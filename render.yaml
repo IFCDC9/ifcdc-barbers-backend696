@@ -37,29 +37,3 @@ services:
       # Point the frontend at the production API (set/override in dashboard if needed).
       - key: VITE_API_BASE
         value: https://ifcdc-barbers-backend696.onrender.com
-
-  - type: web
-    name: ifcdc-barbers-backend
-    runtime: node
-    region: oregon
-    plan: starter
-    buildCommand: npm install && npm run build
-    startCommand: node server.js
-    healthCheckPath: /health
-    envVars:
-      - key: NODE_VERSION
-        value: "22.12.0"
-      - key: NODE_ENV
-        value: production
-      # Skip Vite-related env checks on backend-only hosts (set required keys in dashboard).
-      - key: SKIP_VITE_ENV_VALIDATION
-        value: "true"
-      # Lets the process boot if strict validation would exit(1) before listen (fix dashboard env, then set to 0).
-      - key: IFCDC_SKIP_STRICT_ENV
-        value: "1"
-      # Invite emails must use the public web app origin (never the API host).
-      - key: FRONTEND_URL
-        value: https://ifcdcbarbersapp.com
-      # Set ADMIN_SECRET, DATABASE_URL, Supabase keys, Twilio, OPENAI in the Render dashboard.
-      - key: SUPABASE_STORAGE_BUCKET
-        value: barber-styles
