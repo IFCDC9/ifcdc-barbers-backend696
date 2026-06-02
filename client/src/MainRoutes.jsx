@@ -1,3 +1,8 @@
+/**
+ * LEGACY hash-router shell (Navbar + inline theme styles).
+ * Production entry: main.jsx → App.jsx (BrowserRouter, Render visual baseline).
+ * Keep payment/booking logic in pages/* — do not swap MainRoutes back as the root app.
+ */
 import React from "react";
 import Navbar from "./components/Navbar.jsx";
 import Home from "./pages/Home.jsx";

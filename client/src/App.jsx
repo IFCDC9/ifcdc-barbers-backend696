@@ -1,7 +1,13 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Aura from "./components/Aura.jsx";
+import PayPalReturnBridge from "./components/PayPalReturnBridge.jsx";
 import MainLayout from "./layouts/MainLayout.jsx";
 import { IFCDC_GOLD } from "./lib/ifcdcColors.js";
+import {
+  CheckoutRoute,
+  ConfirmationRoute,
+  PaymentRoute,
+} from "./routes/paymentFlowRoutes.jsx";
 import Home from "./pages/Home.jsx";
 import Barbers from "./pages/Barbers.jsx";
 import Booking from "./pages/Booking.jsx";
@@ -38,6 +44,7 @@ function AppShell() {
       </div>
 
       <div className="app-content">
+        <PayPalReturnBridge />
         <Routes>
           <Route element={<MainLayout />}>
             <Route path="/" element={<Home />} />
@@ -45,6 +52,9 @@ function AppShell() {
             <Route path="/styles" element={<StylesBrowse />} />
             <Route path="/book" element={<Navigate to="/booking" replace />} />
             <Route path="/booking" element={<Booking />} />
+            <Route path="/checkout" element={<CheckoutRoute />} />
+            <Route path="/payment" element={<PaymentRoute />} />
+            <Route path="/confirmation" element={<ConfirmationRoute />} />
             <Route path="/phone" element={<Phone />} />
             <Route path="/about" element={<About />} />
             <Route path="/login" element={<Login />} />
