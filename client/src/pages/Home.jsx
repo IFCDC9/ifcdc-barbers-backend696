@@ -380,10 +380,6 @@ export default function Home() {
         </Link>
       </section>
 
-      <footer className="home-footer">
-        <p className="home-footer__text">© 2026 IFCDC • All Rights Reserved</p>
-        <p className="home-footer__text home-footer__sub">Powered by IFCDC Productions</p>
-      </footer>
     </div>
   );
 }

@@ -122,7 +122,7 @@ console.log("🚀 Server running on port:", PORT);
 console.log("🌐 PUBLIC API URL:", process.env.PUBLIC_API_URL);
 
 const AURA_NUMBER = process.env.AURA_PHONE_NUMBER;
-const BUSINESS_PHONE = process.env.BUSINESS_PHONE || "+13313168167";
+const BUSINESS_PHONE = process.env.BUSINESS_PHONE || "+17327435048";
 
 console.log("RESEND_API_KEY:", process.env.RESEND_API_KEY ? "LOADED" : "MISSING");
 console.log("MAIL_FROM:", process.env.MAIL_FROM);
@@ -154,7 +154,7 @@ console.log(
 }
 console.log(
   "BUSINESS_PHONE:",
-  process.env.BUSINESS_PHONE ? "set" : "default(+13313168167)",
+  process.env.BUSINESS_PHONE ? "set" : "default(+17327435048)",
   "AURA_PHONE_NUMBER:",
   AURA_NUMBER ? "set" : "missing",
   "OPENAI_API_KEY:",

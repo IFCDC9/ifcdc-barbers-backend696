@@ -23,6 +23,7 @@ import Dashboard from "./pages/Dashboard.jsx";
 import BarberSettings from "./pages/BarberSettings.jsx";
 import RequireRole from "./components/RequireRole.jsx";
 import Invite from "./pages/Invite.jsx";
+import IFCDCGlobalFooter from "./components/IFCDCGlobalFooter.jsx";
 
 function AppShell() {
   return (
@@ -90,7 +91,7 @@ function AppShell() {
         </Routes>
       </div>
 
-      <div className="app-footer" aria-hidden="true" />
+      <IFCDCGlobalFooter />
 
       <div className="aura-button">
         <Aura />
