@@ -23,7 +23,6 @@ services:
   - type: web
     name: ifcdc-barbers-frontend
     runtime: static
-    region: oregon
     plan: starter
     branch: main
     autoDeploy: true
