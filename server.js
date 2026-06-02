@@ -27,7 +27,7 @@ import { handleBarberAvailableSlotsGet } from "./barberAvailableSlotsRoute.js";
 import { createBookingsRouter, insertAuraVoiceBookingRow } from "./bookingsRoutes.js";
 import { createBookingsAdminGuard } from "./bookingsAdminGuard.js";
 import { createAdminUsersRouter } from "./adminUsersRoutes.js";
-import { dbQuery } from "./db.js";
+import { resolvePublicBusinessPhone } from "./src/services/publicContactConfig.js";
 import { ensureSecurityAuditTable, ensureSecurityTenantColumns } from "./securityTenantMigrations.js";
 import {
   auraUnclearFallbackReply,
@@ -122,7 +122,7 @@ console.log("🚀 Server running on port:", PORT);
 console.log("🌐 PUBLIC API URL:", process.env.PUBLIC_API_URL);
 
 const AURA_NUMBER = process.env.AURA_PHONE_NUMBER;
-const BUSINESS_PHONE = process.env.BUSINESS_PHONE || "+17327435048";
+const BUSINESS_PHONE = String(process.env.BUSINESS_PHONE || "").trim();
 
 console.log("RESEND_API_KEY:", process.env.RESEND_API_KEY ? "LOADED" : "MISSING");
 console.log("MAIL_FROM:", process.env.MAIL_FROM);
@@ -154,7 +154,7 @@ console.log(
 }
 console.log(
   "BUSINESS_PHONE:",
-  process.env.BUSINESS_PHONE ? "set" : "default(+17327435048)",
+  BUSINESS_PHONE ? "set" : "unset (shop DB phone or none)",
   "AURA_PHONE_NUMBER:",
   AURA_NUMBER ? "set" : "missing",
   "OPENAI_API_KEY:",
@@ -734,14 +734,21 @@ app.get("/test-email", handleGetTestEmail);
 app.post("/api/test-email", handlePostTestEmail);
 app.post("/test-email", handlePostTestEmail);
 
-/** Public config for the client (business phone, etc.). */
-app.get("/api/config", (_req, res) => {
-  const phone = String(BUSINESS_PHONE).trim();
-  const auraPhone = String(AURA_NUMBER || "").trim();
-  res.json({
-    phone: phone || null,
-    auraPhone: auraPhone || null,
-  });
+/** Public config for the client (shop business phone, AURA line, etc.). */
+app.get("/api/config", async (req, res) => {
+  try {
+    const businessId = req.query.businessId ?? req.query.business_id ?? null;
+    const { phone, source } = await resolvePublicBusinessPhone(businessId);
+    const auraPhone = String(AURA_NUMBER || "").trim();
+    res.json({
+      phone: phone || null,
+      auraPhone: auraPhone || null,
+      phoneSource: source,
+    });
+  } catch (e) {
+    console.error("[api/config]", e);
+    res.status(500).json({ error: "config_failed", message: e?.message || String(e) });
+  }
 });
 
 /**

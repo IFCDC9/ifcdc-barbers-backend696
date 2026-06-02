@@ -1,43 +1,12 @@
 import { useEffect, useState } from "react";
-import { getApiOrigin } from "../services/api.js";
 import { formatNanpUsDisplay, nanpDialString } from "../lib/formatNanp.js";
 import { useDevice } from "../hooks/useDevice.js";
-import { SYSTEM_CONFIG } from "../config/systemConfig.js";
+import { usePublicBusinessPhone } from "../hooks/usePublicBusinessPhone.js";
 
 export default function Phone() {
   const device = useDevice();
-  const [phoneNumber, setPhoneNumber] = useState(SYSTEM_CONFIG.BUSINESS_PHONE);
-  const [auraPhone, setAuraPhone] = useState("");
-  const [loadError, setLoadError] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const { phone: phoneNumber, auraPhone, loading, error: loadError } = usePublicBusinessPhone();
   const [copied, setCopied] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    const origin = getApiOrigin();
-    fetch(`${origin}/api/config`, { headers: { Accept: "application/json" } })
-      .then(async (res) => {
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          throw new Error(data?.error || data?.message || `HTTP ${res.status}`);
-        }
-        const p = data?.phone != null ? String(data.phone).trim() : "";
-        const ap = data?.auraPhone != null ? String(data.auraPhone).trim() : "";
-        if (!cancelled) {
-          setPhoneNumber(p || SYSTEM_CONFIG.BUSINESS_PHONE);
-          setAuraPhone(ap);
-        }
-      })
-      .catch((err) => {
-        if (!cancelled) setLoadError(err?.message || "Could not load phone number");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const callNow = () => {
     const raw = String(phoneNumber || "").trim();
@@ -56,7 +25,6 @@ export default function Phone() {
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1400);
     } catch {
-      // Fallback: best-effort copy prompt
       window.prompt("Copy phone number:", toCopy);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1400);
@@ -96,8 +64,9 @@ export default function Phone() {
           </div>
           {!phoneNumber ? (
             <p className="phone-page__status phone-page__status--warn">
-              Set <code className="phone-page__code">BUSINESS_PHONE</code> or <code className="phone-page__code">VITE_BUSINESS_PHONE</code> in{" "}
-              <code className="phone-page__code">.env</code> and restart.
+              No shop phone on file yet. Add it in <strong>Settings</strong> (shop profile) or set{" "}
+              <code className="phone-page__code">BUSINESS_PHONE</code> / <code className="phone-page__code">VITE_BUSINESS_PHONE</code> as a
+              temporary platform fallback.
             </p>
           ) : null}
         </>
