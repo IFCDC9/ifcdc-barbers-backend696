@@ -1,18 +1,21 @@
 /** Client-side mirror of server `styleBookingPricing.js` for display (must match server env). */
+import { resolveClientPlatformFeeUsd } from "./platformFee.js";
 
 export function roundMoney2(n) {
   return Math.round(Number(n) * 100) / 100;
 }
 
 export function depositEnabled() {
-  const v = String(import.meta.env.VITE_BOOKING_DEPOSIT_ENABLED ?? "true").trim().toLowerCase();
+  const env = typeof import.meta !== "undefined" && import.meta.env ? import.meta.env : {};
+  const v = String(env.VITE_BOOKING_DEPOSIT_ENABLED ?? "true").trim().toLowerCase();
   return v !== "false" && v !== "0" && v !== "no";
 }
 
 export function depositForStylePrice(stylePrice) {
+  const env = typeof import.meta !== "undefined" && import.meta.env ? import.meta.env : {};
   const p = roundMoney2(stylePrice);
   if (!Number.isFinite(p) || p <= 0) return 0.01;
-  let dep = Number(import.meta.env.VITE_BOOKING_DEPOSIT);
+  let dep = Number(env.VITE_BOOKING_DEPOSIT);
   if (!Number.isFinite(dep) || dep <= 0) dep = roundMoney2(p * 0.4);
   dep = roundMoney2(dep);
   const maxDep = roundMoney2(Math.max(0.01, p - 0.01));
@@ -55,11 +58,7 @@ export function computeChargeBreakdown(stylePrice, paymentType, tipOpts = {}, pu
 
   const useDeposit = depositsAllowed && paymentType === "deposit";
   const serviceCharge = useDeposit ? depositAmount : totalPrice;
-  const platformFee = roundMoney2(
-    publicPricing != null && Number(publicPricing.platform_fee_usd) > 0
-      ? Number(publicPricing.platform_fee_usd)
-      : 0,
-  );
+  const platformFee = resolveClientPlatformFeeUsd(publicPricing);
   const subtotalBeforeTip = roundMoney2(serviceCharge + platformFee);
   const tipAmount = parseTipAmount(subtotalBeforeTip, tipOpts);
   const paypalTotal = roundMoney2(subtotalBeforeTip + tipAmount);
@@ -74,5 +73,27 @@ export function computeChargeBreakdown(stylePrice, paymentType, tipOpts = {}, pu
     tipAmount,
     paypalTotal,
     paymentType: useDeposit ? "deposit" : "full",
+  };
+}
+
+/** Ensure server quotes always include platform fee (guards stale API before backend deploy). */
+export function normalizeCheckoutBreakdown(breakdown, publicPricing = null) {
+  if (!breakdown || typeof breakdown !== "object") return breakdown;
+  const expectedFee = resolveClientPlatformFeeUsd(publicPricing);
+  const currentFee = Number(breakdown.platformFee);
+  if (Number.isFinite(currentFee) && currentFee > 0) return breakdown;
+
+  const serviceCharge = roundMoney2(breakdown.serviceCharge);
+  const platformFee = expectedFee;
+  const subtotalBeforeTip = roundMoney2(serviceCharge + platformFee);
+  const tipAmount = roundMoney2(breakdown.tipAmount || 0);
+  const totalPrice = roundMoney2(breakdown.totalPrice);
+  return {
+    ...breakdown,
+    platformFee,
+    subtotalBeforeTip,
+    totalAmount: roundMoney2(totalPrice + platformFee),
+    tipAmount,
+    paypalTotal: roundMoney2(subtotalBeforeTip + tipAmount),
   };
 }

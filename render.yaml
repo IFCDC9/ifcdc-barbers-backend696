@@ -36,3 +36,10 @@ services:
       # Point the frontend at the production API (set/override in dashboard if needed).
       - key: VITE_API_BASE
         value: https://ifcdc-barbers-backend696.onrender.com
+      # Required for PayPal buttons (must match backend PAYPAL_CLIENT_ID — Live app).
+      # - key: VITE_PAYPAL_CLIENT_ID
+      #   sync: false
+      - key: VITE_PAYPAL_ENVIRONMENT
+        value: production
+      - key: VITE_PLATFORM_FEE
+        value: "0.99"

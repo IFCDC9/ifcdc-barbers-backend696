@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { PayPalButtons, usePayPalScriptReducer } from "@paypal/react-paypal-js";
 import { getApiOrigin, getBarbers, mediaUrl, fetchBarberPublicPricing, fetchBookingQuote } from "../services/api.js";
-import { computeChargeBreakdown, depositEnabled } from "../lib/stylePricing.js";
+import { computeChargeBreakdown, depositEnabled, normalizeCheckoutBreakdown } from "../lib/stylePricing.js";
 import {
   canOpenDirectionsToShop,
   hasShopCoords,
@@ -129,12 +129,8 @@ function BookingPayPalBlock({
             {loadingStatusErrorMessage ? `: ${loadingStatusErrorMessage}` : "."}
           </p>
           <p className="paypal-fix-hint">
-            Set <code>VITE_PAYPAL_CLIENT_ID</code> in <code>client/.env</code> to match root{" "}
-            <code>PAYPAL_CLIENT_ID</code>, restart Vite. Sandbox:{" "}
-            <a href="https://developer.paypal.com/dashboard/applications/sandbox" target="_blank" rel="noreferrer">
-              Developer Dashboard
-            </a>
-            .
+            On Render, set <code>VITE_PAYPAL_CLIENT_ID</code> (same Live ID as backend <code>PAYPAL_CLIENT_ID</code>) and{" "}
+            <code>VITE_PAYPAL_ENVIRONMENT=production</code>, then redeploy the static site. Local: <code>client/.env</code>.
           </p>
         </div>
       ) : null}
@@ -368,7 +364,7 @@ export default function Booking() {
 
   const breakdown = useMemo(() => {
     if (serverQuote?.breakdown && selectedStyle?.styleId) {
-      return serverQuote.breakdown;
+      return normalizeCheckoutBreakdown(serverQuote.breakdown, barberPricing);
     }
     return computeChargeBreakdown(stylePriceUsd, payChoice, tipOpts, barberPricing);
   }, [serverQuote, selectedStyle?.styleId, stylePriceUsd, payChoice, tipOpts, barberPricing]);
@@ -976,30 +972,28 @@ export default function Booking() {
             <dd>{form.time || "—"}</dd>
           </div>
           <div>
-            <dt>Full price (style)</dt>
+            <dt>Service price</dt>
             <dd className="ifcdc-booking-price">${breakdown.totalPrice.toFixed(2)} USD</dd>
           </div>
-          {depositsAllowedUi ? (
+          {depositsAllowedUi && payChoice === "deposit" ? (
             <div>
-              <dt>Deposit required</dt>
-              <dd>${breakdown.depositAmount.toFixed(2)} USD</dd>
+              <dt>Deposit</dt>
+              <dd>${breakdown.serviceCharge.toFixed(2)} USD</dd>
             </div>
           ) : null}
-          <div>
-            <dt>Remaining after your selection</dt>
-            <dd>
-              $
-              {payChoice === "deposit" && depositsAllowedUi ? remainingAfterPayUsd.toFixed(2) : "0.00"} USD
-              {payChoice === "deposit" && depositsAllowedUi ? " (due later)" : ""}
-            </dd>
-          </div>
+          {depositsAllowedUi && payChoice === "deposit" ? (
+            <div>
+              <dt>Remaining balance</dt>
+              <dd>${remainingAfterPayUsd.toFixed(2)} USD (due later)</dd>
+            </div>
+          ) : null}
           <div>
             <dt>Tip (optional)</dt>
             <dd>{breakdown.tipAmount > 0 ? `$${breakdown.tipAmount.toFixed(2)}` : "None"}</dd>
           </div>
           <div>
-            <dt>Subtotal (pay now, before tip)</dt>
-            <dd>${Number(breakdown.subtotalBeforeTip ?? breakdown.serviceCharge + (breakdown.platformFee || 0)).toFixed(2)} USD</dd>
+            <dt>Platform fee</dt>
+            <dd>${Number(breakdown.platformFee || 0).toFixed(2)} USD</dd>
           </div>
           <div>
             <dt>Total due now (PayPal)</dt>

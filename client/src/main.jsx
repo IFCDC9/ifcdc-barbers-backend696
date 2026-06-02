@@ -2,21 +2,24 @@ import ReactDOM from "react-dom/client";
 import { PayPalScriptProvider } from "@paypal/react-paypal-js";
 import App from "./App.jsx";
 import ScreenErrorBoundary from "./components/ScreenErrorBoundary.jsx";
+import { PAYPAL_CLIENT_ID } from "./config/paypalClientId.js";
 import "./styles/global.css";
 
-/** Sandbox Client ID from https://developer.paypal.com/dashboard/applications/sandbox (must match environment). */
-const PAYPAL_ID = String(import.meta.env.VITE_PAYPAL_CLIENT_ID ?? "").trim();
+/**
+ * Live Client ID from `client/.env` → `VITE_PAYPAL_CLIENT_ID` (must match root PAYPAL_CLIENT_ID).
+ * https://developer.paypal.com/dashboard/applications
+ */
+const PAYPAL_ID = PAYPAL_CLIENT_ID;
 if (!PAYPAL_ID) {
   console.error(
-    "[PayPal] Set VITE_PAYPAL_CLIENT_ID in client/.env to your Sandbox app Client ID, then restart Vite."
+    "[PayPal] Set VITE_PAYPAL_CLIENT_ID on Render (Static Site env) to the same Live Client ID as backend PAYPAL_CLIENT_ID, then redeploy.",
   );
 }
 /**
- * Sandbox → www.sandbox.paypal.com/sdk/js; production → www.paypal.com/sdk/js.
- * VITE_PAYPAL_ENVIRONMENT=production only with a Live app Client ID from the Live tab in the Dashboard.
+ * Default production for release builds; set VITE_PAYPAL_ENVIRONMENT=sandbox only for sandbox Client IDs.
  */
 const PAYPAL_ENV =
-  import.meta.env.VITE_PAYPAL_ENVIRONMENT === "production" ? "production" : "sandbox";
+  import.meta.env.VITE_PAYPAL_ENVIRONMENT === "sandbox" ? "sandbox" : "production";
 
 const rootEl = document.getElementById("root");
 if (!rootEl) {

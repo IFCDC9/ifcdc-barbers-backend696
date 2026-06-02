@@ -41,18 +41,24 @@ export function tierAllowsDeposits(tier) {
   return normalizeTier(tier) !== TIER_FREE;
 }
 
-/** Internal: barber owes this per completed booking (never added to customer PayPal totals). */
+/** Per-booking platform fee charged to customers at checkout (USD). */
 export const BARBER_PLATFORM_FEE_USD = 0.99;
 
-/** @deprecated customer checkout no longer adds a per-booking platform line item */
+/** @deprecated use BARBER_PLATFORM_FEE_USD / platformFeeUsdForTier */
 export const PLATFORM_FEE_USD_FREE = 0.99;
 
+function roundMoney2(n) {
+  return Math.round(Number(n) * 100) / 100;
+}
+
 /**
- * Fee added to customer checkout (PayPal). Always zero — barber platform fee is internal only.
- * @param {unknown} _tier
+ * Customer checkout platform fee (USD) — added to every PayPal total before tip.
+ * @param {unknown} _tier — reserved for future tier-specific fees
  */
 export function platformFeeUsdForTier(_tier) {
-  return 0;
+  const env = Number(process.env.PLATFORM_FEE);
+  if (Number.isFinite(env) && env > 0) return roundMoney2(env);
+  return BARBER_PLATFORM_FEE_USD;
 }
 
 /**

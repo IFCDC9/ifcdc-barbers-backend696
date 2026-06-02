@@ -1,6 +1,7 @@
 /**
  * Shared style-based booking charge + tip math (used by PayPal create-order and POST /api/book).
  */
+import { BARBER_PLATFORM_FEE_USD, platformFeeUsdForTier } from "./subscriptionTier.js";
 
 export function roundMoney2(n) {
   return Math.round(Number(n) * 100) / 100;
@@ -74,7 +75,10 @@ export function computeChargeBreakdown(stylePrice, paymentType, body = {}, opts 
   const wantDeposit = String(paymentType || "").toLowerCase() === "deposit";
   const useDeposit = depositsAllowed && wantDeposit;
   const serviceCharge = useDeposit ? depositAmount : totalPrice;
-  const platformFee = roundMoney2(Number(opts.platformFeeUsd) || 0);
+  const rawPlatform = Number(opts.platformFeeUsd);
+  const platformFee = roundMoney2(
+    Number.isFinite(rawPlatform) && rawPlatform > 0 ? rawPlatform : platformFeeUsdForTier(opts.subscriptionTier),
+  );
   const subtotalBeforeTip = roundMoney2(serviceCharge + platformFee);
   const tipAmount = parseTipAmount(subtotalBeforeTip, body);
   const paypalTotal = roundMoney2(subtotalBeforeTip + tipAmount);
