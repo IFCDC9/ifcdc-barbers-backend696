@@ -20,13 +20,16 @@
 
 services:
   # Frontend (Render Static Site) — SPA rewrite required for deep links like /invite
-  - type: static_site
+  - type: web
     name: ifcdc-barbers-frontend
+    runtime: static
     region: oregon
     plan: starter
+    branch: main
+    autoDeploy: true
     rootDir: client
     buildCommand: npm install && npm run build
-    staticPublishPath: dist
+    staticPublishPath: ./dist
     routes:
       - type: rewrite
         source: /*
