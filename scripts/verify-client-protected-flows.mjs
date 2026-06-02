@@ -46,12 +46,29 @@ function mustInclude(rel, needles, label) {
   return true;
 }
 
+function mustNotInclude(rel, needles, label) {
+  const text = read(rel);
+  for (const n of needles) {
+    if (text.includes(n)) {
+      fail(label || rel, `forbidden: ${n}`);
+      return false;
+    }
+  }
+  ok(label || rel, "no hard-coded fallback numbers");
+  return true;
+}
+
 console.log("\n=== Client protected-flow verification ===\n");
 
 // 1. Render UI baseline (entry + shell)
 mustInclude("client/src/main.jsx", ["App.jsx", "PayPalScriptProvider"], "entry: main.jsx");
 mustInclude("client/src/App.jsx", ["MainLayout", "app-container"], "Render UI: App.jsx shell");
 mustInclude("client/package.json", ["vite", "@vitejs/plugin-react"], "build: vite in dependencies");
+
+mustInclude("client/src/config/systemConfig.js", ["VITE_BUSINESS_PHONE", "import.meta.env"], "phone: env-only client config");
+mustNotInclude("client/src/config/systemConfig.js", ["+13313168167", "+17327435048"], "phone: no hard-coded E.164 in systemConfig");
+mustInclude("src/services/publicContactConfig.js", ["resolvePublicBusinessPhone", "businesses.phone"], "phone: server resolver");
+mustInclude("server.js", ["dbQuery", "resolvePublicBusinessPhone"], "server: dbQuery + contact resolver imports");
 
 // 2. Protected logic files present
 const protectedFiles = [
@@ -62,6 +79,8 @@ const protectedFiles = [
   "client/src/components/PayPalReturnHandler.jsx",
   "client/src/components/PayPalReturnBridge.jsx",
   "client/src/routes/paymentFlowRoutes.jsx",
+  "client/src/hooks/usePublicBusinessPhone.js",
+  "client/src/lib/publicBusinessPhone.js",
   "client/src/lib/api.js",
 ];
 for (const f of protectedFiles) {

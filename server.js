@@ -27,6 +27,7 @@ import { handleBarberAvailableSlotsGet } from "./barberAvailableSlotsRoute.js";
 import { createBookingsRouter, insertAuraVoiceBookingRow } from "./bookingsRoutes.js";
 import { createBookingsAdminGuard } from "./bookingsAdminGuard.js";
 import { createAdminUsersRouter } from "./adminUsersRoutes.js";
+import { dbQuery } from "./db.js";
 import { resolvePublicBusinessPhone } from "./src/services/publicContactConfig.js";
 import { ensureSecurityAuditTable, ensureSecurityTenantColumns } from "./securityTenantMigrations.js";
 import {
