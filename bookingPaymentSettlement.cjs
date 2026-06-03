@@ -11,6 +11,16 @@ function round2(n) {
   return Math.round(Number(n) * 100) / 100;
 }
 
+/** Never accept stored/client platform_fee of 0 — minimum $0.99 at settlement. */
+function resolvePlatformFeeUsd(rawFee) {
+  const env = Number(process.env.PLATFORM_FEE);
+  const configured =
+    Number.isFinite(env) && env > 0 ? round2(env) : DEFAULT_PLATFORM_FEE;
+  const n = Number(rawFee);
+  if (Number.isFinite(n) && n >= configured - 0.001) return round2(n);
+  return configured;
+}
+
 function withinAmount(a, b) {
   return Math.abs(round2(a) - round2(b)) <= AMOUNT_TOLERANCE;
 }
@@ -80,9 +90,7 @@ function extractPayPalCapturedUsd(capture) {
 function computeSettlementFromCapture(input) {
   const servicePrice = round2(Math.max(0, Number(input.servicePrice) || 0));
   const depositAmount = round2(Math.max(0, Number(input.depositAmount) || 0));
-  const platformFee = round2(
-    Number(input.platformFee) > 0 ? Number(input.platformFee) : DEFAULT_PLATFORM_FEE,
-  );
+  const platformFee = resolvePlatformFeeUsd(input.platformFee);
   const tipAmount = round2(Math.max(0, Number(input.tipAmount) || 0));
   const capturedUsd = round2(Number(input.capturedUsd) || 0);
   const captureId = input.captureId ? String(input.captureId).trim() : "";
@@ -213,7 +221,7 @@ function bookingPaymentViewFromRow(row) {
     Number(row.service_price ?? row.total_price ?? row.amount ?? 0),
   );
   const depositAmount = round2(Number(row.deposit_amount ?? 0));
-  const platformFee = round2(Number(row.platform_fee ?? DEFAULT_PLATFORM_FEE));
+  const platformFee = resolvePlatformFeeUsd(row.platform_fee);
   const tipAmount = round2(Number(row.tip_amount ?? 0));
   const amountCharged = round2(
     Number(row.amount_charged ?? row.amount_paid ?? row.total_paid ?? 0),
@@ -347,6 +355,7 @@ function settlementUpdateParams(bookingId, settlement, captureId) {
 
 module.exports = {
   DEFAULT_PLATFORM_FEE,
+  resolvePlatformFeeUsd,
   AMOUNT_TOLERANCE,
   PAYMENT_STATUS,
   CAPTURED_PAYMENT_STATUSES,

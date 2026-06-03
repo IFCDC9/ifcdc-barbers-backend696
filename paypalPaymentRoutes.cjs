@@ -201,7 +201,9 @@ router.post("/create-order", async (req, res) => {
       });
     }
 
-    const { breakdown } = computed;
+    const { breakdown: rawBreakdown } = computed;
+    const { enforcePlatformFeeOnBreakdown } = await import("./styleBookingPricing.js");
+    const breakdown = enforcePlatformFeeOnBreakdown(rawBreakdown, raw, computed.subscription_tier);
     const amount = breakdown.paypalTotal;
     if (!Number.isFinite(amount) || amount <= 0) {
       return res.status(400).json({

@@ -25,6 +25,7 @@ const {
 const { handlePublicBarberServicesGet, handlePublicBarbersListGet } = require("./bookingPublicHandlers.cjs");
 const {
   DEFAULT_PLATFORM_FEE: SETTLEMENT_PLATFORM_FEE,
+  resolvePlatformFeeUsd,
   extractPayPalCapturedUsd,
   computeSettlementFromCapture,
   bookingPaymentViewFromRow,
@@ -214,7 +215,7 @@ async function loadSlotEngine() {
 
 async function loadTier() {
   const mod = await import(path.join(__dirname, "subscriptionTier.js"));
-  return Number(mod.BARBER_PLATFORM_FEE_USD ?? DEFAULT_PLATFORM_FEE);
+  return resolvePlatformFeeUsd(mod.platformFeeUsdForTier(null));
 }
 
 router.get("/health", async (_req, res) => {
@@ -511,7 +512,9 @@ router.post("/start", async (req, res) => {
     const haircutPrice = round2(Number(serviceRow.price));
     const serviceTitle = String(serviceRow.name || "Service").trim();
     const depositAmount = round2(Math.max(0, Number(body.depositAmount) || 0));
-    const total = round2(haircutPrice + depositAmount + platformFee);
+    const paymentTypeLabel = depositAmount > 0 ? "deposit" : "full";
+    const serviceCharge = paymentTypeLabel === "deposit" ? depositAmount : haircutPrice;
+    const total = round2(serviceCharge + platformFee);
     const remainingBalance = round2(Math.max(0, haircutPrice - depositAmount));
     const barberPayout = round2(Math.max(0, haircutPrice - platformFee));
     const tenantBiz = resolved.businessId;
@@ -884,7 +887,7 @@ router.post("/finalize", async (req, res) => {
 
     const haircutPrice = round2(Number(row.service_price ?? row.total_price ?? row.amount ?? 0));
     const depositAmount = round2(Number(row.deposit_amount ?? 0));
-    const platformFee = round2(Number(row.platform_fee ?? DEFAULT_PLATFORM_FEE));
+    const platformFee = round2(resolvePlatformFeeUsd(row.platform_fee));
     const tipAmount = round2(Number(row.tip_amount ?? 0));
 
     if (

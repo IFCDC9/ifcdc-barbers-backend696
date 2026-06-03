@@ -7,6 +7,54 @@ export function roundMoney2(n) {
   return Math.round(Number(n) * 100) / 100;
 }
 
+/** Minimum customer platform fee (USD) — never trust client-supplied fee fields. */
+export function resolvePlatformFeeUsd(rawFee, tier) {
+  const env = Number(process.env.PLATFORM_FEE);
+  const configured =
+    Number.isFinite(env) && env > 0 ? roundMoney2(env) : BARBER_PLATFORM_FEE_USD;
+  const n = Number(rawFee);
+  if (Number.isFinite(n) && n >= configured - 0.001) return roundMoney2(n);
+  const tierFee = platformFeeUsdForTier(tier);
+  if (Number.isFinite(tierFee) && tierFee >= configured - 0.001) return roundMoney2(tierFee);
+  return configured;
+}
+
+/**
+ * Recompute PayPal totals with enforced platform fee (server-only).
+ * @param {object} breakdown
+ * @param {object} [body] - tip fields
+ * @param {unknown} [tier]
+ */
+export function enforcePlatformFeeOnBreakdown(breakdown = {}, body = {}, tier) {
+  const totalPrice = roundMoney2(breakdown.totalPrice ?? breakdown.serviceCharge ?? 0);
+  const depositAmount = roundMoney2(breakdown.depositAmount ?? 0);
+  const serviceCharge = roundMoney2(
+    breakdown.serviceCharge ?? (String(breakdown.paymentType || "").toLowerCase() === "deposit"
+      ? depositAmount
+      : totalPrice),
+  );
+  const platformFee = resolvePlatformFeeUsd(breakdown.platformFee, tier);
+  const subtotalBeforeTip = roundMoney2(serviceCharge + platformFee);
+  const tipAmount =
+    breakdown.tipAmount != null && Number.isFinite(Number(breakdown.tipAmount))
+      ? roundMoney2(Math.max(0, Number(breakdown.tipAmount)))
+      : parseTipAmount(subtotalBeforeTip, body);
+  const paypalTotal = roundMoney2(subtotalBeforeTip + tipAmount);
+  const totalAmount = roundMoney2(totalPrice + platformFee);
+  return {
+    ...breakdown,
+    totalPrice,
+    depositAmount,
+    serviceCharge,
+    platformFee,
+    subtotalBeforeTip,
+    tipAmount,
+    paypalTotal,
+    totalAmount,
+    paymentType: breakdown.paymentType || (depositAmount > 0 && serviceCharge < totalPrice ? "deposit" : "full"),
+  };
+}
+
 export function depositEnabled() {
   const v = String(process.env.BOOKING_DEPOSIT_ENABLED ?? "true").trim().toLowerCase();
   return v !== "false" && v !== "0" && v !== "no";
@@ -75,10 +123,7 @@ export function computeChargeBreakdown(stylePrice, paymentType, body = {}, opts 
   const wantDeposit = String(paymentType || "").toLowerCase() === "deposit";
   const useDeposit = depositsAllowed && wantDeposit;
   const serviceCharge = useDeposit ? depositAmount : totalPrice;
-  const rawPlatform = Number(opts.platformFeeUsd);
-  const platformFee = roundMoney2(
-    Number.isFinite(rawPlatform) && rawPlatform > 0 ? rawPlatform : platformFeeUsdForTier(opts.subscriptionTier),
-  );
+  const platformFee = resolvePlatformFeeUsd(opts.platformFeeUsd, opts.subscriptionTier);
   const subtotalBeforeTip = roundMoney2(serviceCharge + platformFee);
   const tipAmount = parseTipAmount(subtotalBeforeTip, body);
   const paypalTotal = roundMoney2(subtotalBeforeTip + tipAmount);

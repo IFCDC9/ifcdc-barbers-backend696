@@ -11,7 +11,7 @@ import {
   recordStatusChange,
 } from "./bookingStatusEngine.js";
 import { getPayPalHttpClient, ordersGetRequest } from "./paypalClient.js";
-import { roundMoney2, depositsAllowedForBooking } from "./styleBookingPricing.js";
+import { roundMoney2, depositsAllowedForBooking, enforcePlatformFeeOnBreakdown } from "./styleBookingPricing.js";
 import {
   assertSlotWithinAvailability,
   loadBarberDepositPricingOpts,
@@ -42,6 +42,7 @@ const {
   computeSettlementFromCapture,
   bookingEmailPayloadFromRow,
   PAYMENT_STATUS,
+  shouldSendPaidConfirmationEmail,
 } = require("./bookingPaymentSettlement.cjs");
 const { refundPayPalCapture, round2: roundRefundMoney } = require("./paypalRefund.cjs");
 const { sendBookingRefundEmail } = require("./bookingEmail.cjs");
@@ -257,7 +258,44 @@ export async function insertAuraVoiceBookingRow(body, sendBookingEmail) {
   );
 
   if (!insert.rows?.length) {
-    return { ok: true, deduped: true, booking: null, emailSent: false, emailError: null };
+    const existing = await dbQuery(
+      `SELECT id, customer_name, customer_email, barber_name, service, date, time,
+              service_price, total_price, deposit_amount, amount_paid, amount_charged,
+              balance_due, remaining_balance, platform_fee, tip_amount, payment_status,
+              payment_method, payment_provider, paypal_capture_id
+       FROM bookings WHERE paypal_capture_id = $1 LIMIT 1`,
+      [voiceCaptureId],
+    );
+    const row = existing.rows?.[0];
+    let emailSent = false;
+    let emailError = null;
+    if (row && sendBookingEmail && customerEmail) {
+      try {
+        let bookingLanguage = "en";
+        try {
+          const st = await loadBarberSettingsRow(barberId);
+          bookingLanguage = st?.language || "en";
+        } catch {
+          /* default en */
+        }
+        const r = await sendBookingEmail({
+          name: row.customer_name || customerName,
+          email: row.customer_email || customerEmail,
+          barberName: row.barber_name || barberName,
+          date: String(row.date ?? dateStr),
+          time: String(row.time ?? timeStr),
+          service: row.service || serviceTitle,
+          language: bookingLanguage,
+          ...bookingEmailPayloadFromRow(row),
+        });
+        emailSent = !r?.error;
+        emailError = r?.error || null;
+      } catch (e) {
+        emailSent = false;
+        emailError = e?.message || String(e);
+      }
+    }
+    return { ok: true, deduped: true, booking: row || null, emailSent, emailError };
   }
 
   const bookingId = insert.rows[0].id;
@@ -1940,7 +1978,7 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
         return res.status(400).json({ error: "slot_not_available", message: slotOk.message || "Time not available" });
       }
 
-      const breakdown = quoted.breakdown;
+      const breakdown = enforcePlatformFeeOnBreakdown(quoted.breakdown, body, quoted.subscription_tier);
       const { totalPrice, depositAmount, serviceCharge, platformFee, totalAmount, tipAmount, paypalTotal, paymentType } =
         breakdown;
       const barberBookingFee = roundMoney2(BARBER_PLATFORM_FEE_USD);
@@ -2014,6 +2052,14 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
         assertNotUuidForBigintBarberId(barberId, "bookings", req.path);
       }
 
+      let payBookingLang = "en";
+      try {
+        const st = await loadBarberSettingsRow(barberId);
+        payBookingLang = st?.language || "en";
+      } catch {
+        /* default en */
+      }
+
       const insert = await dbQuery(
         `INSERT INTO bookings
          (user_id, customer_name, customer_email, barber_name, barber_id, client_id, service, date, time, amount,
@@ -2075,27 +2121,43 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
       if (!insert.rows?.length) {
         const existing = await dbQuery(
           `SELECT id, user_id, customer_name, customer_email, barber_name, barber_id, service, date, time, amount,
-                  total_price, deposit_amount, amount_paid, remaining_balance, tip_amount, total_paid,
-                  payment_type, payment_status, payment_provider, paypal_order_id, paypal_capture_id,
+                  total_price, deposit_amount, amount_paid, amount_charged, remaining_balance, balance_due,
+                  tip_amount, total_paid, platform_fee, total_amount,
+                  payment_type, payment_status, payment_method, payment_provider, paypal_order_id, paypal_capture_id,
                   style_id, style_title, style_image_url, created_at
            FROM bookings
            WHERE paypal_capture_id = $1
            LIMIT 1`,
           [paypalCaptureId]
         );
-        return res.json({ ok: true, booking: existing.rows?.[0] || null, deduped: true });
+        const row = existing.rows?.[0] || null;
+        let emailSent = false;
+        let emailError = null;
+        if (row && sendBookingEmail && customerEmail && shouldSendPaidConfirmationEmail(row.payment_status)) {
+          try {
+            const r = await sendBookingEmail({
+              name: row.customer_name || customerName,
+              email: row.customer_email || customerEmail,
+              barberName: row.barber_name || barberName,
+              date: String(row.date ?? dateStr),
+              time: String(row.time ?? timeStr),
+              service: row.service || serviceTitle,
+              serviceDuration: undefined,
+              language: payBookingLang,
+              ...bookingEmailPayloadFromRow(row),
+            });
+            emailSent = !r?.error;
+            emailError = r?.error || null;
+          } catch (e) {
+            emailSent = false;
+            emailError = e?.message || String(e);
+          }
+        }
+        return res.json({ ok: true, booking: row, deduped: true, emailSent, emailError });
       }
 
       const bookingId = insert.rows[0].id;
       console.log("[booking] saved", { bookingId, paypalCaptureId, paymentType, paymentStatus, styleId });
-
-      let payBookingLang = "en";
-      try {
-        const st = await loadBarberSettingsRow(barberId);
-        payBookingLang = st?.language || "en";
-      } catch {
-        /* default en */
-      }
 
       let emailSent = false;
       let emailError = null;
