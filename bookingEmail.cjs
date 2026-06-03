@@ -194,8 +194,69 @@ function logResendStatus() {
   }
 }
 
+function isDeliverableCustomerEmail(addr) {
+  const e = String(addr ?? "").trim().toLowerCase();
+  if (!e || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) return false;
+  if (/@ifcdc\.local$/i.test(e)) return false;
+  if (/^pending\+/i.test(e)) return false;
+  return true;
+}
+
 /**
- * Build email subject + bodies from verified payment_status only (never payment_type / checkout labels).
+ * Customer-facing booking confirmation (IFCDC branding).
+ * @param {object} p
+ */
+function buildCustomerConfirmationEmail(p) {
+  const fmt = (n) => (Number.isFinite(Number(n)) ? Number(n).toFixed(2) : "0.00");
+  const labels = bookingEmailLabels(p.language);
+  const servicePrice = round2(p.servicePrice ?? p.totalPrice ?? 0);
+  const platformFee = round2(p.platformFee ?? 0.99);
+  const tip = round2(p.tipAmount ?? 0);
+  const totalPaid = round2(p.amountCharged ?? p.amountPaid ?? p.totalPaid ?? 0);
+  const bookingId = p.bookingId ? String(p.bookingId) : "";
+  const captureId = p.paymentId || p.captureId || null;
+
+  const safeName = escapeHtml(p.name || "Guest");
+  const safeService = escapeHtml(p.service || "TBD");
+  const safeDate = escapeHtml(p.date || "TBD");
+  const safeTime = escapeHtml(p.time || "TBD");
+  const safeBarber = p.barberName ? escapeHtml(p.barberName) : "";
+  const durationLine =
+    p.serviceDuration != null && Number(p.serviceDuration) > 0
+      ? `<p>${labels.lblServiceDuration}: ${escapeHtml(String(p.serviceDuration))} min</p>`
+      : "";
+
+  const html = `
+<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:560px;color:#111;">
+  <p style="margin:0 0 8px;font-size:12px;letter-spacing:0.08em;color:#b8860b;font-weight:700;">IFCDC BARBERS</p>
+  <h2 style="margin:0 0 16px;color:#111;">${escapeHtml(labels.h2)}</h2>
+  <p>${labels.lblName}: <strong>${safeName}</strong></p>
+  ${safeBarber ? `<p>${labels.lblBarber}: <strong>${safeBarber}</strong></p>` : ""}
+  <p>${labels.lblService}: <strong>${safeService}</strong></p>
+  ${durationLine}
+  <p>${labels.lblDate}: <strong>${safeDate}</strong></p>
+  <p>${labels.lblTime}: <strong>${safeTime}</strong></p>
+  <hr style="border:none;border-top:1px solid #e5e5e5;margin:16px 0;" />
+  <p>${labels.lblServicePrice}: $${fmt(servicePrice)}</p>
+  <p>Platform fee: $${fmt(platformFee)}</p>
+  ${tip > 0 ? `<p>${labels.lblTip}: $${fmt(tip)}</p>` : ""}
+  <p><strong>${labels.lblTotalCharged}: $${fmt(totalPaid)}</strong></p>
+  ${bookingId ? `<p>Booking ID: <strong>${escapeHtml(bookingId)}</strong></p>` : ""}
+  ${captureId ? `<p>${labels.lblPayRef}: ${escapeHtml(String(captureId))}</p>` : ""}
+  <p style="margin-top:20px;font-size:13px;color:#555;">Thank you for booking with IFCDC Barbers.</p>
+</div>
+  `.trim();
+
+  return {
+    subject: labels.subjectFull,
+    html,
+    plain: htmlToPlainText(html),
+    template: "customer_confirmation",
+  };
+}
+
+/**
+ * Admin/internal notification copy.
  * @param {string} paymentStatus
  * @param {object} p
  */
@@ -221,7 +282,8 @@ function buildPaymentEmailContent(paymentStatus, p) {
   if (
     status === PAYMENT_STATUS.PAID_IN_FULL ||
     status === PAYMENT_STATUS.PAID_FULL ||
-    status === PAYMENT_STATUS.PAID
+    status === PAYMENT_STATUS.PAID ||
+    status === "paid_in_full"
   ) {
     const subject = "[IFCDC] New booking — Paid in Full";
     const html = `
@@ -288,30 +350,51 @@ async function sendBookingEmail({
   platformFee,
   language,
   bookingRow,
+  bookingId,
 } = {}) {
   const resend = getResend();
   if (!resend) {
-    throw new Error("RESEND_API_KEY missing or invalid (must start with re_)");
+    const err = new Error("RESEND_API_KEY missing or invalid (must start with re_)");
+    console.error("[booking-email] FAILED:", err.message);
+    throw err;
   }
 
   const toAddr = String(email ?? "").trim();
-  if (!toAddr) {
-    throw new Error("Customer email is required");
+  if (!isDeliverableCustomerEmail(toAddr)) {
+    const err = new Error(
+      `Customer email is missing or not deliverable: "${toAddr || "(empty)"}" — provide a real address at checkout`,
+    );
+    console.error("[booking-email] FAILED:", err.message, { bookingId: bookingId || bookingRow?.id });
+    throw err;
   }
 
   const from = getMailFrom();
   if (!from) {
-    throw new Error(
-      'MAIL_FROM is not set. Set MAIL_FROM=IFCDC Barbers <notifications@ifcdcbarbersapp.com> in backend/.env'
+    const err = new Error(
+      'MAIL_FROM is not set. Set MAIL_FROM=IFCDC Barbers <notifications@ifcdcbarbersapp.com> on Render backend696',
     );
+    console.error("[booking-email] FAILED:", err.message);
+    throw err;
   }
+
   const resolvedStatus = paymentStatus
     ? String(paymentStatus).toLowerCase()
     : bookingRow
       ? paymentStatusForEmailFromRow(bookingRow)
       : PAYMENT_STATUS.UNPAID;
 
-  const emailContent = buildPaymentEmailContent(resolvedStatus, {
+  if (!shouldSendPaidConfirmationEmail(resolvedStatus)) {
+    const err = new Error(
+      `Booking confirmation email skipped — payment status "${resolvedStatus}" is not paid in full`,
+    );
+    console.error("[booking-email] FAILED:", err.message, {
+      bookingId: bookingId || bookingRow?.id,
+      to: toAddr,
+    });
+    throw err;
+  }
+
+  const payload = {
     name,
     service,
     date,
@@ -321,45 +404,61 @@ async function sendBookingEmail({
     totalPrice,
     platformFee,
     tipAmount,
+    serviceDuration,
+    language,
+    bookingId: bookingId || bookingRow?.id,
     amountCharged: amountCharged ?? amountPaid ?? totalPaid,
     amountPaid,
-    balanceDue: balanceDue ?? remainingBalance,
-    remainingBalance,
+    totalPaid: totalPaid ?? amountCharged ?? amountPaid,
     paymentId: paymentId || captureId,
     captureId: captureId || paymentId,
+  };
+
+  const customerContent = buildCustomerConfirmationEmail(payload);
+  const adminContent = buildPaymentEmailContent(PAYMENT_STATUS.PAID_IN_FULL, payload);
+
+  console.log("[booking-email] sending confirmation", {
+    to: toAddr,
+    bookingId: payload.bookingId || null,
+    from: from.replace(/(.{2}).+(@.+)/, "$1***$2"),
+    paymentStatus: resolvedStatus,
   });
 
   const customerResult = await sendEmail({
     to: toAddr,
-    subject: emailContent.subject,
-    html: emailContent.html,
-    text: emailContent.plain,
-    label: `booking-confirmation-${emailContent.template}`,
+    subject: customerContent.subject,
+    html: customerContent.html,
+    text: customerContent.plain,
+    label: "booking-confirmation-customer",
   });
   if (customerResult.error) {
-    throw new Error(customerResult.error.message || "Booking email send failed");
+    const msg = customerResult.error.message || "Booking email send failed";
+    console.error("[booking-email] Resend customer send FAILED:", msg, customerResult.error);
+    throw new Error(msg);
   }
+
+  const messageId = customerResult.data?.id;
+  console.log("[booking-email] SENT OK", { to: toAddr, bookingId: payload.bookingId, messageId });
 
   const adminEmail = String(process.env.BOOKING_ADMIN_EMAIL || "service@ifcdc.org").trim();
   let adminResult = null;
   if (adminEmail) {
-    const adminPlain = emailContent.plain;
     try {
       adminResult = await sendResendWithRetry(
         resend,
         {
           from,
           to: adminEmail,
-          subject: emailContent.subject,
-          html: emailContent.html,
-          text: adminPlain,
+          subject: adminContent.subject,
+          html: adminContent.html,
+          text: adminContent.plain,
         },
-        "booking-admin-notification"
+        "booking-admin-notification",
       );
     } catch (adminErr) {
       console.error(
-        "ADMIN EMAIL FAILED (after retry):",
-        adminErr instanceof Error ? adminErr.stack : JSON.stringify(adminErr, null, 2)
+        "[booking-email] admin copy FAILED:",
+        adminErr instanceof Error ? adminErr.message : adminErr,
       );
     }
   }
@@ -368,7 +467,7 @@ async function sendBookingEmail({
     success: true,
     customer: customerResult,
     admin: adminResult,
-    messageId: customerResult.data?.id,
+    messageId,
   };
 }
 
@@ -549,4 +648,6 @@ module.exports = {
   sendBookingRefundEmail,
   isEmailConfigured,
   logResendStatus,
+  isDeliverableCustomerEmail,
+  buildCustomerConfirmationEmail,
 };

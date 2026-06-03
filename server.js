@@ -515,6 +515,22 @@ async function runTestEmailSend(to, res) {
   });
 }
 
+/** GET /api/email/health — Resend config status (no secrets). */
+app.get("/api/email/health", (_req, res) => {
+  const keyOk = Boolean(getResend());
+  const mailFrom = getMailFrom();
+  const fromEmail = mailFrom ? String(mailFrom).replace(/.*<([^>]+)>/, "$1").trim() : "";
+  const domain = fromEmail.includes("@") ? fromEmail.split("@")[1] : "";
+  res.json({
+    ok: keyOk && Boolean(mailFrom),
+    resendApiKey: keyOk ? "configured" : "missing_or_invalid",
+    mailFrom: mailFrom || null,
+    mailFromDomain: domain || null,
+    expectedDomain: "ifcdcbarbersapp.com",
+    bookingAdminEmail: String(process.env.BOOKING_ADMIN_EMAIL || "service@ifcdc.org").trim(),
+  });
+});
+
 async function handleGetTestEmail(req, res) {
   const to = String(req.query.to || req.query.email || "").trim();
   if (!to) {

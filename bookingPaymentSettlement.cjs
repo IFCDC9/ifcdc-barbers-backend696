@@ -146,13 +146,23 @@ function paymentStatusForEmailFromRow(row) {
   const captureId =
     row.paypal_capture_id || row.stripe_payment_intent_id || row.payment_id || null;
   const status = normalizePaymentStatus(row.payment_status);
+  const amountPaid = round2(
+    Number(row.amount_charged ?? row.amount_paid ?? row.total_paid ?? 0),
+  );
 
   if (
     status === PAYMENT_STATUS.PAYMENT_MISMATCH ||
-    status === PAYMENT_STATUS.PAYMENT_FAILED ||
-    status === PAYMENT_STATUS.UNPAID
+    status === PAYMENT_STATUS.PAYMENT_FAILED
   ) {
     return status;
+  }
+
+  if (
+    captureId &&
+    amountPaid > 0 &&
+    (status === PAYMENT_STATUS.PAID_IN_FULL || isCapturedPaymentStatus(status))
+  ) {
+    return PAYMENT_STATUS.PAID_IN_FULL;
   }
 
   if (!captureId || !isBookingPaymentSettled(row)) {

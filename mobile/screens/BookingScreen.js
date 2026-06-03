@@ -43,6 +43,7 @@ import { formatCheckoutError } from '../utils/checkoutError';
 import DarkGradientBackground from '../components/DarkGradientBackground';
 import { palette, radius } from '../constants/theme';
 import { IFCDC_FOOTER_CLEARANCE } from '../constants/profileLayout';
+import { useAuth } from '../services/authContext';
 
 /** Visual tokens only — booking/payment logic unchanged */
 const UI = {
@@ -92,6 +93,7 @@ function buildDateOptions(count = 7) {
 function BookingScreen() {
   const navigation = useNavigation();
   const { t } = useTranslation();
+  const { user } = useAuth();
   /**
    * Translate a date label produced by buildDateOptions() to the user's
    * language for DISPLAY only. The underlying value (English: "Today",
@@ -346,6 +348,8 @@ function BookingScreen() {
       setPhaseLabel(t('booking.phases.creatingCheckout'));
       const barberUuid =
         typeof barber?.id === 'string' && barber.id.includes('-') ? barber.id : barber?.uuid;
+      const customerEmail = String(user?.email || "").trim();
+      const customerName = String(user?.name || user?.displayName || "").trim() || "Mobile customer";
       const started = await startAppBookingCheckout({
         barberName: barber?.name,
         barberId: barber?.id,
@@ -355,6 +359,8 @@ function BookingScreen() {
         serviceId,
         serviceName,
         redirectUri,
+        customerEmail: customerEmail || undefined,
+        customerName,
       });
 
       const { orderId, approveUrl, total, platformFee, haircutPrice, depositAmount: dep } = started;

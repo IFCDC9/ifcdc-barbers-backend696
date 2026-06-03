@@ -44,6 +44,7 @@ const {
   PAYMENT_STATUS,
   shouldSendPaidConfirmationEmail,
 } = require("./bookingPaymentSettlement.cjs");
+const { isDeliverableCustomerEmail } = require("./bookingEmail.cjs");
 const { refundPayPalCapture, round2: roundRefundMoney } = require("./paypalRefund.cjs");
 const { sendBookingRefundEmail } = require("./bookingEmail.cjs");
 const { assessBookingRemoval } = require("./bookingDeletePolicy.cjs");
@@ -2053,24 +2054,36 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
         const row = existing.rows?.[0] || null;
         let emailSent = false;
         let emailError = null;
-        if (row && sendBookingEmail && customerEmail && shouldSendPaidConfirmationEmail(row.payment_status)) {
+        const dedupeEmail = row.customer_email || customerEmail;
+        if (
+          row &&
+          sendBookingEmail &&
+          isDeliverableCustomerEmail(dedupeEmail) &&
+          shouldSendPaidConfirmationEmail(row.payment_status)
+        ) {
           try {
             const r = await sendBookingEmail({
               name: row.customer_name || customerName,
-              email: row.customer_email || customerEmail,
+              email: dedupeEmail,
               barberName: row.barber_name || barberName,
               date: String(row.date ?? dateStr),
               time: String(row.time ?? timeStr),
               service: row.service || serviceTitle,
               serviceDuration: undefined,
               language: payBookingLang,
+              bookingId: row.id,
+              paymentStatus: PAYMENT_STATUS.PAID_IN_FULL,
               ...bookingEmailPayloadFromRow(row),
             });
-            emailSent = !r?.error;
+            emailSent = Boolean(r?.success ?? r?.messageId);
             emailError = r?.error || null;
           } catch (e) {
             emailSent = false;
             emailError = e?.message || String(e);
+            console.error("[booking] dedupe confirmation email FAILED:", emailError, {
+              bookingId: row.id,
+              email: dedupeEmail,
+            });
           }
         }
         return res.json({ ok: true, booking: row, deduped: true, emailSent, emailError });
@@ -2091,14 +2104,16 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
           service: serviceTitle,
           serviceDuration: undefined,
           language: payBookingLang,
+          bookingId,
+          paymentStatus: PAYMENT_STATUS.PAID_IN_FULL,
           ...bookingEmailPayloadFromRow({
             service_price: totalPrice,
             total_price: totalPrice,
-            deposit_amount: depositAmount,
+            deposit_amount: 0,
             amount_paid: settledPaid,
             amount_charged: settledPaid,
-            balance_due: settledRemaining,
-            remaining_balance: settledRemaining,
+            balance_due: 0,
+            remaining_balance: 0,
             platform_fee: barberBookingFee,
             tip_amount: tipAmount,
             payment_status: paymentStatus,
@@ -2107,11 +2122,12 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
             payment_method: settlement.paymentMethod,
           }),
         });
-        emailSent = !r?.error;
+        emailSent = Boolean(r?.success ?? r?.messageId);
         emailError = r?.error || null;
       } catch (e) {
         emailSent = false;
         emailError = e?.message || String(e);
+        console.error("[booking] confirmation email FAILED:", emailError, { bookingId, customerEmail });
       }
 
       return res.json({

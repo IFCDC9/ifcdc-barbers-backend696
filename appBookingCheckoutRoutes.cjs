@@ -957,31 +957,49 @@ router.post("/finalize", async (req, res) => {
     }
 
     if (shouldSendPaidConfirmationEmail(settlement.paymentStatus)) {
-      try {
-        const { sendBookingEmail } = require("./bookingEmail.cjs");
-        const view = bookingPaymentViewFromRow(fresh);
-        await sendBookingEmail({
-          name: row.customer_name || "Guest",
-          email: row.customer_email,
-          service: row.service || "Haircut",
-          servicePrice: view.servicePrice,
-          serviceDuration: row.service_duration_minutes,
-          date: String(row.date ?? ""),
-          time: String(row.time ?? ""),
-          paymentStatus: paymentStatusForEmailFromRow(fresh),
-          paymentId: captureId,
-          captureId,
-          barberName: row.barber_name,
-          platformFee: view.platformFee,
-          tipAmount: view.tipAmount,
-          amountCharged: view.amountCharged,
-          amountPaid: view.amountPaid,
-          balanceDue: view.balanceDue,
-          bookingRow: fresh,
-        });
-        console.log("[app-bookings] payment confirmation email sent:", row.customer_email, view.paymentStatus);
-      } catch (mailErr) {
-        console.warn("[app-bookings] confirmation email failed:", mailErr?.message || mailErr);
+      const { sendBookingEmail, isDeliverableCustomerEmail } = require("./bookingEmail.cjs");
+      const toEmail = String(fresh.customer_email || row.customer_email || "").trim();
+      if (!isDeliverableCustomerEmail(toEmail)) {
+        console.error(
+          "[app-bookings] confirmation email SKIPPED — customer email missing or placeholder:",
+          toEmail || "(empty)",
+          { bookingId: fresh.id },
+        );
+      } else {
+        try {
+          const view = bookingPaymentViewFromRow(fresh);
+          const mail = await sendBookingEmail({
+            name: fresh.customer_name || row.customer_name || "Guest",
+            email: toEmail,
+            service: fresh.service || row.service || "Haircut",
+            servicePrice: view.servicePrice,
+            serviceDuration: fresh.service_duration_minutes ?? row.service_duration_minutes,
+            date: String(fresh.date ?? row.date ?? ""),
+            time: String(fresh.time ?? row.time ?? ""),
+            paymentStatus: PAYMENT_STATUS.PAID_IN_FULL,
+            paymentId: captureId,
+            captureId,
+            barberName: fresh.barber_name || row.barber_name,
+            platformFee: view.platformFee,
+            tipAmount: view.tipAmount,
+            amountCharged: view.amountCharged,
+            amountPaid: view.amountPaid,
+            balanceDue: 0,
+            bookingId: fresh.id,
+            bookingRow: fresh,
+          });
+          console.log("[app-bookings] payment confirmation email SENT OK:", {
+            to: toEmail,
+            bookingId: fresh.id,
+            messageId: mail?.messageId,
+          });
+        } catch (mailErr) {
+          console.error(
+            "[app-bookings] confirmation email FAILED:",
+            mailErr?.message || mailErr,
+            { bookingId: fresh.id, to: toEmail },
+          );
+        }
       }
     } else {
       console.warn("[app-bookings] skipped paid confirmation email — status not settled", settlement.paymentStatus);
