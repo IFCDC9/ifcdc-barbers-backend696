@@ -191,8 +191,7 @@ router.post("/create-order", async (req, res) => {
       });
     }
 
-    let paymentType = String(raw.paymentType || raw.payMode || "full").toLowerCase() === "deposit" ? "deposit" : "full";
-    const computed = await computeStyleBookingBreakdown({ styleId, barberId, paymentType, body: raw });
+    const computed = await computeStyleBookingBreakdown({ styleId, barberId, paymentType: "full", body: raw });
     if (!computed.ok) {
       return res.status(computed.status || 400).json({
         success: false,

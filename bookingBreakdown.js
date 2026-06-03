@@ -1,5 +1,5 @@
 import { dbQuery } from "./db.js";
-import { roundMoney2, computeChargeBreakdown, depositsAllowedForBooking, enforcePlatformFeeOnBreakdown } from "./styleBookingPricing.js";
+import { roundMoney2, computeChargeBreakdown, enforcePlatformFeeOnBreakdown } from "./styleBookingPricing.js";
 import { loadBarberDepositPricingOpts } from "./barberScope.js";
 
 /**
@@ -40,11 +40,9 @@ export async function computeStyleBookingBreakdown({ styleId, barberId, paymentT
   }
 
   const depositOpts = await loadBarberDepositPricingOpts(bidRaw);
-  let pt = String(paymentType || "full").toLowerCase() === "deposit" ? "deposit" : "full";
-  if (pt === "deposit" && !depositsAllowedForBooking(depositOpts)) pt = "full";
 
   const breakdown = enforcePlatformFeeOnBreakdown(
-    computeChargeBreakdown(stylePrice, pt, body, depositOpts),
+    computeChargeBreakdown(stylePrice, "full", body, depositOpts),
     body,
     depositOpts.subscriptionTier,
   );

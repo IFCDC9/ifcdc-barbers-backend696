@@ -511,11 +511,7 @@ router.post("/start", async (req, res) => {
     const platformFee = round2(await loadTier());
     const haircutPrice = round2(Number(serviceRow.price));
     const serviceTitle = String(serviceRow.name || "Service").trim();
-    const depositAmount = round2(Math.max(0, Number(body.depositAmount) || 0));
-    const paymentTypeLabel = depositAmount > 0 ? "deposit" : "full";
-    const serviceCharge = paymentTypeLabel === "deposit" ? depositAmount : haircutPrice;
-    const total = round2(serviceCharge + platformFee);
-    const remainingBalance = round2(Math.max(0, haircutPrice - depositAmount));
+    const total = round2(haircutPrice + platformFee);
     const barberPayout = round2(Math.max(0, haircutPrice - platformFee));
     const tenantBiz = resolved.businessId;
 
@@ -534,18 +530,17 @@ router.post("/start", async (req, res) => {
       if (bookingsColType !== "uuid") {
         assertNotUuidForBigintBarberId(insertBarberId, "bookings", req.path);
       }
-      const paymentTypeLabel = depositAmount > 0 ? "deposit" : "full";
       ins = await dbQuery(
         `INSERT INTO bookings (
          user_id, customer_name, customer_email, barber_name, barber_id, service, service_duration_minutes, date, time, amount,
-         total_price, deposit_amount, amount_paid, remaining_balance, payment_type, payment_status, payment_provider,
+         total_price, deposit_amount, amount_paid, remaining_balance, balance_due, payment_type, payment_status, payment_provider,
          paypal_order_id, platform_fee, total_amount, booking_status, is_paid_booking,
          platform_fee_status, barber_payout_amount, barber_fee_billed, tip_amount, total_paid, business_id
        ) VALUES (
          NULL, $1, $2, $3, $4, $5, $6, $7::date, $8::time, $9,
-         $10, $11, 0, $12, $13, 'unpaid', 'paypal',
-         NULL, $14, $15, 'pending_payment', false,
-         'pending', $16, false, 0, 0, $17
+         $10, 0, 0, 0, 0, 'full', 'unpaid', 'paypal',
+         NULL, $11, $12, 'pending_payment', false,
+         'pending', $13, false, 0, 0, $14
        )
        RETURNING id`,
         [
@@ -559,9 +554,6 @@ router.post("/start", async (req, res) => {
           timeSql,
           haircutPrice,
           haircutPrice,
-          depositAmount,
-          remainingBalance,
-          paymentTypeLabel,
           platformFee,
           total,
           barberPayout,
@@ -571,7 +563,8 @@ router.post("/start", async (req, res) => {
       await dbQuery(
         `UPDATE bookings SET
            service_price = COALESCE(service_price, $2),
-           balance_due = COALESCE(balance_due, remaining_balance),
+           balance_due = 0,
+           remaining_balance = 0,
            amount_charged = COALESCE(amount_charged, 0)
          WHERE id = $1::uuid`,
         [ins.rows[0].id, haircutPrice],
@@ -626,7 +619,6 @@ router.post("/start", async (req, res) => {
       amounts: {
         haircutPrice,
         platformFee,
-        depositAmount,
         total: paypalAmount,
         amountString,
       },
@@ -747,7 +739,7 @@ router.post("/start", async (req, res) => {
       total,
       platformFee,
       haircutPrice,
-      depositAmount,
+      depositAmount: 0,
       bookingId,
       serviceId: serviceRow.id,
       serviceName: serviceTitle,
@@ -886,7 +878,6 @@ router.post("/finalize", async (req, res) => {
     }
 
     const haircutPrice = round2(Number(row.service_price ?? row.total_price ?? row.amount ?? 0));
-    const depositAmount = round2(Number(row.deposit_amount ?? 0));
     const platformFee = round2(resolvePlatformFeeUsd(row.platform_fee));
     const tipAmount = round2(Number(row.tip_amount ?? 0));
 
@@ -923,7 +914,6 @@ router.post("/finalize", async (req, res) => {
 
     const settlement = computeSettlementFromCapture({
       servicePrice: haircutPrice,
-      depositAmount,
       platformFee,
       tipAmount,
       capturedUsd,

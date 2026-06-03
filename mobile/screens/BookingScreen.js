@@ -114,16 +114,13 @@ function BookingScreen() {
   const [slotsError, setSlotsError] = useState(null);
   const [processingPayment, setProcessingPayment] = useState(false);
   const [phaseLabel, setPhaseLabel] = useState('');
-  const [depositAmount] = useState(0);
-
   const servicePrice = Number(selectedService?.price);
   const pricing = useMemo(
     () =>
       calculateFinalBookingTotal({
         haircutPrice: Number.isFinite(servicePrice) && servicePrice > 0 ? servicePrice : FALLBACK_SERVICE_PRICE,
-        depositAmount,
       }),
-    [servicePrice, depositAmount],
+    [servicePrice],
   );
 
   const [successPayload, setSuccessPayload] = useState(null);
@@ -340,7 +337,6 @@ function BookingScreen() {
 
       calculateFinalBookingTotal({
         haircutPrice: Number.isFinite(servicePrice) && servicePrice > 0 ? servicePrice : FALLBACK_SERVICE_PRICE,
-        depositAmount,
       });
 
       const redirectUri = Linking.createURL('paypal-booking/');
@@ -399,13 +395,16 @@ function BookingScreen() {
       const paymentStatus = String(b.paymentStatus ?? b.payment_status ?? '');
       const paymentMethod = String(b.paymentMethod ?? b.payment_method ?? 'paypal');
       const captureId = b.captureId ?? b.transactionId ?? b.paypal_capture_id ?? null;
-      const isPaidInFull = b.isPaidInFull === true || paymentStatus === 'paid_full';
-      const isDepositPaid = b.isDepositPaid === true || paymentStatus === 'deposit_paid';
+      const isPaidInFull =
+        b.isPaidInFull === true ||
+        paymentStatus === 'paid_in_full' ||
+        paymentStatus === 'paid_full' ||
+        paymentStatus === 'paid';
 
-      if (!captureId || amountPaid <= 0 || (!isPaidInFull && !isDepositPaid)) {
+      if (!captureId || amountPaid <= 0 || !isPaidInFull) {
         throw new Error('Payment failed — booking not confirmed.');
       }
-      if (isPaidInFull && balanceDue > 0.01) {
+      if (balanceDue > 0.01) {
         throw new Error('Payment failed — booking not confirmed.');
       }
 
@@ -427,9 +426,8 @@ function BookingScreen() {
         paymentMethod,
         captureId,
         isPaidInFull,
-        isDepositPaid,
-        paymentStatusLabel:
-          b.paymentStatusLabel ?? paymentStatusHeadline(paymentStatus, balanceDue, amountPaid),
+        isDepositPaid: false,
+        paymentStatusLabel: b.paymentStatusLabel ?? 'PAID IN FULL',
       });
       setPhaseLabel(t('booking.phases.confirmed'));
       checkoutSucceeded = true;
@@ -544,16 +542,6 @@ function BookingScreen() {
             <Text style={{ color: '#fff', marginBottom: 6 }}>
               <Text style={{ color: '#888' }}>{t('booking.chargedToday', { defaultValue: 'Charged today' })} </Text>
               {formatMoney(successPayload.chargedToday ?? successPayload.amountPaid)}
-            </Text>
-            <Text
-              style={{
-                color: Number(successPayload.balanceDue) > 0.01 ? '#fbbf24' : '#6ee7b7',
-                marginBottom: 6,
-                fontWeight: '600',
-              }}
-            >
-              <Text style={{ color: '#888' }}>{t('booking.balanceDue', { defaultValue: 'Balance due' })} </Text>
-              {formatMoney(successPayload.balanceDue ?? 0)}
             </Text>
             <Text style={{ color: '#fff', marginBottom: 6 }}>
               <Text style={{ color: '#888' }}>{t('booking.paymentMethod')} </Text>
@@ -829,9 +817,6 @@ function BookingScreen() {
               <Text style={{ color: '#fff' }}>
                 {selectedService?.name || t('booking.service')}: ${pricing.haircutPrice.toFixed(2)}
               </Text>
-              {pricing.depositAmount > 0 ? (
-                <Text style={{ color: '#fff' }}>{t('booking.deposit')}: ${pricing.depositAmount.toFixed(2)}</Text>
-              ) : null}
               <Text style={{ color: '#FFD700' }}>{t('booking.platformFee')}: ${pricing.platformFee.toFixed(2)}</Text>
               <Text style={{ color: '#fff', marginTop: 10, fontSize: 18 }}>
                 {t('booking.totalPayPal')}: ${pricing.total.toFixed(2)}

@@ -800,32 +800,10 @@ export default function BarberSettings() {
                 />
               </label>
             </div>
-            {settings.subscription_tier === "free" ? (
-              <p style={{ fontSize: 13, color: theme.colors.muted }}>
-                Deposits are disabled on the Free plan. Upgrade to Pro or Elite to accept PayPal deposits.
-              </p>
-            ) : null}
-            <label style={{ display: "flex", alignItems: "center", gap: 10, color: theme.colors.text, fontWeight: 800 }}>
-              <input
-                type="checkbox"
-                disabled={settings.subscription_tier === "free"}
-                checked={settings.booking_deposit_enabled}
-                onChange={(e) => setSettings({ ...settings, booking_deposit_enabled: e.target.checked })}
-              />
-              Enable booking deposits (PayPal)
-            </label>
-            <label style={{ display: "grid", gap: 6, fontSize: 12, color: theme.colors.muted, fontWeight: 800 }}>
-              Deposit amount (USD)
-              <input
-                type="number"
-                min="0"
-                step="1"
-                disabled={settings.subscription_tier === "free"}
-                style={inputStyle}
-                value={settings.deposit_amount}
-                onChange={(e) => setSettings({ ...settings, deposit_amount: Number(e.target.value) })}
-              />
-            </label>
+            <p style={{ fontSize: 13, color: theme.colors.muted }}>
+              Customers pay the full service price plus the $0.99 IFCDC platform fee at checkout. Partial payments and
+              deposits are not offered.
+            </p>
             <Button variant="indigo" type="button" onClick={saveSettings}>
               Save payment settings
             </Button>

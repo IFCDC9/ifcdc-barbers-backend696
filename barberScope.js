@@ -261,14 +261,7 @@ export async function loadBarberDepositPricingOpts(barberId) {
   const subscriptionTier = s.subscription_tier;
   const platformFeeUsd = platformFeeUsdForTier(subscriptionTier);
   const common = { subscriptionTier, platformFeeUsd };
-  if (!barberDepositsEffective(s)) {
-    return { ...common, barberDepositEnabled: false, barberDepositAmount: undefined };
-  }
-  return {
-    ...common,
-    barberDepositEnabled: s.booking_deposit_enabled,
-    barberDepositAmount: s.deposit_amount > 0 ? s.deposit_amount : undefined,
-  };
+  return { ...common, barberDepositEnabled: false, barberDepositAmount: undefined };
 }
 
 /**
@@ -311,7 +304,7 @@ export async function buildPublicBarberPricingResponse(barberId) {
 
   const settings = await loadBarberSettingsRow(bid);
   const depositOpts = await loadBarberDepositPricingOpts(bid);
-  const deposits_allowed = depositsAllowedForBooking(depositOpts);
+  const deposits_allowed = false;
   const platform_fee_usd = Number(depositOpts.platformFeeUsd) || 0;
   const barber_platform_fee_per_booking_usd = 0.99;
 
@@ -334,10 +327,10 @@ export async function buildPublicBarberPricingResponse(barberId) {
         ? "Optional Pro upgrade ($9.99) unlocks more dashboard and AURA tools."
         : null,
     aura_available: settings.aura_available,
-    booking_deposit_enabled: settings.booking_deposit_enabled,
-    booking_deposit_available: settings.booking_deposit_available,
-    deposit_amount: Number(settings.deposit_amount) || 0,
-    deposits_allowed,
+    booking_deposit_enabled: false,
+    booking_deposit_available: false,
+    deposit_amount: 0,
+    deposits_allowed: false,
     payment_method: settings.payment_method,
     theme_color: settings.theme_color,
     services: svc.rows || [],

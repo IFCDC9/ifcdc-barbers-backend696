@@ -218,7 +218,11 @@ function buildPaymentEmailContent(paymentStatus, p) {
     ? `<p><strong>PayPal ref:</strong> ${escapeHtml(String(captureId))}</p>`
     : "";
 
-  if (status === PAYMENT_STATUS.PAID_FULL) {
+  if (
+    status === PAYMENT_STATUS.PAID_IN_FULL ||
+    status === PAYMENT_STATUS.PAID_FULL ||
+    status === PAYMENT_STATUS.PAID
+  ) {
     const subject = "[IFCDC] New booking — Paid in Full";
     const html = `
 <h2>Booking Confirmed</h2>
@@ -236,26 +240,6 @@ ${safeBarber ? `<p>Barber: ${safeBarber}</p>` : ""}
 ${payRefLine}
     `.trim();
     return { subject, html, plain: htmlToPlainText(html), template: "paid_full" };
-  }
-
-  if (status === PAYMENT_STATUS.DEPOSIT_PAID) {
-    const subject = "[IFCDC] New booking — Deposit Paid";
-    const html = `
-<h2>Booking Confirmed</h2>
-<p>Name: ${safeName}</p>
-${safeBarber ? `<p>Barber: ${safeBarber}</p>` : ""}
-<p>Service: ${safeService}</p>
-<p>Date: ${safeDate}</p>
-<p>Time: ${safeTime}</p>
-<p><strong>Payment status:</strong> DEPOSIT PAID</p>
-<p>Service price: $${fmt(servicePrice)}</p>
-<p>Platform fee: $${fmt(platformFee)}</p>
-<p>Tip: $${fmt(tip)}</p>
-<p>Charged today: $${fmt(chargedToday)}</p>
-<p>Balance due: $${fmt(balanceDue)}</p>
-${payRefLine}
-    `.trim();
-    return { subject, html, plain: htmlToPlainText(html), template: "deposit_paid" };
   }
 
   const subject = "[IFCDC] Booking pending — Payment Not Completed";

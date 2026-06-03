@@ -60,7 +60,7 @@ function bookingHasRefundableCapture(booking) {
   }
   const paid = Number(booking?.amount_paid ?? booking?.amount_charged ?? booking?.total_paid ?? 0);
   if (paid > 0.01) return true;
-  return ["paid", "paid_full", "deposit_paid"].includes(status);
+  return ["paid", "paid_full", "paid_in_full", "deposit_paid"].includes(status);
 }
 
 function getAuthPayload(req) {
@@ -358,10 +358,8 @@ export async function insertAuraVoiceBookingRow(body, sendBookingEmail) {
   };
 }
 
-function normalizePaymentType(body, depositOpts = {}) {
-  if (!depositsAllowedForBooking(depositOpts)) return "full";
-  const v = String(body?.paymentType || body?.payMode || "full").toLowerCase();
-  return v === "deposit" ? "deposit" : "full";
+function normalizePaymentType(_body, _depositOpts = {}) {
+  return "full";
 }
 
 function extractCaptureIdFromOrder(order) {
@@ -1679,47 +1677,11 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
    * PATCH /api/admin/bookings/:id/mark-fully-paid
    * Clears remaining balance after in-person or other settlement (admin only via route prefix).
    */
-  router.patch("/api/admin/bookings/:id/mark-fully-paid", guard, async (req, res) => {
-    try {
-      const id = String(req.params.id || "").trim();
-      if (!id) return res.status(400).json({ error: "id_required", message: "Booking id required" });
-
-      const found = await dbQuery(
-        `SELECT id, barber_id, business_id, payment_status FROM bookings WHERE id = $1::uuid LIMIT 1`,
-        [id]
-      );
-      const booking = found.rows?.[0] || null;
-      if (!booking) return res.status(404).json({ error: "not_found", message: "Booking not found" });
-
-      const allowed = await canMarkBookingPaid(req, booking);
-      if (!allowed) return res.status(403).json({ error: "forbidden", message: "Access denied" });
-
-      const scope = req.bookingsAdminScope || { all: true };
-      const tenantSql = scope.all ? "" : " AND business_id = $2 ";
-      const updateParams = scope.all ? [id] : [id, scope.businessId];
-
-      const r = await dbQuery(
-        `UPDATE bookings SET
-           amount_paid = total_price,
-           remaining_balance = 0,
-           payment_status = 'paid',
-           payment_type = 'full',
-           total_paid = COALESCE(tip_amount, 0) + total_price
-         WHERE id = $1::uuid AND payment_status = 'deposit_paid' ${tenantSql}
-         RETURNING id, payment_status, amount_paid, remaining_balance, total_price, tip_amount, total_paid`,
-        updateParams
-      );
-      if (!r.rows?.length) {
-        return res.status(404).json({
-          error: "not_found",
-          message: "No deposit_paid booking found for this id (already fully paid or missing).",
-        });
-      }
-      return res.json({ ok: true, booking: r.rows[0] });
-    } catch (e) {
-      console.error("[booking] mark-fully-paid failed:", e?.stack || e);
-      return res.status(500).json({ error: "update_failed", message: e?.message || String(e) });
-    }
+  router.patch("/api/admin/bookings/:id/mark-fully-paid", guard, (_req, res) => {
+    return res.status(410).json({
+      error: "deposits_removed",
+      message: "Deposit payments are no longer supported. All bookings require full payment at checkout.",
+    });
   });
 
   /**
@@ -1727,53 +1689,11 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
    * Staff action: admin/super_admin, barber (only their own bookings), or x-admin-key can mark a deposit booking as paid.
    * Sets remaining_balance=0, payment_status='paid', payment_type='full', total_paid=total_price+tip.
    */
-  router.post("/api/bookings/:id/mark-paid", async (req, res) => {
-    try {
-      const id = String(req.params.id || "").trim();
-      if (!id) return res.status(400).json({ error: "id_required", message: "Booking id required" });
-
-      const found = await dbQuery(
-        `SELECT id, barber_id, business_id, payment_status, total_price, tip_amount
-         FROM bookings
-         WHERE id = $1::uuid
-         LIMIT 1`,
-        [id]
-      );
-      const booking = found.rows?.[0] || null;
-      if (!booking) return res.status(404).json({ error: "not_found", message: "Booking not found" });
-
-      const allowed = await canMarkBookingPaid(req, booking);
-      if (!allowed) return res.status(403).json({ error: "forbidden", message: "Access denied" });
-
-      if (String(booking.payment_status) !== "deposit_paid") {
-        return res.status(409).json({
-          error: "not_deposit_booking",
-          message: "Only deposit_paid bookings can be marked fully paid.",
-        });
-      }
-
-      const r = await dbQuery(
-        `UPDATE bookings SET
-           amount_paid = total_price,
-           remaining_balance = 0,
-           payment_status = 'paid',
-           payment_type = 'full',
-           total_paid = COALESCE(tip_amount, 0) + total_price
-         WHERE id = $1::uuid AND payment_status = 'deposit_paid'
-         RETURNING id, payment_status, amount_paid, remaining_balance, total_price, tip_amount, total_paid`,
-        [id]
-      );
-      if (!r.rows?.length) {
-        return res.status(404).json({
-          error: "not_found",
-          message: "No deposit_paid booking found for this id (already fully paid or missing).",
-        });
-      }
-      return res.json({ ok: true, booking: r.rows[0] });
-    } catch (e) {
-      console.error("[booking] mark-paid failed:", e?.stack || e);
-      return res.status(500).json({ error: "update_failed", message: e?.message || String(e) });
-    }
+  router.post("/api/bookings/:id/mark-paid", (_req, res) => {
+    return res.status(410).json({
+      error: "deposits_removed",
+      message: "Deposit payments are no longer supported. All bookings require full payment at checkout.",
+    });
   });
 
   // Admin stats compatible with existing UI (tenant-scoped for shop_owner)
@@ -2218,7 +2138,7 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
           totalPaid: paypalTotal,
           remainingBalance,
           paymentType,
-          paymentStatus: paymentStatus === "paid" ? "paid_paypal" : "deposit_paypal",
+          paymentStatus: "paid_in_full",
           rawPaymentStatus: paymentStatus,
           bookingStatus: "confirmed",
           isPaidBooking: true,

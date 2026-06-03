@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { PayPalButtons, usePayPalScriptReducer } from "@paypal/react-paypal-js";
 import { getApiOrigin, getBarbers, mediaUrl, fetchBarberPublicPricing, fetchBookingQuote } from "../services/api.js";
-import { computeChargeBreakdown, depositEnabled, normalizeCheckoutBreakdown } from "../lib/stylePricing.js";
+import { computeChargeBreakdown, normalizeCheckoutBreakdown } from "../lib/stylePricing.js";
 import {
   canOpenDirectionsToShop,
   hasShopCoords,
@@ -60,8 +60,7 @@ function normalizeSavedBooking(b) {
   const rem = Number(b.remainingBalance ?? b.remaining_balance ?? 0);
   const raw = b.rawPaymentStatus ?? b.payment_status;
   let ps = b.paymentStatus;
-  if (!ps && raw === "deposit_paid") ps = "deposit_paypal";
-  if (!ps && raw === "paid") ps = "paid_paypal";
+  if (!ps && (raw === "paid" || raw === "paid_full" || raw === "paid_in_full")) ps = "paid_in_full";
   const tip = Number(b.tipAmount ?? b.tip_amount ?? 0);
   const totalPaid = Number(b.totalPaid ?? b.total_paid ?? 0);
   return { ...b, remainingBalance: rem, paymentStatus: ps, tipAmount: tip, totalPaid };
@@ -156,7 +155,7 @@ function BookingPayPalBlock({
                   ...(Number(tipPercent) > 0 ? { tipPercent: Number(tipPercent) } : {}),
                   ...(Number(tipAmount) > 0 ? { tipAmount: Number(tipAmount) } : {}),
                   currency: "USD",
-                  description: `IFCDC Barbers — ${form.service} with ${form.barber} (${paymentType === "deposit" ? "deposit" : "full"})`,
+                  description: `IFCDC Barbers — ${form.service} with ${form.barber} (full payment)`,
                 }),
               });
               const payload = await res.json().catch(() => ({}));
@@ -351,33 +350,16 @@ export default function Booking() {
   const [serverQuote, setServerQuote] = useState(null);
   const [quoteLoading, setQuoteLoading] = useState(false);
 
-  const [payChoice, setPayChoice] = useState(() => (depositEnabled() ? "deposit" : "full"));
   const [savedBookingSnapshot, setSavedBookingSnapshot] = useState(null);
-
-  useEffect(() => {
-    if (barberPricing != null && typeof barberPricing.deposits_allowed === "boolean") {
-      setPayChoice(barberPricing.deposits_allowed ? "deposit" : "full");
-    } else {
-      setPayChoice(depositEnabled() ? "deposit" : "full");
-    }
-  }, [barberPricing, stylePriceUsd, selectedStyle?.styleId]);
 
   const breakdown = useMemo(() => {
     if (serverQuote?.breakdown && selectedStyle?.styleId) {
       return normalizeCheckoutBreakdown(serverQuote.breakdown, barberPricing);
     }
-    return computeChargeBreakdown(stylePriceUsd, payChoice, tipOpts, barberPricing);
-  }, [serverQuote, selectedStyle?.styleId, stylePriceUsd, payChoice, tipOpts, barberPricing]);
+    return computeChargeBreakdown(stylePriceUsd, "full", tipOpts, barberPricing);
+  }, [serverQuote, selectedStyle?.styleId, stylePriceUsd, tipOpts, barberPricing]);
 
   const chargeAmountUsd = breakdown.paypalTotal;
-  const remainingAfterPayUsd = Math.round(Math.max(0, breakdown.totalPrice - breakdown.serviceCharge) * 100) / 100;
-
-  const depositsAllowedUi = useMemo(() => {
-    if (barberPricing != null && typeof barberPricing.deposits_allowed === "boolean") {
-      return Boolean(barberPricing.deposits_allowed);
-    }
-    return depositEnabled();
-  }, [barberPricing]);
 
   const [form, setForm] = useState({
     name: "",
@@ -536,7 +518,7 @@ export default function Booking() {
     setQuoteLoading(true);
     fetchBookingQuote(Number(bid), {
       styleId: String(sid),
-      paymentType: payChoice === "deposit" ? "deposit" : "full",
+      paymentType: "full",
       ...tipOpts,
     })
       .then((j) => {
@@ -551,7 +533,7 @@ export default function Booking() {
     return () => {
       cancelled = true;
     };
-  }, [selectedStyle?.styleId, selectedStyle?.barberId, form.barberId, payChoice, tipOpts]);
+  }, [selectedStyle?.styleId, selectedStyle?.barberId, form.barberId, tipOpts]);
 
   useEffect(() => {
     if (!selectedStyle?.styleId || !barberOptions.length) return;
@@ -975,18 +957,6 @@ export default function Booking() {
             <dt>Service price</dt>
             <dd className="ifcdc-booking-price">${breakdown.totalPrice.toFixed(2)} USD</dd>
           </div>
-          {depositsAllowedUi && payChoice === "deposit" ? (
-            <div>
-              <dt>Deposit</dt>
-              <dd>${breakdown.serviceCharge.toFixed(2)} USD</dd>
-            </div>
-          ) : null}
-          {depositsAllowedUi && payChoice === "deposit" ? (
-            <div>
-              <dt>Remaining balance</dt>
-              <dd>${remainingAfterPayUsd.toFixed(2)} USD (due later)</dd>
-            </div>
-          ) : null}
           <div>
             <dt>Tip (optional)</dt>
             <dd>{breakdown.tipAmount > 0 ? `$${breakdown.tipAmount.toFixed(2)}` : "None"}</dd>
@@ -996,54 +966,17 @@ export default function Booking() {
             <dd>${Number(breakdown.platformFee || 0).toFixed(2)} USD</dd>
           </div>
           <div>
-            <dt>Total due now (PayPal)</dt>
+            <dt>Total due (PayPal)</dt>
             <dd className="ifcdc-booking-price">${breakdown.paypalTotal.toFixed(2)} USD</dd>
           </div>
         </dl>
         {showPayPal ? (
           <>
-            {depositsAllowedUi ? (
-              <>
-                <p className="ifcdc-label" style={{ marginTop: 16 }}>
-                  Pay now
-                </p>
-                <div className="ifcdc-hybrid-pay-row" role="group" aria-label="Deposit or full payment">
-                  <button
-                    type="button"
-                    className={`ifcdc-hybrid-pay-btn${payChoice === "deposit" ? " ifcdc-hybrid-pay-btn--active" : ""}`}
-                    onClick={() => {
-                      setPayChoice("deposit");
-                      setStatus(null);
-                    }}
-                  >
-                    Pay deposit
-                  </button>
-                  <button
-                    type="button"
-                    className={`ifcdc-hybrid-pay-btn${payChoice === "full" ? " ifcdc-hybrid-pay-btn--active" : ""}`}
-                    onClick={() => {
-                      setPayChoice("full");
-                      setStatus(null);
-                    }}
-                  >
-                    Pay full amount
-                  </button>
-                </div>
-                <p className="ifcdc-page-hint" style={{ marginTop: 8 }}>
-                  {payChoice === "deposit"
-                    ? Number(breakdown.platformFee) > 0
-                      ? `You will pay $${breakdown.serviceCharge.toFixed(2)} deposit plus $${Number(breakdown.platformFee).toFixed(2)} platform fee now (plus any tip). Remaining service balance: $${remainingAfterPayUsd.toFixed(2)}.`
-                      : `You will pay $${breakdown.serviceCharge.toFixed(2)} deposit now (plus any tip). Remaining service balance: $${remainingAfterPayUsd.toFixed(2)}.`
-                    : Number(breakdown.platformFee) > 0
-                      ? `You will pay the full $${breakdown.totalPrice.toFixed(2)} for this style plus $${Number(breakdown.platformFee).toFixed(2)} platform fee (plus any tip).`
-                      : `You will pay the full $${breakdown.totalPrice.toFixed(2)} for this style (plus any tip).`}
-                </p>
-              </>
-            ) : (
-              <p className="ifcdc-page-hint" style={{ marginTop: 16 }}>
-                Deposit option is off — paying full style price plus optional tip.
-              </p>
-            )}
+            <p className="ifcdc-page-hint" style={{ marginTop: 16 }}>
+              {Number(breakdown.platformFee) > 0
+                ? `Full payment: $${breakdown.totalPrice.toFixed(2)} service + $${Number(breakdown.platformFee).toFixed(2)} platform fee (plus any tip).`
+                : `Full payment: $${breakdown.totalPrice.toFixed(2)} for this service (plus any tip).`}
+            </p>
             <p className="ifcdc-label" style={{ marginTop: 16 }}>
               Optional tip
             </p>
@@ -1155,7 +1088,7 @@ export default function Booking() {
       {showPayPal ? (
         <div
           className="paypal-buttons-host"
-          key={`paypal-${payChoice}-${chargeAmountUsd}-${tipChoice}-${customTip}`}
+          key={`paypal-full-${chargeAmountUsd}-${tipChoice}-${customTip}`}
           id="paypal-button-container"
         >
           <BookingPayPalBlock
@@ -1175,8 +1108,8 @@ export default function Booking() {
               setSavedBookingSnapshot(booking || null);
               if (!booking) return;
               const paypal =
+                booking.paymentStatus === "paid_in_full" ||
                 booking.paymentStatus === "paid_paypal" ||
-                booking.paymentStatus === "deposit_paypal" ||
                 booking.paymentType === "platform" ||
                 (booking.paymentId != null && String(booking.paymentId).trim() !== "");
               setConfirmChannel(paypal ? "paypal" : "in_person");
@@ -1203,10 +1136,7 @@ export default function Booking() {
           <h2>{"You're Booked"}</h2>
           <p className="booking-confirmation__status">
             {confirmChannel === "paypal"
-              ? savedBookingSnapshot?.paymentStatus === "deposit_paypal" ||
-                (savedBookingSnapshot?.remainingBalance ?? 0) > 0
-                ? "Deposit received — your appointment is reserved. Remaining balance is due later (typically at your visit)."
-                : "Payment successful — booking confirmed."
+              ? "Payment successful — booking confirmed. Check your email for IFCDC confirmation."
               : "Booking confirmed."}
           </p>
           <div className="details">
@@ -1224,12 +1154,7 @@ export default function Booking() {
               Payment:{" "}
               {confirmChannel === "paypal"
                 ? (() => {
-                    const depDue =
-                      savedBookingSnapshot?.paymentStatus === "deposit_paypal" ||
-                      (savedBookingSnapshot?.remainingBalance ?? 0) > 0;
-                    let t = depDue
-                      ? `Deposit via PayPal — $${Number(savedBookingSnapshot?.remainingBalance ?? 0).toFixed(2)} remaining`
-                      : "Paid in full via PayPal";
+                    let t = "Paid in full via PayPal";
                     const tip = Number(savedBookingSnapshot?.tipAmount ?? 0);
                     if (tip > 0) {
                       t += ` · Tip $${tip.toFixed(2)} · Charged $${Number(savedBookingSnapshot?.totalPaid ?? 0).toFixed(2)}`;

@@ -1,6 +1,5 @@
 /**
- * Unified booking payment settlement — PayPal capture amount is the source of truth.
- * Never infer payment from payment_type / checkout labels.
+ * Unified booking payment settlement — full payment only (PayPal capture is source of truth).
  * @module bookingPaymentSettlement
  */
 
@@ -29,8 +28,11 @@ const PAYMENT_STATUS = {
   UNPAID: "unpaid",
   PAYMENT_FAILED: "payment_failed",
   PAYMENT_MISMATCH: "payment_mismatch",
-  DEPOSIT_PAID: "deposit_paid",
+  PAID_IN_FULL: "paid_in_full",
+  /** @deprecated legacy */
   PAID_FULL: "paid_full",
+  /** @deprecated deposits removed */
+  DEPOSIT_PAID: "deposit_paid",
   /** @deprecated */
   FAILED: "failed",
   /** @deprecated */
@@ -38,8 +40,8 @@ const PAYMENT_STATUS = {
 };
 
 const CAPTURED_PAYMENT_STATUSES = new Set([
+  PAYMENT_STATUS.PAID_IN_FULL,
   PAYMENT_STATUS.PAID_FULL,
-  PAYMENT_STATUS.DEPOSIT_PAID,
   PAYMENT_STATUS.PAID,
 ]);
 
@@ -47,17 +49,18 @@ function normalizePaymentStatus(raw) {
   const s = String(raw || "")
     .trim()
     .toLowerCase();
-  if (s === "paid") return PAYMENT_STATUS.PAID_FULL;
-  if (s === "completed") return PAYMENT_STATUS.PAID_FULL;
+  if (s === "paid" || s === "paid_full" || s === "completed" || s === "deposit_paid" || s === "balance_due") {
+    return PAYMENT_STATUS.PAID_IN_FULL;
+  }
   if (s === "failed") return PAYMENT_STATUS.PAYMENT_FAILED;
   if (s === "pending") return PAYMENT_STATUS.UNPAID;
-  if (s === "balance_due") return PAYMENT_STATUS.DEPOSIT_PAID;
+  if (s === "paid_in_full") return PAYMENT_STATUS.PAID_IN_FULL;
   return s || PAYMENT_STATUS.UNPAID;
 }
 
 function isCapturedPaymentStatus(status) {
   const n = normalizePaymentStatus(status);
-  return n === PAYMENT_STATUS.PAID_FULL || n === PAYMENT_STATUS.DEPOSIT_PAID;
+  return n === PAYMENT_STATUS.PAID_IN_FULL;
 }
 
 function extractPayPalCapturedUsd(capture) {
@@ -76,20 +79,8 @@ function extractPayPalCapturedUsd(capture) {
   return null;
 }
 
-/**
- * @param {{
- *   servicePrice: number,
- *   depositAmount?: number,
- *   platformFee?: number,
- *   tipAmount?: number,
- *   capturedUsd: number,
- *   paymentProvider?: string,
- *   captureId?: string | null,
- * }} input
- */
 function computeSettlementFromCapture(input) {
   const servicePrice = round2(Math.max(0, Number(input.servicePrice) || 0));
-  const depositAmount = round2(Math.max(0, Number(input.depositAmount) || 0));
   const platformFee = resolvePlatformFeeUsd(input.platformFee);
   const tipAmount = round2(Math.max(0, Number(input.tipAmount) || 0));
   const capturedUsd = round2(Number(input.capturedUsd) || 0);
@@ -115,48 +106,18 @@ function computeSettlementFromCapture(input) {
   }
 
   const fullRequired = round2(servicePrice + platformFee + tipAmount);
-  const depositRequired = round2(depositAmount + platformFee + tipAmount);
 
-  let paymentStatus = PAYMENT_STATUS.UNPAID;
-  let balanceDue = round2(servicePrice);
-  let paymentType = "full";
-
-  if (depositAmount > 0) {
-    paymentType = "deposit";
-    if (withinAmount(capturedUsd, fullRequired)) {
-      paymentStatus = PAYMENT_STATUS.PAID_FULL;
-      balanceDue = 0;
-    } else if (withinAmount(capturedUsd, depositRequired)) {
-      paymentStatus = PAYMENT_STATUS.DEPOSIT_PAID;
-      balanceDue = round2(Math.max(0, servicePrice - depositAmount));
-    } else {
-      return {
-        ok: false,
-        error: "payment_mismatch",
-        paymentStatus: PAYMENT_STATUS.PAYMENT_MISMATCH,
-        message: `Captured $${capturedUsd.toFixed(2)} does not match required deposit ($${depositRequired.toFixed(2)}) or full total ($${fullRequired.toFixed(2)}).`,
-        capturedUsd,
-        fullRequired,
-        depositRequired,
-      };
-    }
-  } else {
-    if (!withinAmount(capturedUsd, fullRequired)) {
-      return {
-        ok: false,
-        error: "payment_mismatch",
-        paymentStatus: PAYMENT_STATUS.PAYMENT_MISMATCH,
-        message: `Captured $${capturedUsd.toFixed(2)} does not match required full total ($${fullRequired.toFixed(2)}).`,
-        capturedUsd,
-        fullRequired,
-      };
-    }
-    paymentStatus = PAYMENT_STATUS.PAID_FULL;
-    balanceDue = 0;
+  if (!withinAmount(capturedUsd, fullRequired)) {
+    return {
+      ok: false,
+      error: "payment_mismatch",
+      paymentStatus: PAYMENT_STATUS.PAYMENT_MISMATCH,
+      message: `Captured $${capturedUsd.toFixed(2)} does not match required total ($${fullRequired.toFixed(2)}).`,
+      capturedUsd,
+      fullRequired,
+    };
   }
 
-  const amountCharged = capturedUsd;
-  const amountPaid = capturedUsd;
   const paymentMethod = provider === "stripe" ? "card" : provider === "paypal" ? "paypal" : provider;
 
   return {
@@ -165,26 +126,22 @@ function computeSettlementFromCapture(input) {
     platformFee,
     tipAmount,
     totalDue: fullRequired,
-    depositAmount,
-    amountCharged,
-    amountPaid,
-    balanceDue,
-    remainingBalance: balanceDue,
-    paymentStatus,
-    paymentType,
+    depositAmount: 0,
+    amountCharged: capturedUsd,
+    amountPaid: capturedUsd,
+    balanceDue: 0,
+    remainingBalance: 0,
+    paymentStatus: PAYMENT_STATUS.PAID_IN_FULL,
+    paymentType: "full",
     paymentMethod,
     paymentProvider: provider,
     captureId,
-    isPaidBooking: isCapturedPaymentStatus(paymentStatus),
+    isPaidBooking: true,
     bookingStatus: "confirmed",
     canSendPaidConfirmationEmail: true,
   };
 }
 
-/**
- * Derive email template status from DB row — never from payment_type alone.
- * @param {Record<string, unknown>} row
- */
 function paymentStatusForEmailFromRow(row) {
   const captureId =
     row.paypal_capture_id || row.stripe_payment_intent_id || row.payment_id || null;
@@ -202,34 +159,23 @@ function paymentStatusForEmailFromRow(row) {
     return PAYMENT_STATUS.UNPAID;
   }
 
-  const view = bookingPaymentViewFromRow(row);
-  if (view.isPaidInFull) return PAYMENT_STATUS.PAID_FULL;
-  if (view.isDepositPaid) return PAYMENT_STATUS.DEPOSIT_PAID;
-  return PAYMENT_STATUS.UNPAID;
+  return PAYMENT_STATUS.PAID_IN_FULL;
 }
 
 function shouldSendPaidConfirmationEmail(paymentStatus) {
-  const s = normalizePaymentStatus(paymentStatus);
-  return s === PAYMENT_STATUS.PAID_FULL || s === PAYMENT_STATUS.DEPOSIT_PAID;
+  return normalizePaymentStatus(paymentStatus) === PAYMENT_STATUS.PAID_IN_FULL;
 }
 
-/**
- * @param {Record<string, unknown>} row
- */
 function bookingPaymentViewFromRow(row) {
   const servicePrice = round2(
     Number(row.service_price ?? row.total_price ?? row.amount ?? 0),
   );
-  const depositAmount = round2(Number(row.deposit_amount ?? 0));
   const platformFee = resolvePlatformFeeUsd(row.platform_fee);
   const tipAmount = round2(Number(row.tip_amount ?? 0));
   const amountCharged = round2(
     Number(row.amount_charged ?? row.amount_paid ?? row.total_paid ?? 0),
   );
   const amountPaid = amountCharged;
-  const balanceDue = round2(
-    Number(row.balance_due ?? row.remaining_balance ?? 0),
-  );
   const totalDue = round2(Number(row.total_amount ?? servicePrice + platformFee + tipAmount));
   const paymentStatus = normalizePaymentStatus(row.payment_status);
   const captureId = row.paypal_capture_id || row.stripe_payment_intent_id || row.payment_id || null;
@@ -239,22 +185,13 @@ function bookingPaymentViewFromRow(row) {
     (String(row.payment_provider || "") === "stripe" ? "card" : String(row.payment_provider || "paypal"));
 
   const isPaidInFull =
-    paymentStatus === PAYMENT_STATUS.PAID_FULL &&
+    paymentStatus === PAYMENT_STATUS.PAID_IN_FULL &&
     Boolean(transactionId) &&
     amountPaid > 0 &&
-    balanceDue <= AMOUNT_TOLERANCE &&
     withinAmount(amountPaid, servicePrice + platformFee + tipAmount);
-
-  const isDepositPaid =
-    paymentStatus === PAYMENT_STATUS.DEPOSIT_PAID && Boolean(transactionId) && amountPaid > 0;
-
-  const depositPaidAmount = isDepositPaid
-    ? round2(Math.min(depositAmount, Math.max(0, amountPaid - platformFee - tipAmount)))
-    : 0;
 
   let paymentStatusLabel = "PAYMENT NOT COMPLETED";
   if (isPaidInFull) paymentStatusLabel = "PAID IN FULL";
-  else if (isDepositPaid) paymentStatusLabel = "DEPOSIT PAID";
   else if (paymentStatus === PAYMENT_STATUS.PAYMENT_FAILED) paymentStatusLabel = "PAYMENT FAILED";
   else if (paymentStatus === PAYMENT_STATUS.PAYMENT_MISMATCH) paymentStatusLabel = "PAYMENT MISMATCH";
 
@@ -263,36 +200,30 @@ function bookingPaymentViewFromRow(row) {
     platformFee,
     tipAmount,
     totalDue,
-    depositAmount,
-    depositPaidAmount,
+    depositAmount: 0,
+    depositPaidAmount: 0,
     amountCharged,
     amountPaid,
-    balanceDue,
-    remainingBalance: balanceDue,
+    balanceDue: 0,
+    remainingBalance: 0,
     paymentStatus,
     paymentMethod,
     paymentProvider: row.payment_provider || null,
     captureId: transactionId,
     transactionId,
     isPaidInFull,
-    isDepositPaid,
-    /** @deprecated use isPaidInFull */
+    isDepositPaid: false,
     paidInFull: isPaidInFull,
-    /** @deprecated use isDepositPaid */
-    depositPaid: isDepositPaid,
+    depositPaid: false,
     paymentStatusLabel,
   };
 }
 
 function isBookingPaymentSettled(row) {
   const view = bookingPaymentViewFromRow(row);
-  if (!view.captureId || view.amountPaid <= 0) return false;
-  if (view.isPaidInFull) return true;
-  if (view.isDepositPaid && view.balanceDue > AMOUNT_TOLERANCE) return true;
-  return false;
+  return Boolean(view.captureId && view.amountPaid > 0 && view.isPaidInFull);
 }
 
-/** Email + API payload from a bookings row (never uses payment_type alone). */
 function bookingEmailPayloadFromRow(row, overrides = {}) {
   const view = bookingPaymentViewFromRow(row);
   return {
@@ -302,7 +233,7 @@ function bookingEmailPayloadFromRow(row, overrides = {}) {
     tipAmount: view.tipAmount,
     amountCharged: view.amountCharged,
     amountPaid: view.amountPaid,
-    balanceDue: view.balanceDue,
+    balanceDue: 0,
     captureId: view.captureId,
     paymentId: view.captureId,
     bookingRow: row,
@@ -311,10 +242,9 @@ function bookingEmailPayloadFromRow(row, overrides = {}) {
 }
 
 function sqlCapturedPaymentStatuses() {
-  return "('paid_full', 'deposit_paid', 'paid')";
+  return "('paid_in_full', 'paid_full', 'paid', 'deposit_paid')";
 }
 
-/** SQL SET clause values for a successful settlement UPDATE. */
 function settlementUpdateParams(bookingId, settlement, captureId) {
   return {
     sql: `UPDATE bookings SET
@@ -330,9 +260,10 @@ function settlementUpdateParams(bookingId, settlement, captureId) {
       amount_charged = $11,
       amount_paid = $11,
       total_paid = $11,
-      balance_due = $12,
-      remaining_balance = $12,
-      total_amount = $13,
+      deposit_amount = 0,
+      balance_due = 0,
+      remaining_balance = 0,
+      total_amount = $12,
       platform_fee_status = 'collected'
     WHERE id = $1::uuid`,
     values: [
@@ -347,7 +278,6 @@ function settlementUpdateParams(bookingId, settlement, captureId) {
       settlement.platformFee,
       settlement.tipAmount,
       settlement.amountCharged,
-      settlement.balanceDue,
       settlement.totalDue,
     ],
   };

@@ -1,25 +1,18 @@
-/** Client-side mirror of server `styleBookingPricing.js` for display (must match server env). */
+/** Client-side mirror of server `styleBookingPricing.js` — full payment only. */
 import { resolveClientPlatformFeeUsd } from "./platformFee.js";
 
 export function roundMoney2(n) {
   return Math.round(Number(n) * 100) / 100;
 }
 
+/** Deposits removed — always false. */
 export function depositEnabled() {
-  const env = typeof import.meta !== "undefined" && import.meta.env ? import.meta.env : {};
-  const v = String(env.VITE_BOOKING_DEPOSIT_ENABLED ?? "true").trim().toLowerCase();
-  return v !== "false" && v !== "0" && v !== "no";
+  return false;
 }
 
-export function depositForStylePrice(stylePrice) {
-  const env = typeof import.meta !== "undefined" && import.meta.env ? import.meta.env : {};
-  const p = roundMoney2(stylePrice);
-  if (!Number.isFinite(p) || p <= 0) return 0.01;
-  let dep = Number(env.VITE_BOOKING_DEPOSIT);
-  if (!Number.isFinite(dep) || dep <= 0) dep = roundMoney2(p * 0.4);
-  dep = roundMoney2(dep);
-  const maxDep = roundMoney2(Math.max(0.01, p - 0.01));
-  return Math.min(dep, maxDep);
+/** @deprecated */
+export function depositForStylePrice(_stylePrice) {
+  return 0;
 }
 
 const TIP_PRESETS = new Set([5, 10, 15]);
@@ -39,25 +32,10 @@ export function parseTipAmount(serviceSubtotal, { tipPercent, tipAmount, customT
 
 /**
  * @param {object | null} publicPricing - from GET /api/barber/public/:id/pricing (optional)
- * @param {boolean} [publicPricing.deposits_allowed]
- * @param {number} [publicPricing.deposit_amount]
- * @param {number} [publicPricing.platform_fee_usd] — IFCDC fee on Free tier (from public pricing API)
  */
-export function computeChargeBreakdown(stylePrice, paymentType, tipOpts = {}, publicPricing = null) {
+export function computeChargeBreakdown(stylePrice, _paymentType, tipOpts = {}, publicPricing = null) {
   const totalPrice = roundMoney2(stylePrice);
-  let depositAmount = depositForStylePrice(totalPrice);
-  if (publicPricing != null && Number(publicPricing.deposit_amount) > 0) {
-    const cap = roundMoney2(Math.max(0.01, totalPrice - 0.01));
-    depositAmount = roundMoney2(Math.min(Number(publicPricing.deposit_amount), cap));
-  }
-
-  const depositsAllowed =
-    publicPricing != null && typeof publicPricing.deposits_allowed === "boolean"
-      ? publicPricing.deposits_allowed
-      : depositEnabled();
-
-  const useDeposit = depositsAllowed && paymentType === "deposit";
-  const serviceCharge = useDeposit ? depositAmount : totalPrice;
+  const serviceCharge = totalPrice;
   const platformFee = resolveClientPlatformFeeUsd(publicPricing);
   const subtotalBeforeTip = roundMoney2(serviceCharge + platformFee);
   const tipAmount = parseTipAmount(subtotalBeforeTip, tipOpts);
@@ -65,35 +43,35 @@ export function computeChargeBreakdown(stylePrice, paymentType, tipOpts = {}, pu
   const totalAmount = roundMoney2(totalPrice + platformFee);
   return {
     totalPrice,
-    depositAmount,
+    depositAmount: 0,
     serviceCharge,
     platformFee,
     subtotalBeforeTip,
     totalAmount,
     tipAmount,
     paypalTotal,
-    paymentType: useDeposit ? "deposit" : "full",
+    paymentType: "full",
   };
 }
 
-/** Ensure server quotes always include platform fee (guards stale API before backend deploy). */
 export function normalizeCheckoutBreakdown(breakdown, publicPricing = null) {
   if (!breakdown || typeof breakdown !== "object") return breakdown;
   const expectedFee = resolveClientPlatformFeeUsd(publicPricing);
   const currentFee = Number(breakdown.platformFee);
-  if (Number.isFinite(currentFee) && currentFee > 0) return breakdown;
-
-  const serviceCharge = roundMoney2(breakdown.serviceCharge);
-  const platformFee = expectedFee;
+  const serviceCharge = roundMoney2(breakdown.totalPrice ?? breakdown.serviceCharge ?? 0);
+  const platformFee = Number.isFinite(currentFee) && currentFee > 0 ? roundMoney2(currentFee) : expectedFee;
   const subtotalBeforeTip = roundMoney2(serviceCharge + platformFee);
   const tipAmount = roundMoney2(breakdown.tipAmount || 0);
-  const totalPrice = roundMoney2(breakdown.totalPrice);
+  const totalPrice = roundMoney2(breakdown.totalPrice ?? serviceCharge);
   return {
     ...breakdown,
+    depositAmount: 0,
+    serviceCharge,
     platformFee,
     subtotalBeforeTip,
     totalAmount: roundMoney2(totalPrice + platformFee),
     tipAmount,
     paypalTotal: roundMoney2(subtotalBeforeTip + tipAmount),
+    paymentType: "full",
   };
 }
