@@ -71,9 +71,6 @@ function commitMatchesExpected(activeFull, activeShort) {
  */
 export function getDeployInfoPayload() {
   const active = resolveActiveCommit();
-  const paymentFixModulesLoaded = Boolean(captureOrGetCompletedPayPalOrder);
-  const deployCommitMatch =
-    paymentFixModulesLoaded && (commitMatchesExpected(active.full, active.short) || paymentFixModulesLoaded);
   let isDeliverableCustomerEmail = () => false;
   let captureOrGetCompletedPayPalOrder = null;
   try {
@@ -86,6 +83,10 @@ export function getDeployInfoPayload() {
   } catch {
     /* optional */
   }
+  const paymentFixModulesLoaded = Boolean(captureOrGetCompletedPayPalOrder);
+  const deployCommitMatch =
+    paymentFixModulesLoaded &&
+    (commitMatchesExpected(active.full, active.short) || paymentFixModulesLoaded);
 
   let repoIosBuildNumber = null;
   try {
