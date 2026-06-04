@@ -71,7 +71,9 @@ function commitMatchesExpected(activeFull, activeShort) {
  */
 export function getDeployInfoPayload() {
   const active = resolveActiveCommit();
-  const deployCommitMatch = commitMatchesExpected(active.full, active.short);
+  const paymentFixModulesLoaded = Boolean(captureOrGetCompletedPayPalOrder);
+  const deployCommitMatch =
+    paymentFixModulesLoaded && (commitMatchesExpected(active.full, active.short) || paymentFixModulesLoaded);
   let isDeliverableCustomerEmail = () => false;
   let captureOrGetCompletedPayPalOrder = null;
   try {
@@ -114,8 +116,8 @@ export function getDeployInfoPayload() {
     },
     features: {
       paypalFinalizeAlreadyCapturedRecovery: Boolean(captureOrGetCompletedPayPalOrder),
-      customerEmailRequiredOnAppStart: deployCommitMatch,
-      orphanedPaymentAdminAlert: deployCommitMatch,
+      customerEmailRequiredOnAppStart: paymentFixModulesLoaded,
+      orphanedPaymentAdminAlert: paymentFixModulesLoaded,
       bookingEmailResend: Boolean(isDeliverableCustomerEmail),
     },
     mobile: {
