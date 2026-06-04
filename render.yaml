@@ -19,6 +19,19 @@
 # (If unset, the app uses RENDER_EXTERNAL_URL from Render automatically.)
 
 services:
+  # Production API — mobile TestFlight + web checkout (must auto-deploy from main)
+  - type: web
+    name: ifcdc-barbers-backend696
+    runtime: node
+    branch: main
+    autoDeploy: true
+    buildCommand: npm install && git rev-parse HEAD > DEPLOY_COMMIT.txt
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+
   # Frontend (Render Static Site) — SPA rewrite required for deep links like /invite
   - type: web
     name: ifcdc-barbers-frontend

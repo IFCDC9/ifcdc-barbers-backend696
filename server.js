@@ -53,6 +53,7 @@ import { handleTwilioSmsStatusCallback } from "./voiceBookingSms.js";
 import { ensureAuraMemoryTables } from "./auraMemoryMigrations.js";
 import { createAuraChatHistoryRouter } from "./auraChatHistoryRoutes.js";
 import { requireAuth } from "./authRoutes.js";
+import { getDeployInfoPayload } from "./deployInfo.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -651,6 +652,20 @@ mountMinimalIfcdcApi(app, {
 
 app.get("/health", (req, res) => {
   res.json({ ok: true, service: "ifcdc-barbers-api" });
+});
+
+/** Production deploy verification — active git commit vs expected 8a3a601d. */
+app.get("/api/deploy-info", (_req, res) => {
+  res.set("Cache-Control", "no-store");
+  try {
+    res.json(getDeployInfoPayload());
+  } catch (e) {
+    res.status(500).json({
+      ok: false,
+      error: "deploy_info_failed",
+      message: e?.message || String(e),
+    });
+  }
 });
 
 app.get("/api/health", (req, res) => {
