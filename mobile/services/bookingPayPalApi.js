@@ -307,14 +307,21 @@ export async function finalizeAppBookingCheckout(orderID) {
   );
   const status = String(b?.paymentStatus ?? b?.payment_status ?? "").toLowerCase();
   const captureId = b?.captureId ?? b?.transactionId ?? b?.paypal_capture_id ?? null;
-  const paidOk = status === "paid_full" || status === "deposit_paid";
+  const paidOk =
+    status === "paid_in_full" ||
+    status === "paid_full" ||
+    status === "paid" ||
+    status === "deposit_paid";
   if (!b?.id || !(paid > 0) || !captureId || !paidOk) {
     const err = new Error("Payment failed — booking not confirmed.");
     err.code = "payment_not_captured";
     err.details = json;
     throw err;
   }
-  if (status === "paid_full" && remaining > 0.01) {
+  if (
+    (status === "paid_in_full" || status === "paid_full") &&
+    remaining > 0.01
+  ) {
     const err = new Error("Payment failed — booking not confirmed.");
     err.code = "payment_balance_mismatch";
     err.details = json;

@@ -1870,6 +1870,13 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
       if (!customerName || !customerEmail || !dateStr || !timeStr) {
         return res.status(400).json({ error: "missing_fields", message: "Missing required booking fields" });
       }
+      if (!isDeliverableCustomerEmail(customerEmail)) {
+        return res.status(400).json({
+          error: "invalid_email",
+          message:
+            "A valid customer email is required to send your IFCDC booking confirmation after payment.",
+        });
+      }
       if (!paypalOrderId || !paypalCaptureId) {
         return res.status(400).json({ error: "payment_required", message: "Payment required" });
       }
@@ -2124,10 +2131,20 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
         });
         emailSent = Boolean(r?.success ?? r?.messageId);
         emailError = r?.error || null;
+        if (emailSent) {
+          console.log("[booking-email] SENT OK (POST /api/book)", {
+            bookingId,
+            to: customerEmail,
+            messageId: r?.messageId,
+          });
+        }
       } catch (e) {
         emailSent = false;
         emailError = e?.message || String(e);
-        console.error("[booking] confirmation email FAILED:", emailError, { bookingId, customerEmail });
+        console.error("[booking-email] FAILED (POST /api/book):", emailError, {
+          bookingId,
+          to: customerEmail,
+        });
       }
 
       return res.json({

@@ -452,7 +452,16 @@ router.post("/start", async (req, res) => {
     const redirectUri = stripQuotes(body.redirectUri);
     const cancelUri = stripQuotes(body.cancelUri);
     const customerName = stripQuotes(body.customerName) || "Mobile customer";
-    const customerEmail = stripQuotes(body.customerEmail) || stripQuotes(process.env.APP_BOOKING_PLACEHOLDER_EMAIL) || "pending+app@ifcdc.local";
+    const customerEmail = stripQuotes(body.customerEmail) || "";
+    const { isDeliverableCustomerEmail } = require("./bookingEmail.cjs");
+    if (!isDeliverableCustomerEmail(customerEmail)) {
+      return res.status(400).json({
+        success: false,
+        error: "customer_email_required",
+        message:
+          "A valid customer email is required to send your IFCDC booking confirmation after payment.",
+      });
+    }
     const serviceNameRaw = stripQuotes(body.serviceName ?? body.service_name);
     const serviceIdRaw = body.serviceId ?? body.service_id;
     const confirmedBarberName = resolved.barberName;
@@ -956,15 +965,14 @@ router.post("/finalize", async (req, res) => {
       });
     }
 
+    let emailSent = false;
+    let emailError = null;
     if (shouldSendPaidConfirmationEmail(settlement.paymentStatus)) {
       const { sendBookingEmail, isDeliverableCustomerEmail } = require("./bookingEmail.cjs");
       const toEmail = String(fresh.customer_email || row.customer_email || "").trim();
       if (!isDeliverableCustomerEmail(toEmail)) {
-        console.error(
-          "[app-bookings] confirmation email SKIPPED — customer email missing or placeholder:",
-          toEmail || "(empty)",
-          { bookingId: fresh.id },
-        );
+        emailError = `Customer email not deliverable: ${toEmail || "(empty)"}`;
+        console.error("[app-bookings] confirmation email SKIPPED:", emailError, { bookingId: fresh.id });
       } else {
         try {
           const view = bookingPaymentViewFromRow(fresh);
@@ -988,20 +996,23 @@ router.post("/finalize", async (req, res) => {
             bookingId: fresh.id,
             bookingRow: fresh,
           });
-          console.log("[app-bookings] payment confirmation email SENT OK:", {
+          emailSent = Boolean(mail?.success ?? mail?.messageId);
+          console.log("[booking-email] SENT OK (app-bookings finalize)", {
             to: toEmail,
             bookingId: fresh.id,
             messageId: mail?.messageId,
           });
         } catch (mailErr) {
-          console.error(
-            "[app-bookings] confirmation email FAILED:",
-            mailErr?.message || mailErr,
-            { bookingId: fresh.id, to: toEmail },
-          );
+          emailSent = false;
+          emailError = mailErr?.message || String(mailErr);
+          console.error("[booking-email] FAILED (app-bookings finalize):", emailError, {
+            bookingId: fresh.id,
+            to: toEmail,
+          });
         }
       }
     } else {
+      emailError = `Payment status "${settlement.paymentStatus}" — confirmation email not sent`;
       console.warn("[app-bookings] skipped paid confirmation email — status not settled", settlement.paymentStatus);
     }
 
@@ -1047,6 +1058,8 @@ router.post("/finalize", async (req, res) => {
 
     return res.json({
       verified: true,
+      emailSent,
+      emailError,
       booking: {
         id: fresh.id,
         barberName: fresh.barber_name,

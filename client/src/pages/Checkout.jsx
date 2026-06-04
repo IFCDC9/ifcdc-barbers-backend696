@@ -160,11 +160,14 @@ export default function Checkout({
             </div>
           </Card>
 
+          <p style={styles.muted}>
+            PayPal checkout runs on the Booking page so your payment includes the $0.99 platform fee and triggers
+            your IFCDC confirmation email after capture.
+          </p>
           <PayPalCheckout
             amount={payAmount}
             navigate={navigate}
             bookingContext={bookingContext}
-            slotCheck={{ availableTimes, time, nextAvailable }}
           />
         </div>
       </section>

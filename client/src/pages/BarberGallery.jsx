@@ -4,7 +4,6 @@ import { Card } from "../components/ui/Card.jsx";
 import { Button } from "../components/ui/Button.jsx";
 import { theme } from "../components/ui/theme.js";
 import { apiGet } from "../lib/api.js";
-import PayPalCheckout from "../components/PayPalCheckout.jsx";
 import { supabase } from "../utils/supabaseClient.js";
 import {
   getStyleImagesForBarber,
@@ -267,7 +266,6 @@ export default function BarberGallery({ barberName, navigate }) {
                 Book this style
               </Button>
             </div>
-            <PayPalCheckout amount={selectedService.price} navigate={navigate} />
             {Array.isArray(selectedService.images) && selectedService.images.length ? (
               <div style={stylesMeta.subGallery}>
                 {selectedService.images.map((im) => (

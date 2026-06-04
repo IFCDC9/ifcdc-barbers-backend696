@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
+  TextInput,
   TouchableOpacity,
   Alert,
   ActivityIndicator,
@@ -116,6 +117,7 @@ function BookingScreen() {
   const [slotsError, setSlotsError] = useState(null);
   const [processingPayment, setProcessingPayment] = useState(false);
   const [phaseLabel, setPhaseLabel] = useState('');
+  const [guestEmail, setGuestEmail] = useState('');
   const servicePrice = Number(selectedService?.price);
   const pricing = useMemo(
     () =>
@@ -306,11 +308,29 @@ function BookingScreen() {
     setPhaseLabel('');
   };
 
+  const resolveCustomerEmail = () => {
+    const fromUser = String(user?.email || '').trim();
+    if (fromUser) return fromUser;
+    return String(guestEmail || '').trim();
+  };
+
   const onConfirmPayAndBook = async () => {
     if (processingPayment || !barber?.name || !date || !time || !selectedService?.id) {
       if (!selectedService?.id) {
         Alert.alert(t('booking.selectServiceTitle'), t('booking.selectServiceBody'));
       }
+      return;
+    }
+
+    const customerEmail = resolveCustomerEmail();
+    if (!customerEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail)) {
+      Alert.alert(
+        t('booking.emailRequiredTitle', { defaultValue: 'Email required' }),
+        t('booking.emailRequiredBody', {
+          defaultValue:
+            'Enter your email so we can send your IFCDC booking confirmation after payment.',
+        }),
+      );
       return;
     }
 
@@ -348,7 +368,6 @@ function BookingScreen() {
       setPhaseLabel(t('booking.phases.creatingCheckout'));
       const barberUuid =
         typeof barber?.id === 'string' && barber.id.includes('-') ? barber.id : barber?.uuid;
-      const customerEmail = String(user?.email || "").trim();
       const customerName = String(user?.name || user?.displayName || "").trim() || "Mobile customer";
       const started = await startAppBookingCheckout({
         barberName: barber?.name,
@@ -359,7 +378,7 @@ function BookingScreen() {
         serviceId,
         serviceName,
         redirectUri,
-        customerEmail: customerEmail || undefined,
+        customerEmail,
         customerName,
       });
 
@@ -435,6 +454,18 @@ function BookingScreen() {
         isDepositPaid: false,
         paymentStatusLabel: b.paymentStatusLabel ?? 'PAID IN FULL',
       });
+      if (finalized?.emailSent === false) {
+        Alert.alert(
+          t('booking.emailNotSentTitle', { defaultValue: 'Booking confirmed' }),
+          finalized?.emailError
+            ? String(finalized.emailError)
+            : t('booking.emailNotSentBody', {
+                defaultValue:
+                  'Payment succeeded but the confirmation email could not be sent. Contact IFCDC with your booking ID.',
+              }),
+        );
+      }
+
       setPhaseLabel(t('booking.phases.confirmed'));
       checkoutSucceeded = true;
       setStep(6);
@@ -831,6 +862,40 @@ function BookingScreen() {
                 {t('booking.amountServerNote')}
               </Text>
             </View>
+
+            {!user?.email ? (
+              <View style={{ marginTop: 16 }}>
+                <Text style={{ color: '#FFD700', marginBottom: 8 }}>
+                  {t('booking.emailForConfirmation', {
+                    defaultValue: 'Email for confirmation',
+                  })}
+                </Text>
+                <TextInput
+                  value={guestEmail}
+                  onChangeText={setGuestEmail}
+                  placeholder={t('booking.emailPlaceholder', { defaultValue: 'you@example.com' })}
+                  placeholderTextColor="#666"
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  style={{
+                    backgroundColor: '#222',
+                    color: '#fff',
+                    padding: 12,
+                    borderRadius: 8,
+                    borderWidth: 1,
+                    borderColor: '#444',
+                  }}
+                />
+              </View>
+            ) : (
+              <Text style={{ color: '#888', fontSize: 12, marginTop: 12 }}>
+                {t('booking.confirmationSentTo', {
+                  defaultValue: 'Confirmation will be sent to {{email}}',
+                  email: user.email,
+                })}
+              </Text>
+            )}
 
             {phaseLabel ? (
               <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 16 }}>
