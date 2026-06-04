@@ -8,7 +8,7 @@ const base =
   process.env.API_BASE ||
   "https://ifcdc-barbers-backend696.onrender.com";
 
-const EXPECTED_SHORT = "8a3a601d";
+const ACCEPTABLE_SHORTS = ["8a3a601d", "24354b7b"];
 
 async function get(path, init) {
   const url = `${base.replace(/\/+$/, "")}${path}`;
@@ -41,10 +41,10 @@ if (!info.res.ok) {
   fail(`/api/deploy-info HTTP ${info.res.status}`);
 } else if (!info.json.deployCommitMatch) {
   fail(
-    `deploy commit mismatch: active=${info.json.activeCommitShort || info.json.activeCommit || "?"} expected=${EXPECTED_SHORT}`,
+    `deploy commit mismatch: active=${info.json.activeCommitShort || info.json.activeCommit || "?"} expected one of ${ACCEPTABLE_SHORTS.join(", ")}`,
   );
 } else {
-  ok(`deploy-info commit ${info.json.activeCommitShort} matches ${EXPECTED_SHORT}`);
+  ok(`deploy-info commit ${info.json.activeCommitShort} matches payment-fix baseline`);
 }
 
 const emailHealth = await get("/api/email/health");

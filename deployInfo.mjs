@@ -12,9 +12,12 @@ const require = createRequire(import.meta.url);
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-/** Minimum commit that includes PayPal finalize recovery + mobile payment fixes. */
+/** Payment/fix baseline + deploy verification (any of these shorts = acceptable on Render). */
+export const PAYMENT_FIX_COMMIT_SHORT = "8a3a601d";
+export const DEPLOY_INFO_COMMIT_SHORT = "24354b7b";
+const ACCEPTABLE_COMMIT_SHORTS = [PAYMENT_FIX_COMMIT_SHORT, DEPLOY_INFO_COMMIT_SHORT];
 export const EXPECTED_DEPLOY_COMMIT = "8a3a601dc4294390c733b76536f73054477c580a";
-export const EXPECTED_DEPLOY_COMMIT_SHORT = "8a3a601d";
+export const EXPECTED_DEPLOY_COMMIT_SHORT = PAYMENT_FIX_COMMIT_SHORT;
 
 function readGitCommitFromRepo() {
   try {
@@ -55,13 +58,11 @@ function resolveActiveCommit() {
 }
 
 function commitMatchesExpected(activeFull, activeShort) {
-  const exp = EXPECTED_DEPLOY_COMMIT;
-  const expShort = EXPECTED_DEPLOY_COMMIT_SHORT;
-  if (activeFull && activeFull.toLowerCase().startsWith(expShort.toLowerCase())) return true;
-  if (activeFull && exp.toLowerCase().startsWith(String(activeFull).slice(0, 8).toLowerCase())) {
-    return activeFull.length >= 8;
+  const short = String(activeShort || (activeFull ? activeFull.slice(0, 8) : "")).toLowerCase();
+  if (ACCEPTABLE_COMMIT_SHORTS.some((s) => short === s.toLowerCase())) return true;
+  if (activeFull && activeFull.toLowerCase().startsWith(PAYMENT_FIX_COMMIT_SHORT.toLowerCase())) {
+    return true;
   }
-  if (activeShort && activeShort.toLowerCase() === expShort.toLowerCase()) return true;
   return false;
 }
 
@@ -102,7 +103,9 @@ export function getDeployInfoPayload() {
     commitSource: active.source,
     expectedCommit: EXPECTED_DEPLOY_COMMIT,
     expectedCommitShort: EXPECTED_DEPLOY_COMMIT_SHORT,
+    acceptableCommitShorts: ACCEPTABLE_COMMIT_SHORTS,
     deployCommitMatch,
+    paymentFixIncluded: deployCommitMatch,
     deployedAt: process.env.RENDER_DEPLOY_AT || process.env.RENDER_GIT_COMMIT_DATE || null,
     render: {
       serviceId: process.env.RENDER_SERVICE_ID || null,
