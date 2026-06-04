@@ -105,7 +105,10 @@ function computeSettlementFromCapture(input) {
     };
   }
 
-  const fullRequired = round2(servicePrice + platformFee + tipAmount);
+  const computedFull = round2(servicePrice + platformFee + tipAmount);
+  const expectedOverride = round2(Number(input.expectedTotalUsd));
+  const fullRequired =
+    Number.isFinite(expectedOverride) && expectedOverride > 0 ? expectedOverride : computedFull;
 
   if (!withinAmount(capturedUsd, fullRequired)) {
     return {

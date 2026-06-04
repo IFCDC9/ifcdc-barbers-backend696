@@ -33,6 +33,7 @@ const {
   shouldSendPaidConfirmationEmail,
   paymentStatusForEmailFromRow,
   settlementUpdateParams,
+  normalizePaymentStatus,
   PAYMENT_STATUS,
 } = require("./bookingPaymentSettlement.cjs");
 const {
@@ -42,6 +43,8 @@ const {
   normalizePayPalEnvValue,
   getPayPalSecret,
 } = require("./paypalEnv.cjs");
+const { captureOrGetCompletedPayPalOrder } = require("./paypalOrderCaptureHelpers.cjs");
+const { sendOrphanedPaymentAdminAlert } = require("./orphanedPaymentAlert.cjs");
 
 const router = express.Router();
 
@@ -819,18 +822,116 @@ router.post("/start", async (req, res) => {
   }
 });
 
-router.post("/finalize", async (req, res) => {
+function buildFinalizeSuccessPayload({
+  orderID,
+  captureId,
+  fresh,
+  row,
+  view,
+  emailSent,
+  emailError,
+  paymentCaptured = true,
+  alreadyCaptured = false,
+  needsReview = false,
+  reviewReason = null,
+}) {
+  const customerEmail = String(fresh?.customer_email || row?.customer_email || "").trim();
+  return {
+    verified: true,
+    paymentCaptured,
+    bookingConfirmed: Boolean(view?.isPaidInFull ?? view?.captureId),
+    needsReview,
+    reviewReason,
+    paypalOrderId: orderID,
+    captureId: captureId || view?.captureId || null,
+    bookingId: fresh?.id || row?.id || null,
+    customerEmail,
+    emailSent,
+    emailError,
+    alreadyCaptured,
+    booking: {
+      id: fresh.id,
+      barberName: fresh.barber_name,
+      date: fresh.date,
+      time: fresh.time,
+      service: fresh.service,
+      ...view,
+      haircutPrice: view.servicePrice,
+      total: view.totalDue,
+    },
+  };
+}
+
+async function sendPaidConfirmationForAppBooking({ fresh, row, captureId, settlement }) {
+  let emailSent = false;
+  let emailError = null;
+  if (!shouldSendPaidConfirmationEmail(settlement.paymentStatus)) {
+    emailError = `Payment status "${settlement.paymentStatus}" — confirmation email not sent`;
+    return { emailSent, emailError };
+  }
+  const { sendBookingEmail, isDeliverableCustomerEmail } = require("./bookingEmail.cjs");
+  const toEmail = String(fresh.customer_email || row.customer_email || "").trim();
+  if (!isDeliverableCustomerEmail(toEmail)) {
+    emailError = `Customer email not deliverable: ${toEmail || "(empty)"}`;
+    console.error("[app-bookings] confirmation email SKIPPED:", emailError, { bookingId: fresh.id });
+    return { emailSent, emailError };
+  }
   try {
-    const orderID = stripQuotes(req.body?.orderID ?? req.body?.orderId ?? "");
+    const view = bookingPaymentViewFromRow(fresh);
+    const mail = await sendBookingEmail({
+      name: fresh.customer_name || row.customer_name || "Guest",
+      email: toEmail,
+      service: fresh.service || row.service || "Haircut",
+      servicePrice: view.servicePrice,
+      serviceDuration: fresh.service_duration_minutes ?? row.service_duration_minutes,
+      date: String(fresh.date ?? row.date ?? ""),
+      time: String(fresh.time ?? row.time ?? ""),
+      paymentStatus: PAYMENT_STATUS.PAID_IN_FULL,
+      paymentId: captureId,
+      captureId,
+      barberName: fresh.barber_name || row.barber_name,
+      platformFee: view.platformFee,
+      tipAmount: view.tipAmount,
+      amountCharged: view.amountCharged,
+      amountPaid: view.amountPaid,
+      balanceDue: 0,
+      bookingId: fresh.id,
+      bookingRow: fresh,
+    });
+    emailSent = Boolean(mail?.success ?? mail?.messageId);
+    console.log("[booking-email] SENT OK (app-bookings finalize)", {
+      paypalOrderId: row.paypal_order_id,
+      captureId,
+      bookingId: fresh.id,
+      customerEmail: toEmail,
+      emailSent,
+      messageId: mail?.messageId,
+    });
+  } catch (mailErr) {
+    emailError = mailErr?.message || String(mailErr);
+    console.error("[booking-email] FAILED (app-bookings finalize):", emailError, {
+      paypalOrderId: row.paypal_order_id,
+      captureId,
+      bookingId: fresh.id,
+      customerEmail: toEmail,
+      emailSent: false,
+    });
+  }
+  return { emailSent, emailError };
+}
+
+router.post("/finalize", async (req, res) => {
+  const orderID = stripQuotes(req.body?.orderID ?? req.body?.orderId ?? "");
+  try {
     if (!orderID) {
       return res.status(400).json({ verified: false, error: "order_id_required", message: "orderID is required" });
     }
 
+    console.log("[app-bookings] finalize START", { paypalOrderId: orderID });
+
     const client = getPayPalHttpClient();
-    const capReq = new paypalSdk.orders.OrdersCaptureRequest(orderID);
-    capReq.requestBody({});
-    const response = await client.execute(capReq);
-    const capture = response.result;
+    const { order: capture, captureId: capturedIdFromOrder, alreadyCaptured } =
+      await captureOrGetCompletedPayPalOrder(client, orderID);
 
     const { dbQuery } = await loadDb();
 
@@ -848,6 +949,11 @@ router.post("/finalize", async (req, res) => {
         [orderID],
       );
       await markPaymentFailed(pending.rows?.[0]?.id);
+      console.error("[app-bookings] finalize capture not COMPLETED", {
+        paypalOrderId: orderID,
+        status: capture?.status,
+        bookingId: pending.rows?.[0]?.id,
+      });
       return res.status(400).json({
         verified: false,
         error: "capture_not_completed",
@@ -855,7 +961,12 @@ router.post("/finalize", async (req, res) => {
       });
     }
 
-    const captureId = extractCaptureIdFromOrder(capture);
+    const captureId = capturedIdFromOrder || extractCaptureIdFromOrder(capture);
+    console.log("[app-bookings] finalize PayPal COMPLETED", {
+      paypalOrderId: orderID,
+      captureId,
+      alreadyCaptured,
+    });
     if (!captureId) {
       const pending = await dbQuery(
         `SELECT id FROM bookings WHERE paypal_order_id = $1 LIMIT 1`,
@@ -879,10 +990,21 @@ router.post("/finalize", async (req, res) => {
     );
     const row = found.rows?.[0];
     if (!row) {
+      const capturedUsd = extractPayPalCapturedUsd(capture);
+      await sendOrphanedPaymentAdminAlert({
+        paypalOrderId: orderID,
+        captureId,
+        reason: "booking_not_found",
+        capturedUsd,
+      });
+      console.error("[app-bookings] finalize booking_not_found", { paypalOrderId: orderID, captureId });
       return res.status(404).json({
         verified: false,
+        paymentCaptured: true,
         error: "booking_not_found",
-        message: "No pending booking for this PayPal order",
+        message: "PayPal payment captured but no pending booking for this order. Support has been notified.",
+        paypalOrderId: orderID,
+        captureId,
       });
     }
 
@@ -896,19 +1018,31 @@ router.post("/finalize", async (req, res) => {
       isBookingPaymentSettled(row)
     ) {
       const view = bookingPaymentViewFromRow(row);
-      return res.json({
-        verified: true,
-        booking: {
-          id: row.id,
-          barberName: row.barber_name,
-          date: row.date,
-          time: row.time,
-          service: row.service,
-          ...view,
-          haircutPrice: view.servicePrice,
-          total: view.totalDue,
-        },
+      const { emailSent, emailError } = await sendPaidConfirmationForAppBooking({
+        fresh: row,
+        row,
+        captureId,
+        settlement: { paymentStatus: PAYMENT_STATUS.PAID_IN_FULL },
       });
+      console.log("[app-bookings] finalize idempotent OK", {
+        paypalOrderId: orderID,
+        captureId,
+        bookingId: row.id,
+        customerEmail: row.customer_email,
+        emailSent,
+      });
+      return res.json(
+        buildFinalizeSuccessPayload({
+          orderID,
+          captureId,
+          fresh: row,
+          row,
+          view,
+          emailSent,
+          emailError,
+          alreadyCaptured,
+        }),
+      );
     }
 
     const capturedUsd = extractPayPalCapturedUsd(capture);
@@ -921,6 +1055,7 @@ router.post("/finalize", async (req, res) => {
       });
     }
 
+    const expectedTotalUsd = round2(Number(row.total_amount ?? 0));
     const settlement = computeSettlementFromCapture({
       servicePrice: haircutPrice,
       platformFee,
@@ -928,6 +1063,7 @@ router.post("/finalize", async (req, res) => {
       capturedUsd,
       captureId,
       paymentProvider: "paypal",
+      expectedTotalUsd: expectedTotalUsd > 0 ? expectedTotalUsd : undefined,
     });
 
     if (!settlement.ok) {
@@ -936,10 +1072,34 @@ router.post("/finalize", async (req, res) => {
           ? PAYMENT_STATUS.PAYMENT_MISMATCH
           : PAYMENT_STATUS.PAYMENT_FAILED;
       await markPaymentFailed(row.id, failStatus);
+      await sendOrphanedPaymentAdminAlert({
+        paypalOrderId: orderID,
+        captureId,
+        bookingId: row.id,
+        customerEmail: row.customer_email,
+        reason: settlement.error || "settlement_failed",
+        capturedUsd,
+        extra: { message: settlement.message, fullRequired: settlement.fullRequired },
+      });
+      console.error("[app-bookings] finalize settlement FAILED", {
+        paypalOrderId: orderID,
+        captureId,
+        bookingId: row.id,
+        customerEmail: row.customer_email,
+        error: settlement.error,
+        message: settlement.message,
+        capturedUsd,
+      });
       return res.status(400).json({
         verified: false,
+        paymentCaptured: true,
         error: settlement.error,
-        message: settlement.message || "Payment failed — booking not confirmed.",
+        message:
+          settlement.message ||
+          "PayPal captured your payment but the booking could not be confirmed. Support has been notified.",
+        paypalOrderId: orderID,
+        captureId,
+        bookingId: row.id,
       });
     }
 
@@ -957,64 +1117,62 @@ router.post("/finalize", async (req, res) => {
     );
     const fresh = updated.rows?.[0] || row;
     if (!isBookingPaymentSettled(fresh)) {
-      await markPaymentFailed(row.id, PAYMENT_STATUS.PAYMENT_FAILED);
-      return res.status(400).json({
-        verified: false,
-        error: "payment_not_settled",
-        message: "Payment failed — booking not confirmed.",
+      const hasPaidCapture =
+        Boolean(fresh.paypal_capture_id) &&
+        normalizePaymentStatus(fresh.payment_status) === PAYMENT_STATUS.PAID_IN_FULL &&
+        Number(fresh.amount_paid ?? fresh.amount_charged ?? 0) > 0;
+      if (!hasPaidCapture) {
+        await markPaymentFailed(row.id, PAYMENT_STATUS.PAYMENT_FAILED);
+        await sendOrphanedPaymentAdminAlert({
+          paypalOrderId: orderID,
+          captureId,
+          bookingId: row.id,
+          customerEmail: row.customer_email,
+          reason: "payment_not_settled",
+          capturedUsd,
+          extra: { rowStatus: fresh.payment_status, amountPaid: fresh.amount_paid },
+        });
+        console.error("[app-bookings] finalize payment_not_settled", {
+          paypalOrderId: orderID,
+          captureId,
+          bookingId: row.id,
+          customerEmail: row.customer_email,
+          paymentStatus: fresh.payment_status,
+          amountPaid: fresh.amount_paid,
+        });
+        return res.status(400).json({
+          verified: false,
+          paymentCaptured: true,
+          error: "payment_not_settled",
+          message: "PayPal captured your payment but booking settlement failed. Support has been notified.",
+          paypalOrderId: orderID,
+          captureId,
+          bookingId: row.id,
+        });
+      }
+      console.warn("[app-bookings] finalize: isBookingPaymentSettled false but row has paid capture — accepting", {
+        paypalOrderId: orderID,
+        captureId,
+        bookingId: fresh.id,
       });
     }
 
-    let emailSent = false;
-    let emailError = null;
-    if (shouldSendPaidConfirmationEmail(settlement.paymentStatus)) {
-      const { sendBookingEmail, isDeliverableCustomerEmail } = require("./bookingEmail.cjs");
-      const toEmail = String(fresh.customer_email || row.customer_email || "").trim();
-      if (!isDeliverableCustomerEmail(toEmail)) {
-        emailError = `Customer email not deliverable: ${toEmail || "(empty)"}`;
-        console.error("[app-bookings] confirmation email SKIPPED:", emailError, { bookingId: fresh.id });
-      } else {
-        try {
-          const view = bookingPaymentViewFromRow(fresh);
-          const mail = await sendBookingEmail({
-            name: fresh.customer_name || row.customer_name || "Guest",
-            email: toEmail,
-            service: fresh.service || row.service || "Haircut",
-            servicePrice: view.servicePrice,
-            serviceDuration: fresh.service_duration_minutes ?? row.service_duration_minutes,
-            date: String(fresh.date ?? row.date ?? ""),
-            time: String(fresh.time ?? row.time ?? ""),
-            paymentStatus: PAYMENT_STATUS.PAID_IN_FULL,
-            paymentId: captureId,
-            captureId,
-            barberName: fresh.barber_name || row.barber_name,
-            platformFee: view.platformFee,
-            tipAmount: view.tipAmount,
-            amountCharged: view.amountCharged,
-            amountPaid: view.amountPaid,
-            balanceDue: 0,
-            bookingId: fresh.id,
-            bookingRow: fresh,
-          });
-          emailSent = Boolean(mail?.success ?? mail?.messageId);
-          console.log("[booking-email] SENT OK (app-bookings finalize)", {
-            to: toEmail,
-            bookingId: fresh.id,
-            messageId: mail?.messageId,
-          });
-        } catch (mailErr) {
-          emailSent = false;
-          emailError = mailErr?.message || String(mailErr);
-          console.error("[booking-email] FAILED (app-bookings finalize):", emailError, {
-            bookingId: fresh.id,
-            to: toEmail,
-          });
-        }
-      }
-    } else {
-      emailError = `Payment status "${settlement.paymentStatus}" — confirmation email not sent`;
-      console.warn("[app-bookings] skipped paid confirmation email — status not settled", settlement.paymentStatus);
-    }
+    const { emailSent, emailError } = await sendPaidConfirmationForAppBooking({
+      fresh,
+      row,
+      captureId,
+      settlement,
+    });
+
+    console.log("[app-bookings] finalize SUCCESS", {
+      paypalOrderId: orderID,
+      captureId,
+      bookingId: fresh.id,
+      customerEmail: fresh.customer_email,
+      emailSent,
+      emailError: emailError || null,
+      alreadyCaptured,
+    });
 
     // Best-effort push fanout — only after verified payment.
     try {
@@ -1056,29 +1214,81 @@ router.post("/finalize", async (req, res) => {
 
     const view = bookingPaymentViewFromRow(fresh);
 
-    return res.json({
-      verified: true,
-      emailSent,
-      emailError,
-      booking: {
-        id: fresh.id,
-        barberName: fresh.barber_name,
-        date: fresh.date,
-        time: fresh.time,
-        service: fresh.service,
-        ...view,
-        haircutPrice: view.servicePrice,
-        total: view.totalDue,
-      },
-    });
+    return res.json(
+      buildFinalizeSuccessPayload({
+        orderID,
+        captureId,
+        fresh,
+        row,
+        view,
+        emailSent,
+        emailError,
+        alreadyCaptured,
+      }),
+    );
   } catch (e) {
     if (e?.code === "paypal_config") {
       return res.status(503).json({ verified: false, error: "paypal_config", message: e.message });
     }
     const f = formatPayPalFailure(e);
-    console.error("[app-bookings] finalize:", f.message);
+    console.error("[app-bookings] finalize EXCEPTION", {
+      paypalOrderId: orderID,
+      code: f.code,
+      message: f.message,
+    });
+
+    if (orderID) {
+      try {
+        const client = getPayPalHttpClient();
+        const getReq = new paypalSdk.orders.OrdersGetRequest(orderID);
+        const getRes = await client.execute(getReq);
+        const order = getRes.result;
+        if (order?.status === "COMPLETED") {
+          const captureId = extractCaptureIdFromOrder(order);
+          const { dbQuery } = await loadDb();
+          const found = await dbQuery(
+            `SELECT id, customer_email FROM bookings WHERE paypal_order_id = $1 LIMIT 1`,
+            [orderID],
+          );
+          await sendOrphanedPaymentAdminAlert({
+            paypalOrderId: orderID,
+            captureId,
+            bookingId: found.rows?.[0]?.id,
+            customerEmail: found.rows?.[0]?.customer_email,
+            reason: "finalize_exception_after_capture",
+            capturedUsd: extractPayPalCapturedUsd(order),
+            extra: { error: f.message },
+          });
+          if (found.rows?.[0]?.id && captureId) {
+            return res.status(200).json({
+              verified: true,
+              paymentCaptured: true,
+              bookingConfirmed: false,
+              needsReview: true,
+              reviewReason: f.message,
+              paypalOrderId: orderID,
+              captureId,
+              bookingId: found.rows[0].id,
+              customerEmail: found.rows[0].customer_email,
+              emailSent: false,
+              emailError: "Booking needs manual review — retry finalize or contact support.",
+              message:
+                "Your PayPal payment was received. We are finalizing your booking — check your email shortly.",
+            });
+          }
+        }
+      } catch (recoveryErr) {
+        console.error("[app-bookings] finalize recovery failed:", recoveryErr?.message || recoveryErr);
+      }
+    }
+
     const status = Number(f.httpStatus) >= 400 && Number(f.httpStatus) < 600 ? f.httpStatus : 502;
-    return res.status(status).json({ verified: false, error: f.code || "finalize_failed", message: f.message });
+    return res.status(status).json({
+      verified: false,
+      error: f.code || "finalize_failed",
+      message: f.message,
+      paypalOrderId: orderID || null,
+    });
   }
 });
 

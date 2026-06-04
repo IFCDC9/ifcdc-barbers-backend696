@@ -14,9 +14,12 @@ function read(rel) {
 
 const checks = [
   {
-    name: "mobile finalize accepts paid_in_full",
+    name: "mobile finalize trusts server paymentCaptured",
     file: "mobile/services/bookingPayPalApi.js",
-    ok: () => read("mobile/services/bookingPayPalApi.js").includes('"paid_in_full"'),
+    ok: () => {
+      const s = read("mobile/services/bookingPayPalApi.js");
+      return s.includes("paymentCaptured") && s.includes("FINALIZE_RETRY_ATTEMPTS");
+    },
   },
   {
     name: "web Booking uses create-order → capture → /api/book",
@@ -51,6 +54,16 @@ const checks = [
     name: "app finalize returns emailSent",
     file: "appBookingCheckoutRoutes.cjs",
     ok: () => read("appBookingCheckoutRoutes.cjs").includes("emailSent,"),
+  },
+  {
+    name: "PayPal already-captured fallback",
+    file: "paypalOrderCaptureHelpers.cjs",
+    ok: () => read("paypalOrderCaptureHelpers.cjs").includes("captureOrGetCompletedPayPalOrder"),
+  },
+  {
+    name: "orphaned payment admin alert",
+    file: "orphanedPaymentAlert.cjs",
+    ok: () => read("orphanedPaymentAlert.cjs").includes("sendOrphanedPaymentAdminAlert"),
   },
 ];
 

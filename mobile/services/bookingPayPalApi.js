@@ -6,10 +6,25 @@ const BOOKING_FETCH_TIMEOUT_MS = 25_000;
 /** Service menu must resolve within 5s — then use local fallback. */
 export const SERVICES_FETCH_TIMEOUT_MS = 5_000;
 
+const FINALIZE_RETRY_ATTEMPTS = 4;
+const FINALIZE_RETRY_BASE_MS = 1200;
+
 async function bookingFetch(url, init = {}) {
   const timeoutMs = init.timeoutMs ?? BOOKING_FETCH_TIMEOUT_MS;
   const { timeoutMs: _drop, ...rest } = init;
   return fetchWithTimeout(url, { ...rest, timeoutMs });
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableFinalizeError(err) {
+  const status = Number(err?.status);
+  if (status >= 502 && status <= 504) return true;
+  if (err?.name === "AbortError") return true;
+  const code = String(err?.code || "").toLowerCase();
+  return code === "finalize_failed" || code === "network" || status === 0;
 }
 
 let loggedApiEnvOnce = false;
@@ -220,6 +235,7 @@ export async function startAppBookingCheckout(payload) {
     dateLabel: payload?.dateLabel,
     timeLabel: payload?.timeLabel,
     redirectUri: payload?.redirectUri,
+    customerEmail: payload?.customerEmail ? "(set)" : "(missing)",
   });
   console.log("PAYPAL CLIENT (mobile env):", process.env.EXPO_PUBLIC_PAYPAL_CLIENT_ID ?? "(unset — server creates order)");
   console.log("PAYPAL ENV (mobile):", process.env.EXPO_PUBLIC_PAYPAL_ENV ?? "(unset)");
@@ -277,21 +293,47 @@ export async function startAppBookingCheckout(payload) {
 }
 
 /**
- * Server verifies PayPal capture and finalizes booking in Postgres.
+ * Single finalize attempt — server is source of truth for payment + booking.
  * @param {string} orderID
  */
-export async function finalizeAppBookingCheckout(orderID) {
-  logApiEnvOnce();
+async function finalizeAppBookingCheckoutOnce(orderID) {
   const url = apiFullUrl("/api/app-bookings/finalize");
-  console.log("[IFCDC] BOOKING FINALIZE POST:", url);
-
   const res = await bookingFetch(url, {
     method: "POST",
     headers: { Accept: "application/json", "Content-Type": "application/json" },
     body: JSON.stringify({ orderID }),
+    timeoutMs: 45_000,
   });
   const json = await parseJson(res);
+
+  console.log("[IFCDC] FINALIZE RESPONSE:", {
+    status: res.status,
+    verified: json?.verified,
+    paymentCaptured: json?.paymentCaptured,
+    bookingId: json?.bookingId ?? json?.booking?.id,
+    captureId: json?.captureId,
+    emailSent: json?.emailSent,
+    needsReview: json?.needsReview,
+    error: json?.error,
+  });
+
+  if (json?.paymentCaptured === true && json?.booking?.id) {
+    return json;
+  }
+
   if (!res.ok || json.verified !== true) {
+    if (json?.paymentCaptured === true) {
+      const err = new Error(
+        json.message ||
+          "PayPal payment was received. Your booking is being confirmed — check your email or contact IFCDC support.",
+      );
+      err.code = json.error || "payment_captured_booking_pending";
+      err.details = json;
+      err.status = res.status;
+      err.url = url;
+      err.paymentCaptured = true;
+      throw err;
+    }
     const msg = json.message || json.error || `HTTP ${res.status}`;
     const err = new Error(msg);
     err.code = json.error;
@@ -300,34 +342,51 @@ export async function finalizeAppBookingCheckout(orderID) {
     err.url = url;
     throw err;
   }
-  const b = json.booking;
-  const paid = Number(b?.amountPaid ?? b?.amount_paid ?? b?.amountCharged ?? b?.amount_charged ?? 0);
-  const remaining = Number(
-    b?.balanceDue ?? b?.balance_due ?? b?.remainingBalance ?? b?.remaining_balance ?? 0,
-  );
-  const status = String(b?.paymentStatus ?? b?.payment_status ?? "").toLowerCase();
-  const captureId = b?.captureId ?? b?.transactionId ?? b?.paypal_capture_id ?? null;
-  const paidOk =
-    status === "paid_in_full" ||
-    status === "paid_full" ||
-    status === "paid" ||
-    status === "deposit_paid";
-  if (!b?.id || !(paid > 0) || !captureId || !paidOk) {
-    const err = new Error("Payment failed — booking not confirmed.");
-    err.code = "payment_not_captured";
+
+  if (!json.booking?.id) {
+    const err = new Error("Server did not return a confirmed booking.");
+    err.code = "booking_missing";
     err.details = json;
+    err.status = res.status;
+    err.url = url;
     throw err;
   }
-  if (
-    (status === "paid_in_full" || status === "paid_full") &&
-    remaining > 0.01
-  ) {
-    const err = new Error("Payment failed — booking not confirmed.");
-    err.code = "payment_balance_mismatch";
-    err.details = json;
-    throw err;
-  }
+
   return json;
+}
+
+/**
+ * Server verifies PayPal capture and finalizes booking in Postgres (retries transient failures).
+ * @param {string} orderID
+ */
+export async function finalizeAppBookingCheckout(orderID) {
+  logApiEnvOnce();
+  const url = apiFullUrl("/api/app-bookings/finalize");
+  console.log("[IFCDC] BOOKING FINALIZE POST:", url, { orderID });
+
+  let lastErr;
+  for (let attempt = 1; attempt <= FINALIZE_RETRY_ATTEMPTS; attempt++) {
+    try {
+      const json = await finalizeAppBookingCheckoutOnce(orderID);
+      if (json.needsReview) {
+        console.warn("[IFCDC] finalize needsReview:", json.reviewReason);
+      }
+      return json;
+    } catch (err) {
+      lastErr = err;
+      if (err?.paymentCaptured === true) {
+        throw err;
+      }
+      if (attempt < FINALIZE_RETRY_ATTEMPTS && isRetryableFinalizeError(err)) {
+        const delay = FINALIZE_RETRY_BASE_MS * attempt;
+        console.warn(`[IFCDC] finalize attempt ${attempt} failed — retry in ${delay}ms`, err?.message);
+        await sleep(delay);
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr;
 }
 
 /**
@@ -388,12 +447,6 @@ export async function fetchOccupiedSlots({ barberName, dateLabel }) {
 
 /**
  * GET /api/app-bookings/barbers — Postgres bookable barbers (checkout source of truth).
- *
- * Logs every step of the request lifecycle in a stable format so TestFlight
- * console output is greppable for support diagnostics:
- *   BOOKING API: <url>
- *   BOOKING RESPONSE: <status>
- *   BOOKING DATA: <body summary>
  */
 export async function fetchBarbersList() {
   logApiEnvOnce();

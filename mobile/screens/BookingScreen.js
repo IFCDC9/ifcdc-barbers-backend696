@@ -410,7 +410,14 @@ function BookingScreen() {
         throw new Error('Server did not return a confirmed booking');
       }
 
-      const amountPaid = Number(b.amountPaid ?? b.amount_paid ?? b.amountCharged ?? b.amount_charged ?? 0);
+      const amountPaid = Number(
+        b.amountPaid ??
+          b.amount_paid ??
+          b.amountCharged ??
+          b.amount_charged ??
+          finalized?.booking?.amountPaid ??
+          0,
+      );
       const balanceDue = Number(b.balanceDue ?? b.balance_due ?? b.remainingBalance ?? b.remaining_balance ?? 0);
       const platformFeePaid = Number(b.platformFee ?? b.platform_fee ?? platformFee);
       const servicePricePaid = Number(
@@ -419,17 +426,18 @@ function BookingScreen() {
       const tipPaid = Number(b.tipAmount ?? b.tip_amount ?? 0);
       const paymentStatus = String(b.paymentStatus ?? b.payment_status ?? '');
       const paymentMethod = String(b.paymentMethod ?? b.payment_method ?? 'paypal');
-      const captureId = b.captureId ?? b.transactionId ?? b.paypal_capture_id ?? null;
+      const captureId =
+        finalized?.captureId ?? b.captureId ?? b.transactionId ?? b.paypal_capture_id ?? null;
+      const paymentCaptured = finalized?.paymentCaptured === true || Boolean(captureId);
       const isPaidInFull =
         b.isPaidInFull === true ||
+        finalized?.bookingConfirmed === true ||
         paymentStatus === 'paid_in_full' ||
         paymentStatus === 'paid_full' ||
-        paymentStatus === 'paid';
+        paymentStatus === 'paid' ||
+        paymentCaptured;
 
-      if (!captureId || amountPaid <= 0 || !isPaidInFull) {
-        throw new Error('Payment failed — booking not confirmed.');
-      }
-      if (balanceDue > 0.01) {
+      if (!paymentCaptured && (!captureId || amountPaid <= 0)) {
         throw new Error('Payment failed — booking not confirmed.');
       }
 
@@ -454,7 +462,16 @@ function BookingScreen() {
         isDepositPaid: false,
         paymentStatusLabel: b.paymentStatusLabel ?? 'PAID IN FULL',
       });
-      if (finalized?.emailSent === false) {
+      if (finalized?.needsReview) {
+        Alert.alert(
+          t('booking.paymentReceivedTitle', { defaultValue: 'Payment received' }),
+          finalized?.message ||
+            t('booking.paymentReceivedBody', {
+              defaultValue:
+                'PayPal captured your payment. Your booking is being confirmed — watch for your IFCDC email.',
+            }),
+        );
+      } else if (finalized?.emailSent === false) {
         Alert.alert(
           t('booking.emailNotSentTitle', { defaultValue: 'Booking confirmed' }),
           finalized?.emailError
@@ -477,11 +494,20 @@ function BookingScreen() {
         status: err?.status,
         message: err?.message,
       });
+      const paymentCaptured =
+        err?.paymentCaptured === true || err?.details?.paymentCaptured === true;
       const paymentFailed =
-        err?.code === 'payment_not_captured' ||
-        err?.code === 'payment_balance_mismatch' ||
-        /payment failed|not confirmed|not captured/i.test(String(err?.message || ''));
-      const msg = paymentFailed
+        !paymentCaptured &&
+        (err?.code === 'payment_not_captured' ||
+          err?.code === 'payment_balance_mismatch' ||
+          /payment failed|not confirmed|not captured/i.test(String(err?.message || '')));
+      const msg = paymentCaptured
+        ? err?.message ||
+          t('booking.paymentCapturedPending', {
+            defaultValue:
+              'PayPal received your payment. Your booking is being confirmed — check your email or contact IFCDC support.',
+          })
+        : paymentFailed
         ? t('booking.paymentFailedNotConfirmed')
         : formatCheckoutError(err);
       Alert.alert('Checkout Error', msg);

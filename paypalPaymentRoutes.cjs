@@ -5,6 +5,7 @@
  */
 const express = require("express");
 const paypalSdk = require("@paypal/checkout-server-sdk");
+const { captureOrGetCompletedPayPalOrder } = require("./paypalOrderCaptureHelpers.cjs");
 
 const DEFAULT_CURRENCY = "USD";
 const DEFAULT_DESCRIPTION = "IFCDC Barbers Booking";
@@ -300,12 +301,11 @@ router.post("/capture-order", async (req, res) => {
     }
 
     const client = getPayPalHttpClient();
-    const request = new paypalSdk.orders.OrdersCaptureRequest(orderID);
-    request.requestBody({});
-
-    const response = await client.execute(request);
-    /** Full PayPal Orders v2 resource after capture (same as REST `POST …/v2/checkout/orders/{id}/capture`). */
-    const capture = response.result;
+    const { order: capture, captureId: captureIdEarly, alreadyCaptured } =
+      await captureOrGetCompletedPayPalOrder(client, orderID);
+    if (alreadyCaptured) {
+      console.log("[PAYMENT] capture-order: order was already captured — using GET", { orderID });
+    }
 
     try {
       console.log("PAYPAL CAPTURE:", JSON.stringify(capture, null, 2));
@@ -326,7 +326,7 @@ router.post("/capture-order", async (req, res) => {
       });
     }
 
-    const captureId = extractCaptureIdFromOrder(capture);
+    const captureId = captureIdEarly || extractCaptureIdFromOrder(capture);
     console.log("[PAYMENT] capture-order OK", { orderID, captureId: captureId || null });
 
     if (!captureId) {
