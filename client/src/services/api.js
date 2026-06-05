@@ -592,18 +592,30 @@ export async function createBooking(payload) {
   return data;
 }
 
-export async function deleteBooking(id) {
-  const base = getApiBase();
-  assertResolvableApiBase(base);
-  const url = `${base}/bookings/${encodeURIComponent(id)}`;
-  const res = await fetch(url, { method: "DELETE", headers: { Accept: "application/json" } });
+/** Soft-delete a booking (platform admin JWT or x-admin-key). */
+export async function deleteBooking(id, reason = "Admin delete") {
+  const origin = getApiOrigin();
+  const url = `${origin}/api/admin/bookings/${encodeURIComponent(id)}`;
+  const headers = {
+    Accept: "application/json",
+    "Content-Type": "application/json",
+    ...getJwtOrAdminKeyHeaders(),
+  };
+
+  const res = await fetch(url, {
+    method: "DELETE",
+    headers,
+    body: JSON.stringify({ reason }),
+  });
   const text = await res.text();
-  if (!res.ok) {
-    throw new Error(text?.slice(0, 200) || `HTTP ${res.status}`);
-  }
+  let data = {};
   try {
-    return JSON.parse(text);
+    data = text ? JSON.parse(text) : {};
   } catch {
-    return { success: true };
+    data = {};
   }
+  if (!res.ok) {
+    throw new Error(data?.message || data?.error || text?.slice(0, 200) || `HTTP ${res.status}`);
+  }
+  return data;
 }

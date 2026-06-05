@@ -685,7 +685,15 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
 
       return res.json({ ok: true, message: "Booking removed from your history.", deleted: true });
     } catch (e) {
-      console.error("[booking] DELETE /api/bookings/:id failed:", e?.stack || e);
+      console.error("[booking] DELETE /api/bookings/:id failed:", {
+        bookingId: req.params?.id,
+        actorRole: req.user?.role,
+        actorId: req.user?.id,
+        route: "DELETE /api/bookings/:id",
+        error: e?.message || String(e),
+        pgCode: e?.code,
+        stack: e?.stack,
+      });
       return res.status(500).json({ ok: false, message: "Could not remove booking" });
     }
   });
@@ -1500,7 +1508,16 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
 
       return res.json({ ok: true, message: "Booking deleted permanently.", deleted: true });
     } catch (e) {
-      console.error("[booking] admin delete failed:", e?.stack || e);
+      console.error("[booking] admin delete failed:", {
+        bookingId: req.params?.id,
+        actorRole: req.user?.role,
+        actorId: req.user?.id,
+        adminScope: req.bookingsAdminScope?.via,
+        route: "DELETE /api/admin/bookings/:id",
+        error: e?.message || String(e),
+        pgCode: e?.code,
+        stack: e?.stack,
+      });
       return res.status(500).json({ ok: false, message: "Could not delete booking" });
     }
   });

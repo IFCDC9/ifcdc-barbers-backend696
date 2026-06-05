@@ -533,14 +533,15 @@ function AdminDashboard() {
   };
 
   const deleteBooking = async (id) => {
+    if (!window.confirm("Delete this booking from the admin list?")) return;
     try {
       await apiDeleteBooking(id);
       const data = await getAdminStats();
       setStats(data);
       setStatsError(null);
     } catch (err) {
-      console.error(err);
-      alert("Could not delete booking");
+      console.error("[admin] delete booking failed:", { bookingId: id, error: err?.message || err });
+      alert(err?.message || "Could not delete booking");
     }
   };
 
