@@ -36,6 +36,13 @@ services:
         value: https://ifcdcbarbersapp.com
       - key: PUBLIC_WEB_FALLBACK_URL
         value: https://ifcdc-barbers-frontend.onrender.com
+      # Photo persistence — set URL + service role in Render dashboard (Dashboard → API keys)
+      - key: SUPABASE_STORAGE_BUCKET
+        value: barber-styles
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
 
   # Frontend (Render Static Site) — SPA rewrite required for deep links like /invite
   - type: web

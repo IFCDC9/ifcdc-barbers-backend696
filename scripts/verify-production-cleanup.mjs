@@ -69,7 +69,9 @@ const storage = deploy.data?.persistentStorage || {};
 pass(
   "Supabase persistent storage configured",
   storage.supabaseConfigured === true,
-  storage.supabaseConfigured ? `bucket=${storage.bucket}` : "Set SUPABASE_URL + secret on backend696",
+  storage.supabaseConfigured
+    ? `bucket=${storage.bucket}`
+    : "Add SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY on Render → backend696 → Environment, then redeploy",
 );
 
 for (const path of ["/", "/privacy", "/terms"]) {

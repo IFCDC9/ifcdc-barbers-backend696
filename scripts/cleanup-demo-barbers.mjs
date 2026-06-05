@@ -9,7 +9,7 @@
 import "../loadBackendEnv.mjs";
 import { dbQuery } from "../db.js";
 
-const DEMO_NAMES = ["fade master", "clipper king"];
+const DEMO_NAMES = ["fade master", "clipper king", "test"];
 const dryRun = String(process.env.IFCDC_DRY_RUN || "").trim() === "1";
 
 async function count(sql, params = []) {
