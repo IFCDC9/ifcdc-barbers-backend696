@@ -578,14 +578,10 @@ app.use("/api/payments", paypalPaymentRoutes);
 // Aliases (requested naming)
 app.use("/api/paypal", paypalPaymentRoutes);
 
-// Persistent media: Supabase Storage + Postgres (profiles, CMS styles, /api/upload)
-const { cmsStylesRouter } = await mountProductionCms(app);
-app.use("/api/styles", cmsStylesRouter);
-
-// Booking styles (UUID `styles` table; multipart uploads → Supabase)
-const stylesRouter = createStylesRouter();
-app.use("/api/styles", stylesRouter);
-app.use("/styles", stylesRouter);
+// CMS + booking styles mounted in startServer() (after DB migrations, before listen).
+const apiStylesStack = express.Router();
+app.use("/api/styles", apiStylesStack);
+app.use("/styles", apiStylesStack);
 
 const requireBookingsAdmin = createBookingsAdminGuard({ resolveAuthPayload, dbQuery });
 
@@ -983,14 +979,6 @@ for (const auraPath of AURA_CHAT_PATHS) {
 }
 console.log("[boot] mounted POST", AURA_CHAT_PATHS.join(" | "));
 
-app.use((req, res) => {
-  res.status(404).json({
-    error: "not_found",
-    path: req.path,
-    method: req.method,
-  });
-});
-
 async function startServer() {
   // DB migrations needed for auth / RBAC.
   try {
@@ -1036,6 +1024,25 @@ async function startServer() {
   if (typeof paypalPaymentRoutes.probePayPalOAuthAndLog === "function") {
     await paypalPaymentRoutes.probePayPalOAuthAndLog();
   }
+
+  try {
+    const { cmsStylesRouter } = await mountProductionCms(app);
+    apiStylesStack.use(cmsStylesRouter);
+    apiStylesStack.use(createStylesRouter());
+    console.log("[boot] mounted production CMS + styles routes");
+  } catch (e) {
+    console.error("[boot] production CMS mount failed:", e?.message || e);
+    apiStylesStack.use(createStylesRouter());
+  }
+
+  app.use((req, res) => {
+    res.status(404).json({
+      error: "not_found",
+      path: req.path,
+      method: req.method,
+    });
+  });
+
   const server = app.listen(PORT, "0.0.0.0", () => {
     try {
       const stack = app?._router?.stack;

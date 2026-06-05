@@ -5,6 +5,7 @@
  */
 const BACKEND = "https://ifcdc-barbers-backend696.onrender.com";
 const CANONICAL = "https://ifcdcbarbersapp.com";
+const EXPECTED_COMMIT_SHORT = "f58bdaf3";
 
 let failed = 0;
 function pass(label, ok, detail = "") {
@@ -29,6 +30,13 @@ console.log("\n=== IFCDC production cleanup verification ===\n");
 
 const deploy = await fetchJson(`${BACKEND}/api/deploy-info`);
 pass("Backend deploy-info reachable", deploy.res.ok, `HTTP ${deploy.res.status}`);
+
+const liveShort = String(deploy.data?.activeCommitShort || "").slice(0, 8);
+pass(
+  `Backend running commit ${EXPECTED_COMMIT_SHORT}`,
+  liveShort === EXPECTED_COMMIT_SHORT,
+  liveShort ? `live=${liveShort} (deploy may still be in progress)` : "unknown",
+);
 
 const web = deploy.data?.publicWeb || {};
 pass(

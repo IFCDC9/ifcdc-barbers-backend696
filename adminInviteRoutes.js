@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { createRequire } from "node:module";
 import express from "express";
 import { resolveAuthPayload } from "./authRoutes.js";
 import { isJwtGlobalSuperScope } from "./authPlatformJwt.js";
@@ -89,6 +90,7 @@ function validateInviteRole(scope, email, role) {
   return { ok: true };
 }
 
+const require = createRequire(import.meta.url);
 const { resolvePublicWebOrigin, buildInviteAcceptUrl } = require("./publicSiteConfig.cjs");
 
 function inviteAcceptBaseUrl() {

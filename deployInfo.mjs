@@ -16,7 +16,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 /** Payment/fix baseline + deploy verification (any of these shorts = acceptable on Render). */
 export const PAYMENT_FIX_COMMIT_SHORT = "8a3a601d";
 export const DEPLOY_INFO_COMMIT_SHORT = "24354b7b";
-const ACCEPTABLE_COMMIT_SHORTS = [PAYMENT_FIX_COMMIT_SHORT, DEPLOY_INFO_COMMIT_SHORT];
+export const PROD_CLEANUP_COMMIT_SHORT = "f58bdaf3";
+const ACCEPTABLE_COMMIT_SHORTS = [
+  PAYMENT_FIX_COMMIT_SHORT,
+  DEPLOY_INFO_COMMIT_SHORT,
+  PROD_CLEANUP_COMMIT_SHORT,
+];
 export const EXPECTED_DEPLOY_COMMIT = "8a3a601dc4294390c733b76536f73054477c580a";
 export const EXPECTED_DEPLOY_COMMIT_SHORT = PAYMENT_FIX_COMMIT_SHORT;
 
