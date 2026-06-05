@@ -56,6 +56,8 @@ export async function ensureStylesTables() {
 
   await dbQuery(`CREATE INDEX IF NOT EXISTS styles_barber_id_idx ON styles (barber_id);`);
   await dbQuery(`CREATE INDEX IF NOT EXISTS styles_created_at_idx ON styles (created_at DESC);`);
+  await dbQuery(`ALTER TABLE styles ADD COLUMN IF NOT EXISTS is_published BOOLEAN NOT NULL DEFAULT TRUE;`);
+  await dbQuery(`CREATE INDEX IF NOT EXISTS styles_published_idx ON styles (is_published) WHERE is_published = true;`);
 }
 
 export async function seedSampleStylesIfEmpty() {

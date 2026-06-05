@@ -31,8 +31,8 @@ export default function StylesBrowse() {
   const barberNameById = useMemo(() => {
     const m = new Map();
     for (const b of barbers) {
-      const id = Number(b.id);
-      if (Number.isFinite(id)) m.set(id, String(b.name || "").trim());
+      const id = String(b.id ?? "").trim();
+      if (id) m.set(id, String(b.name || "").trim());
     }
     return m;
   }, [barbers]);
@@ -42,7 +42,7 @@ export default function StylesBrowse() {
   }, [styles]);
 
   const goBook = (s) => {
-    const bid = Number(s.barber_id);
+    const bid = String(s.barber_id ?? "").trim();
     const name = barberNameById.get(bid) || `Barber ${bid}`;
     const payload = {
       styleId: s.id,
@@ -80,7 +80,7 @@ export default function StylesBrowse() {
           {sortedStyles.map((s) => {
             const img = mediaUrl(s.image_url);
             const price = Number(s.price) > 0 ? Number(s.price) : 25;
-            const barber = barberNameById.get(Number(s.barber_id)) || `Barber ${s.barber_id}`;
+            const barber = barberNameById.get(String(s.barber_id)) || `Barber ${s.barber_id}`;
             return (
               <li key={s.id} className="ifcdc-styles-browse__card">
                 <div className="ifcdc-styles-browse__img-wrap">

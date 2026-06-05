@@ -1,6 +1,9 @@
-import { dbQuery } from "./db.js";
+import { createRequire } from "node:module";
 import { roundMoney2, computeChargeBreakdown, enforcePlatformFeeOnBreakdown } from "./styleBookingPricing.js";
 import { loadBarberDepositPricingOpts } from "./barberScope.js";
+
+const requireCjs = createRequire(import.meta.url);
+const { resolveBookingStyleRow } = requireCjs("./publicBookingStyles.cjs");
 
 /**
  * Server-only booking charge math for a style + barber (PayPal + persistence).
@@ -17,21 +20,10 @@ export async function computeStyleBookingBreakdown({ styleId, barberId, paymentT
     return { ok: false, status: 400, error: "invalid_input", message: "styleId and barberId required" };
   }
 
-  const sr = await dbQuery(
-    `SELECT id, barber_id, title, image_url, price::float8 AS price FROM styles WHERE id = $1::uuid LIMIT 1`,
-    [sid],
-  );
-  const style = sr.rows?.[0];
+  const { dbQuery } = await import("./db.js");
+  const style = await resolveBookingStyleRow(dbQuery, sid, bidRaw);
   if (!style) {
     return { ok: false, status: 404, error: "style_not_found", message: "Style not found" };
-  }
-  if (String(style.barber_id) !== String(bidRaw)) {
-    return {
-      ok: false,
-      status: 400,
-      error: "barber_mismatch",
-      message: "This style does not belong to the selected barber",
-    };
   }
 
   const stylePrice = roundMoney2(Number(style.price));

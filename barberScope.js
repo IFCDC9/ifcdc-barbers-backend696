@@ -299,8 +299,8 @@ export async function resolveOrCreateBarberClientId(barberId, customerName, cust
  * @param {number} barberId
  */
 export async function buildPublicBarberPricingResponse(barberId) {
-  const bid = Number(barberId);
-  if (!Number.isFinite(bid)) return null;
+  const bid = String(barberId ?? "").trim();
+  if (!bid) return null;
 
   const settings = await loadBarberSettingsRow(bid);
   const depositOpts = await loadBarberDepositPricingOpts(bid);
@@ -311,7 +311,7 @@ export async function buildPublicBarberPricingResponse(barberId) {
   const svc = await dbQuery(
     `SELECT id, name, description, icon, price::float8 AS price, duration_minutes, is_active
      FROM barber_services
-     WHERE barber_id = $1 AND is_active = true
+     WHERE barber_id::text = $1::text AND is_active = true
      ORDER BY id ASC
      LIMIT 100`,
     [bid],

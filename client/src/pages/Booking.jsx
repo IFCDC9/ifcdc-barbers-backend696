@@ -234,7 +234,7 @@ function BookingPayPalBlock({
                 price: totalPriceUsd,
                 paymentType,
                 ...(form.barberId != null && form.barberId !== ""
-                  ? { barberId: Number(form.barberId) }
+                  ? { barberId: String(form.barberId) }
                   : {}),
                 ...(Number(tipPercent) > 0 ? { tipPercent: Number(tipPercent) } : {}),
                 ...(Number(tipAmount) > 0 ? { tipAmount: Number(tipAmount) } : {}),
@@ -459,7 +459,7 @@ export default function Booking() {
     setForm((prev) => ({
       ...prev,
       barber: String(selectedStyle.barberName || prev.barber),
-      barberId: Number(selectedStyle.barberId),
+      barberId: String(selectedStyle.barberId ?? ""),
       service: String(selectedStyle.title || prev.service),
     }));
   }, [selectedStyle]);
@@ -491,13 +491,13 @@ export default function Booking() {
   }, []);
 
   useEffect(() => {
-    const id = selectedStyle?.barberId ?? form.barberId;
-    if (id == null || !Number.isFinite(Number(id))) {
+    const id = String(selectedStyle?.barberId ?? form.barberId ?? "").trim();
+    if (!id) {
       setBarberPricing(null);
       return;
     }
     let cancelled = false;
-    fetchBarberPublicPricing(Number(id)).then((data) => {
+    fetchBarberPublicPricing(id).then((data) => {
       if (cancelled) return;
       if (data && typeof data === "object") setBarberPricing(data);
       else setBarberPricing(null);
@@ -508,15 +508,15 @@ export default function Booking() {
   }, [selectedStyle?.barberId, form.barberId]);
 
   useEffect(() => {
-    const bid = selectedStyle?.barberId ?? form.barberId;
+    const bid = String(selectedStyle?.barberId ?? form.barberId ?? "").trim();
     const sid = selectedStyle?.styleId;
-    if (!sid || bid == null || !Number.isFinite(Number(bid))) {
+    if (!sid || !bid) {
       setServerQuote(null);
       return;
     }
     let cancelled = false;
     setQuoteLoading(true);
-    fetchBookingQuote(Number(bid), {
+    fetchBookingQuote(bid, {
       styleId: String(sid),
       paymentType: "full",
       ...tipOpts,
@@ -571,9 +571,9 @@ export default function Booking() {
       if (barberHint && selectedStyle?.barberId != null) {
         const norm = String(barberHint).trim().toLowerCase();
         const found = barberOptions.find((b) => String(b.name || "").trim().toLowerCase() === norm);
-        if (found && Number(found.id) === Number(selectedStyle.barberId)) {
+        if (found && String(found.id) === String(selectedStyle.barberId)) {
           next.barber = String(found.name);
-          next.barberId = Number(found.id);
+          next.barberId = String(found.id);
         }
       }
       return next;
@@ -596,10 +596,7 @@ export default function Booking() {
     setForm((prev) => ({
       ...prev,
       barber: name,
-      barberId:
-        found != null && (typeof found.id === "number" || /^\d+$/.test(String(found.id)))
-          ? Number(found.id)
-          : undefined,
+      barberId: found != null && found.id != null ? String(found.id) : undefined,
     }));
   };
 
@@ -721,7 +718,7 @@ export default function Booking() {
       service: form.service.trim(),
       barber: form.barber.trim(),
       price: stylePriceUsd,
-      ...(form.barberId != null && form.barberId !== "" ? { barberId: Number(form.barberId) } : {}),
+      ...(form.barberId != null && form.barberId !== "" ? { barberId: String(form.barberId) } : {}),
     };
     if (paymentMode === "hybrid") {
       payload.paymentMethod = "direct";
@@ -1097,7 +1094,7 @@ export default function Booking() {
             paymentType={breakdown.paymentType}
             totalPriceUsd={breakdown.totalPrice}
             styleId={selectedStyle.styleId}
-            barberId={Number(selectedStyle.barberId)}
+            barberId={String(selectedStyle.barberId ?? "")}
             tipPercent={["5", "10", "15"].includes(tipChoice) ? Number(tipChoice) : 0}
             tipAmount={tipChoice === "custom" && Number(customTip) > 0 ? Number(customTip) : 0}
             setPaid={setPaid}

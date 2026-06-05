@@ -11,7 +11,11 @@ import {
   recordStatusChange,
 } from "./bookingStatusEngine.js";
 import { getPayPalHttpClient, ordersGetRequest } from "./paypalClient.js";
+import { createRequire } from "node:module";
 import { roundMoney2, depositsAllowedForBooking, enforcePlatformFeeOnBreakdown } from "./styleBookingPricing.js";
+
+const requireCjs = createRequire(import.meta.url);
+const { resolveBookingStyleRow: resolveBookingStyleRowCjs } = requireCjs("./publicBookingStyles.cjs");
 import {
   assertSlotWithinAvailability,
   loadBarberDepositPricingOpts,
@@ -119,14 +123,16 @@ async function canMarkBookingPaid(req, bookingRow) {
   return Number(myBarberId) === Number(bookingRow?.barber_id);
 }
 
-async function loadStyleRow(styleId) {
-  const id = String(styleId || "").trim();
-  if (!id) return null;
-  const r = await dbQuery(
-    `SELECT id, barber_id, title, image_url, price::float8 AS price FROM styles WHERE id = $1::uuid LIMIT 1`,
-    [id]
-  );
-  return r.rows?.[0] || null;
+async function loadStyleRow(styleId, barberId = null) {
+  const row = await resolveBookingStyleRowCjs(dbQuery, styleId, barberId);
+  if (!row) return null;
+  return {
+    id: row.id,
+    barber_id: row.barber_id,
+    title: row.title,
+    image_url: row.image_url,
+    price: row.price,
+  };
 }
 
 /**

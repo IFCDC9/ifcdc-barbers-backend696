@@ -213,15 +213,15 @@ export async function getBarbers() {
  * @returns {Promise<object | null>}
  */
 export async function fetchBarberPublicPricing(barberId) {
-  const id = Number(barberId);
-  if (!Number.isFinite(id) || id <= 0) return null;
+  const id = String(barberId ?? "").trim();
+  if (!id) return null;
   const base = getApiBase();
   try {
     assertResolvableApiBase(base);
   } catch {
     return null;
   }
-  const url = `${base}/api/barber/public/${id}/pricing`;
+  const url = `${base}/api/barber/public/${encodeURIComponent(id)}/pricing`;
   try {
     const res = await fetch(url, { method: "GET", headers: { Accept: "application/json" } });
     const text = await res.text();
@@ -238,11 +238,11 @@ export async function fetchBarberPublicPricing(barberId) {
  * @param {{ styleId: string, paymentType?: string, tipPercent?: number, tipAmount?: number }} body
  */
 export async function fetchBookingQuote(barberId, body) {
-  const id = Number(barberId);
-  if (!Number.isFinite(id) || id <= 0) return null;
+  const id = String(barberId ?? "").trim();
+  if (!id) return null;
   const base = getApiBase();
   assertResolvableApiBase(base);
-  const url = `${base}/api/barber/public/${id}/booking-quote`;
+  const url = `${base}/api/barber/public/${encodeURIComponent(id)}/booking-quote`;
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },

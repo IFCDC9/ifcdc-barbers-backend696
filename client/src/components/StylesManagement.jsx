@@ -28,17 +28,16 @@ export default function StylesManagement({ lockedBarberId = null, onChanged }) {
   }, [load]);
 
   const stylesForSelected = React.useMemo(() => {
-    const id = selectedBarberId ? Number(selectedBarberId) : null;
-    if (!id || !Number.isFinite(id)) return [];
-    return (Array.isArray(styles) ? styles : []).filter((s) => Number(s.barber_id) === id);
+    const id = selectedBarberId ? String(selectedBarberId).trim() : "";
+    if (!id) return [];
+    return (Array.isArray(styles) ? styles : []).filter((s) => String(s.barber_id) === id);
   }, [styles, selectedBarberId]);
 
   const submit = async () => {
     setMsg("");
-    const barberId = lockedBarberId != null ? lockedBarberId : Number(selectedBarberId);
-    if (!barberId || !Number.isFinite(Number(barberId))) return setMsg("Select a barber.");
+    const barberId = lockedBarberId != null ? lockedBarberId : String(selectedBarberId || "").trim();
+    if (!barberId) return setMsg("Select a barber.");
     if (!title.trim()) return setMsg("Title required.");
-    if (!file) return setMsg("Choose an image.");
 
     setBusy(true);
     try {
@@ -85,6 +84,22 @@ export default function StylesManagement({ lockedBarberId = null, onChanged }) {
       setMsg("Updated.");
     } catch (e) {
       setMsg(e?.message || "Update failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const togglePublish = async (s) => {
+    const next = s.is_published === false;
+    setBusy(true);
+    setMsg("");
+    try {
+      await updateStyle(s.id, { is_published: next });
+      await load();
+      onChanged?.();
+      setMsg(next ? "Style published to booking." : "Style unpublished.");
+    } catch (e) {
+      setMsg(e?.message || "Publish toggle failed");
     } finally {
       setBusy(false);
     }
@@ -251,9 +266,17 @@ export default function StylesManagement({ lockedBarberId = null, onChanged }) {
                     </p>
                     {s.description ? <p className="ifcdc-style-desc">{s.description}</p> : null}
                     <div className="ifcdc-style-cat">{s.category || "other"}</div>
-                    <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
+                    <div style={{ display: "flex", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
                       <button type="button" onClick={() => startEdit(s)} disabled={busy}>
                         Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void togglePublish(s)}
+                        disabled={busy}
+                        title={s.is_published === false ? "Publish to booking" : "Unpublish from booking"}
+                      >
+                        {s.is_published === false ? "Publish" : "Unpublish"}
                       </button>
                       <button type="button" onClick={() => void remove(s.id)} disabled={busy}>
                         Delete

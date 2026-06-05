@@ -183,8 +183,8 @@ router.post("/create-order", async (req, res) => {
     const { computeStyleBookingBreakdown } = await import("./bookingBreakdown.js");
 
     const styleId = String(raw.styleId || "").trim();
-    const barberId = Number(raw.barberId);
-    if (!styleId || !Number.isFinite(barberId)) {
+    const barberId = String(raw.barberId ?? raw.barber_id ?? "").trim();
+    if (!styleId || !barberId) {
       return res.status(400).json({
         success: false,
         error: "style_required",

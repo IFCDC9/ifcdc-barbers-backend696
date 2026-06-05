@@ -155,12 +155,12 @@ export function createBarberBusinessRouter({ uploadDir } = {}) {
 
   /** Public: live deposit rules + catalog services (no auth). */
   router.get("/api/barber/public/:id/pricing", async (req, res) => {
-    const bid = num(req.params.id, NaN);
-    if (!Number.isFinite(bid)) {
+    const bid = String(req.params.id || "").trim();
+    if (!bid) {
       return res.status(400).json({ error: "invalid_barber_id", message: "Invalid barber id" });
     }
     try {
-      const exists = await dbQuery(`SELECT id FROM barbers WHERE id = $1 LIMIT 1`, [bid]);
+      const exists = await dbQuery(`SELECT id FROM barbers WHERE id::text = $1 LIMIT 1`, [bid]);
       if (!exists.rows?.length) {
         return res.status(404).json({ error: "not_found", message: "Barber not found" });
       }
@@ -174,12 +174,12 @@ export function createBarberBusinessRouter({ uploadDir } = {}) {
 
   /** Public: authoritative charge breakdown (service + platform fee + tip) for PayPal + UI. */
   router.post("/api/barber/public/:id/booking-quote", async (req, res) => {
-    const bid = num(req.params.id, NaN);
-    if (!Number.isFinite(bid)) {
+    const bid = String(req.params.id || "").trim();
+    if (!bid) {
       return res.status(400).json({ error: "invalid_barber_id", message: "Invalid barber id" });
     }
     try {
-      const exists = await dbQuery(`SELECT id FROM barbers WHERE id = $1 LIMIT 1`, [bid]);
+      const exists = await dbQuery(`SELECT id FROM barbers WHERE id::text = $1 LIMIT 1`, [bid]);
       if (!exists.rows?.length) {
         return res.status(404).json({ error: "not_found", message: "Barber not found" });
       }

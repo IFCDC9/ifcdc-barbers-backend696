@@ -1,11 +1,23 @@
 import express from "express";
 import multer from "multer";
+import { createRequire } from "node:module";
 import { dbQuery } from "./db.js";
 import { STYLE_CATEGORIES } from "./stylesMigrations.js";
 import { requireAuthOrAdminSecret, requireRole } from "./authRoutes.js";
 import { uploadBarberStyleImage } from "./src/services/storageUpload.js";
 import { listStylesWithImages } from "./src/services/barberCmsStore.js";
 import { getProfileById } from "./src/services/barberProfileStore.js";
+
+const requireCjs = createRequire(import.meta.url);
+const {
+  listAllPublishedBookingStyles,
+  listPublishedBookingStylesForBarber,
+  resolveBookingStyleRow,
+  upsertBarberServiceStyle,
+  setBarberServicePublished,
+  parseServiceStyleId,
+} = requireCjs("./publicBookingStyles.cjs");
+const { isUuidBarberId } = requireCjs("./barberIdentity.cjs");
 
 function normalizeCategory(raw) {
   const v = String(raw || "").trim().toLowerCase();
@@ -30,69 +42,57 @@ export function createStylesRouter() {
     limits: { fileSize: 8 * 1024 * 1024 },
   });
 
-  // Public
+  // Public — published bookable styles (barber_services + legacy styles table)
   router.get("/", async (_req, res) => {
-    const r = await dbQuery(
-      `SELECT id, barber_id, title, description, image_url, category, price::float8 AS price, created_at
-       FROM styles
-       ORDER BY created_at DESC
-       LIMIT 500`
-    );
-    res.json({ styles: r.rows || [] });
+    try {
+      const styles = await listAllPublishedBookingStyles(dbQuery);
+      res.set("Cache-Control", "public, max-age=30");
+      return res.json({ ok: true, styles });
+    } catch (e) {
+      console.error("[styles] public list:", e);
+      return res.status(500).json({ error: "list_failed", message: e?.message || String(e) });
+    }
   });
 
-  /** Public: single style by UUID (used for pricing validation). */
+  /** Public: single style by id (svc-* or UUID). */
   router.get("/by/:id", async (req, res) => {
     const id = String(req.params.id || "").trim();
     if (!id) return res.status(400).json({ error: "id_required" });
-    const r = await dbQuery(
-      `SELECT id, barber_id, title, description, image_url, category, price::float8 AS price, created_at
-       FROM styles
-       WHERE id = $1::uuid
-       LIMIT 1`,
-      [id]
-    );
-    const row = r.rows?.[0];
-    if (!row) return res.status(404).json({ error: "not_found" });
-    res.json({ style: row });
+    const style = await resolveBookingStyleRow(dbQuery, id);
+    if (!style) return res.status(404).json({ error: "not_found" });
+    return res.json({ style });
   });
 
   // Back-compat path (must be before "/:barberId" so "barber" is not parsed as id)
   router.get("/barber/:barberId", async (req, res) => {
-    const barberId = Number(req.params.barberId);
-    if (!Number.isFinite(barberId)) return res.status(400).json({ error: "invalid_barber_id" });
-    try {
-      const cms = await listStylesWithImages(barberId);
-      if (cms.length) {
-        return res.json({ ok: true, barberId, styles: cms });
-      }
-    } catch (e) {
-      console.warn("[styles] CMS list fallback:", e?.message || e);
+    const barberIdRaw = String(req.params.barberId || "").trim();
+    if (!barberIdRaw) return res.status(400).json({ error: "invalid_barber_id" });
+
+    const published = await listPublishedBookingStylesForBarber(dbQuery, barberIdRaw);
+    if (published.length) {
+      return res.json({ ok: true, barberId: barberIdRaw, styles: published });
     }
-    const r = await dbQuery(
-      `SELECT id, barber_id, title, description, image_url, category, price::float8 AS price, created_at
-       FROM styles
-       WHERE barber_id = $1
-       ORDER BY created_at DESC
-       LIMIT 200`,
-      [barberId]
-    );
-    res.json({ styles: r.rows || [] });
+
+    const barberId = Number(barberIdRaw);
+    if (Number.isFinite(barberId)) {
+      try {
+        const cms = await listStylesWithImages(barberId);
+        if (cms.length) {
+          return res.json({ ok: true, barberId, styles: cms });
+        }
+      } catch (e) {
+        console.warn("[styles] CMS list fallback:", e?.message || e);
+      }
+    }
+    return res.json({ ok: true, barberId: barberIdRaw, styles: [] });
   });
 
-  // Public (numeric barber id)
+  // Public list by barber id (UUID or numeric)
   router.get("/:barberId", async (req, res) => {
-    const barberId = Number(req.params.barberId);
-    if (!Number.isFinite(barberId)) return res.status(400).json({ error: "invalid_barber_id" });
-    const r = await dbQuery(
-      `SELECT id, barber_id, title, description, image_url, category, price::float8 AS price, created_at
-       FROM styles
-       WHERE barber_id = $1
-       ORDER BY created_at DESC
-       LIMIT 200`,
-      [barberId]
-    );
-    res.json({ styles: r.rows || [] });
+    const barberIdRaw = String(req.params.barberId || "").trim();
+    if (!barberIdRaw || barberIdRaw === "by") return res.status(400).json({ error: "invalid_barber_id" });
+    const styles = await listPublishedBookingStylesForBarber(dbQuery, barberIdRaw);
+    return res.json({ ok: true, styles });
   });
 
   // Create style (multipart: image + fields)
@@ -112,18 +112,28 @@ export function createStylesRouter() {
 
       if (!title) return res.status(400).json({ error: "title_required" });
 
-      let barberId = Number(barberIdRaw);
+      let barberId = barberIdRaw;
       if (role === "barber") {
         const myBarberId = await getBarberIdForBarberUser(req.user?.id);
         if (!myBarberId) return res.status(403).json({ error: "barber_unlinked", message: "Barber account not linked to a barberId." });
         barberId = myBarberId;
       }
-      if (!Number.isFinite(barberId)) return res.status(400).json({ error: "barber_id_required" });
+      if (barberId == null || String(barberId).trim() === "") {
+        return res.status(400).json({ error: "barber_id_required" });
+      }
 
       let imageUrl = String(req.body?.image_url || req.body?.imageUrl || "").trim();
+      const barberIdText = String(barberId).trim();
+      let barberName = `barber-${barberIdText}`;
+      if (isUuidBarberId(barberIdText)) {
+        const br = await dbQuery(`SELECT name FROM barbers WHERE id::text = $1 LIMIT 1`, [barberIdText]);
+        barberName = br.rows?.[0]?.name || barberName;
+      } else {
+        const profile = await getProfileById(Number(barberIdText));
+        barberName = profile?.name || barberName;
+      }
+
       if (req.file?.buffer?.length) {
-        const profile = await getProfileById(barberId);
-        const barberName = profile?.name || `barber-${barberId}`;
         const { url } = await uploadBarberStyleImage({
           buffer: req.file.buffer,
           mimetype: req.file.mimetype,
@@ -132,16 +142,58 @@ export function createStylesRouter() {
         });
         imageUrl = url;
       }
+
+      if (isUuidBarberId(barberIdText) || !Number.isFinite(Number(barberIdText))) {
+        const style = await upsertBarberServiceStyle(dbQuery, {
+          barberId: barberIdText,
+          name: title,
+          description,
+          category,
+          price,
+          durationMinutes: Number(req.body?.durationMinutes) || 30,
+          imageUrl: imageUrl || "https://ifcdcbarbersapp.com/icon-512.png",
+          isActive: req.body?.is_published !== false && req.body?.isPublished !== false,
+        });
+        return res.json({ ok: true, style });
+      }
+
       if (!imageUrl) return res.status(400).json({ error: "image_required" });
 
       const r = await dbQuery(
-        `INSERT INTO styles (barber_id, title, description, image_url, category, price)
-         VALUES ($1, $2, $3, $4, $5, $6)
+        `INSERT INTO styles (barber_id, title, description, image_url, category, price, is_published)
+         VALUES ($1, $2, $3, $4, $5, $6, true)
          RETURNING id, barber_id, title, description, image_url, category, price::float8 AS price, created_at`,
-        [barberId, title, description, imageUrl, category, price]
+        [Number(barberIdText), title, description, imageUrl, category, price]
       );
       res.json({ ok: true, style: r.rows?.[0] });
     }
+  );
+
+  router.patch(
+    "/:id/publish",
+    requireAuthOrAdminSecret,
+    requireRole(["super_admin", "admin", "barber"]),
+    async (req, res) => {
+      const id = String(req.params.id || "").trim();
+      const published = req.body?.is_published ?? req.body?.isPublished ?? req.body?.published ?? true;
+      try {
+        if (parseServiceStyleId(id) != null || /^\d+$/.test(id)) {
+          const style = await setBarberServicePublished(dbQuery, id, Boolean(published));
+          return res.json({ ok: true, style, is_published: style.is_published });
+        }
+        const updated = await dbQuery(
+          `UPDATE styles SET is_published = $2 WHERE id = $1::uuid
+           RETURNING id, barber_id, title, description, image_url, category, price::float8 AS price, is_published`,
+          [id, Boolean(published)],
+        );
+        if (!updated.rows?.length) return res.status(404).json({ error: "not_found" });
+        return res.json({ ok: true, style: updated.rows[0], is_published: updated.rows[0].is_published });
+      } catch (e) {
+        const msg = e?.message || String(e);
+        if (msg === "not_found") return res.status(404).json({ error: "not_found" });
+        return res.status(500).json({ error: "publish_failed", message: msg });
+      }
+    },
   );
 
   router.put(
@@ -161,8 +213,25 @@ export function createStylesRouter() {
               return Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : null;
             })()
           : null;
+      const isPublished = req.body?.is_published ?? req.body?.isPublished;
 
-      const existing = await dbQuery(`SELECT id, barber_id FROM styles WHERE id = $1 LIMIT 1`, [id]);
+      const serviceId = parseServiceStyleId(id);
+      if (serviceId != null) {
+        const existing = await resolveBookingStyleRow(dbQuery, id);
+        if (!existing) return res.status(404).json({ error: "not_found" });
+        const style = await upsertBarberServiceStyle(dbQuery, {
+          barberId: existing.barber_id,
+          name: title || existing.title,
+          description: description ?? existing.description,
+          category: category || existing.category,
+          price: price ?? existing.price,
+          serviceId,
+          isActive: isPublished == null ? existing.is_published : Boolean(isPublished),
+        });
+        return res.json({ ok: true, style });
+      }
+
+      const existing = await dbQuery(`SELECT id, barber_id FROM styles WHERE id = $1::uuid LIMIT 1`, [id]);
       const row = existing.rows?.[0] || null;
       if (!row) return res.status(404).json({ error: "not_found" });
 
@@ -178,10 +247,11 @@ export function createStylesRouter() {
          SET title = COALESCE($2, title),
              description = COALESCE($3, description),
              category = COALESCE($4, category),
-             price = COALESCE($5, price)
-         WHERE id = $1
-         RETURNING id, barber_id, title, description, image_url, category, price::float8 AS price, created_at`,
-        [id, title, description, category, price]
+             price = COALESCE($5, price),
+             is_published = CASE WHEN $6::boolean IS NULL THEN is_published ELSE $6::boolean END
+         WHERE id = $1::uuid
+         RETURNING id, barber_id, title, description, image_url, category, price::float8 AS price, is_published, created_at`,
+        [id, title, description, category, price, isPublished == null ? null : Boolean(isPublished)]
       );
       res.json({ ok: true, style: updated.rows?.[0] });
     }
@@ -195,7 +265,13 @@ export function createStylesRouter() {
       const id = String(req.params.id || "").trim();
       const role = getTokenRole(req);
 
-      const existing = await dbQuery(`SELECT id, barber_id FROM styles WHERE id = $1 LIMIT 1`, [id]);
+      const serviceId = parseServiceStyleId(id);
+      if (serviceId != null) {
+        await dbQuery(`UPDATE barber_services SET is_active = false WHERE id = $1`, [serviceId]);
+        return res.json({ ok: true, deletedId: id, unpublished: true });
+      }
+
+      const existing = await dbQuery(`SELECT id, barber_id FROM styles WHERE id = $1::uuid LIMIT 1`, [id]);
       const row = existing.rows?.[0] || null;
       if (!row) return res.status(404).json({ error: "not_found" });
 
@@ -206,8 +282,8 @@ export function createStylesRouter() {
         }
       }
 
-      await dbQuery(`DELETE FROM styles WHERE id = $1`, [id]);
-      res.json({ ok: true, deletedId: id });
+      await dbQuery(`UPDATE styles SET is_published = false WHERE id = $1::uuid`, [id]);
+      res.json({ ok: true, deletedId: id, unpublished: true });
     }
   );
 
