@@ -23,6 +23,7 @@ import Dashboard from "./pages/Dashboard.jsx";
 import BarberSettings from "./pages/BarberSettings.jsx";
 import RequireRole from "./components/RequireRole.jsx";
 import Invite from "./pages/Invite.jsx";
+import PublicLegalPage from "./pages/PublicLegalPage.jsx";
 import IFCDCGlobalFooter from "./components/IFCDCGlobalFooter.jsx";
 
 function AppShell() {
@@ -60,6 +61,8 @@ function AppShell() {
             <Route path="/about" element={<About />} />
             <Route path="/login" element={<Login />} />
             <Route path="/invite" element={<Invite />} />
+            <Route path="/privacy" element={<PublicLegalPage />} />
+            <Route path="/terms" element={<PublicLegalPage />} />
             <Route path="/register" element={<Register />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password" element={<ResetPassword />} />

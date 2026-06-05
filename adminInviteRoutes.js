@@ -89,22 +89,10 @@ function validateInviteRole(scope, email, role) {
   return { ok: true };
 }
 
+const { resolvePublicWebOrigin, buildInviteAcceptUrl } = require("./publicSiteConfig.cjs");
+
 function inviteAcceptBaseUrl() {
-  const raw = String(
-    process.env.FRONTEND_URL ||
-      process.env.PUBLIC_WEB_URL ||
-      process.env.PUBLIC_CLIENT_URL ||
-      process.env.VITE_APP_URL ||
-      process.env.APP_URL ||
-      process.env.PUBLIC_URL ||
-      "",
-  ).trim();
-  const base = raw.replace(/\/$/, "");
-  // Guardrail: never point invite links at the backend API origin.
-  if (base.includes("onrender.com") || base.includes("/api")) {
-    console.warn("[admin/invite] FRONTEND_URL appears to be misconfigured:", base);
-  }
-  return base || "https://ifcdcbarbersapp.com";
+  return resolvePublicWebOrigin();
 }
 
 function buildInviteEmailHtml({ name, role, inviteUrl, welcomeNote }) {
@@ -123,7 +111,7 @@ function buildInviteEmailHtml({ name, role, inviteUrl, welcomeNote }) {
 
 async function sendInviteEmailIfReady({ invite, sendEmail, sendEmailFn }) {
   if (!sendEmail || typeof sendEmailFn !== "function") return false;
-  const inviteUrl = `${inviteAcceptBaseUrl()}/invite?token=${encodeURIComponent(invite.invite_token)}`;
+  const inviteUrl = buildInviteAcceptUrl(invite.invite_token);
   console.log("[admin/invite] Invite URL Generated:", inviteUrl);
   try {
     const result = await sendEmailFn({

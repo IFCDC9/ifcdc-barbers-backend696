@@ -3,6 +3,11 @@ import { Link, useNavigate } from "react-router-dom";
 import { getBarbers, mediaUrl } from "../services/api.js";
 import { formatNanpUsDisplay, nanpDialString } from "../lib/formatNanp.js";
 import { useAuraContactPhone } from "../lib/useAuraContactPhone.js";
+import {
+  PUBLIC_CONTACT_EMAIL,
+  PUBLIC_LEGAL,
+  TESTFLIGHT_CTA,
+} from "../lib/publicSite.js";
 
 function getDistanceKm(lat1, lon1, lat2, lon2) {
   const R = 6371;
@@ -206,6 +211,39 @@ export default function Home() {
 
   return (
     <div className="home-landing">
+      <section className="app-marketing-hero" aria-labelledby="app-marketing-title">
+        <p className="ifcdc-hero-brand">IFCDC BARBERS APP</p>
+        <h1 id="app-marketing-title" className="app-marketing-hero__title">
+          Book. Pay. Confirmed.
+        </h1>
+        <p className="app-marketing-hero__sub">
+          The official IFCDC Barbers platform — secure PayPal checkout, instant booking confirmation,
+          and professional scheduling for customers, barbers, and shop owners.
+        </p>
+        <div className="app-marketing-hero__actions">
+          <a href={TESTFLIGHT_CTA.href} className="app-marketing-hero__btn app-marketing-hero__btn--gold">
+            {TESTFLIGHT_CTA.label}
+          </a>
+          <Link to="/booking" className="app-marketing-hero__btn app-marketing-hero__btn--outline">
+            Book on the web
+          </Link>
+        </div>
+        <p className="app-marketing-hero__hint">{TESTFLIGHT_CTA.hint}</p>
+        <div className="app-marketing-hero__owner">
+          <span>Barber or shop owner?</span>
+          <Link to="/login">Sign in</Link>
+          <span className="app-marketing-hero__sep">·</span>
+          <a href={`mailto:${PUBLIC_CONTACT_EMAIL}?subject=IFCDC%20shop%20onboarding`}>
+            Request access
+          </a>
+        </div>
+        <nav className="app-marketing-hero__legal" aria-label="Legal">
+          <Link to={PUBLIC_LEGAL.privacy}>Privacy Policy</Link>
+          <Link to={PUBLIC_LEGAL.terms}>Terms</Link>
+          <a href={`mailto:${PUBLIC_CONTACT_EMAIL}`}>{PUBLIC_CONTACT_EMAIL}</a>
+        </nav>
+      </section>
+
       <section className="home-hero" aria-labelledby="home-hero-title">
         <p className="ifcdc-hero-brand">IFCDC BARBERS</p>
         <h1 id="home-hero-title" className="home-hero__title">
