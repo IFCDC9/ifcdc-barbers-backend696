@@ -57,6 +57,8 @@ async function main() {
     ["WWW homepage", WWW],
     ["Apex /login", `${APEX}/login`],
     ["Apex /invite", `${APEX}/invite?token=test`],
+    ["Apex /privacy", `${APEX}/privacy`],
+    ["Apex /terms", `${APEX}/terms`],
   ]) {
     const r = await fetchMeta(base);
     if (r.isParking) pass(label, false, "GoDaddy parking/lander");

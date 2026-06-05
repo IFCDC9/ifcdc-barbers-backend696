@@ -2,18 +2,17 @@
 
 **Updated:** 2026-06-05
 
-## Which domain shows GoDaddy?
+## Domain status
 
-| Domain | Current behavior | Use for |
-|--------|------------------|---------|
-| **ifcdcbarbersapp.com** | GoDaddy parking → redirects to `/lander` | **Primary marketing + invites** (after DNS fix) |
-| **www.ifcdcbarbersapp.com** | Same GoDaddy parking | Redirect to apex or CNAME to Render |
-| **ifcdc.org** | GoDaddy parking (same 114-byte HTML) | **Do not use** for app/invites until repointed |
-| **ifcdcbarbersapp.org** | HTTP 404 (not configured) | Not in use |
+| Domain | Status | Use for |
+|--------|--------|---------|
+| **ifcdcbarbersapp.com** | **Live** — IFCDC Barbers React SPA | **Primary marketing, invites, legal** |
+| **www.ifcdcbarbersapp.com** | **Live** — same SPA | Redirect/CNAME to Render static site |
+| **ifcdc-barbers-frontend.onrender.com** | **Live** — same SPA | Fallback if custom domain is down |
+| **ifcdc.org** | Separate org site (may still show GoDaddy parking) | Contact email only — **not** the barbers app |
+| **ifcdcbarbersapp.org** | Not configured | Not in use |
 
-**Working today (official SPA):** https://ifcdc-barbers-frontend.onrender.com
-
-Invite emails use `FRONTEND_URL` or fallback `https://ifcdc-barbers-frontend.onrender.com` until DNS is fixed (`publicSiteConfig.cjs`).
+Invite emails use `FRONTEND_URL` (set to `https://ifcdcbarbersapp.com` on Render) with fallback `PUBLIC_WEB_FALLBACK_URL` → Render SPA (`publicSiteConfig.cjs`).
 
 ---
 
@@ -54,8 +53,8 @@ On **ifcdc-barbers-backend696**:
 
 | Phase | `FRONTEND_URL` |
 |-------|----------------|
-| **Until DNS propagates** | `https://ifcdc-barbers-frontend.onrender.com` |
-| **After DNS live** | `https://ifcdcbarbersapp.com` |
+| **Production (DNS live)** | `https://ifcdcbarbersapp.com` |
+| **Emergency fallback** | `PUBLIC_WEB_FALLBACK_URL=https://ifcdc-barbers-frontend.onrender.com` |
 
 Optional: `PUBLIC_WEB_FALLBACK_URL=https://ifcdc-barbers-frontend.onrender.com`
 

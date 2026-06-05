@@ -17,6 +17,7 @@ const {
   shouldSendPaidConfirmationEmail,
   round2,
 } = require("./bookingPaymentSettlement.cjs");
+const { resolvePublicWebOrigin } = require("./publicSiteConfig.cjs");
 
 function escapeHtml(s) {
   return String(s)
@@ -24,6 +25,17 @@ function escapeHtml(s) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+function publicWebFooterHtml() {
+  const base = resolvePublicWebOrigin();
+  const safe = escapeHtml(base);
+  return `
+  <p style="margin-top:24px;font-size:13px;color:#555;">
+    <a href="${safe}/booking" style="color:#b8860b;">Book again on IFCDC Barbers</a><br/>
+    <a href="${safe}/privacy" style="color:#666;">Privacy Policy</a>
+    · <a href="${safe}/terms" style="color:#666;">Terms</a>
+  </p>`.trim();
 }
 
 function formatResendError(err) {
@@ -244,6 +256,7 @@ function buildCustomerConfirmationEmail(p) {
   ${bookingId ? `<p>Booking ID: <strong>${escapeHtml(bookingId)}</strong></p>` : ""}
   ${captureId ? `<p>${labels.lblPayRef}: ${escapeHtml(String(captureId))}</p>` : ""}
   <p style="margin-top:20px;font-size:13px;color:#555;">Thank you for booking with IFCDC Barbers.</p>
+  ${publicWebFooterHtml()}
 </div>
   `.trim();
 

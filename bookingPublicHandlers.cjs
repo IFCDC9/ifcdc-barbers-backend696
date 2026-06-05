@@ -1,27 +1,14 @@
 /**
  * Public booking handlers — no auth. Used by server.js early mounts and app-bookings router.
  */
-const {
-  fetchPublicBarberServices,
-  BOOKING_BARBER_CATALOG,
-  stripQuotes,
-} = require("./bookingServicesCatalog.cjs");
+const { fetchPublicBarberServices, stripQuotes } = require("./bookingServicesCatalog.cjs");
 
 async function resolveBarberRowByName(dbQuery, barberName) {
   const br = await dbQuery(
     `SELECT id, name, business_id FROM barbers WHERE lower(trim(name)) = lower(trim($1)) ORDER BY id ASC LIMIT 1`,
     [barberName],
   );
-  if (br.rows?.[0]) return br.rows[0];
-  const catalog = BOOKING_BARBER_CATALOG.find(
-    (b) => String(b.name || "").trim().toLowerCase() === String(barberName || "").trim().toLowerCase(),
-  );
-  if (!catalog) return null;
-  const ins = await dbQuery(
-    `INSERT INTO barbers (name, profile_image, bio, location) VALUES ($1, $2, '', '') RETURNING id, name, business_id`,
-    [catalog.name, catalog.profile_image || ""],
-  );
-  return ins.rows?.[0] || null;
+  return br.rows?.[0] || null;
 }
 
 function parseServicesQuery(req) {
@@ -59,28 +46,46 @@ async function handlePublicBarberServicesGet(req, res, dbQuery) {
 }
 
 /**
- * GET /api/app-bookings/barbers — bookable barber list for mobile picker.
+ * GET /api/app-bookings/barbers — bookable barber list for mobile picker (Postgres only).
  */
 async function handlePublicBarbersListGet(_req, res, dbQuery) {
-  for (const b of BOOKING_BARBER_CATALOG) {
-    await resolveBarberRowByName(dbQuery, b.name);
+  let rows = [];
+  try {
+    const r = await dbQuery(
+      `
+      SELECT
+        b.id,
+        COALESCE(NULLIF(trim(p.name), ''), NULLIF(trim(b.name), '')) AS name,
+        COALESCE(NULLIF(trim(p.profile_image_url), ''), NULLIF(trim(b.profile_image), '')) AS photo
+      FROM barbers b
+      LEFT JOIN barber_profiles p
+        ON p.id::text = b.id::text
+        OR lower(trim(p.name)) = lower(trim(b.name))
+      WHERE COALESCE(NULLIF(trim(p.name), ''), NULLIF(trim(b.name), '')) IS NOT NULL
+      ORDER BY lower(COALESCE(NULLIF(trim(p.name), ''), NULLIF(trim(b.name), ''))) ASC
+      LIMIT 500
+      `,
+    );
+    rows = r.rows || [];
+  } catch {
+    const r = await dbQuery(
+      `SELECT id, name, profile_image AS photo
+       FROM barbers
+       WHERE name IS NOT NULL AND trim(name) <> ''
+       ORDER BY lower(trim(name)) ASC
+       LIMIT 500`,
+    );
+    rows = r.rows || [];
   }
-  const r = await dbQuery(
-    `SELECT id, name, profile_image AS photo, profile_image AS image
-     FROM barbers
-     WHERE name IS NOT NULL AND trim(name) <> ''
-     ORDER BY id ASC`,
-  );
-  const catalogNames = new Set(BOOKING_BARBER_CATALOG.map((b) => b.name.trim().toLowerCase()));
-  const barbers = (r.rows || [])
-    .filter((row) => catalogNames.has(String(row.name || "").trim().toLowerCase()))
-    .map((row) => ({
-      id: row.id,
-      name: row.name,
-      photo: row.photo || "",
-      image: row.image || "",
-      active: true,
-    }));
+
+  const barbers = rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    photo: row.photo || "",
+    image: row.photo || "",
+    active: true,
+  }));
+
   res.set("Cache-Control", "no-store");
   return res.json(barbers);
 }

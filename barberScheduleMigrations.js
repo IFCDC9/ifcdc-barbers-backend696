@@ -231,8 +231,14 @@ export async function ensureBarberScheduleSchema(barberIdType) {
   `);
 }
 
-/** Force demo schedule for catalog barbers (Mon–Sun 9:00 AM – 12:30 AM). */
+/** Demo schedule for legacy catalog barbers — skipped in production. */
 export async function seedCatalogBarberAvailability() {
+  const isProd = String(process.env.NODE_ENV || "").toLowerCase() === "production";
+  const allowDemo = String(process.env.IFCDC_ALLOW_DEMO_SEED || "").trim() === "1";
+  if (isProd && !allowDemo) {
+    return { seeded: false, reason: "production_skip" };
+  }
+
   await dbQuery(`
     DELETE FROM barber_availability a
     USING barbers b

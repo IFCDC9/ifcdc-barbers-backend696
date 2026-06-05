@@ -1,12 +1,11 @@
 import express from "express";
 import multer from "multer";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { dbQuery } from "./db.js";
 import { STYLE_CATEGORIES } from "./stylesMigrations.js";
 import { requireAuthOrAdminSecret, requireRole } from "./authRoutes.js";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+import { uploadBarberStyleImage } from "./src/services/storageUpload.js";
+import { listStylesWithImages } from "./src/services/barberCmsStore.js";
+import { getProfileById } from "./src/services/barberProfileStore.js";
 
 function normalizeCategory(raw) {
   const v = String(raw || "").trim().toLowerCase();
@@ -23,18 +22,13 @@ async function getBarberIdForBarberUser(userId) {
   return id == null ? null : Number(id);
 }
 
-export function createStylesRouter({ uploadDir }) {
+export function createStylesRouter() {
   const router = express.Router();
 
-  const stylesUploadDir = uploadDir || path.join(__dirname, "backend", "uploads");
-  const storage = multer.diskStorage({
-    destination: (_req, _file, cb) => cb(null, stylesUploadDir),
-    filename: (_req, file, cb) => {
-      const ext = path.extname(file.originalname || "").slice(0, 12) || ".jpg";
-      cb(null, `style-${Date.now()}-${Math.random().toString(16).slice(2)}${ext}`);
-    },
+  const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 8 * 1024 * 1024 },
   });
-  const upload = multer({ storage });
 
   // Public
   router.get("/", async (_req, res) => {
@@ -67,6 +61,14 @@ export function createStylesRouter({ uploadDir }) {
   router.get("/barber/:barberId", async (req, res) => {
     const barberId = Number(req.params.barberId);
     if (!Number.isFinite(barberId)) return res.status(400).json({ error: "invalid_barber_id" });
+    try {
+      const cms = await listStylesWithImages(barberId);
+      if (cms.length) {
+        return res.json({ ok: true, barberId, styles: cms });
+      }
+    } catch (e) {
+      console.warn("[styles] CMS list fallback:", e?.message || e);
+    }
     const r = await dbQuery(
       `SELECT id, barber_id, title, description, image_url, category, price::float8 AS price, created_at
        FROM styles
@@ -118,7 +120,18 @@ export function createStylesRouter({ uploadDir }) {
       }
       if (!Number.isFinite(barberId)) return res.status(400).json({ error: "barber_id_required" });
 
-      const imageUrl = req.file ? `/uploads/${req.file.filename}` : String(req.body?.image_url || req.body?.imageUrl || "").trim();
+      let imageUrl = String(req.body?.image_url || req.body?.imageUrl || "").trim();
+      if (req.file?.buffer?.length) {
+        const profile = await getProfileById(barberId);
+        const barberName = profile?.name || `barber-${barberId}`;
+        const { url } = await uploadBarberStyleImage({
+          buffer: req.file.buffer,
+          mimetype: req.file.mimetype,
+          barberName,
+          originalName: req.file.originalname || "style.jpg",
+        });
+        imageUrl = url;
+      }
       if (!imageUrl) return res.status(400).json({ error: "image_required" });
 
       const r = await dbQuery(

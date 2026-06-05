@@ -1,10 +1,9 @@
 /**
- * Canonical public web origin for IFCDC Barbers (SPA, invites, legal).
- * Production custom domain: ifcdcbarbersapp.com (after GoDaddy DNS → Render).
+ * Canonical public web origin for IFCDC Barbers (SPA, invites, legal, share links).
  */
 export const CANONICAL_PUBLIC_ORIGIN = "https://ifcdcbarbersapp.com";
 
-/** Live SPA on Render until custom domain DNS is cut over. */
+/** Emergency fallback only — production uses CANONICAL_PUBLIC_ORIGIN. */
 export const RENDER_FRONTEND_ORIGIN = "https://ifcdc-barbers-frontend.onrender.com";
 
 export const PUBLIC_CONTACT_EMAIL = "service@ifcdc.org";

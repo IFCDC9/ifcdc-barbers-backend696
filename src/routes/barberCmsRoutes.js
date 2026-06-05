@@ -39,12 +39,12 @@ stylesRouter.get("/barber/:barberId", async (req, res) => {
   }
 })
 
-/** GET /api/styles?barberId= — public alias */
-stylesRouter.get("/", async (req, res) => {
+/** GET /api/styles?barberId= — public alias (no barberId → fall through to legacy UUID styles list) */
+stylesRouter.get("/", async (req, res, next) => {
   try {
     const barberId = req.query?.barberId
     if (barberId == null || String(barberId).trim() === "") {
-      return jsonErr(res, 400, "barberId_required", "Use GET /api/styles/barber/:barberId or ?barberId=")
+      return next("router")
     }
     return await listStylesHandler(barberId, res)
   } catch (e) {
@@ -63,8 +63,14 @@ stylesRouter.get("/:barberId(\\d+)", async (req, res) => {
   }
 })
 
-/** POST /api/styles — admin */
-stylesRouter.post("/", requireAdmin, async (req, res) => {
+/** POST /api/styles — admin JSON create (multipart booking styles → legacy router) */
+stylesRouter.post("/", (req, res, next) => {
+  const ct = String(req.headers["content-type"] || "")
+  if (ct.includes("multipart/form-data")) {
+    return next("router")
+  }
+  return requireAdmin(req, res, next)
+}, async (req, res) => {
   try {
     const style = await createStyle({
       barberId: req.body?.barberId,

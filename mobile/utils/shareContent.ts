@@ -26,11 +26,15 @@ export const APP_BRAND_NAME = "IFCDC Barbers";
  * Canonical: https://ifcdcbarbersapp.com (after GoDaddy DNS → Render).
  * Interim live SPA: Render frontend until DNS cutover.
  */
+export const CANONICAL_LANDING_URL = "https://ifcdcbarbersapp.com";
+
+/** Render SPA fallback when custom domain is unreachable. */
+export const RENDER_LANDING_URL = "https://ifcdc-barbers-frontend.onrender.com";
+
 export const APP_LANDING_URL =
   (typeof process !== "undefined" &&
     String(process.env.EXPO_PUBLIC_WEB_URL || process.env.EXPO_PUBLIC_LANDING_URL || "").trim()) ||
-  "https://ifcdc-barbers-frontend.onrender.com";
-export const CANONICAL_LANDING_URL = "https://ifcdcbarbersapp.com";
+  CANONICAL_LANDING_URL;
 
 const TAG_LINE = `Booked through ${APP_BRAND_NAME}`;
 const FOOTER = `${TAG_LINE}\n${APP_LANDING_URL}`;

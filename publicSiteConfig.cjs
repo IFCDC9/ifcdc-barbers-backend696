@@ -14,9 +14,9 @@ function looksLikeApiOrigin(url) {
 }
 
 /**
- * SPA origin for invite links and public marketing URLs.
- * Set FRONTEND_URL=https://ifcdcbarbersapp.com after GoDaddy DNS points to Render.
- * Until then, set FRONTEND_URL=https://ifcdc-barbers-frontend.onrender.com (or use fallback).
+ * SPA origin for invite links, booking emails, and public marketing URLs.
+ * Production: FRONTEND_URL=https://ifcdcbarbersapp.com (Render backend696 env).
+ * PUBLIC_WEB_FALLBACK_URL is emergency fallback only (Render SPA).
  */
 function resolvePublicWebOrigin() {
   const configured = stripTrailingSlash(
@@ -34,7 +34,7 @@ function resolvePublicWebOrigin() {
   const fallback = stripTrailingSlash(
     process.env.PUBLIC_WEB_FALLBACK_URL || RENDER_FRONTEND_ORIGIN,
   );
-  return fallback || CANONICAL_PUBLIC_ORIGIN;
+  return CANONICAL_PUBLIC_ORIGIN || fallback;
 }
 
 function buildInviteAcceptUrl(inviteToken) {

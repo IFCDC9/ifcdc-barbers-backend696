@@ -1,7 +1,8 @@
 import express from "express"
-import { requireAdmin } from "../middleware/requireAdmin.js"
+import { requireAdminOrAuth } from "../middleware/requireAdminOrAuth.js"
 import { uploadMemory } from "../middleware/uploadMemory.js"
 import { uploadBarberStyleImage } from "../services/storageUpload.js"
+import { requireAuth } from "../../authRoutes.js"
 
 const router = express.Router()
 
@@ -13,8 +14,8 @@ function uploadFileOrPhoto(req, res, next) {
   })
 }
 
-/** POST /api/upload — admin; multipart field `file` or `photo`; optional barberName for storage path */
-router.post("/", requireAdmin, uploadFileOrPhoto, async (req, res) => {
+/** POST /api/upload — admin key or JWT; multipart field `file` or `photo`; optional barberName for storage path */
+router.post("/", requireAdminOrAuth(requireAuth), uploadFileOrPhoto, async (req, res) => {
   try {
     const file = req.file
     if (!file?.buffer?.length) {

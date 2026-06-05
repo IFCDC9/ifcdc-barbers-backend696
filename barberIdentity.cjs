@@ -5,10 +5,8 @@
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-const BOOKING_BARBER_CATALOG = [
-  { name: "Fade Master", profile_image: "/uploads/sample1.jpg", bookingBarberId: 1 },
-  { name: "Clipper King", profile_image: "/uploads/sample2.jpg", bookingBarberId: 2 },
-];
+/** Production uses Postgres only — no hardcoded demo barbers. */
+const BOOKING_BARBER_CATALOG = [];
 
 const BARBER_RESOLVE_MSG = "Unable to confirm barber. Please reselect barber.";
 
@@ -113,12 +111,9 @@ async function ensureBarberRowForServices(dbQuery, name, profileImage = "") {
     [nameRaw],
   );
   if (existing.rows?.[0]) return existing.rows[0];
-  const catalog = BOOKING_BARBER_CATALOG.find(
-    (b) => String(b.name || "").trim().toLowerCase() === nameRaw.toLowerCase(),
-  );
   const ins = await dbQuery(
     `INSERT INTO barbers (name, profile_image, bio, location) VALUES ($1, $2, '', '') RETURNING id, name, business_id`,
-    [nameRaw, catalog?.profile_image || profileImage || ""],
+    [nameRaw, profileImage || ""],
   );
   return ins.rows?.[0] || null;
 }
@@ -130,27 +125,10 @@ async function lookupBarberRow(dbQuery, { idRaw, nameRaw }) {
       [idRaw],
     );
     if (byId.rows?.[0]) return byId.rows[0];
-
-    const catalogByBookingId = BOOKING_BARBER_CATALOG.find(
-      (b) => String(b.bookingBarberId ?? "") === idRaw,
-    );
-    if (catalogByBookingId) {
-      return ensureBarberRowForServices(dbQuery, catalogByBookingId.name, catalogByBookingId.profile_image);
-    }
-    if (/^\d+$/.test(idRaw)) {
-      const idx = Number(idRaw) - 1;
-      if (idx >= 0 && idx < BOOKING_BARBER_CATALOG.length) {
-        const c = BOOKING_BARBER_CATALOG[idx];
-        return ensureBarberRowForServices(dbQuery, c.name, c.profile_image);
-      }
-    }
   }
 
   if (nameRaw) {
-    const catalog = BOOKING_BARBER_CATALOG.find(
-      (b) => String(b.name || "").trim().toLowerCase() === nameRaw.toLowerCase(),
-    );
-    return ensureBarberRowForServices(dbQuery, nameRaw, catalog?.profile_image || "");
+    return ensureBarberRowForServices(dbQuery, nameRaw, "");
   }
 
   return null;

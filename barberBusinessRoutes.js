@@ -21,6 +21,7 @@ import {
 } from "./subscriptionTier.js";
 import { logServiceAudit, logServiceUpdateDiff } from "./serviceAuditLog.js";
 import { writeSecurityAudit } from "./auditSecurity.js";
+import { uploadBarberStyleImage } from "./src/services/storageUpload.js";
 
 function actorFromReq(req) {
   return {
@@ -214,6 +215,10 @@ export function createBarberBusinessRouter({ uploadDir } = {}) {
     },
   });
   const upload = multer({ storage, limits: { fileSize: 8 * 1024 * 1024 } });
+  const uploadMemory = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 8 * 1024 * 1024 },
+  });
 
   const BRANDING_MAX_BYTES = 5 * 1024 * 1024;
   const brandingImageMime = /^image\/(jpeg|pjpeg|png|gif|webp|avif)$/i;
@@ -899,11 +904,22 @@ export function createBarberBusinessRouter({ uploadDir } = {}) {
     }
   });
 
-  router.post("/api/barber/media", ...chain, upload.single("image"), async (req, res) => {
+  router.post("/api/barber/media", ...chain, uploadMemory.single("image"), async (req, res) => {
     try {
       const caption = String(req.body?.caption ?? "").trim().slice(0, 500) || null;
       const sort_order = num(req.body?.sort_order ?? req.body?.sortOrder, 0);
-      const url = req.file ? `/uploads/${req.file.filename}` : String(req.body?.image_url ?? req.body?.imageUrl ?? "").trim();
+      let url = String(req.body?.image_url ?? req.body?.imageUrl ?? "").trim();
+      if (req.file?.buffer?.length) {
+        const br = await dbQuery(`SELECT name FROM barbers WHERE id::text = $1::text LIMIT 1`, [String(req.barberId)]);
+        const barberName = br.rows?.[0]?.name || `barber-${req.barberId}`;
+        const uploaded = await uploadBarberStyleImage({
+          buffer: req.file.buffer,
+          mimetype: req.file.mimetype,
+          barberName,
+          originalName: req.file.originalname || "portfolio.jpg",
+        });
+        url = uploaded.url;
+      }
       if (!url) return res.status(400).json({ error: "validation", message: "Image file or image_url required" });
 
       const ins = await dbQuery(

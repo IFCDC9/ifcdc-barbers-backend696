@@ -31,10 +31,9 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
-      # Until ifcdcbarbersapp.com DNS → Render: use Render SPA URL for invite links.
-      # After DNS cutover: set to https://ifcdcbarbersapp.com in Render dashboard.
+      # Invite emails + public links (SPA). Render fallback if custom domain is down.
       - key: FRONTEND_URL
-        value: https://ifcdc-barbers-frontend.onrender.com
+        value: https://ifcdcbarbersapp.com
       - key: PUBLIC_WEB_FALLBACK_URL
         value: https://ifcdc-barbers-frontend.onrender.com
 

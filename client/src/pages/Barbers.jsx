@@ -3,23 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { getBarbers, getStylesAll, mediaUrl } from "../services/api.js";
 import Lightbox from "../components/Lightbox.jsx";
 
-const SEED = [
-  {
-    id: "seed-mike",
-    name: "Mike",
-    specialty: "Fades, tapers & crisp lineups",
-    experience: "8+ years",
-    image: "",
-  },
-  {
-    id: "seed-jay",
-    name: "Jay",
-    specialty: "Beards, texture & classic cuts",
-    experience: "6+ years",
-    image: "",
-  },
-];
-
 export default function Barbers() {
   const [barbers, setBarbers] = useState([]);
   const [styles, setStyles] = useState([]);
@@ -77,14 +60,14 @@ export default function Barbers() {
       .then((data) => {
         if (!cancelled) {
           const list = Array.isArray(data) ? data : [];
-          setBarbers(list.length ? list : SEED);
-          setError(null);
+          setBarbers(list);
+          setError(list.length ? null : "No barbers listed yet. Add barbers in Admin.");
         }
       })
-      .catch(() => {
+      .catch((e) => {
         if (!cancelled) {
-          setBarbers(SEED);
-          setError("Showing sample roster — connect API for live data.");
+          setBarbers([]);
+          setError(e?.message || "Could not load barbers from the API.");
         }
       });
     return () => {

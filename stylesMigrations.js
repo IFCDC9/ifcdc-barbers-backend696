@@ -59,6 +59,12 @@ export async function ensureStylesTables() {
 }
 
 export async function seedSampleStylesIfEmpty() {
+  const isProd = String(process.env.NODE_ENV || "").toLowerCase() === "production";
+  const allowDemo = String(process.env.IFCDC_ALLOW_DEMO_SEED || "").trim() === "1";
+  if (isProd && !allowDemo) {
+    return { seeded: false, reason: "production_skip" };
+  }
+
   const r = await dbQuery(`SELECT COUNT(*)::int AS n FROM styles;`);
   const n = r.rows?.[0]?.n ?? 0;
   if (n > 0) return { seeded: false, reason: "non_empty" };

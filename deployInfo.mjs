@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
+const { resolvePublicWebOrigin, CANONICAL_PUBLIC_ORIGIN } = require("./publicSiteConfig.cjs");
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -98,9 +99,30 @@ export function getDeployInfoPayload() {
     /* optional */
   }
 
+  const resolvedWeb = resolvePublicWebOrigin();
+  const supabaseUrl = String(process.env.SUPABASE_URL || "").trim();
+  const supabaseSecret = Boolean(
+    String(process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim(),
+  );
+
   return {
     ok: true,
     service: "ifcdc-barbers-backend696",
+    publicWeb: {
+      canonicalOrigin: CANONICAL_PUBLIC_ORIGIN,
+      frontendUrlEnv: String(process.env.FRONTEND_URL || "").trim() || null,
+      resolvedOrigin: resolvedWeb,
+      usesCanonicalDomain: resolvedWeb.includes("ifcdcbarbersapp.com"),
+      inviteExample: `${resolvedWeb}/invite?token=…`,
+      privacyUrl: `${resolvedWeb}/privacy`,
+      termsUrl: `${resolvedWeb}/terms`,
+    },
+    persistentStorage: {
+      supabaseConfigured: Boolean(supabaseUrl && supabaseSecret),
+      bucket: String(process.env.SUPABASE_STORAGE_BUCKET || "barber-styles").trim(),
+      uploadsRoute: "/api/upload",
+      note: "Image uploads use Supabase Storage when supabaseConfigured is true; local /uploads is legacy only.",
+    },
     activeCommit: active.full || active.short || null,
     activeCommitShort: active.short || (active.full ? active.full.slice(0, 8) : null),
     commitSource: active.source,

@@ -3,13 +3,15 @@
  * `./loadBackendEnv.mjs` MUST stay first — loads `backend/.env` (absolute path) before other imports run.
  */
 import "./loadBackendEnv.mjs";
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import cors from "cors";
 import { createRequire } from "module";
 import express from "express";
 import session from "express-session";
-import { mountMinimalIfcdcApi } from "./minimalIfcdcApi.js";
+import { mountProductionBarbersRoutes } from "./productionBarbersRoutes.js";
+import { mountProductionCms } from "./mountProductionCms.js";
 import { createAuthRouter, resolveAuthPayload } from "./authRoutes.js";
 import { ensureUsersRoleColumn, ensureGoogleAuthSupport, ensurePendingInvitesTable, ensurePasswordRecoveryColumns } from "./authDbMigrations.js";
 import { ensureInitialSuperAdmin } from "./seedSuperAdmin.js";
@@ -576,8 +578,12 @@ app.use("/api/payments", paypalPaymentRoutes);
 // Aliases (requested naming)
 app.use("/api/paypal", paypalPaymentRoutes);
 
-// Styles (public read; RBAC write)
-const stylesRouter = createStylesRouter({ uploadDir: path.join(__dirname, "backend", "uploads") });
+// Persistent media: Supabase Storage + Postgres (profiles, CMS styles, /api/upload)
+const { cmsStylesRouter } = await mountProductionCms(app);
+app.use("/api/styles", cmsStylesRouter);
+
+// Booking styles (UUID `styles` table; multipart uploads → Supabase)
+const stylesRouter = createStylesRouter();
 app.use("/api/styles", stylesRouter);
 app.use("/styles", stylesRouter);
 
@@ -631,24 +637,27 @@ console.log("[aura] GET /api/aura/status — wiring check (OpenAI / Twilio flags
 
 // NOTE: in-memory booking routes removed for production persistence.
 
-mountMinimalIfcdcApi(app, {
-  uploadDir: path.join(__dirname, "backend", "uploads"),
-  serveUploads: true,
-  manageMiddleware: (req, res, next) => {
-    const adminKey = String(req.get("x-admin-key") || "").trim();
-    const expected = String(process.env.ADMIN_SECRET || "").trim();
-    if (expected && adminKey && adminKey === expected) return next();
+const manageBarbersMiddleware = (req, res, next) => {
+  const adminKey = String(req.get("x-admin-key") || "").trim();
+  const expected = String(process.env.ADMIN_SECRET || "").trim();
+  if (expected && adminKey && adminKey === expected) return next();
 
-    const hdr = String(req.get("authorization") || "");
-    const token = hdr.toLowerCase().startsWith("bearer ") ? hdr.slice("bearer ".length).trim() : "";
-    if (!token) return res.status(401).json({ ok: false, message: "Missing Bearer token" });
-    const payload = resolveAuthPayload(token);
-    if (!payload) return res.status(401).json({ ok: false, message: "Invalid or expired token" });
-    const role = String(payload?.role || "");
-    if (role === "super_admin" || role === "admin") return next();
-    return res.status(403).json({ ok: false, message: "Access denied" });
-  },
-});
+  const hdr = String(req.get("authorization") || "");
+  const token = hdr.toLowerCase().startsWith("bearer ") ? hdr.slice("bearer ".length).trim() : "";
+  if (!token) return res.status(401).json({ ok: false, message: "Missing Bearer token" });
+  const payload = resolveAuthPayload(token);
+  if (!payload) return res.status(401).json({ ok: false, message: "Invalid or expired token" });
+  const role = String(payload?.role || "");
+  if (role === "super_admin" || role === "admin") return next();
+  return res.status(403).json({ ok: false, message: "Access denied" });
+};
+
+mountProductionBarbersRoutes(app, { manageMiddleware: manageBarbersMiddleware });
+
+// Legacy /uploads paths still served for older rows (new uploads use Supabase public URLs)
+const uploadsDir = path.join(__dirname, "backend", "uploads");
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+app.use("/uploads", express.static(uploadsDir));
 
 app.get("/health", (req, res) => {
   res.json({ ok: true, service: "ifcdc-barbers-api" });

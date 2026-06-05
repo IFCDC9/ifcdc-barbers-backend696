@@ -96,6 +96,9 @@ export async function ensureBarberBusinessTables() {
       ADD COLUMN IF NOT EXISTS billing_subscription_id TEXT NULL;
   `);
 
+  await dbQuery(`ALTER TABLE barber_settings ADD COLUMN IF NOT EXISTS payment_mode TEXT NOT NULL DEFAULT 'platform';`);
+  await dbQuery(`ALTER TABLE barber_settings ADD COLUMN IF NOT EXISTS split_percent INT NOT NULL DEFAULT 80;`);
+  await dbQuery(`ALTER TABLE barber_settings ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true;`);
   await dbQuery(`ALTER TABLE barber_settings ADD COLUMN IF NOT EXISTS is_pro BOOLEAN NOT NULL DEFAULT false;`);
   await dbQuery(
     `ALTER TABLE barber_settings ADD COLUMN IF NOT EXISTS pro_purchase_status VARCHAR(50) NOT NULL DEFAULT 'not_purchased';`,
@@ -202,46 +205,50 @@ export async function ensureBarberBusinessTables() {
     barbersIdType = "unknown";
   }
 
+  const isProd = String(process.env.NODE_ENV || "").toLowerCase() === "production";
+  const allowDemo = String(process.env.IFCDC_ALLOW_DEMO_SEED || "").trim() === "1";
+
   const barbersIdLooksNumeric =
     barbersIdType === "bigint" || barbersIdType === "integer" || barbersIdType === "smallint";
-  if (barbersIdLooksNumeric) {
-    await dbQuery(`
-      INSERT INTO barbers (id, user_id, name, profile_image, bio, location)
-      OVERRIDING SYSTEM VALUE
-      VALUES
-        (1, NULL, 'Fade Master', '/uploads/sample1.jpg', '', ''),
-        (2, NULL, 'Clipper King', '/uploads/sample2.jpg', '', '')
-      ON CONFLICT (id) DO NOTHING;
-    `);
+  if (!isProd || allowDemo) {
+    if (barbersIdLooksNumeric) {
+      await dbQuery(`
+        INSERT INTO barbers (id, user_id, name, profile_image, bio, location)
+        OVERRIDING SYSTEM VALUE
+        VALUES
+          (1, NULL, 'Fade Master', '/uploads/sample1.jpg', '', ''),
+          (2, NULL, 'Clipper King', '/uploads/sample2.jpg', '', '')
+        ON CONFLICT (id) DO NOTHING;
+      `);
+
+      await dbQuery(`
+        SELECT setval(
+          pg_get_serial_sequence('barbers', 'id'),
+          GREATEST((SELECT COALESCE(MAX(id), 1) FROM barbers), 1)
+        );
+      `);
+    }
 
     await dbQuery(`
-      SELECT setval(
-        pg_get_serial_sequence('barbers', 'id'),
-        GREATEST((SELECT COALESCE(MAX(id), 1) FROM barbers), 1)
+      INSERT INTO barbers (name, profile_image, bio, location)
+      SELECT v.name, v.img, '', ''
+      FROM (VALUES
+        ('Fade Master', '/uploads/sample1.jpg'),
+        ('Clipper King', '/uploads/sample2.jpg')
+      ) AS v(name, img)
+      WHERE NOT EXISTS (
+        SELECT 1 FROM barbers b WHERE lower(trim(b.name)) = lower(trim(v.name))
       );
     `);
-  }
 
-  // Ensure catalog barbers exist by name (UUID-id legacy DBs skip numeric seed above).
-  await dbQuery(`
-    INSERT INTO barbers (name, profile_image, bio, location)
-    SELECT v.name, v.img, '', ''
-    FROM (VALUES
-      ('Fade Master', '/uploads/sample1.jpg'),
-      ('Clipper King', '/uploads/sample2.jpg')
-    ) AS v(name, img)
-    WHERE NOT EXISTS (
-      SELECT 1 FROM barbers b WHERE lower(trim(b.name)) = lower(trim(v.name))
-    );
-  `);
+    await seedCatalogBarberAvailability();
+  }
 
   await dbQuery(`
     INSERT INTO barber_settings (barber_id, subscription_tier)
     SELECT b.id, 'pro' FROM barbers b
     WHERE NOT EXISTS (SELECT 1 FROM barber_settings s WHERE s.barber_id = b.id);
   `);
-
-  await seedCatalogBarberAvailability();
 
   try {
     const aligned = await alignLegacyBarberFkColumns();
