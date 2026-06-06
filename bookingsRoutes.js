@@ -14,8 +14,8 @@ import { getPayPalHttpClient, ordersGetRequest } from "./paypalClient.js";
 import { createRequire } from "node:module";
 import { roundMoney2, depositsAllowedForBooking, enforcePlatformFeeOnBreakdown } from "./styleBookingPricing.js";
 
-const requireCjs = createRequire(import.meta.url);
-const { resolveBookingStyleRow: resolveBookingStyleRowCjs } = requireCjs("./publicBookingStyles.cjs");
+const require = createRequire(import.meta.url);
+const { resolveBookingStyleRow: resolveBookingStyleRowCjs } = require("./publicBookingStyles.cjs");
 import {
   assertSlotWithinAvailability,
   loadBarberDepositPricingOpts,
@@ -29,9 +29,7 @@ import { createDepositPaymentLink } from "./depositPaymentLink.js";
 import { tenantMatches } from "./securityPolicy.js";
 import { createPlatformBookingOpsGuard, isPlatformBookingOpsJwt } from "./bookingsAdminGuard.js";
 import { writeSecurityAudit } from "./auditSecurity.js";
-import { createRequire } from "node:module";
 
-const require = createRequire(import.meta.url);
 const {
   resolveBarberIdentity,
   barberIdForTable,

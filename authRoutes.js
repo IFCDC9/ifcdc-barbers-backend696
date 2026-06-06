@@ -13,7 +13,7 @@ import { dbQuery } from "./db.js";
 import { comparePassword, hashPassword, validatePasswordStrength } from "./authPasswordPolicy.js";
 import { jwtClaimsFromAppUser, publicUserFromAppUser } from "./authPlatformJwt.js";
 import { writeSecurityAudit } from "./auditSecurity.js";
-import { CANONICAL_SUPER_ADMIN_EMAIL, isSuperAdminEmail, resolveRoleFromTrustedSource } from "./rolePolicy.js";
+import { CANONICAL_SUPER_ADMIN_EMAIL, isForbiddenPublicSignupRole, isSuperAdminEmail, resolveRoleFromTrustedSource } from "./rolePolicy.js";
 import { recordSignupAcceptanceBatch } from "./legalRoutes.js";
 
 const require = createRequire(import.meta.url);
@@ -147,12 +147,17 @@ export function createAuthRouter({ sendEmail }) {
       const name = String(req.body?.name || "").trim();
       const email = normalizeEmail(req.body?.email);
       const password = String(req.body?.password || "");
-      const wireRole = String(req.body?.role || "").trim().toLowerCase();
-      if (wireRole === "admin" || wireRole === "super_admin") {
-        return res.status(403).json({
-          error: "forbidden_role",
-          message: "Elevated accounts cannot be created through registration.",
-        });
+      const body = req.body && typeof req.body === "object" ? req.body : {};
+      const roleCandidates = [body.role, body.accountType, body.account_type].filter(
+        (v) => v != null && String(v).trim() !== "",
+      );
+      for (const raw of roleCandidates) {
+        if (isForbiddenPublicSignupRole(raw)) {
+          return res.status(403).json({
+            error: "forbidden_role",
+            message: "Elevated accounts cannot be created through registration.",
+          });
+        }
       }
       if (isSuperAdminEmail(email)) {
         return res.status(403).json({
@@ -162,6 +167,12 @@ export function createAuthRouter({ sendEmail }) {
       }
 
       const role = resolveRoleFromTrustedSource(req);
+      if (!role) {
+        return res.status(403).json({
+          error: "forbidden_role",
+          message: "Elevated accounts cannot be created through registration.",
+        });
+      }
       if (role !== "user" && role !== "barber" && role !== "shop_owner") {
         return res.status(400).json({
           error: "invalid_role",

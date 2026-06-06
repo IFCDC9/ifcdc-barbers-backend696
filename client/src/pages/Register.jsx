@@ -103,11 +103,10 @@ export default function Register() {
             <span className="auth-icon" aria-hidden>
               ⌄
             </span>
-            <select name="role" value={form.role} onChange={handleChange} className="auth-input" aria-label="Role">
-              <option value="user">User</option>
+            <select name="role" value={form.role} onChange={handleChange} className="auth-input" aria-label="Account type">
+              <option value="user">Client</option>
               <option value="barber">Barber</option>
-              <option value="admin">Admin</option>
-              <option value="super_admin">Super Admin</option>
+              <option value="shop_owner">Shop owner</option>
             </select>
           </div>
 
