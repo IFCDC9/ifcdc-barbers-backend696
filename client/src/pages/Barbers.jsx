@@ -147,7 +147,11 @@ export default function Barbers() {
             <article key={b.id} className="glass-panel ifcdc-barber-card">
               <div className="ifcdc-barber-card__media">
                 {img ? (
-                  <img src={img.startsWith("http") ? img : mediaUrl(img)} alt="" className="ifcdc-barber-card__img" />
+                  <img
+                    src={img.startsWith("http") ? img : mediaUrl(img)}
+                    alt=""
+                    className="ifcdc-barber-card__img ifcdc-cover-fill"
+                  />
                 ) : (
                   <div className="ifcdc-barber-card__placeholder" aria-hidden />
                 )}

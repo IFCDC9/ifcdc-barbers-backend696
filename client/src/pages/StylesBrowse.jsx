@@ -12,7 +12,7 @@ export default function StylesBrowse() {
 
   useEffect(() => {
     let c = false;
-    Promise.all([getBarbers().catch(() => []), getStylesAll().catch(() => [])])
+    Promise.all([getBarbers(), getStylesAll()])
       .then(([b, s]) => {
         if (!c) {
           setBarbers(Array.isArray(b) ? b : []);
@@ -21,7 +21,11 @@ export default function StylesBrowse() {
         }
       })
       .catch((e) => {
-        if (!c) setError(e?.message || "Could not load styles.");
+        if (!c) {
+          setBarbers([]);
+          setStyles([]);
+          setError(e?.message || "Could not load styles. Check that the API is reachable.");
+        }
       });
     return () => {
       c = true;
@@ -84,7 +88,12 @@ export default function StylesBrowse() {
             return (
               <li key={s.id} className="ifcdc-styles-browse__card">
                 <div className="ifcdc-styles-browse__img-wrap">
-                  <img src={img || ""} alt="" className="ifcdc-styles-browse__img" loading="lazy" />
+                  <img
+                    src={img || ""}
+                    alt=""
+                    className="ifcdc-styles-browse__img ifcdc-cover-fill"
+                    loading="lazy"
+                  />
                 </div>
                 <div className="ifcdc-styles-browse__body">
                   <h2 className="ifcdc-styles-browse__name">{s.title || "Style"}</h2>

@@ -244,7 +244,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     overflow: "hidden",
   },
-  thumb: { width: 52, height: 52 },
+  thumb: { width: 52, height: 52, resizeMode: "cover" },
   thumbIcon: { fontSize: 24 },
   copy: { flex: 1, gap: 3 },
   name: { color: theme.colors.text, fontSize: 16, fontWeight: "700" },

@@ -209,12 +209,14 @@ export default function StylesManagement({ lockedBarberId = null, onChanged }) {
         <div className="ifcdc-style-grid">
           {stylesForSelected.map((s) => (
             <div key={s.id} className="ifcdc-style-card">
-              <img
-                className="ifcdc-style-thumb"
-                src={String(s.image_url || "").startsWith("/") ? mediaUrl(s.image_url) : s.image_url}
-                alt={s.title || ""}
-                loading="lazy"
-              />
+              <div className="ifcdc-cover-media" style={{ aspectRatio: "4 / 5" }}>
+                <img
+                  className="ifcdc-cover-media__img ifcdc-cover-fill"
+                  src={mediaUrl(s.image_url)}
+                  alt={s.title || ""}
+                  loading="lazy"
+                />
+              </div>
               <div className="ifcdc-style-meta">
                 {editingId === s.id ? (
                   <>

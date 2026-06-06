@@ -299,7 +299,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.03)",
     marginBottom: 8,
   },
-  preview: { width: 96, height: 96, borderRadius: 12 },
+  preview: { width: 96, height: 96, borderRadius: 12, resizeMode: "cover" as const },
   previewPlaceholder: { fontSize: 40 },
   uploadHint: { color: theme.colors.gold, fontSize: 13, fontWeight: "600" },
   assigned: { color: theme.colors.textMuted, fontSize: 12, marginTop: 8 },

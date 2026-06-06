@@ -86,6 +86,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 8,
+    resizeMode: 'cover',
   },
   copy: {
     flex: 1,

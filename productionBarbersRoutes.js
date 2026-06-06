@@ -1,5 +1,6 @@
 import express from "express";
 import multer from "multer";
+import { createRequire } from "node:module";
 import { dbQuery } from "./db.js";
 import { uploadBarberStyleImage } from "./src/services/storageUpload.js";
 import {
@@ -11,6 +12,10 @@ import {
 } from "./src/services/barberProfileStore.js";
 import { listStylesWithImages } from "./src/services/barberCmsStore.js";
 
+const requireCjs = createRequire(import.meta.url);
+const { upsertBarberServiceStyle } = requireCjs("./publicBookingStyles.cjs");
+const { isUuidBarberId } = requireCjs("./barberIdentity.cjs");
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 8 * 1024 * 1024 },
@@ -20,6 +25,32 @@ function manageMiddleware(options = {}) {
   const manage =
     typeof options.manageMiddleware === "function" ? options.manageMiddleware : (_req, _res, next) => next();
   return manage;
+}
+
+/** Resolve barber from Postgres UUID (`barbers`) or legacy numeric `barber_profiles`. */
+async function resolveProductionBarber(idRaw) {
+  const idText = String(idRaw ?? "").trim();
+  if (!idText) return null;
+
+  const br = await dbQuery(
+    `SELECT id, name, profile_image, bio FROM barbers WHERE id::text = $1 LIMIT 1`,
+    [idText],
+  );
+  if (br.rows?.[0]) {
+    return { id: br.rows[0].id, name: br.rows[0].name || "Barber", profileImage: br.rows[0].profile_image || "" };
+  }
+
+  if (!isUuidBarberId(idText)) {
+    const n = Number(idText);
+    if (Number.isFinite(n) && n > 0) {
+      const profile = await getProfileById(n);
+      if (profile) {
+        return { id: profile.id, name: profile.name || "Barber", profileImage: profile.profileImageUrl || "" };
+      }
+    }
+  }
+
+  return null;
 }
 
 function mapProfileToBarber(p, extra = {}) {
@@ -160,17 +191,19 @@ export function mountProductionBarbersRoutes(app, options = {}) {
 
   router.post("/barbers/:id/styles", manage, upload.array("styles", 10), async (req, res) => {
     try {
-      const id = Number(req.params.id);
-      if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid_id" });
+      const barber = await resolveProductionBarber(req.params.id);
+      if (!barber) {
+        return res.status(404).json({ error: "not_found", message: "Barber not found" });
+      }
 
-      const profile = await getProfileById(id);
-      const barberName = profile?.name || `barber-${id}`;
+      const barberId = barber.id;
+      const barberName = barber.name || `barber-${barberId}`;
       const files = req.files || [];
       if (!files.length) {
         return res.status(400).json({ error: "Add at least one image (field name: styles)" });
       }
 
-      const urls = [];
+      const createdStyles = [];
       for (const file of files) {
         const { url } = await uploadBarberStyleImage({
           buffer: file.buffer,
@@ -178,28 +211,45 @@ export function mountProductionBarbersRoutes(app, options = {}) {
           barberName,
           originalName: file.originalname || "style.jpg",
         });
-        urls.push(url);
-        const title = String(file.originalname || "Style")
-          .replace(/\.[^.]+$/, "")
-          .trim()
-          .slice(0, 120) || "Style";
-        await dbQuery(
-          `INSERT INTO styles (barber_id, title, description, image_url, category, price)
-           VALUES ($1, $2, NULL, $3, 'other', 25)`,
-          [id, title, url],
-        );
+        const title =
+          String(file.originalname || "Style")
+            .replace(/\.[^.]+$/, "")
+            .trim()
+            .slice(0, 120) || "Style";
+        const style = await upsertBarberServiceStyle(dbQuery, {
+          barberId,
+          name: title,
+          description: null,
+          category: "other",
+          price: 25,
+          durationMinutes: 30,
+          imageUrl: url,
+          isActive: true,
+        });
+        createdStyles.push(style);
       }
 
-      const cms = await listStylesWithImages(id);
-      const styleUrls = cms.flatMap((s) => (Array.isArray(s.images) ? s.images.map((i) => i.url) : []));
-      const allStyles = [...new Set([...urls, ...styleUrls])];
+      const svc = await dbQuery(
+        `SELECT id, name, image_url FROM barber_services
+         WHERE barber_id::text = $1::text AND is_active = true
+         ORDER BY id ASC`,
+        [String(barberId)],
+      );
+      const styleUrls = (svc.rows || []).map((r) => r.image_url).filter(Boolean);
 
-      res.json({
-        id,
+      return res.json({
+        ok: true,
+        id: barberId,
         name: barberName,
-        photo: profile?.profileImageUrl || "",
-        image: profile?.profileImageUrl || "",
-        styles: allStyles,
+        photo: barber.profileImage || "",
+        image: barber.profileImage || "",
+        styles: styleUrls,
+        created: createdStyles.map((s) => ({
+          id: s.id,
+          title: s.title,
+          price: s.price,
+          image_url: s.image_url,
+        })),
       });
     } catch (e) {
       console.error("[barbers] styles upload:", e);

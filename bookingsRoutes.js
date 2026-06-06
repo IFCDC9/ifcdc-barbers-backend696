@@ -1442,7 +1442,7 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
     }
   });
 
-  router.delete("/api/admin/bookings/:id", platformOpsGuard, async (req, res) => {
+  router.delete("/api/admin/bookings/:id", guard, async (req, res) => {
     try {
       const id = String(req.params.id || "").trim();
       if (!id) return res.status(400).json({ ok: false, message: "Booking id required" });
@@ -1454,9 +1454,13 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
             ? req.query.reason.trim().slice(0, 500)
             : "Admin delete";
 
+      const scope = req.bookingsAdminScope || { all: true };
+      const tenantSql = scope.all ? "" : ` AND b.business_id = $2`;
+      const tenantParams = scope.all ? [id] : [id, scope.businessId];
+
       const found = await dbQuery(
-        `${BOOKING_DETAIL_SELECT} WHERE b.id = $1::uuid AND ${BOOKING_ACTIVE_B} LIMIT 1`,
-        [id],
+        `${BOOKING_DETAIL_SELECT} WHERE b.id = $1::uuid AND ${BOOKING_ACTIVE_B}${tenantSql} LIMIT 1`,
+        tenantParams,
       );
       const booking = found.rows?.[0] || null;
       if (!booking) return res.status(404).json({ ok: false, message: "Booking not found" });

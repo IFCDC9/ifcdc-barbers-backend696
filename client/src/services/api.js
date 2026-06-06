@@ -5,6 +5,7 @@
  */
 
 import { ADMIN_KEY_STORAGE, getResolvedAdminApiKey } from "../config/adminClient.js";
+import { API_BASE_URL, PRODUCTION_API_ORIGIN } from "../config/api.js";
 
 /**
  * Resolved API origin for absolute URLs (e.g. `/api/book`, `/api/login`).
@@ -17,8 +18,18 @@ export function getApiOrigin() {
     return String(b).replace(/\/$/, "");
   }
   if (typeof window !== "undefined" && window.location?.origin) {
+    const host = String(window.location.hostname || "").toLowerCase();
+    if (
+      import.meta.env.PROD &&
+      (host === "ifcdcbarbersapp.com" ||
+        host.endsWith(".ifcdcbarbersapp.com") ||
+        host.includes("ifcdc-barbers-frontend"))
+    ) {
+      return PRODUCTION_API_ORIGIN;
+    }
     return window.location.origin;
   }
+  if (API_BASE_URL) return String(API_BASE_URL).replace(/\/$/, "");
   return String(import.meta.env.VITE_API_URL || "").trim() || "";
 }
 
@@ -170,19 +181,19 @@ export async function getHealth() {
   }
 }
 
-/** Absolute URL for a path returned by the API (e.g. `/uploads/foo.jpg`). */
+/** Absolute URL for a path returned by the API (e.g. `/uploads/foo.jpg` or Supabase https URL). */
 export function mediaUrl(path) {
   if (!path) return "";
-  if (path.startsWith("http")) return path;
-  const base = getApiBase();
-  if (base === "") return path.startsWith("/") ? path : `/${path}`;
-  return `${base}${path.startsWith("/") ? "" : "/"}${path}`;
+  if (String(path).startsWith("http")) return String(path);
+  const base = getApiOrigin();
+  const p = String(path);
+  if (!base) return p.startsWith("/") ? p : `/${p}`;
+  return `${base.replace(/\/$/, "")}${p.startsWith("/") ? "" : "/"}${p}`;
 }
 
 export async function getBarbers() {
-  const base = getApiBase();
-  assertResolvableApiBase(base);
-  const url = `${base}/barbers`;
+  const origin = getApiOrigin();
+  const url = `${origin}/barbers`;
   let res;
   try {
     res = await fetch(url, {
@@ -279,9 +290,8 @@ function getJwtOrAdminKeyHeaders() {
 }
 
 export async function getStylesAll() {
-  const base = getApiBase();
-  assertResolvableApiBase(base);
-  const url = `${base}/api/styles`;
+  const origin = getApiOrigin();
+  const url = `${origin}/api/styles`;
   const res = await fetch(url, { headers: { Accept: "application/json" } });
   const text = await res.text();
   if (!res.ok) throw new Error(text?.slice(0, 200) || `HTTP ${res.status}`);
@@ -444,12 +454,11 @@ export async function createBarberFormData(formData) {
 
 /** Append multiple files as field name `styles` (multer upload.array). */
 export async function uploadBarberStyles(barberId, files) {
-  const base = getApiBase();
-  assertResolvableApiBase(base);
+  const origin = getApiOrigin();
   if (!files?.length) {
     throw new Error("Select at least one image");
   }
-  const url = `${base}/barbers/${encodeURIComponent(barberId)}/styles`;
+  const url = `${origin}/barbers/${encodeURIComponent(barberId)}/styles`;
   const formData = new FormData();
   for (const f of files) {
     formData.append("styles", f);

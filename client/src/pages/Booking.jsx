@@ -800,7 +800,7 @@ export default function Booking() {
           <img
             src={mediaUrl(selectedStyle.image_url) || ""}
             alt=""
-            className="ifcdc-style-preview__img"
+            className="ifcdc-style-preview__img ifcdc-cover-fill"
             loading="lazy"
           />
           <div>
