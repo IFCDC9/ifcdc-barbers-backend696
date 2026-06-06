@@ -155,7 +155,7 @@ export function createAuthRouter({ sendEmail }) {
         if (isForbiddenPublicSignupRole(raw)) {
           return res.status(403).json({
             error: "forbidden_role",
-            message: "Elevated accounts cannot be created through registration.",
+            message: "Super Admin accounts cannot be created through registration.",
           });
         }
       }
@@ -170,13 +170,13 @@ export function createAuthRouter({ sendEmail }) {
       if (!role) {
         return res.status(403).json({
           error: "forbidden_role",
-          message: "Elevated accounts cannot be created through registration.",
+          message: "Super Admin accounts cannot be created through registration.",
         });
       }
       if (role !== "user" && role !== "barber" && role !== "shop_owner") {
         return res.status(400).json({
           error: "invalid_role",
-          message: "Account type must be customer, barber, or shop owner.",
+          message: "Account type must be client, barber, or shop admin.",
         });
       }
 

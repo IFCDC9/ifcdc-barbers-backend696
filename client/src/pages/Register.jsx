@@ -106,8 +106,11 @@ export default function Register() {
             <select name="role" value={form.role} onChange={handleChange} className="auth-input" aria-label="Account type">
               <option value="user">Client</option>
               <option value="barber">Barber</option>
-              <option value="shop_owner">Shop owner</option>
+              <option value="shop_owner">Shop Admin</option>
             </select>
+            <p className="auth-subtext" style={{ margin: "4px 0 0", fontSize: "0.8rem", opacity: 0.75 }}>
+              Shop Admin manages your own shop only. Super Admin is not available for public signup.
+            </p>
           </div>
 
           <button type="submit" disabled={submitting} className="auth-btn">

@@ -29,10 +29,10 @@ export default function Login() {
         localStorage.setItem("user", JSON.stringify(data.user));
         const role = data?.user?.role;
         navigate(
-          role === "super_admin"
+          role === "super_admin" || role === "admin"
             ? "/admin"
-            : role === "admin"
-              ? "/admin"
+            : role === "shop_owner"
+              ? "/dashboard"
               : role === "barber"
                 ? "/dashboard"
                 : "/booking",

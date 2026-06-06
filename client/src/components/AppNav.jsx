@@ -10,16 +10,17 @@ export default function AppNav({ variant = "bottom" }) {
     user = null;
   }
   const isLoggedIn = Boolean(user);
-  const canSeeAdminTab = user?.role === "super_admin" || user?.role === "admin";
-  const canSeeBarberSettings = user?.role === "barber" || canSeeAdminTab;
+  const canSeePlatformAdmin = user?.role === "super_admin" || user?.role === "admin";
+  const canSeeShopSettings =
+    user?.role === "barber" || user?.role === "shop_owner" || canSeePlatformAdmin;
 
   const tabs = [
     { to: "/", icon: "⌂", label: "Home", end: true },
     { to: "/barbers", icon: "✂", label: "Barbers" },
     { to: "/styles", icon: "✦", label: "Styles" },
     { to: "/phone", icon: "☎", label: "Phone" },
-    ...(canSeeBarberSettings ? [{ to: "/barber-settings", icon: "◆", label: "Shop" }] : []),
-    ...(canSeeAdminTab ? [{ to: "/admin", icon: "⚙", label: "Admin" }] : []),
+    ...(canSeeShopSettings ? [{ to: "/barber-settings", icon: "◆", label: "Shop" }] : []),
+    ...(canSeePlatformAdmin ? [{ to: "/admin", icon: "⚙", label: "Admin" }] : []),
     ...(!isLoggedIn ? [{ to: "/login", icon: "🔐", label: "Auth" }] : []),
   ];
 
