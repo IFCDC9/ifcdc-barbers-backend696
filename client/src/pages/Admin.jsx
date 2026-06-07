@@ -3,6 +3,7 @@ import { Navigate } from "react-router-dom";
 import {
   createBarberFormData,
   deleteBarber,
+  deleteBarberPhoto,
   deleteBooking as apiDeleteBooking,
   getAdminStats,
   markBookingPaid,
@@ -10,9 +11,11 @@ import {
   getApiDisplayLabel,
   mediaUrl,
   patchBarber,
+  uploadBarberPhoto,
   uploadBarberStyles,
 } from "../services/api.js";
 import StylesManagement from "../components/StylesManagement.jsx";
+import StyleCoverImage from "../components/StyleCoverImage.jsx";
 import { directionsUrlForShop, mapsEmbedSrcForShop } from "../lib/shopDirections.js";
 
 const pageStyle = {
@@ -386,6 +389,7 @@ function AdminDashboard() {
   const [creating, setCreating] = useState(false);
 
   const [styleBusyId, setStyleBusyId] = useState(null);
+  const [photoBusyId, setPhotoBusyId] = useState(null);
   /** Prevents double-submit while mark-paid API runs. */
   const [markingPaidId, setMarkingPaidId] = useState(null);
 
@@ -529,6 +533,34 @@ function AdminDashboard() {
       alert(err?.message || "Style upload failed");
     } finally {
       setStyleBusyId(null);
+    }
+  };
+
+  const handleBarberPhotoReplace = async (barberId, file) => {
+    if (!file) return;
+    setPhotoBusyId(barberId);
+    try {
+      await uploadBarberPhoto(barberId, file);
+      await loadBarbers();
+    } catch (err) {
+      console.error(err);
+      alert(err?.message || "Photo upload failed");
+    } finally {
+      setPhotoBusyId(null);
+    }
+  };
+
+  const handleBarberPhotoDelete = async (barberId) => {
+    if (!window.confirm("Remove this barber's profile photo?")) return;
+    setPhotoBusyId(barberId);
+    try {
+      await deleteBarberPhoto(barberId);
+      await loadBarbers();
+    } catch (err) {
+      console.error(err);
+      alert(err?.message || "Photo delete failed");
+    } finally {
+      setPhotoBusyId(null);
     }
   };
 
@@ -858,16 +890,20 @@ function AdminDashboard() {
               <div key={barber.id} style={cardStyle}>
                 <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-start" }}>
                   {portrait ? (
-                    <img
-                      src={mediaUrl(portrait)}
-                      alt=""
-                      style={{
+                    <StyleCoverImage
+                      barberId={barber.id}
+                      imageUrl={portrait}
+                      alt={barber.name || "Barber"}
+                      className="ifcdc-cover-fill"
+                      frameClassName="ifcdc-cover-media"
+                      frameStyle={{
                         width: 108,
                         height: 108,
-                        objectFit: "cover",
                         borderRadius: 10,
                         border: "1px solid #333",
+                        overflow: "hidden",
                       }}
+                      logContext="admin-barber-portrait"
                     />
                   ) : (
                     <div
@@ -890,6 +926,32 @@ function AdminDashboard() {
                   <div style={{ flex: 1, minWidth: 200 }}>
                     <h3 style={{ color: "#d4af37", margin: "0 0 6px", fontSize: "1.15rem" }}>{barber.name}</h3>
                     <p style={{ ...muted, margin: 0, fontSize: "0.8rem" }}>ID: {barber.id}</p>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10, marginBottom: 8 }}>
+                      <label style={{ ...muted, fontSize: "0.8rem" }}>
+                        {photoBusyId === barber.id ? "Updating photo…" : "Replace photo"}
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp,image/gif"
+                          disabled={photoBusyId === barber.id}
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (f) handleBarberPhotoReplace(barber.id, f);
+                            e.target.value = "";
+                          }}
+                          style={{ display: "block", marginTop: 4, color: "#ccc" }}
+                        />
+                      </label>
+                      {portrait ? (
+                        <button
+                          type="button"
+                          style={deleteButton}
+                          disabled={photoBusyId === barber.id}
+                          onClick={() => handleBarberPhotoDelete(barber.id)}
+                        >
+                          Remove photo
+                        </button>
+                      ) : null}
+                    </div>
                     <button type="button" style={deleteButton} onClick={() => handleDeleteBarber(barber.id)}>
                       Delete
                     </button>

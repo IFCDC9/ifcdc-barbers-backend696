@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 
 function getDeviceFromWidth(width) {
-  if (width < 640) return "mobile";
+  const coarse =
+    typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches;
+  // Touch phones (incl. iPhone landscape) keep app-style bottom nav below 1024px.
+  if (width < 640 || (coarse && width < 1024)) return "mobile";
   if (width < 1024) return "tablet";
   return "desktop";
 }
@@ -30,4 +33,3 @@ export const useDevice = () => {
 
   return device;
 };
-

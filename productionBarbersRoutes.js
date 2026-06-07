@@ -15,11 +15,30 @@ import { listStylesWithImages } from "./src/services/barberCmsStore.js";
 const requireCjs = createRequire(import.meta.url);
 const { upsertBarberServiceStyle } = requireCjs("./publicBookingStyles.cjs");
 const { isUuidBarberId } = requireCjs("./barberIdentity.cjs");
+const { normalizePublishedImageUrl } = requireCjs("./styleImageUrl.cjs");
 
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 8 * 1024 * 1024 },
 });
+
+function isUnsupportedImageFile(file) {
+  if (!file) return false;
+  const name = String(file.originalname || "").toLowerCase();
+  const mime = String(file.mimetype || "").toLowerCase();
+  return (
+    /\.heic$/.test(name) ||
+    /\.heif$/.test(name) ||
+    mime.includes("heic") ||
+    mime.includes("heif")
+  );
+}
+
+function normalizeBarberPhotoUrl(raw, barberId) {
+  const trimmed = String(raw || "").trim();
+  if (!trimmed) return "";
+  return normalizePublishedImageUrl(trimmed, { barberId });
+}
 
 function manageMiddleware(options = {}) {
   const manage =
@@ -117,7 +136,8 @@ async function listPublicBarbersFromDb() {
         /* ignore */
       }
 
-      const img = b.profile_image || "";
+      const barberId = String(b.id);
+      const img = normalizeBarberPhotoUrl(b.profile_image || "", barberId);
       rows.push({
         id: b.id,
         name: b.name || "",
@@ -125,7 +145,7 @@ async function listPublicBarbersFromDb() {
         bio: b.bio || "",
         image: img,
         photo: img,
-        styles: styleUrls,
+        styles: styleUrls.map((u) => normalizePublishedImageUrl(u, { barberId })),
         location: { address: String(b.location || ""), latitude: null, longitude: null },
         paymentMode,
         splitPercent,
@@ -193,6 +213,12 @@ export function mountProductionBarbersRoutes(app, options = {}) {
         if (!name) return res.status(400).json({ error: "name is required" });
 
         const file = req.files?.photo?.[0] || req.files?.image?.[0];
+        if (isUnsupportedImageFile(file)) {
+          return res.status(400).json({
+            error: "unsupported_format",
+            message: "Please upload JPEG or PNG (HEIC/HEIF is not supported in web browsers).",
+          });
+        }
         let profileImageUrl = "";
         if (file?.buffer?.length) {
           const { url } = await uploadBarberStyleImage({
@@ -401,6 +427,87 @@ export function mountProductionBarbersRoutes(app, options = {}) {
       if (msg === "not_found") return res.status(404).json({ error: "barber_not_found", message: "Barber not found" });
       console.error("[barbers] delete:", e);
       res.status(500).json({ error: "delete_failed", message: msg });
+    }
+  });
+
+  router.post(
+    "/barbers/:id/photo",
+    manage,
+    upload.fields([
+      { name: "photo", maxCount: 1 },
+      { name: "image", maxCount: 1 },
+    ]),
+    async (req, res) => {
+      try {
+        const barber = await resolveProductionBarber(req.params.id);
+        if (!barber) {
+          return res.status(404).json({ error: "barber_not_found", message: "Barber not found" });
+        }
+
+        const file = req.files?.photo?.[0] || req.files?.image?.[0];
+        if (!file?.buffer?.length) {
+          return res.status(400).json({ error: "photo_required", message: "Multipart field `photo` is required" });
+        }
+        if (isUnsupportedImageFile(file)) {
+          return res.status(400).json({
+            error: "unsupported_format",
+            message: "Please upload JPEG or PNG (HEIC/HEIF is not supported in web browsers).",
+          });
+        }
+
+        const { url } = await uploadBarberStyleImage({
+          buffer: file.buffer,
+          mimetype: file.mimetype,
+          barberName: barber.name,
+          originalName: file.originalname || "profile.jpg",
+        });
+
+        await dbQuery(`UPDATE barbers SET profile_image = $2 WHERE id::text = $1::text`, [String(barber.id), url]);
+
+        if (!isUuidBarberId(String(barber.id))) {
+          const n = Number(barber.id);
+          if (Number.isFinite(n)) {
+            try {
+              await updateProfileById(n, { profileImageUrl: url });
+            } catch {
+              /* legacy profile optional */
+            }
+          }
+        }
+
+        const photo = normalizeBarberPhotoUrl(url, String(barber.id));
+        res.json({ ok: true, id: barber.id, photo, image: photo });
+      } catch (e) {
+        console.error("[barbers] photo upload:", e);
+        res.status(500).json({ error: "photo_upload_failed", message: e?.message || String(e) });
+      }
+    },
+  );
+
+  router.delete("/barbers/:id/photo", manage, async (req, res) => {
+    try {
+      const barber = await resolveProductionBarber(req.params.id);
+      if (!barber) {
+        return res.status(404).json({ error: "barber_not_found", message: "Barber not found" });
+      }
+
+      await dbQuery(`UPDATE barbers SET profile_image = NULL WHERE id::text = $1::text`, [String(barber.id)]);
+
+      if (!isUuidBarberId(String(barber.id))) {
+        const n = Number(barber.id);
+        if (Number.isFinite(n)) {
+          try {
+            await updateProfileById(n, { profileImageUrl: "" });
+          } catch {
+            /* legacy profile optional */
+          }
+        }
+      }
+
+      res.json({ ok: true, id: barber.id, photo: "", image: "" });
+    } catch (e) {
+      console.error("[barbers] photo delete:", e);
+      res.status(500).json({ error: "photo_delete_failed", message: e?.message || String(e) });
     }
   });
 

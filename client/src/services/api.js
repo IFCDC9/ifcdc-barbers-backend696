@@ -6,6 +6,7 @@
 
 import { ADMIN_KEY_STORAGE, getResolvedAdminApiKey } from "../config/adminClient.js";
 import { API_BASE_URL, PRODUCTION_API_ORIGIN } from "../config/api.js";
+import { resolveStyleImageUrl } from "../lib/styleImageUrl.js";
 
 /**
  * Resolved API origin for absolute URLs (e.g. `/api/book`, `/api/login`).
@@ -182,14 +183,10 @@ export async function getHealth() {
   }
 }
 
-/** Absolute URL for a path returned by the API (e.g. `/uploads/foo.jpg` or Supabase https URL). */
+/** Absolute URL for a path returned by the API. Rejects dead /uploads and HEIC/HEIF paths. */
 export function mediaUrl(path) {
   if (!path) return "";
-  if (String(path).startsWith("http")) return String(path);
-  const base = getApiOrigin();
-  const p = String(path);
-  if (!base) return p.startsWith("/") ? p : `/${p}`;
-  return `${base.replace(/\/$/, "")}${p.startsWith("/") ? "" : "/"}${p}`;
+  return resolveStyleImageUrl(path, getApiOrigin());
 }
 
 export async function getBarbers() {
@@ -395,6 +392,47 @@ export async function deleteBarber(id) {
   } catch {
     return { success: true };
   }
+}
+
+export async function uploadBarberPhoto(barberId, file) {
+  const base = getApiBase();
+  assertResolvableApiBase(base);
+  const url = `${base}/barbers/${encodeURIComponent(barberId)}/photo`;
+  const fd = new FormData();
+  fd.append("photo", file);
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { ...getJwtOrAdminKeyHeaders(), Accept: "application/json" },
+    body: fd,
+  });
+  const text = await res.text();
+  let j = {};
+  try {
+    j = text ? JSON.parse(text) : {};
+  } catch {
+    j = { message: text };
+  }
+  if (!res.ok) throw new Error(j?.message || j?.error || `HTTP ${res.status}`);
+  return j;
+}
+
+export async function deleteBarberPhoto(barberId) {
+  const base = getApiBase();
+  assertResolvableApiBase(base);
+  const url = `${base}/barbers/${encodeURIComponent(barberId)}/photo`;
+  const res = await fetch(url, {
+    method: "DELETE",
+    headers: { ...getJwtOrAdminKeyHeaders(), Accept: "application/json" },
+  });
+  const text = await res.text();
+  let j = {};
+  try {
+    j = text ? JSON.parse(text) : {};
+  } catch {
+    j = { message: text };
+  }
+  if (!res.ok) throw new Error(j?.message || j?.error || `HTTP ${res.status}`);
+  return j;
 }
 
 /** PATCH barber payment settings (`paymentMode`, `splitPercent`, `active`). */

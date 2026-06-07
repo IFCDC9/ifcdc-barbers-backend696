@@ -2,11 +2,13 @@ import { PRODUCTION_API_ORIGIN } from "../config/api.js";
 
 export const FALLBACK_STYLE_IMAGE_URL = "https://ifcdcbarbersapp.com/icon-512.png";
 
-/** Ephemeral disk uploads (Render /uploads) or blob URLs — not safe for production display. */
+/** Ephemeral disk uploads (Render /uploads), blob URLs, or HEIC/HEIF — not safe for production display. */
 export function isEphemeralStyleImageUrl(url) {
   const u = String(url || "").trim();
   if (!u) return true;
   if (u.startsWith("blob:")) return true;
+  const lower = u.toLowerCase();
+  if (/\.heic(?:\?|$)/.test(lower) || /\.heif(?:\?|$)/.test(lower)) return true;
   if (u.includes("supabase.co/storage/")) return false;
   if (u.includes("/uploads/")) return true;
   return false;

@@ -34,3 +34,17 @@ if (dryRun) {
 } else {
   console.log("\nDone. Re-upload photos via Admin or Shop dashboard for affected services.");
 }
+
+const barbers = await dbQuery(
+  `SELECT id, name, profile_image FROM barbers WHERE COALESCE(profile_image, '') <> ''`,
+);
+const badBarbers = (barbers.rows || []).filter((row) => isEphemeralUploadUrl(row.profile_image));
+console.log(`\nFound ${badBarbers.length} barber(s) with ephemeral profile_image (of ${(barbers.rows || []).length} total).`);
+for (const row of badBarbers) {
+  console.log(`  id=${row.id} name=${row.name}`);
+  console.log(`    was: ${row.profile_image}`);
+  if (!dryRun) {
+    await dbQuery(`UPDATE barbers SET profile_image = NULL WHERE id = $1`, [row.id]);
+    console.log("    now: NULL (re-upload via Admin)");
+  }
+}

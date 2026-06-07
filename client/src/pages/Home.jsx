@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { getBarbers, mediaUrl } from "../services/api.js";
+import { getBarbers } from "../services/api.js";
+import StyleCoverImage from "../components/StyleCoverImage.jsx";
 import { formatNanpUsDisplay, nanpDialString } from "../lib/formatNanp.js";
 import { useAuraContactPhone } from "../lib/useAuraContactPhone.js";
 import {
@@ -390,11 +391,14 @@ export default function Home() {
                 <article key={b.id} className="home-featured__card">
                   <div className="home-featured__card-media">
                     {b.image || b.photo ? (
-                      <img
-                        src={mediaUrl(b.image || b.photo)}
+                      <StyleCoverImage
+                        barberId={b.id}
+                        imageUrl={b.image || b.photo}
                         alt={b.name || "Barber"}
-                        loading="lazy"
-                        decoding="async"
+                        className="home-featured__card-media-img ifcdc-cover-fill"
+                        frameClassName="home-featured__card-media-frame ifcdc-cover-media"
+                        logContext="featured-barber"
+                        bare={false}
                       />
                     ) : (
                       <div className="home-featured__card-placeholder" aria-hidden />

@@ -3,10 +3,16 @@
  */
 const FALLBACK_STYLE_IMAGE_URL = "https://ifcdcbarbersapp.com/icon-512.png";
 
+function isUnsupportedBrowserImageUrl(url) {
+  const u = String(url || "").trim().toLowerCase();
+  return /\.heic(?:\?|$)/.test(u) || /\.heif(?:\?|$)/.test(u);
+}
+
 function isEphemeralUploadUrl(url) {
   const u = String(url || "").trim();
   if (!u) return true;
   if (u.startsWith("blob:")) return true;
+  if (isUnsupportedBrowserImageUrl(u)) return true;
   if (u.includes("supabase.co/storage/")) return false;
   if (u.includes("/uploads/")) return true;
   return false;
