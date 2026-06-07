@@ -55,6 +55,7 @@ export function createBookingsAdminGuard({ resolveAuthPayload, dbQuery, adminSec
     const expected = String(process.env[adminSecretEnv] || "").trim();
     if (expected && adminKey && adminKey === expected) {
       req.bookingsAdminScope = { all: true, via: "admin_key" };
+      req.user = { role: "admin", id: null, email: null };
       return next();
     }
 
@@ -70,7 +71,7 @@ export function createBookingsAdminGuard({ resolveAuthPayload, dbQuery, adminSec
     req.user = payload;
 
     const role = String(payload?.role || "").trim().toLowerCase();
-    if (isJwtGlobalSuperScope(payload) || role === "admin") {
+    if (isJwtGlobalSuperScope(payload) || role === "admin" || role === "super_admin") {
       req.bookingsAdminScope = { all: true, via: isJwtGlobalSuperScope(payload) ? "platform_super" : "admin" };
       return next();
     }
