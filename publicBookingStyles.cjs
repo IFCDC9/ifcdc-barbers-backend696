@@ -118,6 +118,7 @@ async function listAllBookingStylesForAdmin(dbQuery) {
               b.name AS barber_name
        FROM barber_services s
        INNER JOIN barbers b ON b.id::text = s.barber_id::text
+       WHERE s.is_active = true
        ORDER BY lower(b.name) ASC, s.id ASC
        LIMIT 2000`,
     );
@@ -146,7 +147,10 @@ async function listAllBookingStylesForAdmin(dbQuery) {
           barber_id: row.barber_id,
           title: String(row.title || "").trim() || "Style",
           description: row.description || "",
-          image_url: String(row.image_url || "").trim() || "https://ifcdcbarbersapp.com/icon-512.png",
+          image_url: normalizePublishedImageUrl(row.image_url, {
+            styleId: String(row.id),
+            barberId: row.barber_id,
+          }),
           category: String(row.category || "other").trim() || "other",
           price: Number(row.price),
           duration_minutes: 30,
@@ -295,6 +299,19 @@ async function setBarberServicePublished(dbQuery, styleId, published) {
   return mapServiceRow(r.rows[0]);
 }
 
+/**
+ * Hard-delete a barber_services row (admin). Returns prior image_url for storage cleanup.
+ */
+async function deleteBarberServiceStyle(dbQuery, styleId) {
+  const serviceId = parseServiceStyleId(styleId) ?? Number(styleId);
+  if (!Number.isFinite(serviceId) || serviceId <= 0) throw new Error("invalid_style_id");
+  const existing = await dbQuery(`SELECT id, image_url FROM barber_services WHERE id = $1 LIMIT 1`, [serviceId]);
+  const row = existing.rows?.[0];
+  if (!row) throw new Error("not_found");
+  await dbQuery(`DELETE FROM barber_services WHERE id = $1`, [serviceId]);
+  return { deletedId: serviceStyleId(serviceId), image_url: row.image_url || "" };
+}
+
 module.exports = {
   SERVICE_ID_PREFIX,
   serviceStyleId,
@@ -306,4 +323,5 @@ module.exports = {
   resolveBookingStyleRow,
   upsertBarberServiceStyle,
   setBarberServicePublished,
+  deleteBarberServiceStyle,
 };

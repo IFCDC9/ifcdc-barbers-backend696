@@ -1,6 +1,7 @@
 import React from "react";
 import { getBarbers, getStylesAll, createStyle, updateStyle, deleteStyle, mediaUrl, replaceStyleImage } from "../services/api.js";
 import StyleCoverImage from "./StyleCoverImage.jsx";
+import { UPLOAD_ACCEPT, validateImageUploadFile } from "../lib/imageUploadValidation.js";
 
 const CATEGORIES = ["fades", "tapers", "waves", "braids", "beard work", "kids cuts", "designs", "other"];
 
@@ -40,6 +41,8 @@ export default function StylesManagement({ lockedBarberId = null, onChanged }) {
     const barberId = lockedBarberId != null ? lockedBarberId : String(selectedBarberId || "").trim();
     if (!barberId) return setMsg("Select a barber.");
     if (!title.trim()) return setMsg("Title required.");
+    const fileErr = validateImageUploadFile(file);
+    if (fileErr) return setMsg(fileErr);
 
     setBusy(true);
     try {
@@ -189,7 +192,21 @@ export default function StylesManagement({ lockedBarberId = null, onChanged }) {
               </option>
             ))}
           </select>
-          <input type="file" accept="image/*" onChange={(e) => setFile(e.target.files?.[0] || null)} />
+          <input
+            type="file"
+            accept={UPLOAD_ACCEPT}
+            onChange={(e) => {
+              const next = e.target.files?.[0] || null;
+              const err = validateImageUploadFile(next);
+              if (err) {
+                setMsg(err);
+                e.target.value = "";
+                setFile(null);
+                return;
+              }
+              setFile(next);
+            }}
+          />
           <button
             type="button"
             onClick={() => void submit()}
@@ -262,8 +279,18 @@ export default function StylesManagement({ lockedBarberId = null, onChanged }) {
                     />
                     <input
                       type="file"
-                      accept="image/*"
-                      onChange={(e) => setEditImageFile(e.target.files?.[0] || null)}
+                      accept={UPLOAD_ACCEPT}
+                      onChange={(e) => {
+                        const next = e.target.files?.[0] || null;
+                        const err = validateImageUploadFile(next);
+                        if (err) {
+                          setMsg(err);
+                          e.target.value = "";
+                          setEditImageFile(null);
+                          return;
+                        }
+                        setEditImageFile(next);
+                      }}
                       style={{ width: "100%", marginBottom: 8 }}
                     />
                     <div style={{ display: "flex", gap: 8 }}>

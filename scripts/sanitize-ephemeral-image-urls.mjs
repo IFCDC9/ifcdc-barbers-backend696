@@ -48,3 +48,17 @@ for (const row of badBarbers) {
     console.log("    now: NULL (re-upload via Admin)");
   }
 }
+
+const placeholderServices = await dbQuery(
+  `SELECT id, barber_id, name, image_url FROM barber_services
+   WHERE COALESCE(image_url, '') ILIKE '%icon-512.png%'`,
+);
+const phRows = placeholderServices.rows || [];
+console.log(`\nFound ${phRows.length} barber_services row(s) with placeholder icon-512 saved as image_url.`);
+for (const row of phRows) {
+  console.log(`  id=${row.id} barber=${row.barber_id} name=${row.name}`);
+  if (!dryRun) {
+    await dbQuery(`DELETE FROM barber_services WHERE id = $1`, [row.id]);
+    console.log("    deleted row (was placeholder, not a real upload)");
+  }
+}

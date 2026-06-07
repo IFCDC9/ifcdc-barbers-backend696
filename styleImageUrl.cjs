@@ -8,14 +8,29 @@ function isUnsupportedBrowserImageUrl(url) {
   return /\.heic(?:\?|$)/.test(u) || /\.heif(?:\?|$)/.test(u);
 }
 
+function isPlaceholderImageUrl(url) {
+  const u = String(url || "").trim().toLowerCase();
+  return u.includes("icon-512.png");
+}
+
 function isEphemeralUploadUrl(url) {
   const u = String(url || "").trim();
   if (!u) return true;
   if (u.startsWith("blob:")) return true;
+  if (isPlaceholderImageUrl(u)) return true;
   if (isUnsupportedBrowserImageUrl(u)) return true;
   if (u.includes("supabase.co/storage/")) return false;
   if (u.includes("/uploads/")) return true;
   return false;
+}
+
+/** Reject URLs that must never be persisted as uploaded photos. */
+function assertPersistableImageUrl(url, label = "image_url") {
+  const u = String(url || "").trim();
+  if (!u) throw new Error(`${label}_required`);
+  if (isPlaceholderImageUrl(u)) throw new Error(`${label}_placeholder_not_allowed`);
+  if (isEphemeralUploadUrl(u)) throw new Error(`${label}_not_persistable`);
+  return u;
 }
 
 function isRenderableImageUrl(url) {
@@ -65,7 +80,9 @@ function normalizePublishedImageUrl(raw, ctx = {}) {
 
 module.exports = {
   FALLBACK_STYLE_IMAGE_URL,
+  isPlaceholderImageUrl,
   isEphemeralUploadUrl,
   isRenderableImageUrl,
   normalizePublishedImageUrl,
+  assertPersistableImageUrl,
 };

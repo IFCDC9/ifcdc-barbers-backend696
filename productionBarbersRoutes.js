@@ -271,6 +271,22 @@ export function mountProductionBarbersRoutes(app, options = {}) {
 
       const createdStyles = [];
       for (const file of files) {
+        if (!file?.buffer?.length) {
+          return res.status(400).json({ error: "file_empty", message: "One or more selected files are empty." });
+        }
+        if (isUnsupportedImageFile(file)) {
+          return res.status(400).json({
+            error: "unsupported_format",
+            message: "Please upload JPEG or PNG (HEIC/HEIF is not supported in web browsers).",
+          });
+        }
+        console.info("[barbers/styles-upload]", {
+          barberId,
+          barberName,
+          originalname: file.originalname,
+          mimetype: file.mimetype,
+          size: file.buffer.length,
+        });
         const { url } = await uploadBarberStyleImage({
           buffer: file.buffer,
           mimetype: file.mimetype,

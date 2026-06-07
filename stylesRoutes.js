@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import { dbQuery } from "./db.js";
 import { STYLE_CATEGORIES } from "./stylesMigrations.js";
 import { requireAuthOrAdminSecret, requireRole } from "./authRoutes.js";
-import { uploadBarberStyleImage } from "./src/services/storageUpload.js";
+import { uploadBarberStyleImage, deleteBarberStyleImageFromUrl } from "./src/services/storageUpload.js";
 import { listStylesWithImages } from "./src/services/barberCmsStore.js";
 import { getProfileById } from "./src/services/barberProfileStore.js";
 
@@ -16,8 +16,10 @@ const {
   resolveBookingStyleRow,
   upsertBarberServiceStyle,
   setBarberServicePublished,
+  deleteBarberServiceStyle,
   parseServiceStyleId,
 } = requireCjs("./publicBookingStyles.cjs");
+const { assertPersistableImageUrl, isPlaceholderImageUrl } = requireCjs("./styleImageUrl.cjs");
 const { isUuidBarberId } = requireCjs("./barberIdentity.cjs");
 
 function normalizeCategory(raw) {
@@ -27,6 +29,42 @@ function normalizeCategory(raw) {
 
 function getTokenRole(req) {
   return String(req.user?.role || "").trim();
+}
+
+function pickUploadFile(req) {
+  return (
+    req.file ||
+    req.files?.image?.[0] ||
+    req.files?.photo?.[0] ||
+    req.files?.file?.[0] ||
+    null
+  );
+}
+
+function logStyleUpload(stage, req, file, extra = {}) {
+  console.info(`[styles-upload] ${stage}`, {
+    barberId: req.body?.barberId ?? req.body?.barber_id,
+    styleId: req.params?.id,
+    title: req.body?.title,
+    contentType: req.headers["content-type"],
+    filePresent: Boolean(file?.buffer?.length),
+    originalname: file?.originalname,
+    mimetype: file?.mimetype,
+    size: file?.buffer?.length ?? 0,
+    ...extra,
+  });
+}
+
+function isUnsupportedImageFile(file) {
+  if (!file) return false;
+  const name = String(file.originalname || "").toLowerCase();
+  const mime = String(file.mimetype || "").toLowerCase();
+  return (
+    /\.heic$/.test(name) ||
+    /\.heif$/.test(name) ||
+    mime.includes("heic") ||
+    mime.includes("heif")
+  );
 }
 
 async function getBarberIdForBarberUser(userId) {
@@ -119,7 +157,11 @@ export function createStylesRouter() {
     "/",
     requireAuthOrAdminSecret,
     requireRole(["super_admin", "admin", "barber", "shop_owner"]),
-    upload.single("image"),
+    upload.fields([
+      { name: "image", maxCount: 1 },
+      { name: "photo", maxCount: 1 },
+      { name: "file", maxCount: 1 },
+    ]),
     async (req, res) => {
       const role = getTokenRole(req);
       const title = String(req.body?.title || "").trim();
@@ -128,6 +170,8 @@ export function createStylesRouter() {
       const barberIdRaw = req.body?.barber_id ?? req.body?.barberId;
       const priceRaw = Number(req.body?.price ?? req.body?.stylePrice);
       const price = Number.isFinite(priceRaw) && priceRaw > 0 ? Math.round(priceRaw * 100) / 100 : 25;
+      const file = pickUploadFile(req);
+      logStyleUpload("create", req, file);
 
       if (!title) return res.status(400).json({ error: "title_required" });
 
@@ -142,6 +186,13 @@ export function createStylesRouter() {
       }
 
       let imageUrl = String(req.body?.image_url || req.body?.imageUrl || "").trim();
+      if (isPlaceholderImageUrl(imageUrl)) {
+        return res.status(400).json({
+          error: "placeholder_not_allowed",
+          message: "Cannot save the default placeholder as an uploaded photo.",
+        });
+      }
+
       const barberIdText = String(barberId).trim();
       let barberName = `barber-${barberIdText}`;
       if (isUuidBarberId(barberIdText)) {
@@ -152,14 +203,34 @@ export function createStylesRouter() {
         barberName = profile?.name || barberName;
       }
 
-      if (req.file?.buffer?.length) {
+      if (file?.buffer?.length) {
+        if (isUnsupportedImageFile(file)) {
+          return res.status(400).json({
+            error: "unsupported_format",
+            message: "Please upload JPEG or PNG (HEIC/HEIF is not supported in web browsers).",
+          });
+        }
         const { url } = await uploadBarberStyleImage({
-          buffer: req.file.buffer,
-          mimetype: req.file.mimetype,
+          buffer: file.buffer,
+          mimetype: file.mimetype,
           barberName,
-          originalName: req.file.originalname || "style.jpg",
+          originalName: file.originalname || "style.jpg",
         });
         imageUrl = url;
+        logStyleUpload("create uploaded", req, file, { imageUrl: url });
+      }
+
+      if (!imageUrl) {
+        return res.status(400).json({
+          error: "image_required",
+          message: "A real image file is required (multipart field `image`). Placeholder images are not saved.",
+        });
+      }
+
+      try {
+        assertPersistableImageUrl(imageUrl, "image_url");
+      } catch (e) {
+        return res.status(400).json({ error: "invalid_image_url", message: e.message || String(e) });
       }
 
       if (isUuidBarberId(barberIdText) || !Number.isFinite(Number(barberIdText))) {
@@ -170,13 +241,11 @@ export function createStylesRouter() {
           category,
           price,
           durationMinutes: Number(req.body?.durationMinutes) || 30,
-          imageUrl: imageUrl || "https://ifcdcbarbersapp.com/icon-512.png",
+          imageUrl,
           isActive: req.body?.is_published !== false && req.body?.isPublished !== false,
         });
         return res.json({ ok: true, style });
       }
-
-      if (!imageUrl) return res.status(400).json({ error: "image_required" });
 
       const r = await dbQuery(
         `INSERT INTO styles (barber_id, title, description, image_url, category, price, is_published)
@@ -286,11 +355,22 @@ export function createStylesRouter() {
 
       const serviceId = parseServiceStyleId(id);
       if (serviceId != null) {
-        await dbQuery(`UPDATE barber_services SET is_active = false WHERE id = $1`, [serviceId]);
-        return res.json({ ok: true, deletedId: id, unpublished: true });
+        try {
+          const removed = await deleteBarberServiceStyle(dbQuery, id);
+          if (removed?.image_url) {
+            await deleteBarberStyleImageFromUrl(removed.image_url).catch((e) => {
+              console.warn("[styles] storage delete skipped:", e?.message || e);
+            });
+          }
+          return res.json({ ok: true, deletedId: id, hardDeleted: true });
+        } catch (e) {
+          const msg = e?.message || String(e);
+          if (msg === "not_found") return res.status(404).json({ error: "not_found" });
+          throw e;
+        }
       }
 
-      const existing = await dbQuery(`SELECT id, barber_id FROM styles WHERE id = $1::uuid LIMIT 1`, [id]);
+      const existing = await dbQuery(`SELECT id, barber_id, image_url FROM styles WHERE id = $1::uuid LIMIT 1`, [id]);
       const row = existing.rows?.[0] || null;
       if (!row) return res.status(404).json({ error: "not_found" });
 
@@ -301,8 +381,13 @@ export function createStylesRouter() {
         }
       }
 
-      await dbQuery(`UPDATE styles SET is_published = false WHERE id = $1::uuid`, [id]);
-      res.json({ ok: true, deletedId: id, unpublished: true });
+      await dbQuery(`DELETE FROM styles WHERE id = $1::uuid`, [id]);
+      if (row.image_url) {
+        await deleteBarberStyleImageFromUrl(row.image_url).catch((e) => {
+          console.warn("[styles] legacy storage delete skipped:", e?.message || e);
+        });
+      }
+      res.json({ ok: true, deletedId: id, hardDeleted: true });
     }
   );
 
@@ -311,11 +396,23 @@ export function createStylesRouter() {
     "/:id/image",
     requireAuthOrAdminSecret,
     requireRole(["super_admin", "admin", "barber", "shop_owner"]),
-    upload.single("image"),
+    upload.fields([
+      { name: "image", maxCount: 1 },
+      { name: "photo", maxCount: 1 },
+      { name: "file", maxCount: 1 },
+    ]),
     async (req, res) => {
       const id = String(req.params.id || "").trim();
-      if (!req.file?.buffer?.length) {
+      const file = pickUploadFile(req);
+      logStyleUpload("replace", req, file, { styleId: id });
+      if (!file?.buffer?.length) {
         return res.status(400).json({ error: "image_required", message: "Multipart field `image` is required" });
+      }
+      if (isUnsupportedImageFile(file)) {
+        return res.status(400).json({
+          error: "unsupported_format",
+          message: "Please upload JPEG or PNG (HEIC/HEIF is not supported in web browsers).",
+        });
       }
 
       const existing = await resolveBookingStyleRow(dbQuery, id);
@@ -359,12 +456,14 @@ export function createStylesRouter() {
         barberName = br.rows?.[0]?.name || barberName;
       }
 
+      const priorImageUrl = row.image_url || "";
       const { url } = await uploadBarberStyleImage({
-        buffer: req.file.buffer,
-        mimetype: req.file.mimetype,
+        buffer: file.buffer,
+        mimetype: file.mimetype,
         barberName,
-        originalName: req.file.originalname || "style.jpg",
+        originalName: file.originalname || "style.jpg",
       });
+      logStyleUpload("replace uploaded", req, file, { styleId: id, imageUrl: url });
 
       if (serviceId != null) {
         const style = await upsertBarberServiceStyle(dbQuery, {
@@ -378,10 +477,16 @@ export function createStylesRouter() {
           isActive: row.is_published !== false,
           serviceId,
         });
+        if (priorImageUrl && priorImageUrl !== url) {
+          await deleteBarberStyleImageFromUrl(priorImageUrl).catch(() => {});
+        }
         return res.json({ ok: true, style });
       }
 
       await dbQuery(`UPDATE styles SET image_url = $2 WHERE id = $1::uuid`, [id, url]);
+      if (priorImageUrl && priorImageUrl !== url) {
+        await deleteBarberStyleImageFromUrl(priorImageUrl).catch(() => {});
+      }
       const refreshed = await resolveBookingStyleRow(dbQuery, id);
       return res.json({ ok: true, style: refreshed || row });
     },

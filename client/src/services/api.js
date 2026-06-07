@@ -313,6 +313,9 @@ export async function getStylesForBarber(barberId) {
 export async function createStyle({ barberId, title, description, category, file, price }) {
   const base = getApiBase();
   assertResolvableApiBase(base);
+  if (!file) {
+    throw new Error("Image file is required. Select a photo before saving.");
+  }
   const url = `${base}/api/styles`;
   const fd = new FormData();
   if (barberId != null) fd.append("barberId", String(barberId));
@@ -321,7 +324,7 @@ export async function createStyle({ barberId, title, description, category, file
   fd.append("category", String(category || "other"));
   const p = Number(price);
   if (Number.isFinite(p) && p > 0) fd.append("price", String(p));
-  if (file) fd.append("image", file);
+  fd.append("image", file, file.name || "style.jpg");
 
   const res = await fetch(url, {
     method: "POST",
@@ -506,7 +509,7 @@ export async function uploadBarberStyles(barberId, files) {
   const url = `${origin}/barbers/${encodeURIComponent(id)}/styles`;
   const formData = new FormData();
   for (const f of files) {
-    formData.append("styles", f);
+    formData.append("styles", f, f.name || "style.jpg");
   }
   let res;
   try {
@@ -545,7 +548,7 @@ export async function replaceStyleImage(styleId, file) {
   if (!id || !file) throw new Error("Style id and image file are required");
   const url = `${origin}/api/styles/${encodeURIComponent(id)}/image`;
   const fd = new FormData();
-  fd.append("image", file);
+  fd.append("image", file, file.name || "style.jpg");
   const res = await fetch(url, {
     method: "POST",
     headers: getJwtOrAdminKeyHeaders(),

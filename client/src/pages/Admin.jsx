@@ -16,6 +16,7 @@ import {
 } from "../services/api.js";
 import StylesManagement from "../components/StylesManagement.jsx";
 import StyleCoverImage from "../components/StyleCoverImage.jsx";
+import { UPLOAD_ACCEPT, validateImageUploadFile } from "../lib/imageUploadValidation.js";
 import { directionsUrlForShop, mapsEmbedSrcForShop } from "../lib/shopDirections.js";
 
 const pageStyle = {
@@ -524,6 +525,13 @@ function AdminDashboard() {
 
   const handleStyleUpload = async (barberId, fileList) => {
     if (!fileList?.length) return;
+    for (const f of Array.from(fileList)) {
+      const err = validateImageUploadFile(f);
+      if (err) {
+        alert(err);
+        return;
+      }
+    }
     setStyleBusyId(barberId);
     try {
       await uploadBarberStyles(barberId, Array.from(fileList));
@@ -537,7 +545,11 @@ function AdminDashboard() {
   };
 
   const handleBarberPhotoReplace = async (barberId, file) => {
-    if (!file) return;
+    const err = validateImageUploadFile(file);
+    if (err) {
+      alert(err);
+      return;
+    }
     setPhotoBusyId(barberId);
     try {
       await uploadBarberPhoto(barberId, file);
@@ -869,7 +881,7 @@ function AdminDashboard() {
             <label style={{ ...muted, display: "block", marginBottom: 6 }}>Profile image</label>
             <input
               type="file"
-              accept="image/*"
+              accept={UPLOAD_ACCEPT}
               onChange={(e) => setPhotoFile(e.target.files?.[0] || null)}
               style={{ color: "#ccc" }}
             />
@@ -931,7 +943,7 @@ function AdminDashboard() {
                         {photoBusyId === barber.id ? "Updating photo…" : "Replace photo"}
                         <input
                           type="file"
-                          accept="image/jpeg,image/png,image/webp,image/gif"
+                          accept={UPLOAD_ACCEPT}
                           disabled={photoBusyId === barber.id}
                           onChange={(e) => {
                             const f = e.target.files?.[0];
@@ -991,7 +1003,7 @@ function AdminDashboard() {
                 <strong style={{ color: "#d4af37" }}>{barber.name}</strong>
                 <input
                   type="file"
-                  accept="image/*"
+                  accept={UPLOAD_ACCEPT}
                   multiple
                   disabled={styleBusyId === barber.id}
                   onChange={(e) => {
