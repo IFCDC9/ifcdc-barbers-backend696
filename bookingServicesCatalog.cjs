@@ -62,6 +62,7 @@ const {
   resolvedBarberDbIdOnly,
   getTableBarberIdType,
 } = require("./barberIdentity.cjs");
+const { normalizePublishedImageUrl } = require("./styleImageUrl.cjs");
 
 function mapServiceRow(row) {
   if (!row) return null;
@@ -75,7 +76,10 @@ function mapServiceRow(row) {
     price: Number(row.price),
     duration_minutes: Number(row.duration_minutes) || 30,
     icon: row.icon || "",
-    image_url: row.image_url || "",
+    image_url: normalizePublishedImageUrl(row.image_url, {
+      serviceId: row.id,
+      barberId: row.barber_id,
+    }),
     is_active: row.is_active !== false,
   };
 }

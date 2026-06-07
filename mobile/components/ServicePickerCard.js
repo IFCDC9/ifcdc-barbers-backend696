@@ -1,7 +1,7 @@
 import React from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { apiFullUrl } from '../constants/config';
+import { isRenderableStyleImageUrl, resolveStyleImageUrl } from '../utils/styleImageUrl';
 
 /**
  * Selectable service card for the booking flow.
@@ -12,9 +12,18 @@ export default function ServicePickerCard({ service, selected = false, onPress }
   const icon = service.icon || '✂️';
   const price = Number(service.price);
   const duration = Number(service.duration_minutes) || 30;
-  const imageUri = service.image_url
-    ? (String(service.image_url).startsWith('http') ? service.image_url : apiFullUrl(service.image_url))
-    : null;
+  const rawUrl = service.image_url;
+  const showPhoto = isRenderableStyleImageUrl(rawUrl);
+  const imageUri = showPhoto ? resolveStyleImageUrl(rawUrl) : null;
+
+  const onImageError = () => {
+    console.warn('[style-card] image load error', {
+      styleId: service.id,
+      barberId: service.barber_id,
+      image_url: rawUrl,
+      attemptedSrc: imageUri,
+    });
+  };
 
   return (
     <Pressable
@@ -29,7 +38,12 @@ export default function ServicePickerCard({ service, selected = false, onPress }
     >
       <View style={styles.iconWrap}>
         {imageUri ? (
-          <Image source={{ uri: imageUri }} style={styles.serviceImage} />
+          <Image
+            source={{ uri: imageUri }}
+            style={styles.serviceImage}
+            resizeMode="cover"
+            onError={onImageError}
+          />
         ) : (
           <Text style={styles.icon}>{icon}</Text>
         )}

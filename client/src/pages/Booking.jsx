@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { PayPalButtons, usePayPalScriptReducer } from "@paypal/react-paypal-js";
 import { getApiOrigin, getBarbers, mediaUrl, fetchBarberPublicPricing, fetchBookingQuote } from "../services/api.js";
+import StyleCoverImage from "../components/StyleCoverImage.jsx";
+import { isRenderableStyleImageUrl } from "../lib/styleImageUrl.js";
 import { computeChargeBreakdown, normalizeCheckoutBreakdown } from "../lib/stylePricing.js";
 import {
   canOpenDirectionsToShop,
@@ -795,13 +797,16 @@ export default function Booking() {
             : "Complete the form, review your style and total, then pay with PayPal. Your booking is saved only after payment succeeds."}
       </p>
 
-      {selectedStyle?.image_url ? (
+      {selectedStyle && isRenderableStyleImageUrl(selectedStyle.image_url) ? (
         <div className="ifcdc-style-preview">
-          <img
-            src={mediaUrl(selectedStyle.image_url) || ""}
-            alt=""
+          <StyleCoverImage
+            bare
+            styleId={selectedStyle.styleId || selectedStyle.id}
+            barberId={selectedStyle.barber_id || selectedStyle.barberId}
+            imageUrl={selectedStyle.image_url}
+            alt={selectedStyle.title || "Style"}
             className="ifcdc-style-preview__img ifcdc-cover-fill"
-            loading="lazy"
+            logContext="booking-preview"
           />
           <div>
             <p className="ifcdc-label" style={{ marginTop: 0 }}>

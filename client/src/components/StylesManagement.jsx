@@ -1,5 +1,6 @@
 import React from "react";
 import { getBarbers, getStylesAll, createStyle, updateStyle, deleteStyle, mediaUrl, replaceStyleImage } from "../services/api.js";
+import StyleCoverImage from "./StyleCoverImage.jsx";
 
 const CATEGORIES = ["fades", "tapers", "waves", "braids", "beard work", "kids cuts", "designs", "other"];
 
@@ -216,11 +217,13 @@ export default function StylesManagement({ lockedBarberId = null, onChanged }) {
           {stylesForSelected.map((s) => (
             <div key={s.id} className="ifcdc-style-card">
               <div className="ifcdc-cover-media" style={{ aspectRatio: "4 / 5" }}>
-                <img
-                  className="ifcdc-cover-media__img ifcdc-cover-fill"
-                  src={mediaUrl(s.image_url)}
+                <StyleCoverImage
+                  bare
+                  styleId={s.id}
+                  barberId={s.barber_id}
+                  imageUrl={s.image_url}
                   alt={s.title || ""}
-                  loading="lazy"
+                  logContext="styles-management"
                 />
               </div>
               <div className="ifcdc-style-meta">

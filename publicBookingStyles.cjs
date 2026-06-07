@@ -2,6 +2,7 @@
  * Unified public booking styles — merges barber_services (UUID barbers) with legacy `styles` rows.
  */
 const { isUuidBarberId, coerceBarberIdForTable } = require("./barberIdentity.cjs");
+const { normalizePublishedImageUrl } = require("./styleImageUrl.cjs");
 
 const SERVICE_ID_PREFIX = "svc-";
 
@@ -18,13 +19,17 @@ function parseServiceStyleId(styleId) {
 
 function mapServiceRow(row) {
   if (!row) return null;
-  const imageUrl = String(row.image_url || "").trim();
+  const imageUrl = normalizePublishedImageUrl(row.image_url, {
+    styleId: serviceStyleId(row.id),
+    barberId: row.barber_id,
+    serviceId: row.id,
+  });
   return {
     id: serviceStyleId(row.id),
     barber_id: row.barber_id,
     title: String(row.name || "").trim() || "Service",
     description: row.description || "",
-    image_url: imageUrl || "https://ifcdcbarbersapp.com/icon-512.png",
+    image_url: imageUrl,
     category: String(row.category || "other").trim() || "other",
     price: Number(row.price),
     duration_minutes: Number(row.duration_minutes) || 30,
@@ -38,13 +43,16 @@ function mapLegacyStyleRow(row) {
   if (!row) return null;
   const published = row.is_published !== false;
   if (!published) return null;
-  const imageUrl = String(row.image_url || "").trim();
+  const imageUrl = normalizePublishedImageUrl(row.image_url, {
+    styleId: String(row.id),
+    barberId: row.barber_id,
+  });
   return {
     id: String(row.id),
     barber_id: row.barber_id,
     title: String(row.title || "").trim() || "Style",
     description: row.description || "",
-    image_url: imageUrl || "https://ifcdcbarbersapp.com/icon-512.png",
+    image_url: imageUrl,
     category: String(row.category || "other").trim() || "other",
     price: Number(row.price),
     duration_minutes: 30,

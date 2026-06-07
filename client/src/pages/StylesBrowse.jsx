@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { getBarbers, getStylesAll, mediaUrl } from "../services/api.js";
+import { getBarbers, getStylesAll } from "../services/api.js";
+import StyleCoverImage from "../components/StyleCoverImage.jsx";
 
 const STORAGE_KEY = "ifcdc_selected_booking_style";
 
@@ -82,17 +83,19 @@ export default function StylesBrowse() {
       ) : (
         <ul className="ifcdc-styles-browse__grid">
           {sortedStyles.map((s) => {
-            const img = mediaUrl(s.image_url);
             const price = Number(s.price) > 0 ? Number(s.price) : 25;
             const barber = barberNameById.get(String(s.barber_id)) || `Barber ${s.barber_id}`;
             return (
               <li key={s.id} className="ifcdc-styles-browse__card">
                 <div className="ifcdc-styles-browse__img-wrap">
-                  <img
-                    src={img || ""}
-                    alt=""
+                  <StyleCoverImage
+                    bare
+                    styleId={s.id}
+                    barberId={s.barber_id}
+                    imageUrl={s.image_url}
+                    alt={s.title || "Style"}
                     className="ifcdc-styles-browse__img ifcdc-cover-fill"
-                    loading="lazy"
+                    logContext="styles-browse"
                   />
                 </div>
                 <div className="ifcdc-styles-browse__body">
