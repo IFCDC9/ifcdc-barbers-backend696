@@ -263,18 +263,40 @@ export function createBarberBusinessRouter({ uploadDir } = {}) {
 
   const chain = [requireAuth, middlewareBarberScope];
 
-  /** POST /api/upload — barber-scoped; multipart field `file`; saves under /uploads, returns `{ url }`. */
-  router.post("/api/upload", ...chain, handleBrandingUpload, (req, res) => {
-    try {
-      if (!req.file?.filename) {
-        return res.status(400).json({ error: "file_required", message: "Multipart field `file` (image) is required" });
+  /** POST /api/upload — barber-scoped; Supabase Storage (persistent public URL). */
+  router.post("/api/upload", ...chain, (req, res, next) => {
+    uploadMemory.single("file")(req, res, async (err) => {
+      if (err) {
+        if (err.code === "LIMIT_FILE_SIZE") {
+          return res.status(400).json({
+            error: "file_too_large",
+            message: "Image must be 8MB or smaller",
+          });
+        }
+        return res.status(400).json({
+          error: "invalid_file",
+          message: err.message || "Upload failed",
+        });
       }
-      const url = `/uploads/${req.file.filename}`;
-      return res.status(201).json({ url });
-    } catch (e) {
-      console.error("[barber-business] POST /api/upload:", e);
-      return res.status(500).json({ error: "server_error", message: e?.message || String(e) });
-    }
+      try {
+        const file = req.file;
+        if (!file?.buffer?.length) {
+          return res.status(400).json({ error: "file_required", message: "Multipart field `file` (image) is required" });
+        }
+        const br = await dbQuery(`SELECT name FROM barbers WHERE id::text = $1::text LIMIT 1`, [String(req.barberId)]);
+        const barberName = br.rows?.[0]?.name || `barber-${req.barberId}`;
+        const { url, storage } = await uploadBarberStyleImage({
+          buffer: file.buffer,
+          mimetype: file.mimetype,
+          barberName,
+          originalName: file.originalname || "upload.jpg",
+        });
+        return res.status(201).json({ ok: true, url, image_url: url, storage });
+      } catch (e) {
+        console.error("[barber-business] POST /api/upload:", e);
+        return res.status(500).json({ error: "upload_failed", message: e?.message || String(e) });
+      }
+    });
   });
 
   const registerProfile = (method, pathSuffix, ...handlers) => {

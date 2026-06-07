@@ -138,10 +138,10 @@ export default function Barbers() {
           const img = b.photo || b.image;
           const specialty = b.specialty || "Cuts & grooming";
           const years = b.experience || b.years || "Pro stylist";
-          const barberId = typeof b.id === "number" ? b.id : Number(b.id);
+          const barberKey = String(b.id ?? "").trim();
           const myStyles =
-            Number.isFinite(barberId) && Array.isArray(styles)
-              ? styles.filter((s) => Number(s.barber_id) === barberId).slice(0, 4)
+            barberKey && Array.isArray(styles)
+              ? styles.filter((s) => String(s.barber_id ?? "").trim() === barberKey).slice(0, 4)
               : [];
           return (
             <article key={b.id} className="glass-panel ifcdc-barber-card">

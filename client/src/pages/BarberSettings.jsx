@@ -81,6 +81,8 @@ export default function BarberSettings() {
   });
   const [services, setServices] = React.useState([]);
   const [svcDraft, setSvcDraft] = React.useState({ name: "", price: "25", duration_minutes: "30" });
+  const [svcImageFile, setSvcImageFile] = React.useState(null);
+  const [svcImageBusy, setSvcImageBusy] = React.useState(false);
   const [availability, setAvailability] = React.useState(() => defaultWeekAvailability());
   const [settings, setSettings] = React.useState({
     theme_color: "#FFD700",
@@ -290,20 +292,46 @@ export default function BarberSettings() {
       setStatus("Service name required.");
       return;
     }
+    setSvcImageBusy(true);
     try {
+      let image_url = "";
+      if (svcImageFile) {
+        image_url = await uploadBrandingFile(svcImageFile);
+      }
       await apiPost(
         `/api/barber/services${scopeQuery}`,
         {
           name,
           price: Number(svcDraft.price),
           duration_minutes: Number(svcDraft.duration_minutes),
+          ...(image_url ? { image_url } : {}),
         },
         authHeaders(),
       );
       setSvcDraft({ name: "", price: "25", duration_minutes: "30" });
+      setSvcImageFile(null);
       await loadAll();
+      setStatus("Service saved.");
     } catch (e) {
       setStatus(e instanceof Error ? e.message : "Add failed");
+    } finally {
+      setSvcImageBusy(false);
+    }
+  };
+
+  const replaceServiceImage = async (serviceId, file) => {
+    if (!file) return;
+    setStatus("");
+    setSvcImageBusy(true);
+    try {
+      const image_url = await uploadBrandingFile(file);
+      await apiPut(`/api/barber/services/${serviceId}${scopeQuery}`, { image_url }, authHeaders());
+      await loadAll();
+      setStatus("Service photo updated.");
+    } catch (e) {
+      setStatus(e instanceof Error ? e.message : "Photo update failed");
+    } finally {
+      setSvcImageBusy(false);
     }
   };
 
@@ -647,12 +675,61 @@ export default function BarberSettings() {
                   border: `1px solid ${theme.colors.border}`,
                   borderRadius: theme.radius.sm,
                   background: theme.colors.subtle,
+                  alignItems: "center",
                 }}
               >
-                <div>
-                  <div style={{ fontWeight: 900, color: theme.colors.text }}>{s.name}</div>
-                  <div style={{ fontSize: 13, color: theme.colors.muted }}>
-                    ${Number(s.price).toFixed(2)} · {s.duration_minutes} min · {s.is_active ? "active" : "hidden"}
+                <div style={{ display: "flex", gap: 12, alignItems: "center", flex: 1, minWidth: 0 }}>
+                  <div
+                    style={{
+                      width: 72,
+                      height: 72,
+                      borderRadius: theme.radius.sm,
+                      overflow: "hidden",
+                      border: `1px solid ${theme.colors.border}`,
+                      background: "rgba(0,0,0,0.35)",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {s.image_url ? (
+                      <img
+                        src={mediaUrl(s.image_url)}
+                        alt=""
+                        style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                      />
+                    ) : (
+                      <div
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          display: "grid",
+                          placeItems: "center",
+                          color: theme.colors.muted,
+                          fontSize: 11,
+                        }}
+                      >
+                        No photo
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 900, color: theme.colors.text }}>{s.name}</div>
+                    <div style={{ fontSize: 13, color: theme.colors.muted }}>
+                      ${Number(s.price).toFixed(2)} · {s.duration_minutes} min · {s.is_active ? "active" : "hidden"}
+                    </div>
+                    <label style={{ display: "inline-block", marginTop: 6, fontSize: 12, color: theme.colors.muted, cursor: svcImageBusy ? "wait" : "pointer" }}>
+                      Replace photo
+                      <input
+                        type="file"
+                        accept="image/*"
+                        disabled={svcImageBusy}
+                        style={{ display: "block", marginTop: 4, maxWidth: "100%" }}
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          e.target.value = "";
+                          if (f) void replaceServiceImage(s.id, f);
+                        }}
+                      />
+                    </label>
                   </div>
                 </div>
                 <Button variant="indigo" type="button" onClick={() => removeService(s.id)}>
@@ -678,8 +755,17 @@ export default function BarberSettings() {
                   onChange={(e) => setSvcDraft({ ...svcDraft, duration_minutes: e.target.value })}
                 />
               </label>
-              <Button variant="indigo" type="button" onClick={addService}>
-                Add
+              <label style={{ display: "grid", gap: 6, fontSize: 12, color: theme.colors.muted, fontWeight: 800 }}>
+                Photo (optional)
+                <input
+                  type="file"
+                  accept="image/*"
+                  disabled={svcImageBusy}
+                  onChange={(e) => setSvcImageFile(e.target.files?.[0] || null)}
+                />
+              </label>
+              <Button variant="indigo" type="button" onClick={addService} disabled={svcImageBusy}>
+                {svcImageBusy ? "Saving…" : "Add"}
               </Button>
             </div>
           </div>
@@ -828,7 +914,25 @@ export default function BarberSettings() {
                   borderRadius: theme.radius.sm,
                 }}
               >
-                <div style={{ fontSize: 13, color: theme.colors.text, wordBreak: "break-all" }}>{im.image_url}</div>
+                <div style={{ display: "flex", gap: 12, alignItems: "center", minWidth: 0 }}>
+                  <img
+                    src={mediaUrl(im.image_url)}
+                    alt=""
+                    style={{
+                      width: 88,
+                      height: 88,
+                      objectFit: "cover",
+                      borderRadius: theme.radius.sm,
+                      border: `1px solid ${theme.colors.border}`,
+                      flexShrink: 0,
+                    }}
+                  />
+                  {im.caption ? (
+                    <div style={{ fontSize: 13, color: theme.colors.text }}>{im.caption}</div>
+                  ) : (
+                    <div style={{ fontSize: 12, color: theme.colors.muted }}>Portfolio image</div>
+                  )}
+                </div>
                 <Button variant="indigo" type="button" onClick={() => removeMedia(im.id)}>
                   Remove
                 </Button>

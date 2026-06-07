@@ -309,7 +309,7 @@ export async function buildPublicBarberPricingResponse(barberId) {
   const barber_platform_fee_per_booking_usd = 0.99;
 
   const svc = await dbQuery(
-    `SELECT id, name, description, icon, price::float8 AS price, duration_minutes, is_active
+    `SELECT id, name, description, icon, image_url, price::float8 AS price, duration_minutes, is_active
      FROM barber_services
      WHERE barber_id::text = $1::text AND is_active = true
      ORDER BY id ASC

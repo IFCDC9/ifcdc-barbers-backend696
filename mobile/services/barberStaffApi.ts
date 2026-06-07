@@ -159,11 +159,12 @@ export async function uploadBarberServiceImage(
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     body: form,
   });
-  const json = (await res.json()) as { url?: string; message?: string; error?: string };
-  if (!res.ok || !json.url) {
+  const json = (await res.json()) as { url?: string; image_url?: string; message?: string; error?: string };
+  if (!res.ok) {
     throw new Error(json.message || json.error || "Image upload failed");
   }
-  const rel = String(json.url);
+  const rel = String(json.image_url || json.url || "").trim();
+  if (!rel) throw new Error("Server did not return an image URL.");
   return rel.startsWith("http") ? rel : apiFullUrl(rel);
 }
 

@@ -292,8 +292,10 @@ function getJwtOrAdminKeyHeaders() {
 
 export async function getStylesAll() {
   const origin = getApiOrigin();
-  const url = `${origin}/api/styles`;
-  const res = await fetch(url, { headers: { Accept: "application/json" } });
+  const authHeaders = getJwtOrAdminKeyHeaders();
+  const hasAuth = Boolean(authHeaders.Authorization || authHeaders["x-admin-key"]);
+  const url = hasAuth ? `${origin}/api/styles/manage/all` : `${origin}/api/styles`;
+  const res = await fetch(url, { headers: { Accept: "application/json", ...authHeaders } });
   const text = await res.text();
   if (!res.ok) throw new Error(text?.slice(0, 200) || `HTTP ${res.status}`);
   const j = text ? JSON.parse(text) : {};
@@ -456,10 +458,14 @@ export async function createBarberFormData(formData) {
 /** Append multiple files as field name `styles` (multer upload.array). */
 export async function uploadBarberStyles(barberId, files) {
   const origin = getApiOrigin();
+  const id = String(barberId ?? "").trim();
+  if (!id) {
+    throw new Error("Barber id is required. Refresh the admin page and try again.");
+  }
   if (!files?.length) {
     throw new Error("Select at least one image");
   }
-  const url = `${origin}/barbers/${encodeURIComponent(barberId)}/styles`;
+  const url = `${origin}/barbers/${encodeURIComponent(id)}/styles`;
   const formData = new FormData();
   for (const f of files) {
     formData.append("styles", f);
@@ -482,7 +488,40 @@ export async function uploadBarberStyles(barberId, files) {
     data = { raw: text };
   }
   if (!res.ok) {
-    throw new Error(data?.error || text?.slice(0, 200) || `HTTP ${res.status}`);
+    const msg =
+      data?.message ||
+      (data?.error === "not_found"
+        ? `Barber not found (${id}). Refresh the page — barber ids must be UUIDs from production.`
+        : data?.error) ||
+      text?.slice(0, 200) ||
+      `HTTP ${res.status}`;
+    throw new Error(msg);
+  }
+  return data;
+}
+
+/** Replace a style/service photo (POST /api/styles/:id/image). */
+export async function replaceStyleImage(styleId, file) {
+  const origin = getApiOrigin();
+  const id = String(styleId ?? "").trim();
+  if (!id || !file) throw new Error("Style id and image file are required");
+  const url = `${origin}/api/styles/${encodeURIComponent(id)}/image`;
+  const fd = new FormData();
+  fd.append("image", file);
+  const res = await fetch(url, {
+    method: "POST",
+    headers: getJwtOrAdminKeyHeaders(),
+    body: fd,
+  });
+  const text = await res.text();
+  let data = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = {};
+  }
+  if (!res.ok) {
+    throw new Error(data?.message || data?.error || text?.slice(0, 200) || `HTTP ${res.status}`);
   }
   return data;
 }

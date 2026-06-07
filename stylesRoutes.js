@@ -11,6 +11,7 @@ import { getProfileById } from "./src/services/barberProfileStore.js";
 const requireCjs = createRequire(import.meta.url);
 const {
   listAllPublishedBookingStyles,
+  listAllBookingStylesForAdmin,
   listPublishedBookingStylesForBarber,
   resolveBookingStyleRow,
   upsertBarberServiceStyle,
@@ -29,9 +30,10 @@ function getTokenRole(req) {
 }
 
 async function getBarberIdForBarberUser(userId) {
-  const r = await dbQuery("SELECT barber_id FROM app_users WHERE id = $1 LIMIT 1", [String(userId)]);
+  const r = await dbQuery("SELECT barber_id FROM app_users WHERE id = $1::uuid LIMIT 1", [String(userId)]);
   const id = r.rows?.[0]?.barber_id;
-  return id == null ? null : Number(id);
+  if (id == null || String(id).trim() === "") return null;
+  return String(id).trim();
 }
 
 export function createStylesRouter() {
@@ -53,6 +55,23 @@ export function createStylesRouter() {
       return res.status(500).json({ error: "list_failed", message: e?.message || String(e) });
     }
   });
+
+  /** Admin/barber — all styles including unpublished (for Styles Management). */
+  router.get(
+    "/manage/all",
+    requireAuthOrAdminSecret,
+    requireRole(["super_admin", "admin", "barber", "shop_owner"]),
+    async (_req, res) => {
+      try {
+        const styles = await listAllBookingStylesForAdmin(dbQuery);
+        res.set("Cache-Control", "no-store");
+        return res.json({ ok: true, styles });
+      } catch (e) {
+        console.error("[styles] admin list:", e);
+        return res.status(500).json({ error: "list_failed", message: e?.message || String(e) });
+      }
+    },
+  );
 
   /** Public: single style by id (svc-* or UUID). */
   router.get("/by/:id", async (req, res) => {
@@ -99,7 +118,7 @@ export function createStylesRouter() {
   router.post(
     "/",
     requireAuthOrAdminSecret,
-    requireRole(["super_admin", "admin", "barber"]),
+    requireRole(["super_admin", "admin", "barber", "shop_owner"]),
     upload.single("image"),
     async (req, res) => {
       const role = getTokenRole(req);
@@ -199,7 +218,7 @@ export function createStylesRouter() {
   router.put(
     "/:id",
     requireAuthOrAdminSecret,
-    requireRole(["super_admin", "admin", "barber"]),
+    requireRole(["super_admin", "admin", "barber", "shop_owner"]),
     async (req, res) => {
       const id = String(req.params.id || "").trim();
       const role = getTokenRole(req);
@@ -237,7 +256,7 @@ export function createStylesRouter() {
 
       if (role === "barber") {
         const myBarberId = await getBarberIdForBarberUser(req.user?.id);
-        if (!myBarberId || Number(row.barber_id) !== Number(myBarberId)) {
+        if (!myBarberId || String(row.barber_id) !== String(myBarberId)) {
           return res.status(403).json({ message: "Access denied" });
         }
       }
@@ -260,7 +279,7 @@ export function createStylesRouter() {
   router.delete(
     "/:id",
     requireAuthOrAdminSecret,
-    requireRole(["super_admin", "admin", "barber"]),
+    requireRole(["super_admin", "admin", "barber", "shop_owner"]),
     async (req, res) => {
       const id = String(req.params.id || "").trim();
       const role = getTokenRole(req);
@@ -277,7 +296,7 @@ export function createStylesRouter() {
 
       if (role === "barber") {
         const myBarberId = await getBarberIdForBarberUser(req.user?.id);
-        if (!myBarberId || Number(row.barber_id) !== Number(myBarberId)) {
+        if (!myBarberId || String(row.barber_id) !== String(myBarberId)) {
           return res.status(403).json({ message: "Access denied" });
         }
       }
@@ -285,6 +304,87 @@ export function createStylesRouter() {
       await dbQuery(`UPDATE styles SET is_published = false WHERE id = $1::uuid`, [id]);
       res.json({ ok: true, deletedId: id, unpublished: true });
     }
+  );
+
+  /** Replace style/service image (multipart field `image`). */
+  router.post(
+    "/:id/image",
+    requireAuthOrAdminSecret,
+    requireRole(["super_admin", "admin", "barber", "shop_owner"]),
+    upload.single("image"),
+    async (req, res) => {
+      const id = String(req.params.id || "").trim();
+      if (!req.file?.buffer?.length) {
+        return res.status(400).json({ error: "image_required", message: "Multipart field `image` is required" });
+      }
+
+      const existing = await resolveBookingStyleRow(dbQuery, id);
+      let row = existing;
+      const serviceId = parseServiceStyleId(id);
+      if (!row && serviceId != null) {
+        const r = await dbQuery(
+          `SELECT id, barber_id, name, description, category, icon, image_url,
+                  price::float8 AS price, duration_minutes, is_active
+           FROM barber_services WHERE id = $1 LIMIT 1`,
+          [serviceId],
+        );
+        row = r.rows?.[0]
+          ? {
+              id,
+              barber_id: r.rows[0].barber_id,
+              title: r.rows[0].name,
+              description: r.rows[0].description,
+              category: r.rows[0].category,
+              image_url: r.rows[0].image_url,
+              price: r.rows[0].price,
+              duration_minutes: r.rows[0].duration_minutes,
+              is_published: r.rows[0].is_active !== false,
+            }
+          : null;
+      }
+      if (!row) return res.status(404).json({ error: "not_found", message: "Style not found" });
+
+      const role = getTokenRole(req);
+      if (role === "barber") {
+        const myBarberId = await getBarberIdForBarberUser(req.user?.id);
+        if (!myBarberId || String(row.barber_id) !== String(myBarberId)) {
+          return res.status(403).json({ message: "Access denied" });
+        }
+      }
+
+      const barberIdText = String(row.barber_id || "").trim();
+      let barberName = `barber-${barberIdText}`;
+      if (isUuidBarberId(barberIdText)) {
+        const br = await dbQuery(`SELECT name FROM barbers WHERE id::text = $1 LIMIT 1`, [barberIdText]);
+        barberName = br.rows?.[0]?.name || barberName;
+      }
+
+      const { url } = await uploadBarberStyleImage({
+        buffer: req.file.buffer,
+        mimetype: req.file.mimetype,
+        barberName,
+        originalName: req.file.originalname || "style.jpg",
+      });
+
+      if (serviceId != null) {
+        const style = await upsertBarberServiceStyle(dbQuery, {
+          barberId: row.barber_id,
+          name: row.title,
+          description: row.description,
+          category: row.category,
+          price: row.price,
+          durationMinutes: row.duration_minutes || 30,
+          imageUrl: url,
+          isActive: row.is_published !== false,
+          serviceId,
+        });
+        return res.json({ ok: true, style });
+      }
+
+      await dbQuery(`UPDATE styles SET image_url = $2 WHERE id = $1::uuid`, [id, url]);
+      const refreshed = await resolveBookingStyleRow(dbQuery, id);
+      return res.json({ ok: true, style: refreshed || row });
+    },
   );
 
   return router;

@@ -78,17 +78,19 @@ function mapProfileToBarber(p, extra = {}) {
 }
 
 async function listPublicBarbersFromDb() {
-  const profiles = await listProfiles();
-  if (profiles.length) {
+  const r = await dbQuery(
+    `SELECT id, name, bio, profile_image, location FROM barbers ORDER BY LOWER(name) NULLS LAST LIMIT 500`,
+  );
+  if (r.rows?.length) {
     const rows = [];
-    for (const p of profiles) {
+    for (const b of r.rows) {
       let paymentMode = "platform";
       let splitPercent = 80;
       let active = true;
       try {
         const st = await dbQuery(
           `SELECT payment_mode, split_percent, is_active FROM barber_settings WHERE barber_id::text = $1 LIMIT 1`,
-          [String(p.id)],
+          [String(b.id)],
         );
         const s = st.rows?.[0];
         if (s?.payment_mode && ["platform", "direct", "hybrid"].includes(s.payment_mode)) {
@@ -100,27 +102,65 @@ async function listPublicBarbersFromDb() {
       } catch {
         /* barber_settings columns may be absent on older DBs */
       }
-      rows.push(mapProfileToBarber(p, { paymentMode, splitPercent, active }));
+
+      let styleUrls = [];
+      try {
+        const svc = await dbQuery(
+          `SELECT image_url FROM barber_services
+           WHERE barber_id::text = $1::text AND is_active = true
+             AND COALESCE(image_url, '') <> ''
+           ORDER BY id ASC`,
+          [String(b.id)],
+        );
+        styleUrls = (svc.rows || []).map((row) => String(row.image_url || "").trim()).filter(Boolean);
+      } catch {
+        /* ignore */
+      }
+
+      const img = b.profile_image || "";
+      rows.push({
+        id: b.id,
+        name: b.name || "",
+        specialty: b.bio || "",
+        bio: b.bio || "",
+        image: img,
+        photo: img,
+        styles: styleUrls,
+        location: { address: String(b.location || ""), latitude: null, longitude: null },
+        paymentMode,
+        splitPercent,
+        active,
+      });
     }
     return rows;
   }
 
-  const r = await dbQuery(
-    `SELECT id, name, bio, profile_image, location FROM barbers ORDER BY LOWER(name) NULLS LAST LIMIT 500`,
-  );
-  return (r.rows || []).map((b) => ({
-    id: b.id,
-    name: b.name || "",
-    specialty: b.bio || "",
-    bio: b.bio || "",
-    image: b.profile_image || "",
-    photo: b.profile_image || "",
-    styles: [],
-    location: { address: String(b.location || ""), latitude: null, longitude: null },
-    paymentMode: "platform",
-    splitPercent: 80,
-    active: true,
-  }));
+  const profiles = await listProfiles();
+  if (!profiles.length) return [];
+
+  const rows = [];
+  for (const p of profiles) {
+    let paymentMode = "platform";
+    let splitPercent = 80;
+    let active = true;
+    try {
+      const st = await dbQuery(
+        `SELECT payment_mode, split_percent, is_active FROM barber_settings WHERE barber_id::text = $1 LIMIT 1`,
+        [String(p.id)],
+      );
+      const s = st.rows?.[0];
+      if (s?.payment_mode && ["platform", "direct", "hybrid"].includes(s.payment_mode)) {
+        paymentMode = s.payment_mode;
+      }
+      const sp = Number(s?.split_percent);
+      if (Number.isFinite(sp) && sp >= 0 && sp <= 100) splitPercent = sp;
+      if (s?.is_active === false) active = false;
+    } catch {
+      /* barber_settings columns may be absent on older DBs */
+    }
+    rows.push(mapProfileToBarber(p, { paymentMode, splitPercent, active }));
+  }
+  return rows;
 }
 
 /**
@@ -259,34 +299,35 @@ export function mountProductionBarbersRoutes(app, options = {}) {
 
   router.patch("/barbers/:id", manage, express.json(), async (req, res) => {
     try {
-      const id = Number(req.params.id);
-      if (!Number.isFinite(id)) return res.status(400).json({ error: "Invalid id" });
-
-      const profile = await getProfileById(id);
-      if (!profile) return res.status(404).json({ error: "Not found" });
-
-      const { paymentMode, splitPercent, active, location } = req.body || {};
-      const patch = {};
-
-      if (location !== undefined) {
-        if (!location || typeof location !== "object") {
-          return res.status(400).json({ error: "location must be an object" });
-        }
-        const address = location.address != null ? String(location.address).trim() : "";
-        const lat = location.latitude != null && location.latitude !== "" ? Number(location.latitude) : null;
-        const lng = location.longitude != null && location.longitude !== "" ? Number(location.longitude) : null;
-        if (lat !== null && (!Number.isFinite(lat) || lat < -90 || lat > 90)) {
-          return res.status(400).json({ error: "location.latitude must be between -90 and 90" });
-        }
-        if (lng !== null && (!Number.isFinite(lng) || lng < -180 || lng > 180)) {
-          return res.status(400).json({ error: "location.longitude must be between -180 and 180" });
-        }
-        patch.address = address;
-        patch.latitude = lat;
-        patch.longitude = lng;
+      const barber = await resolveProductionBarber(req.params.id);
+      if (!barber) {
+        return res.status(404).json({ error: "barber_not_found", message: "Barber not found for id " + String(req.params.id || "") });
       }
 
-      const updated = Object.keys(patch).length ? await updateProfileById(id, patch) : profile;
+      const id = barber.id;
+      const isUuid = isUuidBarberId(String(id));
+      const { paymentMode, splitPercent, active, location } = req.body || {};
+      let updated = barber;
+
+      if (location !== undefined && isUuid) {
+        const address = location.address != null ? String(location.address).trim() : "";
+        await dbQuery(`UPDATE barbers SET location = $2 WHERE id::text = $1::text`, [String(id), address]);
+      }
+
+      if (!isUuid) {
+        const n = Number(id);
+        if (Number.isFinite(n)) {
+          const patch = {};
+          if (location !== undefined && location && typeof location === "object") {
+            patch.address = location.address != null ? String(location.address).trim() : "";
+            patch.latitude = location.latitude != null && location.latitude !== "" ? Number(location.latitude) : null;
+            patch.longitude = location.longitude != null && location.longitude !== "" ? Number(location.longitude) : null;
+          }
+          if (Object.keys(patch).length) {
+            updated = await updateProfileById(n, patch);
+          }
+        }
+      }
 
       if (paymentMode !== undefined || splitPercent !== undefined || active !== undefined) {
         try {
@@ -323,7 +364,19 @@ export function mountProductionBarbersRoutes(app, options = {}) {
         /* ignore */
       }
 
-      res.json(mapProfileToBarber(updated, { paymentMode: paymentModeOut, splitPercent: splitPercentOut, active: activeOut }));
+      if (typeof updated === "object" && updated?.name) {
+        res.json(mapProfileToBarber(updated, { paymentMode: paymentModeOut, splitPercent: splitPercentOut, active: activeOut }));
+      } else {
+        res.json({
+          id,
+          name: barber.name,
+          photo: barber.profileImage || "",
+          image: barber.profileImage || "",
+          paymentMode: paymentModeOut,
+          splitPercent: splitPercentOut,
+          active: activeOut,
+        });
+      }
     } catch (e) {
       console.error("[barbers] patch:", e);
       res.status(500).json({ error: "patch_failed", message: e?.message || String(e) });
@@ -332,18 +385,20 @@ export function mountProductionBarbersRoutes(app, options = {}) {
 
   router.delete("/barbers/:id", manage, async (req, res) => {
     try {
-      const id = Number(req.params.id);
-      if (!Number.isFinite(id)) return res.status(400).json({ error: "Invalid id" });
-      await deleteProfileById(id);
-      try {
-        await dbQuery(`DELETE FROM barbers WHERE id::text = $1::text`, [String(id)]);
-      } catch {
-        /* barbers row may use different id shape */
+      const barber = await resolveProductionBarber(req.params.id);
+      if (!barber) {
+        return res.status(404).json({ error: "barber_not_found", message: "Barber not found" });
       }
+      const id = barber.id;
+      if (!isUuidBarberId(String(id))) {
+        const n = Number(id);
+        if (Number.isFinite(n)) await deleteProfileById(n);
+      }
+      await dbQuery(`DELETE FROM barbers WHERE id::text = $1::text`, [String(id)]);
       res.json({ success: true, deleted: true });
     } catch (e) {
       const msg = e?.message || String(e);
-      if (msg === "not_found") return res.status(404).json({ error: "Not found" });
+      if (msg === "not_found") return res.status(404).json({ error: "barber_not_found", message: "Barber not found" });
       console.error("[barbers] delete:", e);
       res.status(500).json({ error: "delete_failed", message: msg });
     }

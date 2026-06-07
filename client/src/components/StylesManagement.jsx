@@ -1,5 +1,5 @@
 import React from "react";
-import { getBarbers, getStylesAll, createStyle, updateStyle, deleteStyle, mediaUrl } from "../services/api.js";
+import { getBarbers, getStylesAll, createStyle, updateStyle, deleteStyle, mediaUrl, replaceStyleImage } from "../services/api.js";
 
 const CATEGORIES = ["fades", "tapers", "waves", "braids", "beard work", "kids cuts", "designs", "other"];
 
@@ -16,6 +16,7 @@ export default function StylesManagement({ lockedBarberId = null, onChanged }) {
   const [busy, setBusy] = React.useState(false);
   const [editingId, setEditingId] = React.useState(null);
   const [edit, setEdit] = React.useState({ title: "", description: "", category: "other", price: "35" });
+  const [editImageFile, setEditImageFile] = React.useState(null);
 
   const load = React.useCallback(async () => {
     const [b, s] = await Promise.all([getBarbers().catch(() => []), getStylesAll().catch(() => [])]);
@@ -59,6 +60,7 @@ export default function StylesManagement({ lockedBarberId = null, onChanged }) {
 
   const startEdit = (s) => {
     setEditingId(s.id);
+    setEditImageFile(null);
     setEdit({
       title: String(s.title || ""),
       description: String(s.description || ""),
@@ -72,6 +74,9 @@ export default function StylesManagement({ lockedBarberId = null, onChanged }) {
     setBusy(true);
     setMsg("");
     try {
+      if (editImageFile) {
+        await replaceStyleImage(editingId, editImageFile);
+      }
       await updateStyle(editingId, {
         title: edit.title,
         description: edit.description,
@@ -79,6 +84,7 @@ export default function StylesManagement({ lockedBarberId = null, onChanged }) {
         price: Number(edit.price),
       });
       setEditingId(null);
+      setEditImageFile(null);
       await load();
       onChanged?.();
       setMsg("Updated.");
@@ -251,11 +257,17 @@ export default function StylesManagement({ lockedBarberId = null, onChanged }) {
                       placeholder="Price USD"
                       style={{ width: "100%", padding: 8, borderRadius: 10, marginBottom: 8 }}
                     />
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => setEditImageFile(e.target.files?.[0] || null)}
+                      style={{ width: "100%", marginBottom: 8 }}
+                    />
                     <div style={{ display: "flex", gap: 8 }}>
                       <button type="button" onClick={() => void saveEdit()} disabled={busy}>
                         Save
                       </button>
-                      <button type="button" onClick={() => setEditingId(null)} disabled={busy}>
+                      <button type="button" onClick={() => { setEditingId(null); setEditImageFile(null); }} disabled={busy}>
                         Cancel
                       </button>
                     </div>
