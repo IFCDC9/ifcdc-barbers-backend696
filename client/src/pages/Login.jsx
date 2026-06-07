@@ -31,12 +31,10 @@ export default function Login() {
         navigate(
           role === "super_admin" || role === "admin"
             ? "/admin"
-            : role === "shop_owner"
-              ? "/dashboard"
-              : role === "barber"
-                ? "/dashboard"
-                : "/booking",
-          { replace: true }
+            : role === "shop_owner" || role === "barber"
+              ? "/barber-settings"
+              : "/booking",
+          { replace: true },
         );
       } else {
         setStatus("Invalid login");

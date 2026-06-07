@@ -67,9 +67,10 @@ export async function login(email, password) {
   return data;
 }
 
-export async function register({ name, email, password, role }) {
+export async function register({ name, email, password, role, accountType }) {
   const origin = getApiOrigin();
-  const payload = { name, email, password, role };
+  const resolvedRole = accountType || role;
+  const payload = { name, email, password, role: resolvedRole, accountType: resolvedRole };
   let res = await fetch(`${origin}/api/auth/register`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },

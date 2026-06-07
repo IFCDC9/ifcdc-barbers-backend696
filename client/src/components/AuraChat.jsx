@@ -118,7 +118,7 @@ export default function AuraChat({
             /* prefill is best-effort */
           }
           navigate("/book", { state: navState });
-        } else if (action === "NAVIGATE_STYLES") navigate("/styles");
+        } else if (action === "NAVIGATE_STYLES") navigate("/booking");
       }
       setEntry({ pending: false, bot });
       queueMicrotask(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }));

@@ -1,5 +1,6 @@
 import { NavLink, useNavigate } from "react-router-dom";
 
+/** TestFlight-parity tab bar: Home · Book · AURA · Profile · Shop/Admin */
 export default function AppNav({ variant = "bottom" }) {
   const navigate = useNavigate();
 
@@ -10,18 +11,19 @@ export default function AppNav({ variant = "bottom" }) {
     user = null;
   }
   const isLoggedIn = Boolean(user);
-  const canSeePlatformAdmin = user?.role === "super_admin" || user?.role === "admin";
+  const role = String(user?.role || "");
+  const canSeePlatformAdmin = role === "super_admin" || role === "admin";
   const canSeeShopSettings =
-    user?.role === "barber" || user?.role === "shop_owner" || canSeePlatformAdmin;
+    role === "barber" || role === "shop_owner" || canSeePlatformAdmin;
 
   const tabs = [
     { to: "/", icon: "⌂", label: "Home", end: true },
-    { to: "/barbers", icon: "✂", label: "Barbers" },
-    { to: "/styles", icon: "✦", label: "Styles" },
-    { to: "/phone", icon: "☎", label: "Phone" },
+    { to: "/booking", icon: "📅", label: "Book" },
+    { to: "/aura", icon: "✦", label: "AURA" },
+    { to: "/profile", icon: "👤", label: "Profile" },
     ...(canSeeShopSettings ? [{ to: "/barber-settings", icon: "◆", label: "Shop" }] : []),
     ...(canSeePlatformAdmin ? [{ to: "/admin", icon: "⚙", label: "Admin" }] : []),
-    ...(!isLoggedIn ? [{ to: "/login", icon: "🔐", label: "Auth" }] : []),
+    ...(!isLoggedIn ? [{ to: "/login", icon: "🔐", label: "Sign in" }] : []),
   ];
 
   const navClass =

@@ -4499,3 +4499,194 @@ a.payments-page__cta {
   flex-shrink: 0;
   display: block;
 }
+
+/* —— App-parity booking wizard (TestFlight flow) —— */
+.ifcdc-book-wizard {
+  max-width: 42rem;
+  margin: 0 auto;
+  padding: 0 0 2rem;
+}
+
+.ifcdc-book-wizard__steps {
+  display: flex;
+  gap: 0.5rem;
+  margin: 0 0 1.25rem;
+}
+
+.ifcdc-book-wizard__dot {
+  flex: 1;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(212, 175, 55, 0.2);
+}
+
+.ifcdc-book-wizard__dot--on {
+  background: var(--gold);
+}
+
+.ifcdc-book-wizard__panel {
+  background: var(--bg-card);
+  border: 1px solid var(--gold-dim);
+  border-radius: var(--radius-card);
+  padding: 1.25rem;
+}
+
+.ifcdc-book-wizard__heading {
+  margin: 0 0 0.75rem;
+  font-size: 1.15rem;
+  color: var(--gold-soft);
+}
+
+.ifcdc-book-wizard__list {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.ifcdc-book-wizard__list--grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr));
+  gap: 0.5rem;
+}
+
+.ifcdc-book-wizard__pick {
+  width: 100%;
+  padding: 0.85rem 1rem;
+  border-radius: 10px;
+  border: 1px solid rgba(212, 175, 55, 0.25);
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--text);
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+
+.ifcdc-book-wizard__pick--on {
+  border-color: var(--gold);
+  background: rgba(212, 175, 55, 0.12);
+  color: var(--gold-soft);
+}
+
+.ifcdc-book-wizard__services {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.ifcdc-book-wizard__service {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  width: 100%;
+  padding: 0.65rem;
+  border-radius: 12px;
+  border: 1px solid rgba(212, 175, 55, 0.22);
+  background: rgba(0, 0, 0, 0.3);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.ifcdc-book-wizard__service--on {
+  border-color: var(--gold);
+  background: rgba(212, 175, 55, 0.1);
+}
+
+.ifcdc-book-wizard__service-img {
+  width: 4.5rem;
+  min-width: 4.5rem;
+  aspect-ratio: 1;
+  border-radius: 10px;
+}
+
+.ifcdc-book-wizard__service-icon {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 1.5rem;
+}
+
+.ifcdc-book-wizard__service-copy {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.9rem;
+}
+
+.ifcdc-book-wizard__service-copy strong {
+  color: var(--gold-soft);
+  font-size: 1rem;
+}
+
+.ifcdc-book-wizard__service-price {
+  color: var(--gold);
+  font-weight: 700;
+}
+
+.ifcdc-book-wizard__check {
+  color: var(--gold);
+  font-size: 1.25rem;
+  font-weight: 800;
+}
+
+.ifcdc-book-wizard__summary {
+  margin-bottom: 1rem;
+  padding: 1rem;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(212, 175, 55, 0.15);
+  line-height: 1.55;
+}
+
+.ifcdc-book-wizard__cta {
+  display: block;
+  width: 100%;
+  margin: 0.5rem 0;
+  padding: 0.9rem 1rem;
+  border: none;
+  border-radius: 10px;
+  font-weight: 800;
+  cursor: pointer;
+  background: linear-gradient(180deg, #e8c84a, var(--gold));
+  color: #0a0a0a;
+}
+
+.ifcdc-book-wizard__cta--ghost {
+  background: transparent;
+  border: 1px solid var(--gold-dim);
+  color: var(--gold-soft);
+}
+
+.ifcdc-book-wizard__back {
+  margin-top: 0.75rem;
+  padding: 0.5rem 0;
+  border: none;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.ifcdc-aura-page__panel {
+  min-height: 24rem;
+  border: 1px solid var(--gold-dim);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.ifcdc-aura-page__panel .aura-chat-dock,
+.ifcdc-aura-page__panel .aura-chat-panel {
+  position: static;
+  width: 100%;
+  max-width: none;
+  box-shadow: none;
+}

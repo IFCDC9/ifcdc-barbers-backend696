@@ -1,30 +1,28 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import Aura from "./components/Aura.jsx";
 import PayPalReturnBridge from "./components/PayPalReturnBridge.jsx";
 import MainLayout from "./layouts/MainLayout.jsx";
 import { IFCDC_GOLD } from "./lib/ifcdcColors.js";
 import {
-  CheckoutRoute,
   ConfirmationRoute,
-  PaymentRoute,
 } from "./routes/paymentFlowRoutes.jsx";
 import Home from "./pages/Home.jsx";
-import Barbers from "./pages/Barbers.jsx";
-import Booking from "./pages/Booking.jsx";
-import StylesBrowse from "./pages/StylesBrowse.jsx";
-import Phone from "./pages/Phone.jsx";
+import BookingWizard from "./pages/BookingWizard.jsx";
+import AuraPage from "./pages/AuraPage.jsx";
+import Profile from "./pages/Profile.jsx";
 import About from "./pages/About.jsx";
 import Login from "./pages/Login.jsx";
 import Register from "./pages/Register.jsx";
 import ForgotPassword from "./pages/ForgotPassword.jsx";
 import ResetPassword from "./pages/ResetPassword.jsx";
 import Admin from "./pages/Admin.jsx";
-import Dashboard from "./pages/Dashboard.jsx";
 import BarberSettings from "./pages/BarberSettings.jsx";
 import RequireRole from "./components/RequireRole.jsx";
 import Invite from "./pages/Invite.jsx";
 import PublicLegalPage from "./pages/PublicLegalPage.jsx";
 import IFCDCGlobalFooter from "./components/IFCDCGlobalFooter.jsx";
+
+/** Legacy booking page — kept for reference; wizard is production path. */
+import Booking from "./pages/Booking.jsx";
 
 function AppShell() {
   return (
@@ -50,14 +48,17 @@ function AppShell() {
         <Routes>
           <Route element={<MainLayout />}>
             <Route path="/" element={<Home />} />
-            <Route path="/barbers" element={<Barbers />} />
-            <Route path="/styles" element={<StylesBrowse />} />
+            <Route path="/barbers" element={<Navigate to="/booking" replace />} />
+            <Route path="/styles" element={<Navigate to="/booking" replace />} />
             <Route path="/book" element={<Navigate to="/booking" replace />} />
-            <Route path="/booking" element={<Booking />} />
-            <Route path="/checkout" element={<CheckoutRoute />} />
-            <Route path="/payment" element={<PaymentRoute />} />
+            <Route path="/booking" element={<BookingWizard />} />
+            <Route path="/booking-legacy" element={<Booking />} />
+            <Route path="/aura" element={<AuraPage />} />
+            <Route path="/profile" element={<Profile />} />
+            <Route path="/checkout" element={<Navigate to="/booking" replace />} />
+            <Route path="/payment" element={<Navigate to="/booking" replace />} />
             <Route path="/confirmation" element={<ConfirmationRoute />} />
-            <Route path="/phone" element={<Phone />} />
+            <Route path="/phone" element={<Navigate to="/aura" replace />} />
             <Route path="/about" element={<About />} />
             <Route path="/login" element={<Login />} />
             <Route path="/invite" element={<Invite />} />
@@ -68,16 +69,12 @@ function AppShell() {
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route
               path="/dashboard"
-              element={
-                <RequireRole roles={["barber", "admin", "super_admin"]}>
-                  <Dashboard />
-                </RequireRole>
-              }
+              element={<Navigate to="/barber-settings" replace />}
             />
             <Route
               path="/barber-settings"
               element={
-                <RequireRole roles={["barber", "admin", "super_admin"]}>
+                <RequireRole roles={["barber", "shop_owner", "admin", "super_admin"]}>
                   <BarberSettings />
                 </RequireRole>
               }
@@ -95,10 +92,6 @@ function AppShell() {
       </div>
 
       <IFCDCGlobalFooter />
-
-      <div className="aura-button">
-        <Aura />
-      </div>
     </div>
   );
 }

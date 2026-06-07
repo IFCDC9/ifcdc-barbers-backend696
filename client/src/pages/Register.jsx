@@ -12,7 +12,8 @@ export default function Register() {
   });
   const [status, setStatus] = useState(null);
   const [tone, setTone] = useState(null);
-  const [submitting, setSubmitting] = useState(false);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -28,9 +29,14 @@ export default function Register() {
       setTone("error");
       return;
     }
+    if (!acceptedTerms || !acceptedPrivacy) {
+      setStatus("Please accept the Terms and Privacy Policy.");
+      setTone("error");
+      return;
+    }
     setSubmitting(true);
     try {
-      await register(form);
+      await register({ ...form, accountType: form.role });
       setStatus("Account created! You can sign in.");
       setTone("success");
     } catch (err) {
@@ -104,14 +110,27 @@ export default function Register() {
               ⌄
             </span>
             <select name="role" value={form.role} onChange={handleChange} className="auth-input" aria-label="Account type">
-              <option value="user">Client</option>
+              <option value="user">Customer</option>
               <option value="barber">Barber</option>
-              <option value="shop_owner">Admin</option>
+              <option value="shop_owner">Shop owner</option>
             </select>
             <p className="auth-subtext" style={{ margin: "4px 0 0", fontSize: "0.8rem", opacity: 0.75 }}>
               Admin manages your own shop only.
             </p>
           </div>
+
+          <label className="auth-subtext" style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 8 }}>
+            <input type="checkbox" checked={acceptedTerms} onChange={(e) => setAcceptedTerms(e.target.checked)} />
+            <span>
+              I agree to the <Link to="/terms">Terms</Link>
+            </span>
+          </label>
+          <label className="auth-subtext" style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 12 }}>
+            <input type="checkbox" checked={acceptedPrivacy} onChange={(e) => setAcceptedPrivacy(e.target.checked)} />
+            <span>
+              I agree to the <Link to="/privacy">Privacy Policy</Link>
+            </span>
+          </label>
 
           <button type="submit" disabled={submitting} className="auth-btn">
             {submitting ? "Creating…" : "Create Account"}

@@ -201,12 +201,12 @@ export default function Home() {
   }, []);
 
   const bookInstant = () => {
-    navigate("/styles");
+    navigate("/booking");
   };
 
   const openNow = async () => {
     if (!userCoords) await requestLocation();
-    navigate("/styles");
+    navigate("/booking");
   };
 
   return (
@@ -252,7 +252,7 @@ export default function Home() {
         <p className="home-hero__sub">
           Matte black. Liquid gold. Book your chair and walk out sharp — every time.
         </p>
-        <Link to="/styles" className="home-hero__btn">
+        <Link to="/booking" className="home-hero__btn">
           Book appointment
         </Link>
       </section>
@@ -284,7 +284,7 @@ export default function Home() {
         </div>
 
         <div className="quick-actions">
-          <button type="button" className="smart-home__btn smart-home__btn--primary" onClick={() => navigate("/styles")}>
+          <button type="button" className="smart-home__btn smart-home__btn--primary" onClick={() => navigate("/booking")}>
             Book Now
           </button>
           <button
@@ -292,7 +292,7 @@ export default function Home() {
             className="smart-home__btn"
             onClick={async () => {
               if (!userCoords) await requestLocation();
-              navigate("/barbers");
+              navigate("/booking");
             }}
             disabled={locating}
           >
@@ -413,7 +413,7 @@ export default function Home() {
           Book
         </h2>
         <p className="home-cta__text">Ready when you are.</p>
-        <Link to="/styles" className="home-cta__btn">
+        <Link to="/booking" className="home-cta__btn">
           Reserve your time
         </Link>
       </section>
