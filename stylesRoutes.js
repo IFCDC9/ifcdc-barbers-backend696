@@ -55,18 +55,6 @@ function logStyleUpload(stage, req, file, extra = {}) {
   });
 }
 
-function isUnsupportedImageFile(file) {
-  if (!file) return false;
-  const name = String(file.originalname || "").toLowerCase();
-  const mime = String(file.mimetype || "").toLowerCase();
-  return (
-    /\.heic$/.test(name) ||
-    /\.heif$/.test(name) ||
-    mime.includes("heic") ||
-    mime.includes("heif")
-  );
-}
-
 async function getBarberIdForBarberUser(userId) {
   const r = await dbQuery("SELECT barber_id FROM app_users WHERE id = $1::uuid LIMIT 1", [String(userId)]);
   const id = r.rows?.[0]?.barber_id;
@@ -204,12 +192,6 @@ export function createStylesRouter() {
       }
 
       if (file?.buffer?.length) {
-        if (isUnsupportedImageFile(file)) {
-          return res.status(400).json({
-            error: "unsupported_format",
-            message: "Please upload JPEG or PNG (HEIC/HEIF is not supported in web browsers).",
-          });
-        }
         const { url } = await uploadBarberStyleImage({
           buffer: file.buffer,
           mimetype: file.mimetype,
@@ -407,12 +389,6 @@ export function createStylesRouter() {
       logStyleUpload("replace", req, file, { styleId: id });
       if (!file?.buffer?.length) {
         return res.status(400).json({ error: "image_required", message: "Multipart field `image` is required" });
-      }
-      if (isUnsupportedImageFile(file)) {
-        return res.status(400).json({
-          error: "unsupported_format",
-          message: "Please upload JPEG or PNG (HEIC/HEIF is not supported in web browsers).",
-        });
       }
 
       const existing = await resolveBookingStyleRow(dbQuery, id);

@@ -13,7 +13,7 @@ function slugPart(s) {
     .slice(0, 80) || "barber"
 }
 
-function isUnsupportedUploadFile({ mimetype, originalName }) {
+function isHeicUpload({ mimetype, originalName }) {
   const name = String(originalName || "").toLowerCase()
   const mime = String(mimetype || "").toLowerCase()
   return (
@@ -22,6 +22,11 @@ function isUnsupportedUploadFile({ mimetype, originalName }) {
     mime.includes("heic") ||
     mime.includes("heif")
   )
+}
+
+function replaceExtension(originalName, nextExt) {
+  const base = String(originalName || "photo").replace(/\.[^.]+$/, "")
+  return `${base}${nextExt}`
 }
 
 function webSafeExtension(mimetype, originalName) {
@@ -39,17 +44,53 @@ function logUploadMeta(label, meta) {
   console.info(`[storage] ${label}`, meta)
 }
 
+/** Convert iPhone HEIC/HEIF camera photos to JPEG for browser display. */
+async function normalizeUploadBuffer({ buffer, mimetype, originalName }) {
+  if (!isHeicUpload({ mimetype, originalName })) {
+    return { buffer, mimetype, originalName, converted: false }
+  }
+
+  try {
+    const heicConvert = (await import("heic-convert")).default
+    const converted = await heicConvert({
+      buffer,
+      format: "JPEG",
+      quality: 0.92,
+    })
+    const out = Buffer.from(converted)
+    logUploadMeta("heic converted to jpeg", {
+      originalName: String(originalName || ""),
+      inBytes: buffer.length,
+      outBytes: out.length,
+    })
+    return {
+      buffer: out,
+      mimetype: "image/jpeg",
+      originalName: replaceExtension(originalName, ".jpg"),
+      converted: true,
+    }
+  } catch (e) {
+    console.error("[storage] heic conversion failed:", e?.message || e)
+    throw new Error(
+      "heic_convert_failed: Could not convert iPhone photo. Try a JPEG/PNG export or screenshot.",
+    )
+  }
+}
+
 /**
  * Upload image buffer. Requires Supabase in production (no ephemeral disk saves).
- * @returns {Promise<{ url: string, storage: "supabase" | "local" }>}
+ * HEIC/HEIF from iPhone cameras is converted to JPEG before upload.
+ * @returns {Promise<{ url: string, storage: "supabase" | "local", converted?: boolean }>}
  */
 export async function uploadBarberStyleImage({ buffer, mimetype, barberName, originalName }) {
   if (!buffer?.length) {
     throw new Error("file_empty")
   }
-  if (isUnsupportedUploadFile({ mimetype, originalName })) {
-    throw new Error("unsupported_format: Please upload JPEG or PNG (HEIC/HEIF is not supported in web browsers)")
-  }
+
+  const normalized = await normalizeUploadBuffer({ buffer, mimetype, originalName })
+  buffer = normalized.buffer
+  mimetype = normalized.mimetype
+  originalName = normalized.originalName
 
   const safeExt = webSafeExtension(mimetype, originalName)
   const key = `${slugPart(barberName)}/${Date.now()}-${Math.random().toString(36).slice(2, 10)}${safeExt}`
@@ -60,6 +101,7 @@ export async function uploadBarberStyleImage({ buffer, mimetype, barberName, ori
     mimetype: String(mimetype || ""),
     bytes: buffer.length,
     key,
+    heicConverted: Boolean(normalized.converted),
   })
 
   if (supabaseService) {
@@ -72,8 +114,11 @@ export async function uploadBarberStyleImage({ buffer, mimetype, barberName, ori
     const { data: pub } = supabaseService.storage.from(BUCKET).getPublicUrl(data.path)
     const url = pub?.publicUrl
     if (!url) throw new Error("supabase_public_url_failed")
-    logUploadMeta("uploaded supabase", { key, url })
-    return { url, storage: "supabase" }
+    if (url.includes("/uploads/")) {
+      throw new Error("invalid_storage_url: Upload must use Supabase, not ephemeral disk")
+    }
+    logUploadMeta("uploaded supabase", { key, url, heicConverted: Boolean(normalized.converted) })
+    return { url, storage: "supabase", converted: Boolean(normalized.converted) }
   }
 
   if (process.env.NODE_ENV === "production") {
@@ -92,7 +137,7 @@ export async function uploadBarberStyleImage({ buffer, mimetype, barberName, ori
   fs.writeFileSync(full, buffer)
   const url = `/uploads/barber-styles/${key.replace(/\\/g, "/")}`
   logUploadMeta("saved local dev disk", { url })
-  return { url, storage: "local" }
+  return { url, storage: "local", converted: Boolean(normalized.converted) }
 }
 
 /** Extract storage object key from a Supabase public URL, if possible. */

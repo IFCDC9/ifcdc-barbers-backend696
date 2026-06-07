@@ -299,7 +299,7 @@ if (String(fakeErr).includes("invalid_id")) {
   pass("no-invalid-id-fake-uuid", `Fake UUID returns ${fakeUpload.data?.error || fakeUpload.res.status} (not invalid_id)`);
 }
 
-// 10. Delete / unpublish style
+// 10. Delete — hard remove from admin list
 if (styleId) {
   const del = await jsonFetch(`${base}/api/styles/${encodeURIComponent(styleId)}`, {
     method: "DELETE",
@@ -308,17 +308,70 @@ if (styleId) {
   if (!del.res.ok) {
     fail("photo-delete", `HTTP ${del.res.status}: ${del.data?.error || del.data?.message}`);
   } else {
-    pass("photo-delete", `Deleted/unpublished style ${styleId}`);
+    pass("photo-delete", `Hard-deleted style ${styleId}`);
     const afterDel = await jsonFetch(`${base}/api/styles/manage/all`, {
       headers: { "x-admin-key": adminKey, Accept: "application/json" },
     });
     const row = (afterDel.data?.styles || []).find((s) => String(s.id) === String(styleId));
-    if (row && row.is_published !== false) {
-      fail("photo-delete-verify", "Style still published after delete");
+    if (row) {
+      fail("photo-delete-verify", "Style still in admin list after delete");
     } else {
-      pass("photo-delete-verify", "Style unpublished/removed from public catalog");
+      pass("photo-delete-verify", "Style removed from admin list and public catalog");
     }
   }
+}
+
+// 11. Reject save without file (no placeholder)
+const noFileFd = new FormData();
+noFileFd.append("barberId", barberId);
+noFileFd.append("title", "No Image Test");
+noFileFd.append("category", "other");
+const noFile = await jsonFetch(`${base}/api/styles`, {
+  method: "POST",
+  headers: { "x-admin-key": adminKey, Accept: "application/json" },
+  body: noFileFd,
+});
+if (noFile.res.status === 400 && noFile.data?.error === "image_required") {
+  pass("no-placeholder-save", "Empty upload rejected (icon-512 never saved)");
+} else {
+  fail("no-placeholder-save", `Expected image_required, got ${noFile.res.status} / ${noFile.data?.error}`);
+}
+
+// 12. HEIC → JPEG conversion (iPhone camera simulation)
+const heicPath = path.join(__dirname, "fixtures", "sample.heic");
+if (fs.existsSync(heicPath)) {
+  const heicBuf = fs.readFileSync(heicPath);
+  const heicFd = new FormData();
+  heicFd.append("barberId", barberId);
+  heicFd.append("title", `HEIC Test ${Date.now()}`);
+  heicFd.append("category", "other");
+  heicFd.append("price", "35");
+  heicFd.append("image", new Blob([heicBuf], { type: "image/heic" }), "iphone-camera.heic");
+  const heicRes = await jsonFetch(`${base}/api/styles`, {
+    method: "POST",
+    headers: { "x-admin-key": adminKey, Accept: "application/json" },
+    body: heicFd,
+  });
+  if (!heicRes.res.ok) {
+    fail("heic-convert-upload", `HTTP ${heicRes.res.status}: ${heicRes.data?.error || heicRes.data?.message}`);
+  } else {
+    const hid = heicRes.data?.style?.id;
+    const hurl = heicRes.data?.style?.image_url || "";
+    const converted = hurl.includes("supabase.co") && !/\.heic|\.heif/i.test(hurl);
+    if (converted) {
+      pass("heic-convert-upload", `HEIC stored as browser URL ${String(hurl).slice(0, 60)}…`);
+      if (hid) {
+        await jsonFetch(`${base}/api/styles/${encodeURIComponent(hid)}`, {
+          method: "DELETE",
+          headers: { "x-admin-key": adminKey, Accept: "application/json" },
+        });
+      }
+    } else {
+      fail("heic-convert-upload", `Bad URL after HEIC upload: ${hurl.slice(0, 80)}`);
+    }
+  }
+} else {
+  fail("heic-convert-upload", "Missing scripts/fixtures/sample.heic");
 }
 
 console.log("\n--- Summary ---");

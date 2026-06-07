@@ -4,7 +4,7 @@
  * Usage: node --import ./loadBackendEnv.mjs scripts/sanitize-ephemeral-image-urls.mjs [--dry-run]
  */
 import { dbQuery } from "../db.js";
-import { isEphemeralUploadUrl, FALLBACK_STYLE_IMAGE_URL } from "../styleImageUrl.cjs";
+import { isEphemeralUploadUrl } from "../styleImageUrl.cjs";
 
 const dryRun = process.argv.includes("--dry-run");
 
@@ -21,11 +21,8 @@ for (const row of bad) {
   console.log(`  id=${row.id} barber=${row.barber_id} name=${row.name}`);
   console.log(`    was: ${row.image_url}`);
   if (!dryRun) {
-    await dbQuery(`UPDATE barber_services SET image_url = $2 WHERE id = $1`, [
-      row.id,
-      FALLBACK_STYLE_IMAGE_URL,
-    ]);
-    console.log(`    now: ${FALLBACK_STYLE_IMAGE_URL}`);
+    await dbQuery(`DELETE FROM barber_services WHERE id = $1`, [row.id]);
+    console.log("    deleted row (ephemeral/broken URL — re-upload via Admin)");
   }
 }
 

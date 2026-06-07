@@ -22,18 +22,6 @@ const upload = multer({
   limits: { fileSize: 8 * 1024 * 1024 },
 });
 
-function isUnsupportedImageFile(file) {
-  if (!file) return false;
-  const name = String(file.originalname || "").toLowerCase();
-  const mime = String(file.mimetype || "").toLowerCase();
-  return (
-    /\.heic$/.test(name) ||
-    /\.heif$/.test(name) ||
-    mime.includes("heic") ||
-    mime.includes("heif")
-  );
-}
-
 function normalizeBarberPhotoUrl(raw, barberId) {
   const trimmed = String(raw || "").trim();
   if (!trimmed) return "";
@@ -213,12 +201,6 @@ export function mountProductionBarbersRoutes(app, options = {}) {
         if (!name) return res.status(400).json({ error: "name is required" });
 
         const file = req.files?.photo?.[0] || req.files?.image?.[0];
-        if (isUnsupportedImageFile(file)) {
-          return res.status(400).json({
-            error: "unsupported_format",
-            message: "Please upload JPEG or PNG (HEIC/HEIF is not supported in web browsers).",
-          });
-        }
         let profileImageUrl = "";
         if (file?.buffer?.length) {
           const { url } = await uploadBarberStyleImage({
@@ -273,12 +255,6 @@ export function mountProductionBarbersRoutes(app, options = {}) {
       for (const file of files) {
         if (!file?.buffer?.length) {
           return res.status(400).json({ error: "file_empty", message: "One or more selected files are empty." });
-        }
-        if (isUnsupportedImageFile(file)) {
-          return res.status(400).json({
-            error: "unsupported_format",
-            message: "Please upload JPEG or PNG (HEIC/HEIF is not supported in web browsers).",
-          });
         }
         console.info("[barbers/styles-upload]", {
           barberId,
@@ -463,12 +439,6 @@ export function mountProductionBarbersRoutes(app, options = {}) {
         const file = req.files?.photo?.[0] || req.files?.image?.[0];
         if (!file?.buffer?.length) {
           return res.status(400).json({ error: "photo_required", message: "Multipart field `photo` is required" });
-        }
-        if (isUnsupportedImageFile(file)) {
-          return res.status(400).json({
-            error: "unsupported_format",
-            message: "Please upload JPEG or PNG (HEIC/HEIF is not supported in web browsers).",
-          });
         }
 
         const { url } = await uploadBarberStyleImage({

@@ -8,8 +8,8 @@ export function isEphemeralStyleImageUrl(url) {
   if (!u) return true;
   if (u.startsWith("blob:")) return true;
   const lower = u.toLowerCase();
-  if (/\.heic(?:\?|$)/.test(lower) || /\.heif(?:\?|$)/.test(lower)) return true;
   if (u.includes("supabase.co/storage/")) return false;
+  if (/\.heic(?:\?|$)/.test(lower) || /\.heif(?:\?|$)/.test(lower)) return true;
   if (u.includes("/uploads/")) return true;
   return false;
 }

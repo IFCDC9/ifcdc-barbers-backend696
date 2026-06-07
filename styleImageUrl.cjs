@@ -18,8 +18,8 @@ function isEphemeralUploadUrl(url) {
   if (!u) return true;
   if (u.startsWith("blob:")) return true;
   if (isPlaceholderImageUrl(u)) return true;
-  if (isUnsupportedBrowserImageUrl(u)) return true;
   if (u.includes("supabase.co/storage/")) return false;
+  if (isUnsupportedBrowserImageUrl(u)) return true;
   if (u.includes("/uploads/")) return true;
   return false;
 }
