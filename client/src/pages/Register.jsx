@@ -12,6 +12,7 @@ export default function Register() {
   });
   const [status, setStatus] = useState(null);
   const [tone, setTone] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
 
