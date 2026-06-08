@@ -20,6 +20,11 @@ import RequireRole from "./components/RequireRole.jsx";
 import Invite from "./pages/Invite.jsx";
 import PublicLegalPage from "./pages/PublicLegalPage.jsx";
 import IFCDCGlobalFooter from "./components/IFCDCGlobalFooter.jsx";
+import StylesBrowse from "./pages/StylesBrowse.jsx";
+import BarberOnboarding from "./pages/BarberOnboarding.jsx";
+import SignupBusiness from "./pages/SignupBusiness.jsx";
+import Messages from "./pages/Messages.jsx";
+import NotFound from "./pages/NotFound.jsx";
 
 /** Legacy booking page — kept for reference; wizard is production path. */
 import Booking from "./pages/Booking.jsx";
@@ -49,7 +54,7 @@ function AppShell() {
           <Route element={<MainLayout />}>
             <Route path="/" element={<Home />} />
             <Route path="/barbers" element={<Navigate to="/booking" replace />} />
-            <Route path="/styles" element={<Navigate to="/booking" replace />} />
+            <Route path="/styles" element={<StylesBrowse />} />
             <Route path="/book" element={<Navigate to="/booking" replace />} />
             <Route path="/booking" element={<BookingWizard />} />
             <Route path="/booking-legacy" element={<Booking />} />
@@ -65,6 +70,9 @@ function AppShell() {
             <Route path="/privacy" element={<PublicLegalPage />} />
             <Route path="/terms" element={<PublicLegalPage />} />
             <Route path="/register" element={<Register />} />
+            <Route path="/signup-business" element={<SignupBusiness />} />
+            <Route path="/onboarding/barber" element={<BarberOnboarding />} />
+            <Route path="/messages" element={<Messages />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route
@@ -87,6 +95,7 @@ function AppShell() {
                 </RequireRole>
               }
             />
+            <Route path="*" element={<NotFound />} />
           </Route>
         </Routes>
       </div>

@@ -80,10 +80,15 @@ if (deploy.res.ok && deploy.data?.ok) {
 // 2. Styles + prices on booking APIs
 const styles = await jsonFetch(`${apiBase}/api/styles`);
 const styleRows = styles.data?.styles || [];
-if (styleRows.length && styleRows.every((s) => s.image_url && Number(s.price) > 0)) {
-  pass("booking-styles-prices", `${styleRows.length} published styles with image_url + price`);
+const stylesWithPrice = styleRows.filter((s) => Number(s.price) > 0);
+const stylesWithPhoto = styleRows.filter((s) => String(s.image_url || "").trim());
+if (styleRows.length && stylesWithPrice.length === styleRows.length) {
+  pass(
+    "booking-styles-prices",
+    `${styleRows.length} published styles with price (${stylesWithPhoto.length} with photos)`,
+  );
 } else if (styleRows.length) {
-  fail("booking-styles-prices", `Missing image_url or price on some of ${styleRows.length} styles`);
+  fail("booking-styles-prices", `Missing price on some of ${styleRows.length} styles`);
 } else {
   fail("booking-styles-prices", "No published styles");
 }

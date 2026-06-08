@@ -12,8 +12,7 @@ export default function Messages() {
   };
 
   const startChat = () => {
-    goMessages();
-    window.dispatchEvent(new CustomEvent("ifcdc-open-aura", { detail: { mode: "chat" } }));
+    navigate("/aura", { replace: false });
   };
 
   const viewConversations = () => {
