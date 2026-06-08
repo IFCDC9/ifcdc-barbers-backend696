@@ -37,7 +37,32 @@ function isRenderableImageUrl(url) {
   const u = String(url || "").trim();
   if (!u || u.startsWith("blob:")) return false;
   if (isEphemeralUploadUrl(u)) return false;
+  if (isPlaceholderImageUrl(u)) return false;
   return u.startsWith("https://") || u.startsWith("http://");
+}
+
+/**
+ * Valid published photo URL, or "" when missing / placeholder / broken.
+ * Booking APIs use this so clients only show the IFCDC placeholder when truly empty.
+ */
+function resolvePublishedImageUrl(raw, ctx = {}) {
+  const original = String(raw || "").trim();
+  if (!original) return "";
+  if (isPlaceholderImageUrl(original) || isEphemeralUploadUrl(original)) {
+    if (ctx.serviceId || ctx.styleId) {
+      console.warn("[style-image] ignoring non-persistable image_url", {
+        styleId: ctx.styleId,
+        barberId: ctx.barberId,
+        serviceId: ctx.serviceId,
+        image_url: original,
+      });
+    }
+    return "";
+  }
+  if (original.startsWith("https://") || original.startsWith("http://")) {
+    return original;
+  }
+  return "";
 }
 
 /**
@@ -45,37 +70,7 @@ function isRenderableImageUrl(url) {
  * @returns {string} HTTPS URL suitable for <img src>
  */
 function normalizePublishedImageUrl(raw, ctx = {}) {
-  const original = String(raw || "").trim();
-  if (!original) {
-    if (ctx.styleId || ctx.serviceId) {
-      console.warn("[style-image] empty image_url", {
-        styleId: ctx.styleId,
-        barberId: ctx.barberId,
-        serviceId: ctx.serviceId,
-      });
-    }
-    return FALLBACK_STYLE_IMAGE_URL;
-  }
-  if (isEphemeralUploadUrl(original)) {
-    console.warn("[style-image] ephemeral/broken image_url replaced", {
-      styleId: ctx.styleId,
-      barberId: ctx.barberId,
-      serviceId: ctx.serviceId,
-      image_url: original,
-      fallback: FALLBACK_STYLE_IMAGE_URL,
-    });
-    return FALLBACK_STYLE_IMAGE_URL;
-  }
-  if (original.startsWith("https://") || original.startsWith("http://")) {
-    return original;
-  }
-  console.warn("[style-image] relative/non-http image_url replaced", {
-    styleId: ctx.styleId,
-    barberId: ctx.barberId,
-    serviceId: ctx.serviceId,
-    image_url: original,
-  });
-  return FALLBACK_STYLE_IMAGE_URL;
+  return resolvePublishedImageUrl(raw, ctx) || FALLBACK_STYLE_IMAGE_URL;
 }
 
 module.exports = {
@@ -83,6 +78,7 @@ module.exports = {
   isPlaceholderImageUrl,
   isEphemeralUploadUrl,
   isRenderableImageUrl,
+  resolvePublishedImageUrl,
   normalizePublishedImageUrl,
   assertPersistableImageUrl,
 };

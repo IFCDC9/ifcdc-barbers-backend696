@@ -19,11 +19,15 @@ export default function StyleCoverImage({
   logContext = "style-card",
   bare = false,
 }) {
-  const [src, setSrc] = React.useState(() => resolveStyleImageUrl(imageUrl));
+  const [src, setSrc] = React.useState(() =>
+    isRenderableStyleImageUrl(imageUrl) ? resolveStyleImageUrl(imageUrl) : FALLBACK_STYLE_IMAGE_URL,
+  );
   const [useFallback, setUseFallback] = React.useState(false);
 
   React.useEffect(() => {
-    const resolved = resolveStyleImageUrl(imageUrl);
+    const resolved = isRenderableStyleImageUrl(imageUrl)
+      ? resolveStyleImageUrl(imageUrl)
+      : FALLBACK_STYLE_IMAGE_URL;
     setSrc(resolved);
     setUseFallback(false);
     console.info(`[${logContext}] style image`, {

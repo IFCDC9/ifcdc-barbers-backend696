@@ -11,7 +11,7 @@ import {
 import { calculateFinalBookingTotal, IFCDC_PLATFORM_FEE_USD } from "../lib/bookingPaymentTotals.js";
 import { DEFAULT_BOOKING_SERVICES } from "../lib/defaultBookingServices.js";
 import { mediaUrl } from "../services/api.js";
-import { resolveStyleImageUrl, isRenderableStyleImageUrl } from "../lib/styleImageUrl.js";
+import { isRenderableStyleImageUrl } from "../lib/styleImageUrl.js";
 import StyleCoverImage from "../components/StyleCoverImage.jsx";
 
 const FALLBACK_SERVICE_PRICE = 25;
@@ -40,9 +40,6 @@ function readUser() {
   }
 }
 
-function serviceImageUrl(service) {
-  return resolveStyleImageUrl(service?.image_url);
-}
 
 export default function BookingWizard() {
   const navigate = useNavigate();
@@ -420,7 +417,6 @@ export default function BookingWizard() {
           {servicesLoading ? <p className="ifcdc-page-hint">Loading services…</p> : null}
           <ul className="ifcdc-book-wizard__services">
             {services.map((s) => {
-              const hasPhoto = isRenderableStyleImageUrl(s.image_url);
               const selected = String(selectedService?.id) === String(s.id);
               return (
                 <li key={s.id}>
@@ -430,19 +426,15 @@ export default function BookingWizard() {
                     onClick={() => setSelectedService(s)}
                   >
                     <div className="ifcdc-cover-media ifcdc-book-wizard__service-img">
-                      {hasPhoto ? (
-                        <StyleCoverImage
-                          bare
-                          styleId={s.id}
-                          barberId={barber?.id}
-                          imageUrl={s.image_url}
-                          alt={s.name || ""}
-                          className="ifcdc-cover-media__img ifcdc-cover-fill"
-                          logContext="booking-wizard"
-                        />
-                      ) : (
-                        <span className="ifcdc-book-wizard__service-icon">{s.icon || "✂️"}</span>
-                      )}
+                      <StyleCoverImage
+                        bare
+                        styleId={s.id}
+                        barberId={barber?.id}
+                        imageUrl={isRenderableStyleImageUrl(s.image_url) ? s.image_url : ""}
+                        alt={s.name || ""}
+                        className="ifcdc-cover-media__img ifcdc-cover-fill"
+                        logContext="booking-wizard"
+                      />
                     </div>
                     <div className="ifcdc-book-wizard__service-copy">
                       <strong>{s.name}</strong>

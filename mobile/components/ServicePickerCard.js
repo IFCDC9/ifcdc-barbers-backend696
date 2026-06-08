@@ -1,7 +1,11 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { isRenderableStyleImageUrl, resolveStyleImageUrl } from '../utils/styleImageUrl';
+import {
+  FALLBACK_STYLE_IMAGE_URL,
+  getServiceCardImageUrl,
+  isRenderableStyleImageUrl,
+} from '../utils/styleImageUrl';
 
 /**
  * Selectable service card for the booking flow.
@@ -9,12 +13,14 @@ import { isRenderableStyleImageUrl, resolveStyleImageUrl } from '../utils/styleI
  */
 export default function ServicePickerCard({ service, selected = false, onPress }) {
   const { t } = useTranslation();
-  const icon = service.icon || '✂️';
   const price = Number(service.price);
   const duration = Number(service.duration_minutes) || 30;
   const rawUrl = service.image_url;
-  const showPhoto = isRenderableStyleImageUrl(rawUrl);
-  const imageUri = showPhoto ? resolveStyleImageUrl(rawUrl) : null;
+  const [imageUri, setImageUri] = useState(() => getServiceCardImageUrl(rawUrl));
+
+  useEffect(() => {
+    setImageUri(getServiceCardImageUrl(rawUrl));
+  }, [rawUrl]);
 
   const onImageError = () => {
     console.warn('[style-card] image load error', {
@@ -22,7 +28,9 @@ export default function ServicePickerCard({ service, selected = false, onPress }
       barberId: service.barber_id,
       image_url: rawUrl,
       attemptedSrc: imageUri,
+      renderable: isRenderableStyleImageUrl(rawUrl),
     });
+    setImageUri(FALLBACK_STYLE_IMAGE_URL);
   };
 
   return (
@@ -37,16 +45,12 @@ export default function ServicePickerCard({ service, selected = false, onPress }
       accessibilityState={{ selected }}
     >
       <View style={styles.iconWrap}>
-        {imageUri ? (
-          <Image
-            source={{ uri: imageUri }}
-            style={styles.serviceImage}
-            resizeMode="cover"
-            onError={onImageError}
-          />
-        ) : (
-          <Text style={styles.icon}>{icon}</Text>
-        )}
+        <Image
+          source={{ uri: imageUri }}
+          style={styles.serviceImage}
+          resizeMode="cover"
+          onError={onImageError}
+        />
       </View>
       <View style={styles.copy}>
         <Text style={styles.name}>{service.name}</Text>
@@ -90,17 +94,14 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.35)',
     borderWidth: 1,
     borderColor: 'rgba(245,200,66,0.25)',
+    overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  icon: {
-    fontSize: 22,
   },
   serviceImage: {
     width: 44,
     height: 44,
     borderRadius: 8,
-    resizeMode: 'cover',
   },
   copy: {
     flex: 1,

@@ -2,11 +2,17 @@ import { PRODUCTION_API_ORIGIN } from "../config/api.js";
 
 export const FALLBACK_STYLE_IMAGE_URL = "https://ifcdcbarbersapp.com/icon-512.png";
 
-/** Ephemeral disk uploads (Render /uploads), blob URLs, or HEIC/HEIF — not safe for production display. */
+export function isPlaceholderStyleImageUrl(url) {
+  const u = String(url || "").trim().toLowerCase();
+  return u.includes("icon-512.png");
+}
+
+/** Ephemeral disk uploads (Render /uploads), blob URLs, placeholders, or HEIC/HEIF. */
 export function isEphemeralStyleImageUrl(url) {
   const u = String(url || "").trim();
   if (!u) return true;
   if (u.startsWith("blob:")) return true;
+  if (isPlaceholderStyleImageUrl(u)) return true;
   const lower = u.toLowerCase();
   if (u.includes("supabase.co/storage/")) return false;
   if (/\.heic(?:\?|$)/.test(lower) || /\.heif(?:\?|$)/.test(lower)) return true;
@@ -45,5 +51,11 @@ export function resolveStyleImageUrl(raw, apiOrigin) {
     }
     return `${String(base).replace(/\/$/, "")}${original}`;
   }
+  return FALLBACK_STYLE_IMAGE_URL;
+}
+
+/** Real uploaded photo URL, or IFCDC placeholder when none exists. */
+export function getServiceCardImageUrl(raw, apiOrigin) {
+  if (isRenderableStyleImageUrl(raw)) return resolveStyleImageUrl(raw, apiOrigin);
   return FALLBACK_STYLE_IMAGE_URL;
 }

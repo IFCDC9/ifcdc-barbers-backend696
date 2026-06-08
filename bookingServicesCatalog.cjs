@@ -62,10 +62,20 @@ const {
   resolvedBarberDbIdOnly,
   getTableBarberIdType,
 } = require("./barberIdentity.cjs");
-const { normalizePublishedImageUrl } = require("./styleImageUrl.cjs");
+const { resolvePublishedImageUrl } = require("./styleImageUrl.cjs");
+const {
+  loadServiceImageSourcesForBarber,
+  pickServiceImageUrl,
+} = require("./serviceImageEnrichment.cjs");
 
-function mapServiceRow(row) {
+function mapServiceRow(row, imageSources = null) {
   if (!row) return null;
+  const image_url =
+    pickServiceImageUrl(row, imageSources) ||
+    resolvePublishedImageUrl(row.image_url, {
+      serviceId: row.id,
+      barberId: row.barber_id,
+    });
   return {
     id: row.id,
     barber_id: row.barber_id,
@@ -76,10 +86,7 @@ function mapServiceRow(row) {
     price: Number(row.price),
     duration_minutes: Number(row.duration_minutes) || 30,
     icon: row.icon || "",
-    image_url: normalizePublishedImageUrl(row.image_url, {
-      serviceId: row.id,
-      barberId: row.barber_id,
-    }),
+    image_url,
     is_active: row.is_active !== false,
   };
 }
@@ -111,7 +118,7 @@ async function serviceBarberKey(dbQuery, barberRow, barberName) {
  * Load active services for a barber; seed defaults when catalog is empty.
  * @returns {Promise<{ services: object[], seeded: boolean }>}
  */
-async function ensureBarberServices(dbQuery, barberId, barberName = "") {
+async function ensureBarberServices(dbQuery, barberId, barberName = "", imageSources = null) {
   let serviceKey = barberId;
   if (isUuidBarberId(serviceKey)) {
     serviceKey = await coerceBarberIdForTable(dbQuery, "barber_services", serviceKey, barberName);
@@ -135,7 +142,10 @@ async function ensureBarberServices(dbQuery, barberId, barberName = "") {
     [String(serviceKey)],
   );
   if (list.rows?.length) {
-    return { services: list.rows.map(mapServiceRow).filter(Boolean), seeded: false };
+    return {
+      services: list.rows.map((row) => mapServiceRow(row, imageSources)).filter(Boolean),
+      seeded: false,
+    };
   }
 
   for (const s of DEFAULT_BOOKING_SERVICES) {
@@ -165,7 +175,10 @@ async function ensureBarberServices(dbQuery, barberId, barberName = "") {
      ORDER BY id ASC`,
     [String(serviceKey)],
   );
-  return { services: (seeded.rows || []).map(mapServiceRow).filter(Boolean), seeded: true };
+  return {
+    services: (seeded.rows || []).map((row) => mapServiceRow(row, imageSources)).filter(Boolean),
+    seeded: true,
+  };
 }
 
 /**
@@ -191,7 +204,17 @@ async function fetchPublicBarberServices(dbQuery, { barberIdRaw, barberName }) {
       console.log(`[services] barberId=${barberIdRaw || "—"}, count=0, fallbackUsed=false, error=${error}`);
       return { barberId: null, services: [], fallbackUsed: false, error };
     }
-    const loaded = await ensureBarberServices(dbQuery, serviceKey, barberName || barberRow.name);
+    const resolvedName = barberName || barberRow.name || "";
+    const imageSources = await loadServiceImageSourcesForBarber(dbQuery, {
+      barberKey: serviceKey,
+      barberName: resolvedName,
+    });
+    const loaded = await ensureBarberServices(
+      dbQuery,
+      serviceKey,
+      resolvedName,
+      imageSources,
+    );
     services = loaded.services;
     fallbackUsed = loaded.seeded;
     console.log(

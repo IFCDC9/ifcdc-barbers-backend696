@@ -2,7 +2,11 @@
  * Unified public booking styles — merges barber_services (UUID barbers) with legacy `styles` rows.
  */
 const { isUuidBarberId, coerceBarberIdForTable } = require("./barberIdentity.cjs");
-const { normalizePublishedImageUrl } = require("./styleImageUrl.cjs");
+const { resolvePublishedImageUrl } = require("./styleImageUrl.cjs");
+const {
+  loadServiceImageSourcesForBarber,
+  pickServiceImageUrl,
+} = require("./serviceImageEnrichment.cjs");
 
 const SERVICE_ID_PREFIX = "svc-";
 
@@ -17,13 +21,15 @@ function parseServiceStyleId(styleId) {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
-function mapServiceRow(row) {
+function mapServiceRow(row, imageSources = null) {
   if (!row) return null;
-  const imageUrl = normalizePublishedImageUrl(row.image_url, {
-    styleId: serviceStyleId(row.id),
-    barberId: row.barber_id,
-    serviceId: row.id,
-  });
+  const imageUrl =
+    pickServiceImageUrl(row, imageSources) ||
+    resolvePublishedImageUrl(row.image_url, {
+      styleId: serviceStyleId(row.id),
+      barberId: row.barber_id,
+      serviceId: row.id,
+    });
   return {
     id: serviceStyleId(row.id),
     barber_id: row.barber_id,
@@ -43,7 +49,7 @@ function mapLegacyStyleRow(row) {
   if (!row) return null;
   const published = row.is_published !== false;
   if (!published) return null;
-  const imageUrl = normalizePublishedImageUrl(row.image_url, {
+  const imageUrl = resolvePublishedImageUrl(row.image_url, {
     styleId: String(row.id),
     barberId: row.barber_id,
   });
@@ -67,6 +73,21 @@ function mapLegacyStyleRow(row) {
  */
 async function listAllPublishedBookingStyles(dbQuery) {
   const out = [];
+  const sourcesCache = new Map();
+
+  async function sourcesFor(barberKey, barberName) {
+    const cacheKey = `${barberKey}::${barberName}`;
+    if (!sourcesCache.has(cacheKey)) {
+      sourcesCache.set(
+        cacheKey,
+        await loadServiceImageSourcesForBarber(dbQuery, {
+          barberKey,
+          barberName: barberName || "",
+        }),
+      );
+    }
+    return sourcesCache.get(cacheKey);
+  }
 
   try {
     const svc = await dbQuery(
@@ -80,7 +101,8 @@ async function listAllPublishedBookingStyles(dbQuery) {
        LIMIT 2000`,
     );
     for (const row of svc.rows || []) {
-      const mapped = mapServiceRow(row);
+      const imageSources = await sourcesFor(row.barber_id, row.barber_name);
+      const mapped = mapServiceRow(row, imageSources);
       if (mapped) out.push(mapped);
     }
   } catch (e) {
@@ -147,7 +169,7 @@ async function listAllBookingStylesForAdmin(dbQuery) {
           barber_id: row.barber_id,
           title: String(row.title || "").trim() || "Style",
           description: row.description || "",
-          image_url: normalizePublishedImageUrl(row.image_url, {
+          image_url: resolvePublishedImageUrl(row.image_url, {
             styleId: String(row.id),
             barberId: row.barber_id,
           }),
