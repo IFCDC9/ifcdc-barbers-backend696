@@ -75,9 +75,9 @@ function commitMatchesExpected(activeFull, activeShort) {
 }
 
 /**
- * @returns {object} JSON body for GET /api/deploy-info
+ * @returns {Promise<object>} JSON body for GET /api/deploy-info
  */
-export function getDeployInfoPayload() {
+export async function getDeployInfoPayload() {
   const active = resolveActiveCommit();
   let isDeliverableCustomerEmail = () => false;
   let captureOrGetCompletedPayPalOrder = null;
@@ -107,9 +107,23 @@ export function getDeployInfoPayload() {
   }
 
   const resolvedWeb = resolvePublicWebOrigin();
-  const supabaseUrl = String(process.env.SUPABASE_URL || "").trim();
-  const supabaseSecret = Boolean(
-    String(process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim(),
+  let storageInit = {
+    urlConfigured: false,
+    secretConfigured: false,
+    clientReady: false,
+    bucket: String(process.env.SUPABASE_STORAGE_BUCKET || "barber-styles").trim(),
+    lastError: null,
+    probe: null,
+  };
+  try {
+    const mod = await import("./src/db/supabaseServiceClient.js");
+    storageInit = { ...mod.getSupabaseInitStatus(), probe: await mod.probeSupabaseStorage() };
+  } catch (e) {
+    storageInit.lastError = e?.message || String(e);
+  }
+
+  const supabaseConfigured = Boolean(
+    storageInit.clientReady && storageInit.probe?.ok,
   );
 
   return {
@@ -125,10 +139,17 @@ export function getDeployInfoPayload() {
       termsUrl: `${resolvedWeb}/terms`,
     },
     persistentStorage: {
-      supabaseConfigured: Boolean(supabaseUrl && supabaseSecret),
-      bucket: String(process.env.SUPABASE_STORAGE_BUCKET || "barber-styles").trim(),
+      supabaseConfigured,
+      envOnlyConfigured: Boolean(storageInit.urlConfigured && storageInit.secretConfigured),
+      clientReady: Boolean(storageInit.clientReady),
+      storageReachable: Boolean(storageInit.probe?.ok),
+      bucket: storageInit.bucket,
+      urlHost: storageInit.urlHost || null,
+      lastError: storageInit.lastError || storageInit.probe?.reason || null,
       uploadsRoute: "/api/upload",
-      note: "Image uploads use Supabase Storage when supabaseConfigured is true; local /uploads is legacy only.",
+      note: supabaseConfigured
+        ? "Supabase Storage is live for photo uploads."
+        : "Photo uploads will fail until SUPABASE_URL + service role key are set and bucket is reachable.",
     },
     activeCommit: active.full || active.short || null,
     activeCommitShort: active.short || (active.full ? active.full.slice(0, 8) : null),

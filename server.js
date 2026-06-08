@@ -660,14 +660,40 @@ app.get("/health", (req, res) => {
 });
 
 /** Production deploy verification — active git commit vs expected 8a3a601d. */
-app.get("/api/deploy-info", (_req, res) => {
+app.get("/api/deploy-info", async (_req, res) => {
   res.set("Cache-Control", "no-store");
   try {
-    res.json(getDeployInfoPayload());
+    res.json(await getDeployInfoPayload());
   } catch (e) {
     res.status(500).json({
       ok: false,
       error: "deploy_info_failed",
+      message: e?.message || String(e),
+    });
+  }
+});
+
+/** Live Supabase Storage probe for TestFlight / ops (no secrets returned). */
+app.get("/api/storage-health", async (_req, res) => {
+  res.set("Cache-Control", "no-store");
+  try {
+    const { getSupabaseInitStatus, probeSupabaseStorage } = await import("./src/db/supabaseServiceClient.js");
+    const init = getSupabaseInitStatus();
+    const probe = await probeSupabaseStorage();
+    const ok = Boolean(init.clientReady && probe.ok);
+    res.status(ok ? 200 : 503).json({
+      ok,
+      ...init,
+      probe,
+      uploadsRoute: "/api/upload",
+      message: ok
+        ? "Photo storage is configured and reachable."
+        : init.lastError || probe.reason || "Photo storage is not ready.",
+    });
+  } catch (e) {
+    res.status(503).json({
+      ok: false,
+      error: "storage_health_failed",
       message: e?.message || String(e),
     });
   }
@@ -1033,6 +1059,26 @@ async function startServer() {
   } catch (e) {
     console.error("[boot] production CMS mount failed:", e?.message || e);
     apiStylesStack.use(createStylesRouter());
+  }
+
+  try {
+    const { logSupabaseKeyStatus } = await import("./src/config/supabaseEnv.js");
+    logSupabaseKeyStatus();
+    const { getSupabaseInitStatus, probeSupabaseStorage } = await import("./src/db/supabaseServiceClient.js");
+    const init = getSupabaseInitStatus();
+    const probe = await probeSupabaseStorage();
+    const ready = Boolean(init.clientReady && probe.ok);
+    console.log(
+      ready ? "[boot] ✓ Supabase photo storage READY" : "[boot] ✗ Supabase photo storage NOT READY",
+      { bucket: init.bucket, urlHost: init.urlHost, probeOk: probe.ok, reason: probe.reason || init.lastError || null },
+    );
+    if (process.env.NODE_ENV === "production" && !ready) {
+      console.error(
+        "[boot] CRITICAL: Set SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_SECRET_KEY) on Render and ensure bucket barber-styles exists.",
+      );
+    }
+  } catch (e) {
+    console.error("[boot] Supabase storage check failed:", e?.message || e);
   }
 
   app.use((req, res) => {

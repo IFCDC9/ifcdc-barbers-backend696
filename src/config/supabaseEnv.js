@@ -12,9 +12,18 @@ export function resolveSupabasePublishableKey(env = process.env) {
 }
 
 /** @param {NodeJS.ProcessEnv} [env] */
+function stripEnvQuotes(v) {
+  let t = String(v || "").trim()
+  if ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'"))) {
+    t = t.slice(1, -1).trim()
+  }
+  return t
+}
+
+/** @param {NodeJS.ProcessEnv} [env] */
 export function resolveSupabaseSecretKey(env = process.env) {
-  const secret = String(env.SUPABASE_SECRET_KEY || "").trim()
-  const serviceRole = String(env.SUPABASE_SERVICE_ROLE_KEY || "").trim()
+  const secret = stripEnvQuotes(env.SUPABASE_SECRET_KEY || "")
+  const serviceRole = stripEnvQuotes(env.SUPABASE_SERVICE_ROLE_KEY || "")
   return secret || serviceRole
 }
 

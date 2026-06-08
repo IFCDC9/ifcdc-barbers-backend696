@@ -1,6 +1,10 @@
 import fs from "node:fs"
 import path from "node:path"
-import supabaseService from "../db/supabaseServiceClient.js"
+import {
+  getSupabaseServiceClient,
+  getSupabaseInitStatus,
+  probeSupabaseStorage,
+} from "../db/supabaseServiceClient.js"
 
 const BUCKET = String(process.env.SUPABASE_STORAGE_BUCKET || "barber-styles").trim()
 
@@ -104,14 +108,15 @@ export async function uploadBarberStyleImage({ buffer, mimetype, barberName, ori
     heicConverted: Boolean(normalized.converted),
   })
 
-  if (supabaseService) {
-    const { data, error } = await supabaseService.storage.from(BUCKET).upload(key, buffer, {
+  if (getSupabaseServiceClient()) {
+    const client = getSupabaseServiceClient()
+    const { data, error } = await client.storage.from(BUCKET).upload(key, buffer, {
       contentType: mimetype || "image/jpeg",
       upsert: false,
     })
     if (error) throw new Error(error.message || "supabase_upload_failed")
 
-    const { data: pub } = supabaseService.storage.from(BUCKET).getPublicUrl(data.path)
+    const { data: pub } = client.storage.from(BUCKET).getPublicUrl(data.path)
     const url = pub?.publicUrl
     if (!url) throw new Error("supabase_public_url_failed")
     if (url.includes("/uploads/")) {
@@ -153,10 +158,10 @@ export function supabaseObjectKeyFromPublicUrl(publicUrl) {
 /** Best-effort delete of a previously uploaded Supabase object. */
 export async function deleteBarberStyleImageFromUrl(publicUrl) {
   const key = supabaseObjectKeyFromPublicUrl(publicUrl)
-  if (!key || !supabaseService) {
+  if (!key || !getSupabaseServiceClient()) {
     return { deleted: false, reason: key ? "no_supabase_client" : "not_supabase_url" }
   }
-  const { error } = await supabaseService.storage.from(BUCKET).remove([key])
+  const { error } = await getSupabaseServiceClient().storage.from(BUCKET).remove([key])
   if (error) {
     console.warn("[storage] delete failed:", key, error.message || error)
     return { deleted: false, reason: error.message || "delete_failed", key }
