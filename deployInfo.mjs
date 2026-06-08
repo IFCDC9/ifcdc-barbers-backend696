@@ -172,7 +172,7 @@ export async function getDeployInfoPayload() {
       bookingEmailResend: Boolean(isDeliverableCustomerEmail),
     },
     mobile: {
-      requiredIosBuildNumberMin: 31,
+      requiredIosBuildNumberMin: 32,
       repoIosBuildNumber,
       testFlightReady: repoIosBuildNumber != null && Number(repoIosBuildNumber) >= 31,
     },

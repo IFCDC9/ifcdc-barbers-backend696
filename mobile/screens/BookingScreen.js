@@ -235,7 +235,7 @@ function BookingScreen() {
         console.warn('[services] safety timeout — showing fallback menu');
         applyServices(DEFAULT_BOOKING_SERVICES, { usedLocalFallback: true });
         finishLoading();
-      }, 5500);
+      }, 13000);
 
       try {
         const result = await fetchBookingServices({

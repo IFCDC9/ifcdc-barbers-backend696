@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
+import { normalizeBookingService } from '../utils/bookingServiceImages';
 import {
   FALLBACK_STYLE_IMAGE_URL,
   getServiceCardImageUrl,
@@ -15,7 +16,7 @@ export default function ServicePickerCard({ service, selected = false, onPress }
   const { t } = useTranslation();
   const price = Number(service.price);
   const duration = Number(service.duration_minutes) || 30;
-  const rawUrl = service.image_url;
+  const rawUrl = normalizeBookingService(service)?.image_url;
   const [imageUri, setImageUri] = useState(() => getServiceCardImageUrl(rawUrl));
 
   useEffect(() => {

@@ -33,6 +33,8 @@ function actorFromReq(req) {
 
 const requireCjs = createRequire(import.meta.url);
 const { handlePublicBarberServicesGet } = requireCjs("./bookingPublicHandlers.cjs");
+const { loadServiceImageSourcesForBarber, pickServiceImageUrl } = requireCjs("./serviceImageEnrichment.cjs");
+const { resolvePublishedImageUrl } = requireCjs("./styleImageUrl.cjs");
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -393,7 +395,21 @@ export function createBarberBusinessRouter({ uploadDir } = {}) {
           `${servicesSelectSql} ${where} ORDER BY s.is_active DESC, s.id ASC`,
           [req.barberId],
         );
-        return res.json({ services: r.rows || [], barberId: req.barberId });
+        const barberName = r.rows?.[0]?.barber_name || "";
+        const imageSources = await loadServiceImageSourcesForBarber(dbQuery, {
+          barberKey: req.barberId,
+          barberName,
+        });
+        const services = (r.rows || []).map((row) => {
+          const image_url =
+            pickServiceImageUrl(row, imageSources) ||
+            resolvePublishedImageUrl(row.image_url, {
+              serviceId: row.id,
+              barberId: row.barber_id,
+            });
+          return { ...row, image_url };
+        });
+        return res.json({ services, barberId: req.barberId });
       } catch (e) {
         console.error("[barber-business] GET services:", e);
         return res.status(500).json({ error: "server_error", message: "Failed to load services" });

@@ -1,10 +1,14 @@
 import { API_URL, apiFullUrl } from "../constants/config";
 import { fetchWithTimeout } from "../auth/authSessionApi";
 import { DEFAULT_BOOKING_SERVICES } from "../lib/defaultBookingServices.js";
+import {
+  enrichBookingServicesWithPublishedStyles,
+  normalizeBookingService,
+} from "../utils/bookingServiceImages.js";
 
 const BOOKING_FETCH_TIMEOUT_MS = 25_000;
-/** Service menu must resolve within 5s — then use local fallback. */
-export const SERVICES_FETCH_TIMEOUT_MS = 5_000;
+/** Service menu — allow cold Render wake; avoid offline emoji-only fallback. */
+export const SERVICES_FETCH_TIMEOUT_MS = 12_000;
 
 const FINALIZE_RETRY_ATTEMPTS = 4;
 const FINALIZE_RETRY_BASE_MS = 1200;
@@ -104,7 +108,7 @@ async function requestServicesFromUrl(url, timeoutMs) {
     throw err;
   }
 
-  const services = Array.isArray(json.services) ? json.services : [];
+  const services = (Array.isArray(json.services) ? json.services : []).map(normalizeBookingService);
   return {
     services,
     barberId: json.barberId,
@@ -117,8 +121,8 @@ async function requestServicesFromUrl(url, timeoutMs) {
 function primaryServiceUrls({ barberName, barberId }) {
   const q = buildServicesQuery({ barberName, barberId }).toString();
   return [
-    apiFullUrl(`/api/barber/services?${q}`),
     apiFullUrl(`/api/app-bookings/services?${q}`),
+    apiFullUrl(`/api/barber/services?${q}`),
   ];
 }
 
@@ -126,8 +130,8 @@ function nameOnlyServiceUrls(barberName) {
   if (!barberName) return [];
   const q = buildServicesQuery({ barberName, barberId: null }).toString();
   return [
-    apiFullUrl(`/api/barber/services?${q}`),
     apiFullUrl(`/api/app-bookings/services?${q}`),
+    apiFullUrl(`/api/barber/services?${q}`),
   ];
 }
 
@@ -171,15 +175,25 @@ export async function fetchBookingServices({ barberName, barberId }) {
         });
         continue;
       }
+      const enriched = await enrichBookingServicesWithPublishedStyles(
+        result.services,
+        { barberId: result.barberId ?? barberId, barberName },
+        bookingFetch,
+        Math.max(2000, deadline - Date.now()),
+      );
+      const withPhotos = enriched.filter((s) => String(s.image_url || "").trim()).length;
       logServicesEvent("success", {
         barberId: result.barberId ?? barberIdLabel,
         url,
         status: result.status ?? 200,
-        count: result.services.length,
+        count: enriched.length,
         fallbackUsed: result.fallbackUsed,
       });
+      console.log(
+        `[services] photos barberId=${result.barberId ?? barberIdLabel} withImage=${withPhotos}/${enriched.length}`,
+      );
       return {
-        services: result.services,
+        services: enriched,
         barberId: result.barberId ?? barberId,
         fallbackUsed: result.fallbackUsed,
         usedLocalFallback: false,

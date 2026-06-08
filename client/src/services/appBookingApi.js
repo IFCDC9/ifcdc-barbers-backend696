@@ -5,7 +5,7 @@ import { getApiOrigin } from "./api.js";
 import { DEFAULT_BOOKING_SERVICES } from "../lib/defaultBookingServices.js";
 
 const BOOKING_FETCH_TIMEOUT_MS = 25_000;
-export const SERVICES_FETCH_TIMEOUT_MS = 5_000;
+export const SERVICES_FETCH_TIMEOUT_MS = 12_000;
 const FINALIZE_RETRY_ATTEMPTS = 4;
 const FINALIZE_RETRY_BASE_MS = 1200;
 
@@ -86,8 +86,8 @@ export async function fetchBookingServices({ barberName, barberId }) {
   const deadline = Date.now() + SERVICES_FETCH_TIMEOUT_MS;
   const q = buildServicesQuery({ barberName, barberId }).toString();
   const urls = [
-    apiUrl(`/api/barber/services?${q}`),
     apiUrl(`/api/app-bookings/services?${q}`),
+    apiUrl(`/api/barber/services?${q}`),
   ];
 
   for (const url of urls) {
