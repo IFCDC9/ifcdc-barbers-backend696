@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js"
+import ws from "ws"
 import { resolveSupabaseSecretKey } from "../config/supabaseEnv.js"
 
 let _client = null
@@ -35,6 +36,7 @@ export function getSupabaseServiceClient() {
   try {
     _client = createClient(url, key, {
       auth: { autoRefreshToken: false, persistSession: false },
+      realtime: { transport: ws },
     })
     _lastInitError = null
     console.log("[supabase] service client ready", { url: url.slice(0, 40) + "…" })
