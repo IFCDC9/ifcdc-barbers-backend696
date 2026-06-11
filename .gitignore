@@ -1,5 +1,8 @@
 # IFCDC Barbers — production .gitignore (UTF-8)
 
+# local DB exports (contain production data)
+backups/
+
 # dependencies
 node_modules/
 **/node_modules/

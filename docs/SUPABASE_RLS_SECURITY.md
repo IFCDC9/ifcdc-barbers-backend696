@@ -55,6 +55,22 @@ Manual:
 - [ ] TestFlight booking (Build 32)
 - [ ] Registration / login
 
+## Function hardening (search_path)
+
+Security Advisor may flag **function_search_path_mutable** on loyalty/geo RPCs.
+
+```bash
+npm run backup:db
+npm run apply:function-hardening
+npm run audit:security
+```
+
+`src/db/supabase_function_hardening.sql`:
+
+- Pins `search_path = public, pg_temp` on all custom plpgsql functions
+- Revokes `anon`/`authenticated` EXECUTE on **SECURITY DEFINER** loyalty RPCs (they bypass RLS)
+- Leaves read-only helpers (`get_nearby_barbers`, etc.) callable by anon (RLS still applies)
+
 ## Do not
 
 - Disable RLS after enabling without policies
