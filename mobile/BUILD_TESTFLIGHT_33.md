@@ -17,6 +17,14 @@ curl -sS https://ifcdc-barbers-backend696.onrender.com/api/deploy-info
 # mobile.repoIosBuildNumber: 33
 ```
 
+## Build 34 follow-up (style gallery — after backend deploy)
+
+Build **33** does not include unlimited style gallery on mobile. After deploying the backend + website:
+
+- **Photo limit:** **100 gallery photos per barber** (batch upload up to 25 per request)
+- Website Styles Management: multi-upload, delete, reorder (↑↓)
+- Mobile booking: submit **Build 34** with `bookingServiceImages.js` gallery cards
+
 ## Included since build 32
 
 - Password reset: `app_users` + Resend email, SPA link (`ifcdcbarbersapp.com/reset-password`)

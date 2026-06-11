@@ -1,9 +1,37 @@
 import React from "react";
-import { getBarbers, getStylesAll, createStyle, updateStyle, deleteStyle, mediaUrl, replaceStyleImage } from "../services/api.js";
+import {
+  getBarbers,
+  getStylesAll,
+  createStyle,
+  createStylesBatch,
+  updateStyle,
+  deleteStyle,
+  reorderStyleGallery,
+  replaceStyleImage,
+} from "../services/api.js";
 import StyleCoverImage from "./StyleCoverImage.jsx";
 import { UPLOAD_ACCEPT, validateImageUploadFile } from "../lib/imageUploadValidation.js";
 
 const CATEGORIES = ["fades", "tapers", "waves", "braids", "beard work", "kids cuts", "designs", "other"];
+const GALLERY_PHOTO_LIMIT = 100;
+
+function styleSortKey(s) {
+  const src = String(s?.source || "");
+  if (src === "barber_style_gallery") {
+    return [0, Number(s.sort_order) || 0, String(s.id)];
+  }
+  return [1, Number(s.service_id) || 0, String(s.id)];
+}
+
+function compareStyles(a, b) {
+  const ka = styleSortKey(a);
+  const kb = styleSortKey(b);
+  for (let i = 0; i < ka.length; i += 1) {
+    if (ka[i] < kb[i]) return -1;
+    if (ka[i] > kb[i]) return 1;
+  }
+  return 0;
+}
 
 export default function StylesManagement({ lockedBarberId = null, onChanged }) {
   const [barbers, setBarbers] = React.useState([]);
@@ -13,7 +41,7 @@ export default function StylesManagement({ lockedBarberId = null, onChanged }) {
   const [description, setDescription] = React.useState("");
   const [category, setCategory] = React.useState("other");
   const [price, setPrice] = React.useState("35");
-  const [file, setFile] = React.useState(null);
+  const [files, setFiles] = React.useState([]);
   const [msg, setMsg] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [editingId, setEditingId] = React.useState(null);
@@ -30,31 +58,46 @@ export default function StylesManagement({ lockedBarberId = null, onChanged }) {
     load();
   }, [load]);
 
+  const barberId = lockedBarberId != null ? String(lockedBarberId) : String(selectedBarberId || "").trim();
+
   const stylesForSelected = React.useMemo(() => {
-    const id = selectedBarberId ? String(selectedBarberId).trim() : "";
-    if (!id) return [];
-    return (Array.isArray(styles) ? styles : []).filter((s) => String(s.barber_id) === id);
-  }, [styles, selectedBarberId]);
+    if (!barberId) return [];
+    return (Array.isArray(styles) ? styles : [])
+      .filter((s) => String(s.barber_id) === barberId)
+      .sort(compareStyles);
+  }, [styles, barberId]);
+
+  const galleryCount = React.useMemo(
+    () => stylesForSelected.filter((s) => s.source === "barber_style_gallery").length,
+    [stylesForSelected],
+  );
 
   const submit = async () => {
     setMsg("");
-    const barberId = lockedBarberId != null ? lockedBarberId : String(selectedBarberId || "").trim();
     if (!barberId) return setMsg("Select a barber.");
     if (!title.trim()) return setMsg("Title required.");
-    const fileErr = validateImageUploadFile(file);
-    if (fileErr) return setMsg(fileErr);
+    if (!files.length) return setMsg("Select at least one photo.");
+
+    for (const f of files) {
+      const fileErr = validateImageUploadFile(f);
+      if (fileErr) return setMsg(fileErr);
+    }
 
     setBusy(true);
     try {
-      await createStyle({ barberId, title, description, category, file, price: Number(price) });
+      if (files.length === 1) {
+        await createStyle({ barberId, title, description, category, file: files[0], price: Number(price) });
+      } else {
+        await createStylesBatch({ barberId, title, description, category, files, price: Number(price) });
+      }
       setTitle("");
       setDescription("");
       setCategory("other");
       setPrice("35");
-      setFile(null);
+      setFiles([]);
       await load();
       onChanged?.();
-      setMsg("Saved.");
+      setMsg(files.length > 1 ? `Saved ${files.length} photos.` : "Saved.");
     } catch (e) {
       setMsg(e?.message || "Save failed");
     } finally {
@@ -131,11 +174,35 @@ export default function StylesManagement({ lockedBarberId = null, onChanged }) {
     }
   };
 
+  const moveStyle = async (index, direction) => {
+    const nextIndex = index + direction;
+    if (nextIndex < 0 || nextIndex >= stylesForSelected.length) return;
+    const reordered = [...stylesForSelected];
+    const [item] = reordered.splice(index, 1);
+    reordered.splice(nextIndex, 0, item);
+    setBusy(true);
+    setMsg("");
+    try {
+      await reorderStyleGallery({
+        barberId,
+        orderedIds: reordered.map((s) => s.id),
+      });
+      await load();
+      onChanged?.();
+      setMsg("Order updated.");
+    } catch (e) {
+      setMsg(e?.message || "Reorder failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <section className="glass-panel" style={{ padding: 14, marginTop: 14 }}>
       <h2 style={{ margin: 0, color: "rgba(245,217,122,0.95)", letterSpacing: "0.08em" }}>Styles Management</h2>
       <p style={{ margin: "8px 0 12px", color: "rgba(255,255,255,0.68)" }}>
-        Upload haircut/style photos with title, description, and category. These display publicly on barber cards.
+        Upload haircut photos for your gallery — up to {GALLERY_PHOTO_LIMIT} per barber. Select multiple files at once.
+        Use the arrows on each card to set which photo appears first on the website and app.
       </p>
 
       {msg ? <div style={{ marginBottom: 10, color: "rgba(245,217,122,0.95)", fontWeight: 800 }}>{msg}</div> : null}
@@ -155,6 +222,12 @@ export default function StylesManagement({ lockedBarberId = null, onChanged }) {
             ))}
           </select>
         </div>
+      ) : null}
+
+      {barberId ? (
+        <p style={{ margin: "0 0 10px", color: "rgba(255,255,255,0.55)", fontSize: 13 }}>
+          Gallery photos: {galleryCount} / {GALLERY_PHOTO_LIMIT}
+        </p>
       ) : null}
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 10, marginBottom: 12 }}>
@@ -195,16 +268,22 @@ export default function StylesManagement({ lockedBarberId = null, onChanged }) {
           <input
             type="file"
             accept={UPLOAD_ACCEPT}
+            multiple
             onChange={(e) => {
-              const next = e.target.files?.[0] || null;
-              const err = validateImageUploadFile(next);
-              if (err) {
-                setMsg(err);
-                e.target.value = "";
-                setFile(null);
-                return;
+              const picked = Array.from(e.target.files || []);
+              const valid = [];
+              for (const next of picked) {
+                const err = validateImageUploadFile(next);
+                if (err) {
+                  setMsg(err);
+                  e.target.value = "";
+                  setFiles([]);
+                  return;
+                }
+                valid.push(next);
               }
-              setFile(next);
+              setFiles(valid);
+              if (valid.length) setMsg(`${valid.length} photo(s) selected.`);
             }}
           />
           <button
@@ -220,20 +299,25 @@ export default function StylesManagement({ lockedBarberId = null, onChanged }) {
               fontWeight: 900,
             }}
           >
-            {busy ? "Saving…" : "Save"}
+            {busy ? "Saving…" : files.length > 1 ? `Upload ${files.length} photos` : "Save"}
           </button>
         </div>
+        {files.length ? (
+          <p style={{ margin: 0, color: "rgba(255,255,255,0.6)", fontSize: 13 }}>
+            Selected: {files.map((f) => f.name).join(", ")}
+          </p>
+        ) : null}
       </div>
 
-      {!selectedBarberId && !lockedBarberId ? (
+      {!barberId ? (
         <div style={{ color: "rgba(255,255,255,0.6)" }}>Select a barber to see their gallery.</div>
       ) : !stylesForSelected.length ? (
         <div style={{ color: "rgba(255,255,255,0.7)" }}>No styles uploaded yet.</div>
       ) : (
         <div className="ifcdc-style-grid">
-          {stylesForSelected.map((s) => (
+          {stylesForSelected.map((s, index) => (
             <div key={s.id} className="ifcdc-style-card">
-              <div className="ifcdc-cover-media" style={{ aspectRatio: "4 / 5" }}>
+              <div className="ifcdc-cover-media" style={{ aspectRatio: "4 / 5", position: "relative" }}>
                 <StyleCoverImage
                   bare
                   styleId={s.id}
@@ -242,6 +326,23 @@ export default function StylesManagement({ lockedBarberId = null, onChanged }) {
                   alt={s.title || ""}
                   logContext="styles-management"
                 />
+                {index === 0 ? (
+                  <span
+                    style={{
+                      position: "absolute",
+                      top: 8,
+                      left: 8,
+                      background: "rgba(212,175,55,0.9)",
+                      color: "#111",
+                      fontSize: 11,
+                      fontWeight: 900,
+                      padding: "4px 8px",
+                      borderRadius: 999,
+                    }}
+                  >
+                    Cover
+                  </span>
+                ) : null}
               </div>
               <div className="ifcdc-style-meta">
                 {editingId === s.id ? (
@@ -311,6 +412,17 @@ export default function StylesManagement({ lockedBarberId = null, onChanged }) {
                     {s.description ? <p className="ifcdc-style-desc">{s.description}</p> : null}
                     <div className="ifcdc-style-cat">{s.category || "other"}</div>
                     <div style={{ display: "flex", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
+                      <button type="button" onClick={() => void moveStyle(index, -1)} disabled={busy || index === 0} title="Move earlier">
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void moveStyle(index, 1)}
+                        disabled={busy || index === stylesForSelected.length - 1}
+                        title="Move later"
+                      >
+                        ↓
+                      </button>
                       <button type="button" onClick={() => startEdit(s)} disabled={busy}>
                         Edit
                       </button>
@@ -336,4 +448,3 @@ export default function StylesManagement({ lockedBarberId = null, onChanged }) {
     </section>
   );
 }
-

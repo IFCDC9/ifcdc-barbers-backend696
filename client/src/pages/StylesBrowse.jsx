@@ -43,7 +43,14 @@ export default function StylesBrowse() {
   }, [barbers]);
 
   const sortedStyles = useMemo(() => {
-    return [...styles].sort((a, b) => String(a.title || "").localeCompare(String(b.title || "")));
+    return [...styles].sort((a, b) => {
+      const ao = Number(a.sort_order);
+      const bo = Number(b.sort_order);
+      const aOrder = Number.isFinite(ao) ? ao : 9999;
+      const bOrder = Number.isFinite(bo) ? bo : 9999;
+      if (aOrder !== bOrder) return aOrder - bOrder;
+      return String(a.title || "").localeCompare(String(b.title || ""));
+    });
   }, [styles]);
 
   const goBook = (s) => {

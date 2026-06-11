@@ -342,6 +342,64 @@ export async function createStyle({ barberId, title, description, category, file
   return j?.style;
 }
 
+/** Upload multiple gallery photos at once (up to 25 per request). */
+export async function createStylesBatch({ barberId, title, description, category, files, price }) {
+  const base = getApiBase();
+  assertResolvableApiBase(base);
+  const list = Array.isArray(files) ? files.filter(Boolean) : [];
+  if (!list.length) throw new Error("Select at least one image file.");
+  const url = `${base}/api/styles/batch`;
+  const fd = new FormData();
+  if (barberId != null) fd.append("barberId", String(barberId));
+  fd.append("title", String(title || ""));
+  fd.append("description", String(description || ""));
+  fd.append("category", String(category || "other"));
+  const p = Number(price);
+  if (Number.isFinite(p) && p > 0) fd.append("price", String(p));
+  for (const file of list) {
+    fd.append("images", file, file.name || "style.jpg");
+  }
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { ...getJwtOrAdminKeyHeaders(), Accept: "application/json" },
+    body: fd,
+  });
+  const text = await res.text();
+  let j = {};
+  try {
+    j = text ? JSON.parse(text) : {};
+  } catch {
+    j = { message: text };
+  }
+  if (!res.ok) throw new Error(j?.message || j?.error || `HTTP ${res.status}`);
+  return Array.isArray(j?.styles) ? j.styles : [];
+}
+
+/** Reorder gallery photos — pass ordered style ids (gal-* first in desired order). */
+export async function reorderStyleGallery({ barberId, orderedIds }) {
+  const base = getApiBase();
+  assertResolvableApiBase(base);
+  const url = `${base}/api/styles/reorder`;
+  const res = await fetch(url, {
+    method: "PATCH",
+    headers: {
+      ...getJwtOrAdminKeyHeaders(),
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({ barberId, orderedIds }),
+  });
+  const text = await res.text();
+  let j = {};
+  try {
+    j = text ? JSON.parse(text) : {};
+  } catch {
+    j = { message: text };
+  }
+  if (!res.ok) throw new Error(j?.message || j?.error || `HTTP ${res.status}`);
+  return j;
+}
+
 export async function updateStyle(id, patch) {
   const base = getApiBase();
   assertResolvableApiBase(base);

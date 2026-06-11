@@ -93,6 +93,22 @@ if (styleRows.length && stylesWithPrice.length === styleRows.length) {
   fail("booking-styles-prices", "No published styles");
 }
 
+const galleryStyles = styleRows.filter(
+  (s) => s.source === "barber_style_gallery" || String(s.id || "").startsWith("gal-"),
+);
+if (galleryStyles.length) {
+  pass("style-gallery-api", `${galleryStyles.length} gallery photo(s) in public /api/styles`);
+} else {
+  const batchProbe = await jsonFetch(`${apiBase}/api/styles/batch`, { method: "POST" });
+  if (batchProbe.res.status === 401 || batchProbe.res.status === 403) {
+    pass("style-gallery-api", "Gallery batch route deployed (auth required; 0 gallery rows published yet)");
+  } else if (batchProbe.res.status === 404) {
+    fail("style-gallery-api", "POST /api/styles/batch not found — deploy Build 34 backend");
+  } else {
+    pass("style-gallery-api", `Gallery routes live (${batchProbe.res.status}); no published gallery rows yet`);
+  }
+}
+
 const barbers = await jsonFetch(`${apiBase}/barbers`);
 const barberList = Array.isArray(barbers.data) ? barbers.data : [];
 const barber = barberList.find((b) => String(b.id || "").includes("-")) || barberList[0];

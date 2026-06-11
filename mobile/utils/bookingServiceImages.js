@@ -28,6 +28,45 @@ function stylePhotoUrl(style) {
   return '';
 }
 
+/** Gallery rows from /api/styles as extra bookable service cards (gal-* ids). */
+export function appendGalleryStylesAsServices(services, styles, { barberId } = {}) {
+  const list = (Array.isArray(services) ? services : []).map(normalizeBookingService);
+  const published = Array.isArray(styles) ? styles : [];
+  if (!published.length) return list;
+
+  const bid = String(barberId || '').trim();
+  const existingIds = new Set(list.map((s) => String(s.id)));
+  const extras = [];
+
+  for (const st of published) {
+    const src = String(st.source || '');
+    const sid = String(st.id || '');
+    if (src !== 'barber_style_gallery' && !sid.startsWith('gal-')) continue;
+
+    const stBarberId = String(st.barber_id ?? st.barberId ?? '').trim();
+    if (bid && stBarberId && stBarberId !== bid) continue;
+    if (existingIds.has(sid)) continue;
+
+    const url = stylePhotoUrl(st);
+    if (!isRenderableStyleImageUrl(url)) continue;
+
+    extras.push(
+      normalizeBookingService({
+        id: sid,
+        name: st.title || st.name || 'Style',
+        description: st.description || '',
+        price: st.price,
+        duration_minutes: st.duration_minutes || 30,
+        image_url: url,
+        barber_id: stBarberId || bid,
+      }),
+    );
+    existingIds.add(sid);
+  }
+
+  return [...list, ...extras];
+}
+
 /**
  * Merge published style photos onto booking services (website /api/styles parity).
  */
@@ -80,7 +119,8 @@ export async function enrichBookingServicesWithPublishedStyles(
     const text = await res.text();
     const json = text ? JSON.parse(text) : {};
     const styles = Array.isArray(json.styles) ? json.styles : [];
-    return mergeServicePhotosFromStyles(list, styles, { barberId, barberName });
+    const withPhotos = mergeServicePhotosFromStyles(list, styles, { barberId, barberName });
+    return appendGalleryStylesAsServices(withPhotos, styles, { barberId, barberName });
   } catch {
     return list;
   }

@@ -1,4 +1,8 @@
 import { dbQuery } from "./db.js";
+import { createRequire } from "node:module";
+
+const requireCjs = createRequire(import.meta.url);
+const { ensureBarberStyleGalleryTable } = requireCjs("./styleGalleryStore.cjs");
 
 export const STYLE_CATEGORIES = [
   "fades",
@@ -58,6 +62,8 @@ export async function ensureStylesTables() {
   await dbQuery(`CREATE INDEX IF NOT EXISTS styles_created_at_idx ON styles (created_at DESC);`);
   await dbQuery(`ALTER TABLE styles ADD COLUMN IF NOT EXISTS is_published BOOLEAN NOT NULL DEFAULT TRUE;`);
   await dbQuery(`CREATE INDEX IF NOT EXISTS styles_published_idx ON styles (is_published) WHERE is_published = true;`);
+
+  await ensureBarberStyleGalleryTable(dbQuery);
 }
 
 export async function seedSampleStylesIfEmpty() {

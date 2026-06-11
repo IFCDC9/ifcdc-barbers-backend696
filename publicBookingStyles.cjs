@@ -7,6 +7,20 @@ const {
   loadServiceImageSourcesForBarber,
   pickServiceImageUrl,
 } = require("./serviceImageEnrichment.cjs");
+const {
+  listPublishedGalleryStyles,
+  listAllGalleryStylesForAdmin,
+  listGalleryStylesForBarber,
+  resolveGalleryStyleRow,
+  resolveGalleryStyleRowAdmin,
+  insertGalleryImage,
+  updateGalleryMetadata,
+  updateGalleryImageUrl,
+  setGalleryPublished,
+  deleteGalleryStyle,
+  reorderGalleryStyles,
+  parseGalleryStyleId,
+} = require("./styleGalleryStore.cjs");
 
 const SERVICE_ID_PREFIX = "svc-";
 
@@ -75,6 +89,15 @@ async function listAllPublishedBookingStyles(dbQuery) {
   const out = [];
   const sourcesCache = new Map();
 
+  try {
+    const gallery = await listPublishedGalleryStyles(dbQuery);
+    for (const row of gallery) {
+      out.push(row);
+    }
+  } catch (e) {
+    console.warn("[styles] gallery list:", e?.message || e);
+  }
+
   async function sourcesFor(barberKey, barberName) {
     const cacheKey = `${barberKey}::${barberName}`;
     if (!sourcesCache.has(cacheKey)) {
@@ -132,6 +155,13 @@ async function listAllPublishedBookingStyles(dbQuery) {
 /** All bookable styles including unpublished (admin / barber dashboard). */
 async function listAllBookingStylesForAdmin(dbQuery) {
   const out = [];
+
+  try {
+    const gallery = await listAllGalleryStylesForAdmin(dbQuery);
+    for (const row of gallery) out.push(row);
+  } catch (e) {
+    console.warn("[styles] gallery admin list:", e?.message || e);
+  }
 
   try {
     const svc = await dbQuery(
@@ -195,8 +225,21 @@ async function listPublishedBookingStylesForBarber(dbQuery, barberIdRaw) {
   const idText = String(barberIdRaw || "").trim();
   if (!idText) return [];
 
+  const out = [];
+  try {
+    const gallery = await listGalleryStylesForBarber(dbQuery, idText);
+    out.push(...gallery);
+  } catch (e) {
+    console.warn("[styles] gallery barber list:", e?.message || e);
+  }
+
   const all = await listAllPublishedBookingStyles(dbQuery);
-  return all.filter((s) => String(s.barber_id) === idText);
+  for (const s of all) {
+    if (String(s.barber_id) !== idText) continue;
+    if (s.source === "barber_style_gallery") continue;
+    out.push(s);
+  }
+  return out;
 }
 
 /**
@@ -205,6 +248,10 @@ async function listPublishedBookingStylesForBarber(dbQuery, barberIdRaw) {
 async function resolveBookingStyleRow(dbQuery, styleId, barberIdRaw) {
   const sid = String(styleId || "").trim();
   if (!sid) return null;
+
+  if (parseGalleryStyleId(sid)) {
+    return resolveGalleryStyleRow(dbQuery, sid, barberIdRaw);
+  }
 
   const serviceId = parseServiceStyleId(sid);
   if (serviceId != null) {
@@ -338,12 +385,20 @@ module.exports = {
   SERVICE_ID_PREFIX,
   serviceStyleId,
   parseServiceStyleId,
+  parseGalleryStyleId,
   mapServiceRow,
   listAllPublishedBookingStyles,
   listAllBookingStylesForAdmin,
   listPublishedBookingStylesForBarber,
   resolveBookingStyleRow,
+  resolveGalleryStyleRowAdmin,
   upsertBarberServiceStyle,
   setBarberServicePublished,
   deleteBarberServiceStyle,
+  insertGalleryImage,
+  updateGalleryMetadata,
+  updateGalleryImageUrl,
+  setGalleryPublished,
+  deleteGalleryStyle,
+  reorderGalleryStyles,
 };

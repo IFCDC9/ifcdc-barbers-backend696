@@ -14,11 +14,20 @@ const {
   listAllBookingStylesForAdmin,
   listPublishedBookingStylesForBarber,
   resolveBookingStyleRow,
+  resolveGalleryStyleRowAdmin,
   upsertBarberServiceStyle,
   setBarberServicePublished,
   deleteBarberServiceStyle,
   parseServiceStyleId,
+  parseGalleryStyleId,
+  insertGalleryImage,
+  updateGalleryMetadata,
+  updateGalleryImageUrl,
+  setGalleryPublished,
+  deleteGalleryStyle,
+  reorderGalleryStyles,
 } = requireCjs("./publicBookingStyles.cjs");
+const { MAX_STYLE_GALLERY_BATCH_UPLOAD } = requireCjs("./styleGalleryConstants.cjs");
 const { assertPersistableImageUrl, isPlaceholderImageUrl } = requireCjs("./styleImageUrl.cjs");
 const { isUuidBarberId } = requireCjs("./barberIdentity.cjs");
 
@@ -39,6 +48,20 @@ function pickUploadFile(req) {
     req.files?.file?.[0] ||
     null
   );
+}
+
+function pickBatchUploadFiles(req) {
+  const batches = [
+    ...(req.files?.images || []),
+    ...(req.files?.image || []),
+    ...(req.files?.photos || []),
+    ...(req.files?.photo || []),
+    ...(req.files?.files || []),
+    ...(req.files?.file || []),
+  ];
+  if (batches.length) return batches;
+  const single = pickUploadFile(req);
+  return single ? [single] : [];
 }
 
 function logStyleUpload(stage, req, file, extra = {}) {
@@ -132,6 +155,138 @@ export function createStylesRouter() {
     return res.json({ ok: true, barberId: barberIdRaw, styles: [] });
   });
 
+  /** Reorder gallery photos for a barber (gal-* ids in desired display order). */
+  router.patch(
+    "/reorder",
+    requireAuthOrAdminSecret,
+    requireRole(["super_admin", "admin", "barber", "shop_owner"]),
+    async (req, res) => {
+      const barberIdRaw = req.body?.barberId ?? req.body?.barber_id;
+      let barberId = barberIdRaw;
+      const role = getTokenRole(req);
+      if (role === "barber") {
+        const myBarberId = await getBarberIdForBarberUser(req.user?.id);
+        if (!myBarberId) return res.status(403).json({ error: "barber_unlinked" });
+        barberId = myBarberId;
+      }
+      const barberKey = String(barberId || "").trim();
+      if (!barberKey) return res.status(400).json({ error: "barber_id_required" });
+      const orderedIds = req.body?.orderedIds ?? req.body?.ordered_ids;
+      if (!Array.isArray(orderedIds) || !orderedIds.length) {
+        return res.status(400).json({ error: "ordered_ids_required" });
+      }
+      try {
+        const result = await reorderGalleryStyles(dbQuery, barberKey, orderedIds);
+        const styles = await listPublishedBookingStylesForBarber(dbQuery, barberKey);
+        return res.json({ ok: true, ...result, styles });
+      } catch (e) {
+        const msg = e?.message || String(e);
+        return res.status(500).json({ error: "reorder_failed", message: msg });
+      }
+    },
+  );
+
+  /** Batch upload multiple gallery photos (UUID barbers). */
+  router.post(
+    "/batch",
+    requireAuthOrAdminSecret,
+    requireRole(["super_admin", "admin", "barber", "shop_owner"]),
+    upload.fields([
+      { name: "images", maxCount: MAX_STYLE_GALLERY_BATCH_UPLOAD },
+      { name: "image", maxCount: MAX_STYLE_GALLERY_BATCH_UPLOAD },
+      { name: "photos", maxCount: MAX_STYLE_GALLERY_BATCH_UPLOAD },
+      { name: "photo", maxCount: MAX_STYLE_GALLERY_BATCH_UPLOAD },
+      { name: "files", maxCount: MAX_STYLE_GALLERY_BATCH_UPLOAD },
+      { name: "file", maxCount: MAX_STYLE_GALLERY_BATCH_UPLOAD },
+    ]),
+    async (req, res) => {
+      const role = getTokenRole(req);
+      const title = String(req.body?.title || "").trim();
+      const description = String(req.body?.description || "").trim() || null;
+      const category = normalizeCategory(req.body?.category);
+      const barberIdRaw = req.body?.barber_id ?? req.body?.barberId;
+      const priceRaw = Number(req.body?.price ?? req.body?.stylePrice);
+      const price = Number.isFinite(priceRaw) && priceRaw > 0 ? Math.round(priceRaw * 100) / 100 : 25;
+      const files = pickBatchUploadFiles(req);
+      if (!title) return res.status(400).json({ error: "title_required" });
+      if (!files.length) {
+        return res.status(400).json({ error: "image_required", message: "At least one image file is required." });
+      }
+
+      let barberId = barberIdRaw;
+      if (role === "barber") {
+        const myBarberId = await getBarberIdForBarberUser(req.user?.id);
+        if (!myBarberId) return res.status(403).json({ error: "barber_unlinked" });
+        barberId = myBarberId;
+      }
+      const barberIdText = String(barberId || "").trim();
+      if (!barberIdText) return res.status(400).json({ error: "barber_id_required" });
+      if (!isUuidBarberId(barberIdText)) {
+        return res.status(400).json({
+          error: "batch_gallery_uuid_only",
+          message: "Batch gallery upload is supported for production barber accounts.",
+        });
+      }
+
+      let barberName = `barber-${barberIdText}`;
+      const br = await dbQuery(`SELECT name FROM barbers WHERE id::text = $1 LIMIT 1`, [barberIdText]);
+      barberName = br.rows?.[0]?.name || barberName;
+
+      const created = [];
+      const errors = [];
+      for (let i = 0; i < files.length; i += 1) {
+        const file = files[i];
+        if (!file?.buffer?.length) continue;
+        try {
+          const { url } = await uploadBarberStyleImage({
+            buffer: file.buffer,
+            mimetype: file.mimetype,
+            barberName,
+            originalName: file.originalname || `style-${i + 1}.jpg`,
+          });
+          assertPersistableImageUrl(url, "image_url");
+          const photoTitle =
+            files.length > 1 && title ? `${title} (${i + 1})` : title;
+          const style = await insertGalleryImage(dbQuery, {
+            barberId: barberIdText,
+            title: photoTitle,
+            description,
+            category,
+            price,
+            imageUrl: url,
+            isPublished: req.body?.is_published !== false && req.body?.isPublished !== false,
+          });
+          created.push(style);
+        } catch (e) {
+          const msg = e?.message || String(e);
+          if (msg === "gallery_limit_reached") {
+            errors.push({ index: i, error: msg });
+            break;
+          }
+          errors.push({ index: i, error: msg });
+        }
+      }
+
+      if (!created.length) {
+        const limitHit = errors.some((x) => x.error === "gallery_limit_reached");
+        return res.status(limitHit ? 400 : 500).json({
+          error: limitHit ? "gallery_limit_reached" : "batch_upload_failed",
+          message: limitHit
+            ? "Gallery photo limit reached for this barber."
+            : "No photos could be uploaded.",
+          errors,
+        });
+      }
+
+      return res.json({
+        ok: true,
+        styles: created,
+        count: created.length,
+        errors: errors.length ? errors : undefined,
+      });
+    },
+  );
+
   // Public list by barber id (UUID or numeric)
   router.get("/:barberId", async (req, res) => {
     const barberIdRaw = String(req.params.barberId || "").trim();
@@ -216,17 +371,29 @@ export function createStylesRouter() {
       }
 
       if (isUuidBarberId(barberIdText) || !Number.isFinite(Number(barberIdText))) {
-        const style = await upsertBarberServiceStyle(dbQuery, {
-          barberId: barberIdText,
-          name: title,
-          description,
-          category,
-          price,
-          durationMinutes: Number(req.body?.durationMinutes) || 30,
-          imageUrl,
-          isActive: req.body?.is_published !== false && req.body?.isPublished !== false,
-        });
-        return res.json({ ok: true, style });
+        try {
+          const style = await insertGalleryImage(dbQuery, {
+            barberId: barberIdText,
+            title,
+            description,
+            category,
+            price,
+            durationMinutes: Number(req.body?.durationMinutes) || 30,
+            imageUrl,
+            serviceId: req.body?.serviceId ?? req.body?.service_id ?? null,
+            isPublished: req.body?.is_published !== false && req.body?.isPublished !== false,
+          });
+          return res.json({ ok: true, style });
+        } catch (e) {
+          const msg = e?.message || String(e);
+          if (msg === "gallery_limit_reached") {
+            return res.status(400).json({
+              error: "gallery_limit_reached",
+              message: "Maximum gallery photos reached for this barber.",
+            });
+          }
+          throw e;
+        }
       }
 
       const r = await dbQuery(
@@ -247,6 +414,10 @@ export function createStylesRouter() {
       const id = String(req.params.id || "").trim();
       const published = req.body?.is_published ?? req.body?.isPublished ?? req.body?.published ?? true;
       try {
+        if (parseGalleryStyleId(id)) {
+          const style = await setGalleryPublished(dbQuery, id, Boolean(published));
+          return res.json({ ok: true, style, is_published: style.is_published });
+        }
         if (parseServiceStyleId(id) != null || /^\d+$/.test(id)) {
           const style = await setBarberServicePublished(dbQuery, id, Boolean(published));
           return res.json({ ok: true, style, is_published: style.is_published });
@@ -284,6 +455,25 @@ export function createStylesRouter() {
             })()
           : null;
       const isPublished = req.body?.is_published ?? req.body?.isPublished;
+
+      if (parseGalleryStyleId(id)) {
+        const existing = await resolveGalleryStyleRowAdmin(dbQuery, id);
+        if (!existing) return res.status(404).json({ error: "not_found" });
+        if (role === "barber") {
+          const myBarberId = await getBarberIdForBarberUser(req.user?.id);
+          if (!myBarberId || String(existing.barber_id) !== String(myBarberId)) {
+            return res.status(403).json({ message: "Access denied" });
+          }
+        }
+        const style = await updateGalleryMetadata(dbQuery, id, {
+          title: title || existing.title,
+          description: description ?? existing.description,
+          category: category || existing.category,
+          price: price ?? existing.price,
+          isPublished: isPublished == null ? existing.is_published : Boolean(isPublished),
+        });
+        return res.json({ ok: true, style });
+      }
 
       const serviceId = parseServiceStyleId(id);
       if (serviceId != null) {
@@ -335,6 +525,24 @@ export function createStylesRouter() {
       const id = String(req.params.id || "").trim();
       const role = getTokenRole(req);
 
+      if (parseGalleryStyleId(id)) {
+        const existing = await resolveGalleryStyleRowAdmin(dbQuery, id);
+        if (!existing) return res.status(404).json({ error: "not_found" });
+        if (role === "barber") {
+          const myBarberId = await getBarberIdForBarberUser(req.user?.id);
+          if (!myBarberId || String(existing.barber_id) !== String(myBarberId)) {
+            return res.status(403).json({ message: "Access denied" });
+          }
+        }
+        const removed = await deleteGalleryStyle(dbQuery, id);
+        if (removed?.image_url) {
+          await deleteBarberStyleImageFromUrl(removed.image_url).catch((e) => {
+            console.warn("[styles] gallery storage delete skipped:", e?.message || e);
+          });
+        }
+        return res.json({ ok: true, deletedId: id, hardDeleted: true });
+      }
+
       const serviceId = parseServiceStyleId(id);
       if (serviceId != null) {
         try {
@@ -385,10 +593,40 @@ export function createStylesRouter() {
     ]),
     async (req, res) => {
       const id = String(req.params.id || "").trim();
+      const role = getTokenRole(req);
       const file = pickUploadFile(req);
       logStyleUpload("replace", req, file, { styleId: id });
       if (!file?.buffer?.length) {
         return res.status(400).json({ error: "image_required", message: "Multipart field `image` is required" });
+      }
+
+      if (parseGalleryStyleId(id)) {
+        const existing = await resolveGalleryStyleRowAdmin(dbQuery, id);
+        if (!existing) return res.status(404).json({ error: "not_found", message: "Style not found" });
+        if (role === "barber") {
+          const myBarberId = await getBarberIdForBarberUser(req.user?.id);
+          if (!myBarberId || String(existing.barber_id) !== String(myBarberId)) {
+            return res.status(403).json({ message: "Access denied" });
+          }
+        }
+        const barberIdText = String(existing.barber_id || "").trim();
+        let barberName = `barber-${barberIdText}`;
+        if (isUuidBarberId(barberIdText)) {
+          const br = await dbQuery(`SELECT name FROM barbers WHERE id::text = $1 LIMIT 1`, [barberIdText]);
+          barberName = br.rows?.[0]?.name || barberName;
+        }
+        const priorImageUrl = existing.image_url || "";
+        const { url } = await uploadBarberStyleImage({
+          buffer: file.buffer,
+          mimetype: file.mimetype,
+          barberName,
+          originalName: file.originalname || "style.jpg",
+        });
+        const style = await updateGalleryImageUrl(dbQuery, id, url);
+        if (priorImageUrl && priorImageUrl !== url) {
+          await deleteBarberStyleImageFromUrl(priorImageUrl).catch(() => {});
+        }
+        return res.json({ ok: true, style });
       }
 
       const existing = await resolveBookingStyleRow(dbQuery, id);
@@ -417,7 +655,6 @@ export function createStylesRouter() {
       }
       if (!row) return res.status(404).json({ error: "not_found", message: "Style not found" });
 
-      const role = getTokenRole(req);
       if (role === "barber") {
         const myBarberId = await getBarberIdForBarberUser(req.user?.id);
         if (!myBarberId || String(row.barber_id) !== String(myBarberId)) {
