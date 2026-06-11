@@ -140,7 +140,23 @@ export async function resetPassword({ token, newPassword }) {
 
 export function getApiBase() {
   const raw = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE;
-  return raw !== undefined && raw !== null && String(raw).trim() !== "" ? String(raw).replace(/\/$/, "") : "";
+  if (raw !== undefined && raw !== null && String(raw).trim() !== "") {
+    return String(raw).replace(/\/$/, "");
+  }
+  // Split-host production (ifcdcbarbersapp.com static → backend696 API).
+  // Reads already used getApiOrigin(); uploads must hit the same backend.
+  if (typeof window !== "undefined" && window.location?.origin) {
+    const host = String(window.location.hostname || "").toLowerCase();
+    if (
+      import.meta.env.PROD &&
+      (host === "ifcdcbarbersapp.com" ||
+        host.endsWith(".ifcdcbarbersapp.com") ||
+        host.includes("ifcdc-barbers-frontend"))
+    ) {
+      return PRODUCTION_API_ORIGIN;
+    }
+  }
+  return "";
 }
 
 /** Short label for UI (e.g. Home) — reflects VITE_API_BASE or dev proxy. */
@@ -384,7 +400,13 @@ export async function createStyle({ barberId, title, description, category, file
     j = { message: text };
   }
   if (!res.ok) throw new Error(j?.message || j?.error || `HTTP ${res.status}`);
-  return j?.style;
+  if (!j?.style?.id) {
+    throw new Error("Photo upload did not return a saved style. Please retry.");
+  }
+  if (j.persisted === false) {
+    throw new Error("Photo was not saved to the database. Please retry.");
+  }
+  return j.style;
 }
 
 /** Upload multiple gallery photos at once (up to 25 per request). */
@@ -417,7 +439,11 @@ export async function createStylesBatch({ barberId, title, description, category
     j = { message: text };
   }
   if (!res.ok) throw new Error(j?.message || j?.error || `HTTP ${res.status}`);
-  return Array.isArray(j?.styles) ? j.styles : [];
+  const styles = Array.isArray(j?.styles) ? j.styles : [];
+  if (!styles.length) {
+    throw new Error(j?.message || "No photos were saved. Please retry.");
+  }
+  return styles;
 }
 
 /** Reorder gallery photos — pass ordered style ids (gal-* first in desired order). */

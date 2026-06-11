@@ -65,9 +65,11 @@ export default function StylesManagement({ lockedBarberId = null, onChanged }) {
         return [];
       }),
     ]);
+    const nextStyles = Array.isArray(s) ? s : [];
     setBarbers(Array.isArray(b) ? b : []);
-    setStyles(Array.isArray(s) ? s : []);
+    setStyles(nextStyles);
     if (styleError) setMsg(styleError);
+    return nextStyles;
   }, []);
 
   const setSelectedBarber = React.useCallback((id) => {
@@ -126,29 +128,33 @@ export default function StylesManagement({ lockedBarberId = null, onChanged }) {
       } else {
         created = await createStylesBatch({ barberId, title, description, category, files, price: Number(price) });
       }
-      if (created.length) {
-        setStyles((prev) => {
-          const ids = new Set((prev || []).map((x) => String(x.id)));
-          const merged = [...(prev || [])];
-          for (const row of created) {
-            if (row?.id && !ids.has(String(row.id))) merged.push(row);
-          }
-          return merged;
-        });
-      }
+      const savedCount = created.length;
+      const createdIds = created.map((r) => String(r?.id || "")).filter(Boolean);
       setTitle("");
       setDescription("");
       setCategory("other");
       setPrice("35");
       setFiles([]);
-      await load();
+      const allStyles = await load();
+      const missing = createdIds.filter(
+        (id) => !allStyles.some((s) => String(s.id) === id && String(s.barber_id) === barberId),
+      );
+      if (createdIds.length && missing.length === createdIds.length) {
+        throw new Error(
+          "Photos uploaded but did not appear after refresh. Check your connection and try again.",
+        );
+      }
       onChanged?.();
       try {
         window.dispatchEvent(new CustomEvent("ifcdc-styles-gallery-changed", { detail: { barberId } }));
       } catch {
         /* ignore */
       }
-      setMsg(files.length > 1 ? `Saved ${files.length} photos to gallery.` : "Saved to gallery.");
+      setMsg(
+        savedCount > 1
+          ? `Saved ${savedCount} photos to gallery — visible on booking now.`
+          : "Photo saved to gallery — visible on booking now.",
+      );
     } catch (e) {
       setMsg(e?.message || "Save failed");
     } finally {

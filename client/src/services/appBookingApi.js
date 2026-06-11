@@ -3,6 +3,7 @@
  */
 import { getApiOrigin } from "./api.js";
 import { DEFAULT_BOOKING_SERVICES } from "../lib/defaultBookingServices.js";
+import { enrichBookingServicesWithPublishedStyles } from "../lib/bookingServiceImages.js";
 
 const BOOKING_FETCH_TIMEOUT_MS = 25_000;
 export const SERVICES_FETCH_TIMEOUT_MS = 12_000;
@@ -96,8 +97,14 @@ export async function fetchBookingServices({ barberName, barberId }) {
     try {
       const result = await requestServicesFromUrl(url, Math.max(800, remaining));
       if (!result.services.length) continue;
+      const enriched = await enrichBookingServicesWithPublishedStyles(
+        result.services,
+        { barberId: result.barberId ?? barberId, barberName },
+        bookingFetch,
+        Math.max(2000, remaining),
+      );
       return {
-        services: result.services,
+        services: enriched,
         barberId: result.barberId ?? barberId,
         fallbackUsed: result.fallbackUsed,
         usedLocalFallback: false,

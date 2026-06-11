@@ -97,7 +97,7 @@ export function createStylesRouter() {
   router.get("/", async (_req, res) => {
     try {
       const styles = await listAllPublishedBookingStyles(dbQuery);
-      res.set("Cache-Control", "public, max-age=30");
+      res.set("Cache-Control", "no-store");
       return res.json({ ok: true, styles });
     } catch (e) {
       console.error("[styles] public list:", e);
@@ -280,6 +280,7 @@ export function createStylesRouter() {
 
       return res.json({
         ok: true,
+        persisted: true,
         styles: created,
         count: created.length,
         errors: errors.length ? errors : undefined,
