@@ -16,6 +16,8 @@
     "build": "node -e \"const {execSync}=require('child_process');try{require('fs').writeFileSync('DEPLOY_COMMIT.txt',execSync('git rev-parse HEAD',{encoding:'utf8'}).trim())}catch(e){console.warn('[build] DEPLOY_COMMIT.txt skipped',e.message)} console.log('[build] backend ready')\"",
     "verify:deploy": "node scripts/verify-production-deploy.mjs",
     "verify:storage": "node scripts/verify-supabase-production.mjs",
+    "audit:rls": "node --import ./loadBackendEnv.mjs scripts/audit-supabase-rls.mjs",
+    "apply:rls": "node --import ./loadBackendEnv.mjs scripts/apply-supabase-rls.mjs",
     "verify:domains": "node scripts/verify-public-domains.mjs",
     "verify:invite": "node scripts/verify-invite-deployment.mjs",
     "verify:cleanup": "node scripts/verify-production-cleanup.mjs",
