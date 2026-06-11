@@ -410,6 +410,14 @@ function AdminDashboard() {
     loadBarbers();
   }, [loadBarbers]);
 
+  useEffect(() => {
+    const onGalleryChanged = () => {
+      void loadBarbers();
+    };
+    window.addEventListener("ifcdc-styles-gallery-changed", onGalleryChanged);
+    return () => window.removeEventListener("ifcdc-styles-gallery-changed", onGalleryChanged);
+  }, [loadBarbers]);
+
   /** Live stats: initial load + poll every 5s (silent refresh, no loading flicker). */
   useEffect(() => {
     let cancelled = false;

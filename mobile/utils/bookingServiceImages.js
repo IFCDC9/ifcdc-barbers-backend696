@@ -112,7 +112,7 @@ export async function enrichBookingServicesWithPublishedStyles(
 
   try {
     const res = await fetchFn(apiFullUrl('/api/styles'), {
-      headers: { Accept: 'application/json' },
+      headers: { Accept: 'application/json', 'Cache-Control': 'no-cache' },
       timeoutMs,
     });
     if (!res?.ok) return list;

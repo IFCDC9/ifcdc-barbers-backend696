@@ -14,6 +14,7 @@ import { UPLOAD_ACCEPT, validateImageUploadFile } from "../lib/imageUploadValida
 
 const CATEGORIES = ["fades", "tapers", "waves", "braids", "beard work", "kids cuts", "designs", "other"];
 const GALLERY_PHOTO_LIMIT = 100;
+const SELECTED_BARBER_STORAGE_KEY = "ifcdc_styles_mgmt_barber_id";
 
 function styleSortKey(s) {
   const src = String(s?.source || "");
@@ -36,7 +37,14 @@ function compareStyles(a, b) {
 export default function StylesManagement({ lockedBarberId = null, onChanged }) {
   const [barbers, setBarbers] = React.useState([]);
   const [styles, setStyles] = React.useState([]);
-  const [selectedBarberId, setSelectedBarberId] = React.useState(lockedBarberId || "");
+  const [selectedBarberId, setSelectedBarberId] = React.useState(() => {
+    if (lockedBarberId) return String(lockedBarberId);
+    try {
+      return sessionStorage.getItem(SELECTED_BARBER_STORAGE_KEY) || "";
+    } catch {
+      return "";
+    }
+  });
   const [title, setTitle] = React.useState("");
   const [description, setDescription] = React.useState("");
   const [category, setCategory] = React.useState("other");
@@ -49,10 +57,35 @@ export default function StylesManagement({ lockedBarberId = null, onChanged }) {
   const [editImageFile, setEditImageFile] = React.useState(null);
 
   const load = React.useCallback(async () => {
-    const [b, s] = await Promise.all([getBarbers().catch(() => []), getStylesAll().catch(() => [])]);
+    let styleError = "";
+    const [b, s] = await Promise.all([
+      getBarbers().catch(() => []),
+      getStylesAll().catch((e) => {
+        styleError = e?.message || "Could not load styles";
+        return [];
+      }),
+    ]);
     setBarbers(Array.isArray(b) ? b : []);
     setStyles(Array.isArray(s) ? s : []);
+    if (styleError) setMsg(styleError);
   }, []);
+
+  const setSelectedBarber = React.useCallback((id) => {
+    const next = String(id || "").trim();
+    setSelectedBarberId(next);
+    try {
+      if (next) sessionStorage.setItem(SELECTED_BARBER_STORAGE_KEY, next);
+      else sessionStorage.removeItem(SELECTED_BARBER_STORAGE_KEY);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (!lockedBarberId && barbers.length === 1 && !selectedBarberId) {
+      setSelectedBarber(String(barbers[0].id));
+    }
+  }, [barbers, lockedBarberId, selectedBarberId, setSelectedBarber]);
 
   React.useEffect(() => {
     load();
@@ -85,10 +118,23 @@ export default function StylesManagement({ lockedBarberId = null, onChanged }) {
 
     setBusy(true);
     try {
+      setSelectedBarber(barberId);
+      let created = [];
       if (files.length === 1) {
-        await createStyle({ barberId, title, description, category, file: files[0], price: Number(price) });
+        const one = await createStyle({ barberId, title, description, category, file: files[0], price: Number(price) });
+        if (one) created = [one];
       } else {
-        await createStylesBatch({ barberId, title, description, category, files, price: Number(price) });
+        created = await createStylesBatch({ barberId, title, description, category, files, price: Number(price) });
+      }
+      if (created.length) {
+        setStyles((prev) => {
+          const ids = new Set((prev || []).map((x) => String(x.id)));
+          const merged = [...(prev || [])];
+          for (const row of created) {
+            if (row?.id && !ids.has(String(row.id))) merged.push(row);
+          }
+          return merged;
+        });
       }
       setTitle("");
       setDescription("");
@@ -97,7 +143,12 @@ export default function StylesManagement({ lockedBarberId = null, onChanged }) {
       setFiles([]);
       await load();
       onChanged?.();
-      setMsg(files.length > 1 ? `Saved ${files.length} photos.` : "Saved.");
+      try {
+        window.dispatchEvent(new CustomEvent("ifcdc-styles-gallery-changed", { detail: { barberId } }));
+      } catch {
+        /* ignore */
+      }
+      setMsg(files.length > 1 ? `Saved ${files.length} photos to gallery.` : "Saved to gallery.");
     } catch (e) {
       setMsg(e?.message || "Save failed");
     } finally {
@@ -211,7 +262,7 @@ export default function StylesManagement({ lockedBarberId = null, onChanged }) {
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
           <select
             value={selectedBarberId}
-            onChange={(e) => setSelectedBarberId(e.target.value)}
+            onChange={(e) => setSelectedBarber(e.target.value)}
             style={{ flex: "1 1 220px", padding: 10, borderRadius: 10, background: "rgba(0,0,0,0.35)", color: "white" }}
           >
             <option value="">Select barber…</option>

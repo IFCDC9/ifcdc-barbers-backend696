@@ -91,6 +91,33 @@ async function nextGallerySortOrder(dbQuery, barberId) {
   return r.rows?.[0]?.n ?? 0;
 }
 
+/** Resolve production barber UUID from display name (for legacy upload routes). */
+async function resolveBarberUuidByName(dbQuery, barberName) {
+  const name = String(barberName || "").trim();
+  if (!name) return null;
+  const r = await dbQuery(
+    `SELECT id::text AS id FROM barbers WHERE lower(trim(name)) = lower(trim($1)) LIMIT 1`,
+    [name],
+  );
+  return r.rows?.[0]?.id ? String(r.rows[0].id).trim() : null;
+}
+
+/** Published gallery image URLs for barber cards / admin previews. */
+async function listGalleryImageUrlsForBarber(dbQuery, barberId) {
+  const key = String(barberId || "").trim();
+  if (!key) return [];
+  const r = await dbQuery(
+    `SELECT image_url FROM barber_style_gallery
+     WHERE barber_id = $1 AND is_published = true
+     ORDER BY sort_order ASC, created_at ASC
+     LIMIT 500`,
+    [key],
+  );
+  return (r.rows || [])
+    .map((row) => resolvePublishedImageUrl(row.image_url, { barberId: key }))
+    .filter(Boolean);
+}
+
 async function insertGalleryImage(
   dbQuery,
   {
@@ -150,7 +177,15 @@ async function insertGalleryImage(
       Boolean(isPublished),
     ],
   );
-  return mapGalleryRow(ins.rows?.[0], { includeUnpublished: true });
+  const mapped = mapGalleryRow(ins.rows?.[0], { includeUnpublished: true });
+  if (!mapped?.id) throw new Error("gallery_persist_failed");
+
+  const verify = await dbQuery(
+    `SELECT id FROM barber_style_gallery WHERE id = $1::uuid AND barber_id = $2 LIMIT 1`,
+    [parseGalleryStyleId(mapped.id), barberKey],
+  );
+  if (!verify.rows?.length) throw new Error("gallery_persist_failed");
+  return mapped;
 }
 
 async function listPublishedGalleryStyles(dbQuery) {
@@ -346,6 +381,8 @@ module.exports = {
   parseGalleryStyleId,
   mapGalleryRow,
   ensureBarberStyleGalleryTable,
+  resolveBarberUuidByName,
+  listGalleryImageUrlsForBarber,
   countGalleryForBarber,
   insertGalleryImage,
   listPublishedGalleryStyles,

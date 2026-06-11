@@ -64,6 +64,21 @@ export async function ensureStylesTables() {
   await dbQuery(`CREATE INDEX IF NOT EXISTS styles_published_idx ON styles (is_published) WHERE is_published = true;`);
 
   await ensureBarberStyleGalleryTable(dbQuery);
+
+  await dbQuery(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public' AND tablename = 'barber_style_gallery'
+          AND policyname = 'barber_style_gallery_public_read'
+      ) THEN
+        CREATE POLICY barber_style_gallery_public_read ON barber_style_gallery
+          FOR SELECT TO anon, authenticated
+          USING (is_published = true);
+      END IF;
+    END $$;
+  `);
 }
 
 export async function seedSampleStylesIfEmpty() {

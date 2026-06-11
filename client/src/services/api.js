@@ -268,16 +268,20 @@ export async function fetchBookingQuote(barberId, body) {
   return data;
 }
 
-/**
- * JWT first; otherwise `x-admin-key` from localStorage or `VITE_ADMIN_API_KEY` / dev default (must match server `ADMIN_SECRET`).
- */
-function getJwtOrAdminKeyHeaders() {
+function isJwtExpired(token) {
   try {
-    const token = window.localStorage.getItem("token");
-    if (token) return { Authorization: `Bearer ${token}` };
+    const parts = String(token || "").split(".");
+    if (parts.length < 2) return true;
+    const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
+    const exp = Number(payload?.exp);
+    if (!Number.isFinite(exp)) return false;
+    return exp * 1000 <= Date.now() + 5000;
   } catch {
-    /* ignore */
+    return true;
   }
+}
+
+function getAdminKeyHeadersOnly() {
   try {
     const k = window.localStorage.getItem(ADMIN_KEY_STORAGE) || getResolvedAdminApiKey();
     if (k) return { "x-admin-key": k };
@@ -287,16 +291,57 @@ function getJwtOrAdminKeyHeaders() {
   return {};
 }
 
+/**
+ * Valid JWT first; otherwise `x-admin-key` (skip expired JWT so admin key can be used).
+ */
+function getJwtOrAdminKeyHeaders() {
+  try {
+    const token = window.localStorage.getItem("token");
+    if (token && !isJwtExpired(token)) return { Authorization: `Bearer ${token}` };
+  } catch {
+    /* ignore */
+  }
+  return getAdminKeyHeadersOnly();
+}
+
+async function fetchStylesList(url, headers) {
+  const res = await fetch(url, {
+    headers: { Accept: "application/json", ...headers },
+    cache: "no-store",
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    const err = new Error(text?.slice(0, 200) || `HTTP ${res.status}`);
+    err.status = res.status;
+    throw err;
+  }
+  const j = text ? JSON.parse(text) : {};
+  return Array.isArray(j?.styles) ? j.styles : [];
+}
+
 export async function getStylesAll() {
   const origin = getApiOrigin();
   const authHeaders = getJwtOrAdminKeyHeaders();
-  const hasAuth = Boolean(authHeaders.Authorization || authHeaders["x-admin-key"]);
-  const url = hasAuth ? `${origin}/api/styles/manage/all` : `${origin}/api/styles`;
-  const res = await fetch(url, { headers: { Accept: "application/json", ...authHeaders } });
-  const text = await res.text();
-  if (!res.ok) throw new Error(text?.slice(0, 200) || `HTTP ${res.status}`);
-  const j = text ? JSON.parse(text) : {};
-  return Array.isArray(j?.styles) ? j.styles : [];
+  const manageUrl = `${origin}/api/styles/manage/all`;
+  const publicUrl = `${origin}/api/styles`;
+
+  if (authHeaders.Authorization || authHeaders["x-admin-key"]) {
+    try {
+      return await fetchStylesList(manageUrl, authHeaders);
+    } catch (e) {
+      if (e?.status === 401 || e?.status === 403) {
+        const adminHeaders = getAdminKeyHeadersOnly();
+        if (adminHeaders["x-admin-key"] && !authHeaders["x-admin-key"]) {
+          try {
+            return await fetchStylesList(manageUrl, adminHeaders);
+          } catch {
+            /* fall through to public */
+          }
+        }
+      }
+    }
+  }
+  return fetchStylesList(publicUrl, {});
 }
 
 export async function getStylesForBarber(barberId) {

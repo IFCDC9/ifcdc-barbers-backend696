@@ -383,7 +383,7 @@ export function createStylesRouter() {
             serviceId: req.body?.serviceId ?? req.body?.service_id ?? null,
             isPublished: req.body?.is_published !== false && req.body?.isPublished !== false,
           });
-          return res.json({ ok: true, style });
+          return res.json({ ok: true, persisted: true, style });
         } catch (e) {
           const msg = e?.message || String(e);
           if (msg === "gallery_limit_reached") {

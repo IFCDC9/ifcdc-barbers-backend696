@@ -13,7 +13,7 @@ import {
 import { listStylesWithImages } from "./src/services/barberCmsStore.js";
 
 const requireCjs = createRequire(import.meta.url);
-const { upsertBarberServiceStyle } = requireCjs("./publicBookingStyles.cjs");
+const { insertGalleryImage, listGalleryImageUrlsForBarber } = requireCjs("./styleGalleryStore.cjs");
 const { isUuidBarberId } = requireCjs("./barberIdentity.cjs");
 const { normalizePublishedImageUrl } = requireCjs("./styleImageUrl.cjs");
 
@@ -112,6 +112,7 @@ async function listPublicBarbersFromDb() {
 
       let styleUrls = [];
       try {
+        const galleryUrls = await listGalleryImageUrlsForBarber(dbQuery, String(b.id));
         const svc = await dbQuery(
           `SELECT image_url FROM barber_services
            WHERE barber_id::text = $1::text AND is_active = true
@@ -119,7 +120,15 @@ async function listPublicBarbersFromDb() {
            ORDER BY id ASC`,
           [String(b.id)],
         );
-        styleUrls = (svc.rows || []).map((row) => String(row.image_url || "").trim()).filter(Boolean);
+        const serviceUrls = (svc.rows || []).map((row) => String(row.image_url || "").trim()).filter(Boolean);
+        const seen = new Set();
+        for (const u of [...galleryUrls, ...serviceUrls]) {
+          const key = String(u || "").trim();
+          if (key && !seen.has(key)) {
+            seen.add(key);
+            styleUrls.push(key);
+          }
+        }
       } catch {
         /* ignore */
       }
@@ -274,26 +283,20 @@ export function mountProductionBarbersRoutes(app, options = {}) {
             .replace(/\.[^.]+$/, "")
             .trim()
             .slice(0, 120) || "Style";
-        const style = await upsertBarberServiceStyle(dbQuery, {
-          barberId,
-          name: title,
-          description: null,
+        const style = await insertGalleryImage(dbQuery, {
+          barberId: String(barberId),
+          title,
+          description: "",
           category: "other",
           price: 25,
           durationMinutes: 30,
           imageUrl: url,
-          isActive: true,
+          isPublished: true,
         });
         createdStyles.push(style);
       }
 
-      const svc = await dbQuery(
-        `SELECT id, name, image_url FROM barber_services
-         WHERE barber_id::text = $1::text AND is_active = true
-         ORDER BY id ASC`,
-        [String(barberId)],
-      );
-      const styleUrls = (svc.rows || []).map((r) => r.image_url).filter(Boolean);
+      const styleUrls = await listGalleryImageUrlsForBarber(dbQuery, String(barberId));
 
       return res.json({
         ok: true,

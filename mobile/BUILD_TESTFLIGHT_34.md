@@ -16,6 +16,14 @@ curl -sS https://ifcdc-barbers-backend696.onrender.com/api/deploy-info
 # mobile.testFlightReady: true
 ```
 
+## Post–build 34 hotfix (style photo persistence)
+
+- All style uploads now persist to **`barber_style_gallery`** (single source of truth)
+- Admin barber picker **remembers selected barber** across refresh (`sessionStorage`)
+- Expired JWT no longer blocks style list load (falls back to admin key / public API)
+- `GET /barbers` preview includes gallery URLs (not only `barber_services`)
+- DB insert verified before API returns `persisted: true`
+
 ## Included in build 34
 
 - **Password reset** — `app_users` + Resend, SPA links (`ifcdcbarbersapp.com/reset-password`), PayPal handler no longer hijacks `?token=`

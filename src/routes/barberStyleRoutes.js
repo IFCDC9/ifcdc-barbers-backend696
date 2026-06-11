@@ -1,4 +1,5 @@
 import express from "express"
+import { createRequire } from "node:module"
 import db from "../db/db.js"
 import { requireAdmin } from "../middleware/requireAdmin.js"
 import { uploadMemory } from "../middleware/uploadMemory.js"
@@ -9,6 +10,15 @@ import {
 } from "../services/barberStylePhotoStore.js"
 import { uploadBarberStyleImage } from "../services/storageUpload.js"
 import { listBarberStylesObjects } from "../services/storageListService.js"
+
+const requireCjs = createRequire(import.meta.url)
+const {
+  insertGalleryImage,
+  resolveBarberUuidByName,
+  listGalleryStylesForBarber,
+} = requireCjs("../../styleGalleryStore.cjs")
+
+const dbQuery = (text, params) => db.query(text, params)
 
 const router = express.Router()
 
@@ -88,6 +98,26 @@ router.get("/styles", async (req, res) => {
     if (!barber) {
       return res.status(400).json({ ok: false, error: "validation_failed", message: "barber query required" })
     }
+    const barberUuid = await resolveBarberUuidByName(dbQuery, barber)
+    if (barberUuid) {
+      const gallery = await listGalleryStylesForBarber(dbQuery, barberUuid)
+      if (gallery.length) {
+        return res.json({
+          ok: true,
+          barberName: barber,
+          barberId: barberUuid,
+          styles: gallery.map((row) => ({
+            id: row.id,
+            styleName: row.title,
+            price: Number(row.price),
+            durationMinutes: row.duration_minutes,
+            imageUrl: row.image_url,
+            tags: [],
+            createdAt: row.created_at,
+          })),
+        })
+      }
+    }
     const styles = await listStylesByBarber(barber)
     res.json({
       ok: true,
@@ -141,17 +171,32 @@ router.post("/styles", requireAdmin, uploadMemory.single("photo"), async (req, r
       originalName: file.originalname,
     })
 
-    const row = await insertStylePhoto({
-      barberName,
-      styleName,
-      price,
-      durationMinutes: Math.floor(duration),
-      imageUrl: url,
-      tags,
-    })
+    const barberUuid = await resolveBarberUuidByName(dbQuery, barberName)
+    let row = null
+    if (barberUuid) {
+      row = await insertGalleryImage(dbQuery, {
+        barberId: barberUuid,
+        title: styleName,
+        description: tags.length ? tags.join(", ") : "",
+        category: "other",
+        price,
+        durationMinutes: Math.floor(duration),
+        imageUrl: url,
+        isPublished: true,
+      })
+    } else {
+      row = await insertStylePhoto({
+        barberName,
+        styleName,
+        price,
+        durationMinutes: Math.floor(duration),
+        imageUrl: url,
+        tags,
+      })
+    }
 
-    console.log("[barbers/styles] created:", { id: row?.id, barberName, styleName })
-    res.status(201).json({ ok: true, style: row })
+    console.log("[barbers/styles] created:", { id: row?.id, barberName, styleName, persisted: Boolean(row?.id) })
+    res.status(201).json({ ok: true, style: row, persisted: true })
   } catch (e) {
     console.error("[barbers/styles] upload error:", e)
     res.status(500).json({ ok: false, error: "upload_failed", message: e instanceof Error ? e.message : String(e) })
