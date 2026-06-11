@@ -42,9 +42,15 @@ function buildInviteAcceptUrl(inviteToken) {
   return `${base}/invite?token=${encodeURIComponent(String(inviteToken || "").trim())}`;
 }
 
+function buildPasswordResetUrl(rawToken) {
+  const base = resolvePublicWebOrigin();
+  return `${base}/reset-password?token=${encodeURIComponent(String(rawToken || "").trim())}`;
+}
+
 module.exports = {
   CANONICAL_PUBLIC_ORIGIN,
   RENDER_FRONTEND_ORIGIN,
   resolvePublicWebOrigin,
   buildInviteAcceptUrl,
+  buildPasswordResetUrl,
 };

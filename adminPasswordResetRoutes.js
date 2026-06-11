@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { createRequire } from "node:module";
 import { resolveAuthPayload } from "./authRoutes.js";
 import { isJwtGlobalSuperScope } from "./authPlatformJwt.js";
 import { dbQuery } from "./db.js";
@@ -7,14 +8,8 @@ import { hashPassword, validatePasswordStrength } from "./authPasswordPolicy.js"
 import { isSuperAdminEmail } from "./rolePolicy.js";
 import { writeSecurityAudit } from "./auditSecurity.js";
 
-function resolvePublicWebUrl() {
-  const base = String(
-    process.env.PUBLIC_BASE_URL || process.env.PUBLIC_API_URL || process.env.RENDER_EXTERNAL_URL || "",
-  )
-    .trim()
-    .replace(/\/$/, "");
-  return base || "https://ifcdcbarbersapp.com";
-}
+const require = createRequire(import.meta.url);
+const { buildPasswordResetUrl } = require("./publicSiteConfig.cjs");
 
 async function resolveSuperAdminScope(req, res) {
   const hdr = String(req.get("authorization") || "");
@@ -135,7 +130,7 @@ export function registerAdminPasswordResetRoutes(router, { sendEmail } = {}) {
         [tokenHash, expiresAt, userId],
       );
 
-      const resetLink = `${resolvePublicWebUrl()}/reset-password?token=${encodeURIComponent(rawToken)}`;
+      const resetLink = buildPasswordResetUrl(rawToken);
       let emailSent = false;
       if (typeof sendEmail === "function") {
         try {

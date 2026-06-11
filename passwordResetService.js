@@ -1,22 +1,17 @@
 import crypto from "node:crypto";
+import { createRequire } from "node:module";
 import { dbQuery } from "./db.js";
 import { normalizeEmail, sha256Hex } from "./authStore.js";
 import { hashPassword, validatePasswordStrength } from "./authPasswordPolicy.js";
 
+const require = createRequire(import.meta.url);
+const { resolvePublicWebOrigin, buildPasswordResetUrl } = require("./publicSiteConfig.cjs");
+
 const RESET_TOKEN_TTL_MS = 60 * 60 * 1000;
 
+/** SPA origin for reset links — never the API host (see publicSiteConfig.cjs). */
 export function resolvePublicWebUrl() {
-  const base = String(
-    process.env.PUBLIC_WEB_URL ||
-      process.env.PUBLIC_CLIENT_URL ||
-      process.env.PUBLIC_BASE_URL ||
-      process.env.PUBLIC_API_URL ||
-      process.env.RENDER_EXTERNAL_URL ||
-      "",
-  )
-    .trim()
-    .replace(/\/$/, "");
-  return base || "https://ifcdcbarbersapp.com";
+  return resolvePublicWebOrigin();
 }
 
 export function isValidEmailFormat(email) {
@@ -117,7 +112,7 @@ export async function requestPasswordResetForEmail(email, { sendEmail } = {}) {
   const expiresAtIso = new Date(Date.now() + RESET_TOKEN_TTL_MS).toISOString();
   await setResetTokenForAppUserId(user.id, { tokenHash, expiresAtIso });
 
-  const resetLink = `${resolvePublicWebUrl()}/reset-password?token=${encodeURIComponent(rawToken)}`;
+  const resetLink = buildPasswordResetUrl(rawToken);
 
   if (typeof sendEmail !== "function") {
     return { ok: false, error: "email_unconfigured", message: "Email service is not configured" };

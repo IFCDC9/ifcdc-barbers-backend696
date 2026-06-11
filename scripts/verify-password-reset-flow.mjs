@@ -12,10 +12,14 @@
 import "../loadBackendEnv.mjs";
 import crypto from "node:crypto";
 import pg from "pg";
+import { createRequire } from "node:module";
 import {
   completePasswordResetWithToken,
   requestPasswordResetForEmail,
 } from "../passwordResetService.js";
+
+const require = createRequire(import.meta.url);
+const { CANONICAL_PUBLIC_ORIGIN, buildPasswordResetUrl } = require("../publicSiteConfig.cjs");
 
 const API_BASE = String(process.env.API_BASE || "https://ifcdc-barbers-backend696.onrender.com").replace(/\/$/, "");
 const e2e = process.argv.includes("--e2e");
@@ -85,6 +89,22 @@ async function localServiceE2E() {
       fail("local service request", JSON.stringify(req));
     } else {
       pass("local service issues token");
+    }
+
+    const expectedOrigin = CANONICAL_PUBLIC_ORIGIN.replace(/\/$/, "");
+    if (req.resetLink?.startsWith(`${expectedOrigin}/reset-password?token=`)) {
+      pass("reset link uses frontend origin", expectedOrigin);
+    } else if (req.resetLink?.includes("backend696") || req.resetLink?.includes("onrender.com/api")) {
+      fail("reset link must not point at API host", req.resetLink);
+    } else {
+      fail("reset link format", req.resetLink || "(missing)");
+    }
+
+    const sample = buildPasswordResetUrl("sample-token");
+    if (sample.startsWith(`${expectedOrigin}/reset-password?`)) {
+      pass("buildPasswordResetUrl uses SPA origin");
+    } else {
+      fail("buildPasswordResetUrl", sample);
     }
 
     const row = await pool.query(
