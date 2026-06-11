@@ -27,14 +27,17 @@ curl -sS https://ifcdc-barbers-backend696.onrender.com/api/deploy-info
 - Register page fix, routing (`/styles`, 404, messages)
 - Footer / legal links, production API URLs locked
 
-## Build & submit
+## Build & submit — completed 2026-06-11
 
-```bash
-cd mobile
-npm install
-npx eas-cli build --platform ios --profile production --non-interactive
-npx eas-cli submit --platform ios --profile production --latest --non-interactive
-```
+| Field | Value |
+|-------|--------|
+| EAS Build ID | `2d80f954-129a-4396-b5d6-13483ed25589` |
+| IPA | https://expo.dev/artifacts/eas/7CUQqStOs_e5I0ZywEKs2BfjuhYJUMfC2TdnTDI_-O4.ipa |
+| Submission | `b0a8d716-88d1-4766-bd39-05543615298f` |
+| Version | 1.0.0 (33) |
+| Git at build | `8242bffa` (includes `21070361` password-reset + PayPal token fix) |
+
+TestFlight: https://appstoreconnect.apple.com/apps/6766149605/testflight/ios
 
 `app.json` iOS **buildNumber: 33**.
 
