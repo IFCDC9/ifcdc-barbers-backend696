@@ -14,11 +14,14 @@ export default function ForgotPassword() {
     setStatus(null);
     setTone(null);
     try {
-      await forgotPassword(email);
-      setStatus("Password reset email sent.");
+      const data = await forgotPassword(email);
+      setStatus(
+        data?.message ||
+          "If an account exists for that email, a password reset link is on the way.",
+      );
       setTone("success");
     } catch (err) {
-      setStatus(err?.message || "Could not send reset email");
+      setStatus(err?.message || "Could not send reset email. Please try again.");
       setTone("error");
     } finally {
       setSubmitting(false);

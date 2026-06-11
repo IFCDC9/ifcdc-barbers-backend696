@@ -1,22 +1,3 @@
-/**
- * PasswordResetScreen — Build 22 minimal placeholder.
- *
- * Build 22 reintegration only re-enables Login / Register / Password Reset /
- * Dashboard shell. The customer-facing password reset endpoint isn't wired
- * to the backend yet — `mobile/services/adminPasswordResetApi.ts` exists but
- * is admin-only. Until the public endpoint lands, this screen takes an email
- * and shows the standard neutral confirmation regardless of whether an
- * account exists, so we never leak which addresses are registered.
- *
- * Intentional design choices:
- *   - Imports ONLY `react` + `react-native` core (no theme, no shared
- *     components) so the module-load cost is near zero — the same constraint
- *     Build 21 proved is safe.
- *   - `useTranslation()` is intentionally NOT used here so this screen still
- *     renders even if i18n init fails later. The text is fixed English; the
- *     i18n-aware customer flow can replace this in a later build.
- */
-
 import React from "react";
 import {
   Alert,
@@ -27,6 +8,8 @@ import {
   View,
 } from "react-native";
 import IFCDCFooter from "../components/IFCDCFooter";
+import { requestPasswordReset } from "../auth/authSessionApi";
+import { userFacingApiError } from "../utils/userFacingApiError";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -38,32 +21,28 @@ export default function PasswordResetScreen({ navigation }: Props) {
   const [email, setEmail] = React.useState("");
   const [busy, setBusy] = React.useState(false);
 
-  const onSubmit = React.useCallback(() => {
+  const onSubmit = React.useCallback(async () => {
     const trimmed = email.trim();
     if (!trimmed || !EMAIL_RE.test(trimmed)) {
-      Alert.alert(
-        "Reset password",
-        "Please enter a valid email address.",
-      );
+      Alert.alert("Reset password", "Please enter a valid email address.");
       return;
     }
     setBusy(true);
-    // Same neutral message regardless of account existence — avoids leaking
-    // which emails are registered. Real backend wiring lands in a future build.
-    setTimeout(() => {
+    try {
+      const message = await requestPasswordReset(trimmed);
+      Alert.alert("Reset password", message);
+    } catch (e) {
+      Alert.alert("Reset password", userFacingApiError(e));
+    } finally {
       setBusy(false);
-      Alert.alert(
-        "Reset password",
-        "If an account exists for that email, a password reset link is on the way.",
-      );
-    }, 350);
+    }
   }, [email]);
 
   return (
     <View style={styles.root}>
       <Text style={styles.title}>Reset password</Text>
       <Text style={styles.subtitle}>
-        Enter your email and we'll send a link to set a new password.
+        Enter your email and we'll send a link to set a new password on the IFCDC website.
       </Text>
 
       <View style={styles.card}>
@@ -82,7 +61,7 @@ export default function PasswordResetScreen({ navigation }: Props) {
         />
 
         <Pressable
-          onPress={onSubmit}
+          onPress={() => void onSubmit()}
           disabled={busy}
           style={({ pressed }) => [
             styles.primary,
@@ -90,9 +69,7 @@ export default function PasswordResetScreen({ navigation }: Props) {
             pressed && !busy ? styles.primaryPressed : null,
           ]}
         >
-          <Text style={styles.primaryText}>
-            {busy ? "Sending…" : "Send reset link"}
-          </Text>
+          <Text style={styles.primaryText}>{busy ? "Sending…" : "Send reset link"}</Text>
         </Pressable>
 
         <Pressable

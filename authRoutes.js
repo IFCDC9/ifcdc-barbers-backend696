@@ -1,14 +1,11 @@
 import express from "express";
 import crypto from "node:crypto";
 import { createRequire } from "node:module";
+import { normalizeEmail } from "./authStore.js";
 import {
-  clearResetTokenForUserId,
-  getUserByResetTokenHash,
-  normalizeEmail,
-  setResetTokenForEmail,
-  sha256Hex,
-  updatePasswordForUserId,
-} from "./authStore.js";
+  completePasswordResetWithToken,
+  requestPasswordResetForEmail,
+} from "./passwordResetService.js";
 import { dbQuery } from "./db.js";
 import { comparePassword, hashPassword, validatePasswordStrength } from "./authPasswordPolicy.js";
 import { jwtClaimsFromAppUser, publicUserFromAppUser } from "./authPlatformJwt.js";
@@ -113,11 +110,6 @@ export function requireRole(roles) {
     }
     return res.status(403).json({ message: "Access denied" });
   };
-}
-
-function resolvePublicWebUrl() {
-  const base = String(process.env.PUBLIC_WEB_URL || process.env.PUBLIC_CLIENT_URL || "").trim();
-  return base ? base.replace(/\/$/, "") : "http://localhost:5173";
 }
 
 /** Google ID token `aud` must match one of these (web + optional native Expo clients). */
@@ -628,49 +620,25 @@ export function createAuthRouter({ sendEmail }) {
     }
   });
 
+  const NEUTRAL_RESET_MESSAGE =
+    "If an account exists for that email, a password reset link is on the way.";
+
   router.post("/forgot-password", async (req, res) => {
     try {
-      const email = normalizeEmail(req.body?.email);
-      if (!email) return res.status(400).json({ error: "email_required", message: "Email is required" });
+      const email = String(req.body?.email || "");
+      const result = await requestPasswordResetForEmail(email, { sendEmail });
 
-      const user = await getUserByEmail(email);
-      if (!user) return res.status(404).json({ error: "email_not_found", message: "Email not found" });
-
-      const rawToken = crypto.randomBytes(32).toString("hex");
-      const tokenHash = sha256Hex(rawToken);
-      const expiresAt = Date.now() + 60 * 60 * 1000; // 1 hour
-      const expiresAtIso = new Date(expiresAt).toISOString();
-      await setResetTokenForEmail(email, { tokenHash, expiresAtIso });
-
-      const resetLink = `${resolvePublicWebUrl()}/reset-password?token=${encodeURIComponent(rawToken)}`;
-
-      const html = `
-        <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif;line-height:1.5;color:#111">
-          <h2 style="margin:0 0 12px">Reset Your Password</h2>
-          <p style="margin:0 0 12px">We received a request to reset your IFCDC Barbers password.</p>
-          <p style="margin:0 0 18px">
-            <a href="${resetLink}" style="display:inline-block;padding:10px 14px;border-radius:10px;background:#d4af37;color:#0a0a0a;text-decoration:none;font-weight:700">
-              Reset password
-            </a>
-          </p>
-          <p style="margin:0 0 12px;color:#444">This link expires in 1 hour.</p>
-          <p style="margin:0;color:#666;font-size:12px">If you didn’t request this, you can ignore this email.</p>
-        </div>
-      `;
-
-      const result = await sendEmail({
-        to: email,
-        subject: "Reset Your Password",
-        html,
-        label: "auth-reset-password",
-      });
-
-      if (result?.error) {
-        console.error("[auth] resend error:", result.error);
-        return res.status(503).json({ error: "email_failed", message: "Could not send reset email" });
+      if (!result.ok) {
+        if (result.error === "email_required") {
+          return res.status(400).json({ error: result.error, message: result.message });
+        }
+        if (result.error === "email_failed" || result.error === "email_unconfigured") {
+          return res.status(503).json({ error: result.error, message: result.message });
+        }
+        return res.status(500).json({ error: "server_error", message: result.message || "Could not start reset flow" });
       }
 
-      return res.json({ success: true, message: "Password reset email sent" });
+      return res.json({ success: true, message: NEUTRAL_RESET_MESSAGE });
     } catch (e) {
       console.error("[auth] forgot-password error:", e);
       return res.status(500).json({ error: "server_error", message: "Could not start reset flow" });
@@ -681,24 +649,16 @@ export function createAuthRouter({ sendEmail }) {
     try {
       const token = String(req.body?.token || "").trim();
       const newPassword = String(req.body?.newPassword || req.body?.password || "");
-      if (!token) return res.status(400).json({ error: "token_required", message: "Reset token is required" });
-      const resetPw = validatePasswordStrength(newPassword);
-      if (!resetPw.valid) {
-        return res.status(400).json({ error: "weak_password", message: resetPw.message });
-      }
+      const result = await completePasswordResetWithToken(token, newPassword);
 
-      const tokenHash = sha256Hex(token);
-      const user = await getUserByResetTokenHash(tokenHash);
-      if (!user) return res.status(400).json({ error: "invalid_token", message: "Invalid reset token" });
-      const exp = user.resetTokenExpiresAt ? Date.parse(user.resetTokenExpiresAt) : 0;
-      if (!exp || Number.isNaN(exp) || Date.now() > exp) {
-        await clearResetTokenForUserId(user.id);
-        return res.status(400).json({ error: "token_expired", message: "Reset token expired" });
+      if (!result.ok) {
+        const code = result.error || "reset_failed";
+        const status =
+          code === "weak_password" || code === "token_required" || code === "invalid_token" || code === "token_expired"
+            ? 400
+            : 500;
+        return res.status(status).json({ error: code, message: result.message });
       }
-
-      const passwordHash = await hashPassword(newPassword);
-      await updatePasswordForUserId(user.id, passwordHash);
-      await clearResetTokenForUserId(user.id);
 
       return res.json({ success: true, message: "Password updated" });
     } catch (e) {

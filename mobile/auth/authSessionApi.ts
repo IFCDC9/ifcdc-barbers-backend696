@@ -90,6 +90,12 @@ export function mapAuthErrorToMessage(json: JsonAuth | null, status: number): st
   if (code === "email_exists" || status === 409) return msg || "This email is already registered. Try signing in.";
   if (code === "weak_password") return msg || "Password is too weak.";
   if (code === "name_required") return msg || "Name is required.";
+  if (code === "email_failed" || code === "email_unconfigured") {
+    return msg || "Could not send reset email. Please try again later.";
+  }
+  if (code === "invalid_token" || code === "token_expired") {
+    return msg || "This reset link is invalid or expired. Request a new one.";
+  }
 
   if (status >= 500) return msg || UX.errorGeneric;
   if (msg) return detail ? `${msg} ${detail}` : msg;
@@ -266,4 +272,17 @@ export async function getAuthMe(
   }
 
   return { ok, status: res.status, json, url };
+}
+
+const NEUTRAL_RESET_MESSAGE =
+  "If an account exists for that email, a password reset link is on the way.";
+
+/** POST /api/auth/forgot-password — Resend email with link to website reset page. */
+export async function requestPasswordReset(email: string): Promise<string> {
+  const trimmed = String(email || "").trim();
+  const { json, status } = await postAuthJson("/api/auth/forgot-password", { email: trimmed });
+  if (status >= 200 && status < 300 && json.success !== false) {
+    return String(json.message || NEUTRAL_RESET_MESSAGE);
+  }
+  throw new Error(mapAuthErrorToMessage(json, status));
 }
