@@ -1,8 +1,11 @@
 import React from "react";
+import { isNonPayPalTokenPath, looksLikePasswordResetToken } from "../lib/queryTokenRoutes.js";
 
 /**
  * PayPal full-page return — route to app-parity booking wizard for finalize.
  * BookingWizard calls POST /api/app-bookings/finalize (same as TestFlight).
+ *
+ * Must NOT steal ?token= on /reset-password, /invite, etc. (password reset uses 64-char hex).
  */
 export default function PayPalReturnHandler({ navigate }) {
   const doneRef = React.useRef(false);
@@ -18,6 +21,9 @@ export default function PayPalReturnHandler({ navigate }) {
     if (!token) return;
 
     const path = window.location.pathname || "";
+    if (isNonPayPalTokenPath(path) || looksLikePasswordResetToken(token)) {
+      return;
+    }
     if (path === "/booking" || path.endsWith("/booking")) {
       return;
     }

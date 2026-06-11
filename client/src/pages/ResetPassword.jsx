@@ -47,7 +47,7 @@ export default function ResetPassword() {
     <div className="auth-shell">
       <div className="auth-card">
         <div className="auth-brand">
-          <h1 className="auth-title">New Password</h1>
+          <h1 className="auth-title">Create New Password</h1>
           <p className="auth-subtext">Min 12 characters with uppercase, lowercase, number, and symbol</p>
         </div>
 

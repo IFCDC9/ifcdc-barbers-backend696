@@ -145,9 +145,23 @@ async function localServiceE2E() {
 async function main() {
   console.log(`\n=== Password reset verification ===\nAPI: ${API_BASE}\n`);
 
+  const WEB = String(process.env.FRONTEND_URL || "https://ifcdcbarbersapp.com").replace(/\/$/, "");
+
   const health = await fetch(`${API_BASE}/api/health`);
   if (health.ok) pass("API health");
   else fail("API health", `HTTP ${health.status}`);
+
+  const resetPage = await fetch(`${WEB}/reset-password?token=e2e-test-token`);
+  if (resetPage.ok) {
+    const html = await resetPage.text();
+    if (html.includes("Create New Password") || html.includes("New Password") || html.includes("root")) {
+      pass("SPA serves /reset-password", WEB);
+    } else {
+      fail("SPA /reset-password body", "expected React shell");
+    }
+  } else {
+    fail("SPA /reset-password", `HTTP ${resetPage.status}`);
+  }
 
   const badEmail = await postJson("/api/auth/forgot-password", { email: "" });
   if (badEmail.status === 400) pass("forgot-password rejects empty email");

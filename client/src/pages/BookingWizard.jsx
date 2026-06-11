@@ -13,6 +13,7 @@ import { DEFAULT_BOOKING_SERVICES } from "../lib/defaultBookingServices.js";
 import { mediaUrl } from "../services/api.js";
 import { isRenderableStyleImageUrl } from "../lib/styleImageUrl.js";
 import StyleCoverImage from "../components/StyleCoverImage.jsx";
+import { looksLikePasswordResetToken } from "../lib/queryTokenRoutes.js";
 
 const FALLBACK_SERVICE_PRICE = 25;
 const CHECKOUT_STORAGE = "ifcdc_app_checkout_pending";
@@ -172,6 +173,10 @@ export default function BookingWizard() {
   useEffect(() => {
     const token = searchParams.get("token");
     if (!token) return;
+    if (looksLikePasswordResetToken(token)) {
+      navigate(`/reset-password?token=${encodeURIComponent(token)}`, { replace: true });
+      return;
+    }
     let cancelled = false;
     setProcessingPayment(true);
     setPhaseLabel("Confirming your booking…");
@@ -209,7 +214,7 @@ export default function BookingWizard() {
     return () => {
       cancelled = true;
     };
-  }, [searchParams, setSearchParams]);
+  }, [searchParams, setSearchParams, navigate]);
 
   const resolveCustomerEmail = () => {
     const fromUser = String(user?.email || "").trim();
