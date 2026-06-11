@@ -69,6 +69,10 @@ TestFlight: https://appstoreconnect.apple.com/apps/6766149605/testflight/ios
 - [ ] **Android Chrome** — same API, same photos and prices
 - [ ] **TestFlight Build 35** — service picker photos, gallery cards, PayPal checkout
 
+## App Store metadata (synced)
+
+`eas metadata:push` completed successfully — version 1.0 listing, categories, age rating, privacy URL, and review contact details are in App Store Connect.
+
 ## App Store submission checklist
 
 - [ ] TestFlight Build 35 installed and smoke-tested on physical iPhone
@@ -80,4 +84,5 @@ TestFlight: https://appstoreconnect.apple.com/apps/6766149605/testflight/ios
 - [ ] Screenshots, description, privacy policy URL: `https://ifcdcbarbersapp.com/privacy`
 - [ ] Terms URL: `https://ifcdcbarbersapp.com/terms`
 - [ ] Export compliance: `ITSAppUsesNonExemptEncryption: false` (already in Info.plist)
-- [ ] Submit for App Review
+- [ ] Submit for App Review (App Store Connect → version 1.0 → select Build 35 → Submit for Review)
+- [ ] Or: `node mobile/scripts/submit-app-store-review.mjs` with App Store Connect API key env vars

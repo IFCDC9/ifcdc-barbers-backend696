@@ -31,7 +31,8 @@
     "production": {
       "ios": {
         "ascAppId": "6766149605",
-        "appleTeamId": "KTP587XA2T"
+        "appleTeamId": "KTP587XA2T",
+        "metadataPath": "./store.config.json"
       }
     }
   }

@@ -1,0 +1,61 @@
+{
+  "configVersion": 0,
+  "apple": {
+    "version": "1.0",
+    "copyright": "2026 IFCDC Barbers",
+    "categories": ["LIFESTYLE", "BUSINESS"],
+    "release": {
+      "automaticRelease": true
+    },
+    "info": {
+      "en-US": {
+        "title": "IFCDC Barbers",
+        "subtitle": "Book cuts with style photos",
+        "description": "IFCDC Barbers makes it easy to book professional barbershop appointments. Browse real haircut and style photos, choose your service, pick a barber and time, and pay securely with PayPal.\n\nFeatures:\n• Book appointments with live availability\n• View service photos and style gallery before you book\n• Secure PayPal checkout and email confirmations\n• AURA assistant for quick booking help\n• Manage your profile and booking history\n\nOfficial app for IFCDC Barbers — smart booking powered by real style photos.",
+        "keywords": ["barber", "haircut", "fade", "booking", "appointments", "IFCDC", "barbershop"],
+        "promoText": "Book your next cut — browse styles, pick a barber, pay with PayPal.",
+        "marketingUrl": "https://ifcdcbarbersapp.com",
+        "supportUrl": "https://ifcdcbarbersapp.com",
+        "privacyPolicyUrl": "https://ifcdcbarbersapp.com/privacy",
+        "releaseNotes": "Build 35 — final App Store readiness release with style photo persistence, booking photo sync across platforms, per-service photo management, PayPal checkout, and AURA assistant."
+      }
+    },
+    "advisory": {
+      "ageRatingOverride": "NONE",
+      "alcoholTobaccoOrDrugUseOrReferences": "NONE",
+      "contests": "NONE",
+      "gambling": false,
+      "gamblingSimulated": "NONE",
+      "horrorOrFearThemes": "NONE",
+      "kidsAgeBand": null,
+      "koreaAgeRatingOverride": "NONE",
+      "lootBox": false,
+      "matureOrSuggestiveThemes": "NONE",
+      "medicalOrTreatmentInformation": "NONE",
+      "profanityOrCrudeHumor": "NONE",
+      "sexualContentGraphicAndNudity": "NONE",
+      "sexualContentOrNudity": "NONE",
+      "unrestrictedWebAccess": false,
+      "violenceCartoonOrFantasy": "NONE",
+      "violenceRealistic": "NONE",
+      "violenceRealisticProlongedGraphicOrSadistic": "NONE",
+      "advertising": false,
+      "ageAssurance": false,
+      "ageRatingOverrideV2": "NONE",
+      "developerAgeRatingInfoUrl": null,
+      "gunsOrOtherWeapons": "NONE",
+      "healthOrWellnessTopics": false,
+      "messagingAndChat": false,
+      "parentalControls": false,
+      "userGeneratedContent": false
+    },
+    "review": {
+      "firstName": "Fahreal",
+      "lastName": "Allah",
+      "email": "ifcdcbarbersapp@gmail.com",
+      "phone": "+1 202 555 0100",
+      "demoRequired": false,
+      "notes": "IFCDC Barbers is a barbershop booking app. Reviewers can register a free customer account in-app or on https://ifcdcbarbersapp.com/register to test booking. PayPal sandbox/live checkout is enabled; use any valid email at checkout. Style and service photos are loaded from our production API. AURA chat is available from the booking flow. No special hardware required."
+    }
+  }
+}

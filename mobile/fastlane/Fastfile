@@ -1,0 +1,20 @@
+default_platform(:ios)
+
+platform :ios do
+  desc "Submit Build 35 to App Store review (binary already uploaded via EAS)"
+  lane :submit_app_store_review do
+    deliver(
+      app_identifier: "com.ifcdc.barbers",
+      app_version: "1.0",
+      build_number: "35",
+      skip_binary_upload: true,
+      skip_screenshots: true,
+      skip_metadata: true,
+      submit_for_review: true,
+      automatic_release: true,
+      force: true,
+      precheck_include_in_app_purchases: false,
+      run_precheck_before_submit: false
+    )
+  end
+end
