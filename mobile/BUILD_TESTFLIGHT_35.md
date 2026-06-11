@@ -51,10 +51,12 @@ eas submit --platform ios --profile production --latest --non-interactive
 
 | Field | Value |
 |-------|--------|
-| EAS Build ID | _(fill after build)_ |
-| Submission ID | _(fill after submit)_ |
+| EAS Build ID | `f146102a-edd9-448b-b15a-c92a94f5de6b` |
+| IPA | https://expo.dev/artifacts/eas/x-MQmPLIcKm6jle2ROOqikCMI7FsLjPjN8aFnT8eYYk.ipa |
+| Submission ID | `f7beaf4f-6f74-40f6-9d7c-8878c1cfa1ac` |
 | Version | 1.0.0 (35) |
-| Git at build | _(fill from `git rev-parse --short HEAD`)_ |
+| Git at build | `54b61c87` |
+| Backend deploy | `c3b03bc2`+ (photo persistence fixes on Render) |
 
 TestFlight: https://appstoreconnect.apple.com/apps/6766149605/testflight/ios
 
