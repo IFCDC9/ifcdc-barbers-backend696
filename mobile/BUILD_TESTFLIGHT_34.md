@@ -42,9 +42,12 @@ node --import ./loadBackendEnv.mjs scripts/test-photo-production-verification.mj
 
 | Field | Value |
 |-------|--------|
-| EAS Build ID | _(fill after build)_ |
-| Submission ID | _(fill after submit)_ |
+| EAS Build ID | `f66606ef-9b13-4ad5-8a60-6648a3414bf5` |
+| IPA | https://expo.dev/artifacts/eas/59ZqJHZxqtwkwLbyFRAtMzUlk12e21hn4b2ojo2hH5g.ipa |
+| Submission ID | `79ced35d-1258-4be5-a57a-638ef6224c09` |
 | Version | 1.0.0 (34) |
+| Git at build | `b7e22254` |
+| Backend deploy | `b7e22254` live on backend696 |
 
 TestFlight: https://appstoreconnect.apple.com/apps/6766149605/testflight/ios
 

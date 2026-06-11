@@ -5,7 +5,7 @@
  */
 const BACKEND = "https://ifcdc-barbers-backend696.onrender.com";
 const CANONICAL = "https://ifcdcbarbersapp.com";
-const EXPECTED_COMMIT_SHORT = "561601e2";
+const EXPECTED_COMMIT_SHORT = "b7e22254";
 
 let failed = 0;
 function pass(label, ok, detail = "") {
