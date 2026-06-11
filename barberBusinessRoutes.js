@@ -35,6 +35,17 @@ const requireCjs = createRequire(import.meta.url);
 const { handlePublicBarberServicesGet } = requireCjs("./bookingPublicHandlers.cjs");
 const { loadServiceImageSourcesForBarber, pickServiceImageUrl } = requireCjs("./serviceImageEnrichment.cjs");
 const { resolvePublishedImageUrl } = requireCjs("./styleImageUrl.cjs");
+const {
+  loadGalleryPhotoIndexForBarber,
+  enrichServicesWithGalleryPhotos,
+} = requireCjs("./servicePhotoResolver.cjs");
+const {
+  insertGalleryImage,
+  listGalleryPhotosForService,
+  setGalleryPhotoPrimary,
+  deleteGalleryStyle,
+  reorderGalleryStyles,
+} = requireCjs("./styleGalleryStore.cjs");
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -400,7 +411,7 @@ export function createBarberBusinessRouter({ uploadDir } = {}) {
           barberKey: req.barberId,
           barberName,
         });
-        const services = (r.rows || []).map((row) => {
+        const mapped = (r.rows || []).map((row) => {
           const image_url =
             pickServiceImageUrl(row, imageSources) ||
             resolvePublishedImageUrl(row.image_url, {
@@ -408,6 +419,10 @@ export function createBarberBusinessRouter({ uploadDir } = {}) {
               barberId: row.barber_id,
             });
           return { ...row, image_url };
+        });
+        const galleryIndex = await loadGalleryPhotoIndexForBarber(dbQuery, req.barberId);
+        const services = enrichServicesWithGalleryPhotos(mapped, galleryIndex, {
+          includeGalleryList: true,
         });
         return res.json({ services, barberId: req.barberId });
       } catch (e) {
@@ -546,6 +561,161 @@ export function createBarberBusinessRouter({ uploadDir } = {}) {
   };
   router.put("/api/barber/services/:id", ...chain, putService);
   router.put("/api/services/:id", ...chain, putService);
+
+  const servicePhotoUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 8 * 1024 * 1024 },
+  });
+
+  const getServicePhotos = async (req, res) => {
+    try {
+      const id = num(req.params.id, NaN);
+      if (!Number.isFinite(id)) return res.status(400).json({ error: "validation", message: "Invalid id" });
+      const photos = await listGalleryPhotosForService(dbQuery, req.barberId, id);
+      return res.json({ ok: true, photos });
+    } catch (e) {
+      console.error("[barber-business] GET service photos:", e);
+      return res.status(500).json({ error: "server_error", message: "Failed to load photos" });
+    }
+  };
+  router.get("/api/barber/services/:id/photos", ...chain, getServicePhotos);
+
+  const postServicePhotos = async (req, res) => {
+    try {
+      const id = num(req.params.id, NaN);
+      if (!Number.isFinite(id)) return res.status(400).json({ error: "validation", message: "Invalid id" });
+      const file =
+        req.file ||
+        req.files?.image?.[0] ||
+        req.files?.images?.[0] ||
+        req.files?.photo?.[0] ||
+        null;
+      if (!file?.buffer?.length) {
+        return res.status(400).json({ error: "image_required", message: "Image file is required" });
+      }
+      const cur = await dbQuery(
+        `SELECT id, barber_id, name, price, duration_minutes FROM barber_services
+         WHERE id = $1 AND barber_id = $2 LIMIT 1`,
+        [id, req.barberId],
+      );
+      const svc = cur.rows?.[0];
+      if (!svc) return res.status(404).json({ error: "not_found", message: "Service not found" });
+
+      const br = await dbQuery(`SELECT name FROM barbers WHERE id::text = $1 LIMIT 1`, [String(req.barberId)]);
+      const barberName = br.rows?.[0]?.name || `barber-${req.barberId}`;
+      const { url } = await uploadBarberStyleImage({
+        buffer: file.buffer,
+        mimetype: file.mimetype,
+        barberName,
+        originalName: file.originalname || "service.jpg",
+      });
+
+      const setPrimary = req.body?.isPrimary !== false && req.body?.is_primary !== false;
+      const photo = await insertGalleryImage(dbQuery, {
+        barberId: String(req.barberId),
+        title: String(svc.name || "Service"),
+        price: Number(svc.price) || 25,
+        durationMinutes: Number(svc.duration_minutes) || 30,
+        imageUrl: url,
+        serviceId: id,
+        isPrimary: setPrimary,
+        isPublished: true,
+      });
+
+      const photos = await listGalleryPhotosForService(dbQuery, req.barberId, id);
+      return res.status(201).json({
+        ok: true,
+        persisted: true,
+        message: "Photo saved to gallery",
+        photo,
+        photos,
+      });
+    } catch (e) {
+      const msg = e?.message || String(e);
+      if (msg === "gallery_limit_reached") {
+        return res.status(400).json({ error: "gallery_limit_reached", message: "Photo limit reached for this barber" });
+      }
+      console.error("[barber-business] POST service photos:", e);
+      return res.status(500).json({ error: "upload_failed", message: msg });
+    }
+  };
+  router.post(
+    "/api/barber/services/:id/photos",
+    ...chain,
+    servicePhotoUpload.fields([
+      { name: "image", maxCount: 25 },
+      { name: "images", maxCount: 25 },
+      { name: "photo", maxCount: 25 },
+    ]),
+    postServicePhotos,
+  );
+
+  const patchServicePhotoPrimary = async (req, res) => {
+    try {
+      const id = num(req.params.id, NaN);
+      const galleryId = String(req.body?.galleryId || req.body?.photoId || "").trim();
+      if (!Number.isFinite(id) || !galleryId) {
+        return res.status(400).json({ error: "validation", message: "service id and galleryId required" });
+      }
+      const photo = await setGalleryPhotoPrimary(dbQuery, galleryId, req.barberId);
+      const photos = await listGalleryPhotosForService(dbQuery, req.barberId, id);
+      return res.json({ ok: true, message: "Primary photo updated", photo, photos });
+    } catch (e) {
+      const msg = e?.message || String(e);
+      if (msg === "not_found") return res.status(404).json({ error: "not_found" });
+      console.error("[barber-business] PATCH service photo primary:", e);
+      return res.status(500).json({ error: "server_error", message: msg });
+    }
+  };
+  router.patch("/api/barber/services/:id/photos/primary", ...chain, patchServicePhotoPrimary);
+
+  const patchServicePhotosReorder = async (req, res) => {
+    try {
+      const orderedIds = req.body?.orderedIds ?? req.body?.ordered_ids;
+      if (!Array.isArray(orderedIds)) {
+        return res.status(400).json({ error: "ordered_ids_required" });
+      }
+      await reorderGalleryStyles(dbQuery, req.barberId, orderedIds);
+      const id = num(req.params.id, NaN);
+      const photos = Number.isFinite(id)
+        ? await listGalleryPhotosForService(dbQuery, req.barberId, id)
+        : [];
+      return res.json({ ok: true, message: "Photo order updated", photos });
+    } catch (e) {
+      console.error("[barber-business] PATCH service photos reorder:", e);
+      return res.status(500).json({ error: "reorder_failed", message: e?.message || String(e) });
+    }
+  };
+  router.patch("/api/barber/services/:id/photos/reorder", ...chain, patchServicePhotosReorder);
+
+  const delServicePhoto = async (req, res) => {
+    try {
+      const galleryId = String(req.params.photoId || "").trim();
+      if (!galleryId) return res.status(400).json({ error: "photo_id_required" });
+      const id = num(req.params.id, NaN);
+      const existing = await listGalleryPhotosForService(dbQuery, req.barberId, id);
+      const hit = existing.find((p) => String(p.id) === galleryId || String(p.gallery_id) === galleryId);
+      if (!hit) return res.status(404).json({ error: "not_found" });
+
+      await deleteGalleryStyle(dbQuery, hit.id);
+      const photos = await listGalleryPhotosForService(dbQuery, req.barberId, id);
+      const nextPrimary = photos.find((p) => p.is_primary) || photos[0];
+      if (nextPrimary) {
+        await setGalleryPhotoPrimary(dbQuery, nextPrimary.id, req.barberId);
+      } else {
+        await dbQuery(`UPDATE barber_services SET image_url = NULL WHERE id = $1 AND barber_id = $2`, [
+          id,
+          req.barberId,
+        ]);
+      }
+      const refreshed = await listGalleryPhotosForService(dbQuery, req.barberId, id);
+      return res.json({ ok: true, message: "Photo deleted", photos: refreshed });
+    } catch (e) {
+      console.error("[barber-business] DELETE service photo:", e);
+      return res.status(500).json({ error: "delete_failed", message: e?.message || String(e) });
+    }
+  };
+  router.delete("/api/barber/services/:id/photos/:photoId", ...chain, delServicePhoto);
 
   const delService = async (req, res) => {
     try {

@@ -812,3 +812,82 @@ export async function deleteBooking(id, reason = "Admin delete") {
   }
   return data;
 }
+
+function servicePhotoHeaders() {
+  return { Accept: "application/json", ...getJwtOrAdminKeyHeaders() };
+}
+
+/** List gallery photos linked to a bookable service. */
+export async function getServicePhotos(serviceId, scopeQuery = "") {
+  const origin = getApiOrigin();
+  const id = encodeURIComponent(String(serviceId));
+  const res = await fetch(`${origin}/api/barber/services/${id}/photos${scopeQuery}`, {
+    headers: servicePhotoHeaders(),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.message || data?.error || `HTTP ${res.status}`);
+  return data;
+}
+
+/** Upload one or more photos for a service (gallery-backed, syncs cover). */
+export async function uploadServicePhotos(serviceId, files, scopeQuery = "", { isPrimary = true } = {}) {
+  const origin = getApiOrigin();
+  const id = encodeURIComponent(String(serviceId));
+  const list = Array.isArray(files) ? files : files ? [files] : [];
+  if (!list.length) throw new Error("Image file is required");
+
+  const uploaded = [];
+  for (const file of list) {
+    const fd = new FormData();
+    fd.append("image", file, file.name || "service.jpg");
+    if (isPrimary && !uploaded.length) fd.append("isPrimary", "true");
+    const res = await fetch(`${origin}/api/barber/services/${id}/photos${scopeQuery}`, {
+      method: "POST",
+      headers: servicePhotoHeaders(),
+      body: fd,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.message || data?.error || `HTTP ${res.status}`);
+    uploaded.push(data);
+  }
+  return uploaded.length === 1 ? uploaded[0] : uploaded;
+}
+
+export async function setServicePhotoPrimary(serviceId, galleryId, scopeQuery = "") {
+  const origin = getApiOrigin();
+  const id = encodeURIComponent(String(serviceId));
+  const res = await fetch(`${origin}/api/barber/services/${id}/photos/primary${scopeQuery}`, {
+    method: "PATCH",
+    headers: { ...servicePhotoHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ galleryId }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.message || data?.error || `HTTP ${res.status}`);
+  return data;
+}
+
+export async function reorderServicePhotos(serviceId, orderedIds, scopeQuery = "") {
+  const origin = getApiOrigin();
+  const id = encodeURIComponent(String(serviceId));
+  const res = await fetch(`${origin}/api/barber/services/${id}/photos/reorder${scopeQuery}`, {
+    method: "PATCH",
+    headers: { ...servicePhotoHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ orderedIds }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.message || data?.error || `HTTP ${res.status}`);
+  return data;
+}
+
+export async function deleteServicePhoto(serviceId, photoId, scopeQuery = "") {
+  const origin = getApiOrigin();
+  const sid = encodeURIComponent(String(serviceId));
+  const pid = encodeURIComponent(String(photoId));
+  const res = await fetch(`${origin}/api/barber/services/${sid}/photos/${pid}${scopeQuery}`, {
+    method: "DELETE",
+    headers: servicePhotoHeaders(),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.message || data?.error || `HTTP ${res.status}`);
+  return data;
+}

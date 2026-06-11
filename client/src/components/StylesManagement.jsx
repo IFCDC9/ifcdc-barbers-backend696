@@ -13,7 +13,7 @@ import StyleCoverImage from "./StyleCoverImage.jsx";
 import { UPLOAD_ACCEPT, validateImageUploadFile } from "../lib/imageUploadValidation.js";
 
 const CATEGORIES = ["fades", "tapers", "waves", "braids", "beard work", "kids cuts", "designs", "other"];
-const GALLERY_PHOTO_LIMIT = 100;
+const GALLERY_PHOTO_LIMIT = 500;
 const SELECTED_BARBER_STORAGE_KEY = "ifcdc_styles_mgmt_barber_id";
 
 function styleSortKey(s) {

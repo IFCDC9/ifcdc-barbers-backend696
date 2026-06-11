@@ -1,5 +1,5 @@
 /** Max style gallery photos per barber (soft cap for storage/performance). */
-const MAX_STYLE_GALLERY_PHOTOS_PER_BARBER = 100;
+const MAX_STYLE_GALLERY_PHOTOS_PER_BARBER = 500;
 
 /** Max files accepted per batch upload request. */
 const MAX_STYLE_GALLERY_BATCH_UPLOAD = 25;

@@ -13,7 +13,9 @@ export function serviceNameKey(name) {
 /** Normalize API row — same fields website booking uses. */
 export function normalizeBookingService(raw) {
   if (!raw || typeof raw !== 'object') return raw;
-  const image_url = String(raw.image_url || raw.imageUrl || raw.image || '').trim();
+  const image_url = String(
+    raw.image_url || raw.imageUrl || raw.cover_image_url || raw.coverImageUrl || raw.image || '',
+  ).trim();
   return { ...raw, image_url };
 }
 
@@ -107,8 +109,7 @@ export async function enrichBookingServicesWithPublishedStyles(
   timeoutMs = 8000,
 ) {
   const list = (Array.isArray(services) ? services : []).map(normalizeBookingService);
-  const needs = list.some((s) => !isRenderableStyleImageUrl(s.image_url));
-  if (!needs || !fetchFn) return list;
+  if (!fetchFn) return list;
 
   try {
     const res = await fetchFn(apiFullUrl('/api/styles'), {

@@ -67,6 +67,11 @@ const {
   loadServiceImageSourcesForBarber,
   pickServiceImageUrl,
 } = require("./serviceImageEnrichment.cjs");
+const {
+  loadGalleryPhotoIndexForBarber,
+  enrichServicesWithGalleryPhotos,
+} = require("./servicePhotoResolver.cjs");
+const { FALLBACK_STYLE_IMAGE_URL } = require("./styleImageUrl.cjs");
 
 function mapServiceRow(row, imageSources = null) {
   if (!row) return null;
@@ -87,6 +92,7 @@ function mapServiceRow(row, imageSources = null) {
     duration_minutes: Number(row.duration_minutes) || 30,
     icon: row.icon || "",
     image_url,
+    cover_image_url: image_url || FALLBACK_STYLE_IMAGE_URL,
     is_active: row.is_active !== false,
   };
 }
@@ -215,7 +221,8 @@ async function fetchPublicBarberServices(dbQuery, { barberIdRaw, barberName }) {
       resolvedName,
       imageSources,
     );
-    services = loaded.services;
+    const galleryIndex = await loadGalleryPhotoIndexForBarber(dbQuery, barberId);
+    services = enrichServicesWithGalleryPhotos(loaded.services, galleryIndex);
     fallbackUsed = loaded.seeded;
     console.log(
       `[services] barberId=${barberId}, count=${services.length}, fallbackUsed=${fallbackUsed}, error=null`,

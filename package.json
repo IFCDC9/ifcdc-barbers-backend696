@@ -22,6 +22,7 @@
     "apply:function-hardening": "node --import ./loadBackendEnv.mjs scripts/apply-supabase-function-hardening.mjs",
     "backup:db": "node --import ./loadBackendEnv.mjs scripts/backup-supabase-db.mjs",
     "verify:password-reset": "node --import ./loadBackendEnv.mjs scripts/verify-password-reset-flow.mjs",
+    "verify:service-photos": "node --import ./loadBackendEnv.mjs scripts/verify-service-photo-workflow.mjs",
     "verify:domains": "node scripts/verify-public-domains.mjs",
     "verify:invite": "node scripts/verify-invite-deployment.mjs",
     "verify:cleanup": "node scripts/verify-production-cleanup.mjs",

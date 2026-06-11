@@ -39,6 +39,7 @@ function mapGalleryRow(row, { includeUnpublished = false } = {}) {
     price: Number(row.price),
     duration_minutes: Number(row.duration_minutes) || 30,
     sort_order: Number(row.sort_order) || 0,
+    is_primary: row.is_primary === true,
     is_published: published,
     source: "barber_style_gallery",
     created_at: row.created_at,
@@ -71,6 +72,15 @@ async function ensureBarberStyleGalleryTable(dbQuery) {
     CREATE INDEX IF NOT EXISTS barber_style_gallery_published_idx
     ON barber_style_gallery (barber_id)
     WHERE is_published = true;
+  `);
+  await dbQuery(`
+    ALTER TABLE barber_style_gallery
+    ADD COLUMN IF NOT EXISTS is_primary BOOLEAN NOT NULL DEFAULT FALSE;
+  `);
+  await dbQuery(`
+    CREATE INDEX IF NOT EXISTS barber_style_gallery_service_idx
+    ON barber_style_gallery (barber_id, service_id, sort_order ASC)
+    WHERE service_id IS NOT NULL;
   `);
 }
 
@@ -130,6 +140,7 @@ async function insertGalleryImage(
     imageUrl,
     serviceId = null,
     isPublished = true,
+    isPrimary = false,
   },
 ) {
   const barberKey = String(barberId || "").trim();
@@ -156,14 +167,23 @@ async function insertGalleryImage(
     if (Number.isFinite(sid) && sid > 0) linkedServiceId = sid;
   }
 
+  let makePrimary = Boolean(isPrimary);
+  if (linkedServiceId && !makePrimary) {
+    const existing = await dbQuery(
+      `SELECT COUNT(*)::int AS n FROM barber_style_gallery WHERE barber_id = $1 AND service_id = $2`,
+      [barberKey, linkedServiceId],
+    );
+    if ((existing.rows?.[0]?.n ?? 0) === 0) makePrimary = true;
+  }
+
   const ins = await dbQuery(
     `INSERT INTO barber_style_gallery
        (barber_id, service_id, title, description, category, price, duration_minutes,
-        image_url, sort_order, is_published)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        image_url, sort_order, is_published, is_primary)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
      RETURNING id, barber_id, service_id, title, description, category,
                price::float8 AS price, duration_minutes, image_url, sort_order,
-               is_published, created_at`,
+               COALESCE(is_primary, false) AS is_primary, is_published, created_at`,
     [
       barberKey,
       linkedServiceId,
@@ -175,6 +195,7 @@ async function insertGalleryImage(
       url,
       sortOrder,
       Boolean(isPublished),
+      makePrimary,
     ],
   );
   const mapped = mapGalleryRow(ins.rows?.[0], { includeUnpublished: true });
@@ -185,6 +206,11 @@ async function insertGalleryImage(
     [parseGalleryStyleId(mapped.id), barberKey],
   );
   if (!verify.rows?.length) throw new Error("gallery_persist_failed");
+
+  if (makePrimary && linkedServiceId) {
+    await setGalleryPhotoPrimary(dbQuery, mapped.id, barberKey);
+  }
+
   return mapped;
 }
 
@@ -192,7 +218,7 @@ async function listPublishedGalleryStyles(dbQuery) {
   const r = await dbQuery(
     `SELECT id, barber_id, service_id, title, description, category,
             price::float8 AS price, duration_minutes, image_url, sort_order,
-            is_published, created_at
+            COALESCE(is_primary, false) AS is_primary, is_published, created_at
      FROM barber_style_gallery
      WHERE is_published = true
      ORDER BY barber_id ASC, sort_order ASC, created_at ASC
@@ -351,6 +377,64 @@ async function deleteGalleryStyle(dbQuery, styleId) {
   return { deletedId: galleryStyleId(gid), image_url: row.image_url || "" };
 }
 
+async function syncServiceCoverFromGallery(dbQuery, serviceId, barberId, imageUrl) {
+  const sid = Number(serviceId);
+  if (!Number.isFinite(sid) || sid <= 0) return;
+  const url = String(imageUrl || "").trim();
+  if (!url) return;
+  await dbQuery(
+    `UPDATE barber_services SET image_url = $2 WHERE id = $1 AND barber_id::text = $3`,
+    [sid, url, String(barberId || "").trim()],
+  );
+}
+
+async function listGalleryPhotosForService(dbQuery, barberId, serviceId) {
+  const key = String(barberId || "").trim();
+  const sid = Number(serviceId);
+  if (!key || !Number.isFinite(sid)) return [];
+  const r = await dbQuery(
+    `SELECT id, barber_id, service_id, title, description, category,
+            price::float8 AS price, duration_minutes, image_url, sort_order,
+            COALESCE(is_primary, false) AS is_primary, is_published, created_at
+     FROM barber_style_gallery
+     WHERE barber_id = $1 AND service_id = $2
+     ORDER BY is_primary DESC, sort_order ASC, created_at ASC`,
+    [key, sid],
+  );
+  return (r.rows || [])
+    .map((row) => mapGalleryRow(row, { includeUnpublished: true }))
+    .filter(Boolean);
+}
+
+async function setGalleryPhotoPrimary(dbQuery, galleryStyleId, barberId, { skipClear = false } = {}) {
+  const gid = parseGalleryStyleId(galleryStyleId);
+  const barberKey = String(barberId || "").trim();
+  if (!gid || !barberKey) throw new Error("invalid_input");
+
+  const cur = await dbQuery(
+    `SELECT id, barber_id, service_id, image_url FROM barber_style_gallery
+     WHERE id = $1::uuid AND barber_id = $2 LIMIT 1`,
+    [gid, barberKey],
+  );
+  const row = cur.rows?.[0];
+  if (!row) throw new Error("not_found");
+
+  if (!skipClear && row.service_id != null) {
+    await dbQuery(
+      `UPDATE barber_style_gallery SET is_primary = false
+       WHERE barber_id = $1 AND service_id = $2 AND id <> $3::uuid`,
+      [barberKey, row.service_id, gid],
+    );
+  }
+  await dbQuery(`UPDATE barber_style_gallery SET is_primary = true WHERE id = $1::uuid`, [gid]);
+
+  if (row.service_id != null && row.image_url) {
+    await syncServiceCoverFromGallery(dbQuery, row.service_id, barberKey, row.image_url);
+  }
+
+  return resolveGalleryStyleRowAdmin(dbQuery, galleryStyleId(gid));
+}
+
 async function reorderGalleryStyles(dbQuery, barberId, orderedIds) {
   const barberKey = String(barberId || "").trim();
   if (!barberKey) throw new Error("invalid_barber_id");
@@ -395,4 +479,7 @@ module.exports = {
   setGalleryPublished,
   deleteGalleryStyle,
   reorderGalleryStyles,
+  listGalleryPhotosForService,
+  setGalleryPhotoPrimary,
+  syncServiceCoverFromGallery,
 };

@@ -5,7 +5,14 @@ import { Card, CardTitle } from "../components/ui/Card.jsx";
 import { Button } from "../components/ui/Button.jsx";
 import { theme } from "../components/ui/theme.js";
 import { apiGet, apiPut, apiPost, apiDelete, apiUrl, fetchWithTimeout } from "../lib/api.js";
-import { mediaUrl } from "../services/api.js";
+import {
+  mediaUrl,
+  uploadServicePhotos,
+  setServicePhotoPrimary,
+  reorderServicePhotos,
+  deleteServicePhoto,
+} from "../services/api.js";
+import { getServiceCardImageUrl } from "../lib/styleImageUrl.js";
 
 function authHeaders() {
   try {
@@ -319,17 +326,70 @@ export default function BarberSettings() {
     }
   };
 
-  const replaceServiceImage = async (serviceId, file) => {
-    if (!file) return;
+  const uploadServicePhotoFiles = async (serviceId, fileList) => {
+    const files = Array.from(fileList || []).filter(Boolean);
+    if (!files.length) return;
     setStatus("");
     setSvcImageBusy(true);
     try {
-      const image_url = await uploadBrandingFile(file);
-      await apiPut(`/api/barber/services/${serviceId}${scopeQuery}`, { image_url }, authHeaders());
+      const result = await uploadServicePhotos(serviceId, files, scopeQuery);
       await loadAll();
-      setStatus("Service photo updated.");
+      const n = Array.isArray(result) ? result.length : 1;
+      setStatus(n > 1 ? `${n} photos saved successfully.` : "Photo saved successfully.");
     } catch (e) {
-      setStatus(e instanceof Error ? e.message : "Photo update failed");
+      setStatus(e instanceof Error ? e.message : "Photo upload failed");
+    } finally {
+      setSvcImageBusy(false);
+    }
+  };
+
+  const makeServicePhotoPrimary = async (serviceId, galleryId) => {
+    setSvcImageBusy(true);
+    setStatus("");
+    try {
+      await setServicePhotoPrimary(serviceId, galleryId, scopeQuery);
+      await loadAll();
+      setStatus("Primary photo updated.");
+    } catch (e) {
+      setStatus(e instanceof Error ? e.message : "Could not set primary photo");
+    } finally {
+      setSvcImageBusy(false);
+    }
+  };
+
+  const removeServicePhoto = async (serviceId, photoId) => {
+    setSvcImageBusy(true);
+    setStatus("");
+    try {
+      await deleteServicePhoto(serviceId, photoId, scopeQuery);
+      await loadAll();
+      setStatus("Photo deleted.");
+    } catch (e) {
+      setStatus(e instanceof Error ? e.message : "Delete failed");
+    } finally {
+      setSvcImageBusy(false);
+    }
+  };
+
+  const moveServicePhoto = async (serviceId, photos, index, delta) => {
+    const next = [...photos];
+    const j = index + delta;
+    if (j < 0 || j >= next.length) return;
+    const tmp = next[index];
+    next[index] = next[j];
+    next[j] = tmp;
+    setSvcImageBusy(true);
+    setStatus("");
+    try {
+      await reorderServicePhotos(
+        serviceId,
+        next.map((p) => p.id),
+        scopeQuery,
+      );
+      await loadAll();
+      setStatus("Photo order updated.");
+    } catch (e) {
+      setStatus(e instanceof Error ? e.message : "Reorder failed");
     } finally {
       setSvcImageBusy(false);
     }
@@ -664,79 +724,141 @@ export default function BarberSettings() {
         <Card style={{ marginTop: 16 }}>
           <CardTitle>Services</CardTitle>
           <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
-            {services.map((s) => (
-              <div
-                key={s.id}
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  gap: 12,
-                  padding: 10,
-                  border: `1px solid ${theme.colors.border}`,
-                  borderRadius: theme.radius.sm,
-                  background: theme.colors.subtle,
-                  alignItems: "center",
-                }}
-              >
-                <div style={{ display: "flex", gap: 12, alignItems: "center", flex: 1, minWidth: 0 }}>
-                  <div
-                    style={{
-                      width: 72,
-                      height: 72,
-                      borderRadius: theme.radius.sm,
-                      overflow: "hidden",
-                      border: `1px solid ${theme.colors.border}`,
-                      background: "rgba(0,0,0,0.35)",
-                      flexShrink: 0,
-                    }}
-                  >
-                    {s.image_url ? (
-                      <img
-                        src={mediaUrl(s.image_url)}
-                        alt=""
-                        style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-                      />
-                    ) : (
+            {services.map((s) => {
+              const photos = Array.isArray(s.gallery_photos) ? s.gallery_photos : [];
+              const cover = getServiceCardImageUrl(s.image_url || s.cover_image_url);
+              return (
+                <div
+                  key={s.id}
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 10,
+                    padding: 10,
+                    border: `1px solid ${theme.colors.border}`,
+                    borderRadius: theme.radius.sm,
+                    background: theme.colors.subtle,
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
+                    <div style={{ display: "flex", gap: 12, alignItems: "center", flex: 1, minWidth: 0 }}>
                       <div
                         style={{
-                          width: "100%",
-                          height: "100%",
-                          display: "grid",
-                          placeItems: "center",
-                          color: theme.colors.muted,
-                          fontSize: 11,
+                          width: 72,
+                          height: 72,
+                          borderRadius: theme.radius.sm,
+                          overflow: "hidden",
+                          border: `1px solid ${theme.colors.border}`,
+                          background: "rgba(0,0,0,0.35)",
+                          flexShrink: 0,
                         }}
                       >
-                        No photo
+                        <img
+                          src={cover}
+                          alt=""
+                          style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                        />
                       </div>
-                    )}
-                  </div>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontWeight: 900, color: theme.colors.text }}>{s.name}</div>
-                    <div style={{ fontSize: 13, color: theme.colors.muted }}>
-                      ${Number(s.price).toFixed(2)} · {s.duration_minutes} min · {s.is_active ? "active" : "hidden"}
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: 900, color: theme.colors.text }}>{s.name}</div>
+                        <div style={{ fontSize: 13, color: theme.colors.muted }}>
+                          ${Number(s.price).toFixed(2)} · {s.duration_minutes} min · {s.is_active ? "active" : "hidden"}
+                          {photos.length ? ` · ${photos.length} photo${photos.length === 1 ? "" : "s"}` : ""}
+                        </div>
+                        <label
+                          style={{
+                            display: "inline-block",
+                            marginTop: 6,
+                            fontSize: 12,
+                            color: theme.colors.muted,
+                            cursor: svcImageBusy ? "wait" : "pointer",
+                          }}
+                        >
+                          Add photos
+                          <input
+                            type="file"
+                            accept="image/*"
+                            multiple
+                            disabled={svcImageBusy}
+                            style={{ display: "block", marginTop: 4, maxWidth: "100%" }}
+                            onChange={(e) => {
+                              const fl = e.target.files;
+                              e.target.value = "";
+                              if (fl?.length) void uploadServicePhotoFiles(s.id, fl);
+                            }}
+                          />
+                        </label>
+                      </div>
                     </div>
-                    <label style={{ display: "inline-block", marginTop: 6, fontSize: 12, color: theme.colors.muted, cursor: svcImageBusy ? "wait" : "pointer" }}>
-                      Replace photo
-                      <input
-                        type="file"
-                        accept="image/*"
-                        disabled={svcImageBusy}
-                        style={{ display: "block", marginTop: 4, maxWidth: "100%" }}
-                        onChange={(e) => {
-                          const f = e.target.files?.[0];
-                          e.target.value = "";
-                          if (f) void replaceServiceImage(s.id, f);
-                        }}
-                      />
-                    </label>
+                    <Button variant="indigo" type="button" onClick={() => removeService(s.id)}>
+                      Delete service
+                    </Button>
                   </div>
+                  {photos.length ? (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                      {photos.map((p, idx) => (
+                        <div
+                          key={p.id}
+                          style={{
+                            width: 88,
+                            border: `1px solid ${p.is_primary ? theme.colors.indigoBorder : theme.colors.border}`,
+                            borderRadius: theme.radius.sm,
+                            overflow: "hidden",
+                            background: "rgba(0,0,0,0.35)",
+                          }}
+                        >
+                          <img
+                            src={getServiceCardImageUrl(p.image_url)}
+                            alt=""
+                            style={{ width: "100%", height: 72, objectFit: "cover", display: "block" }}
+                          />
+                          <div style={{ display: "flex", flexDirection: "column", gap: 2, padding: 4 }}>
+                            {p.is_primary ? (
+                              <span style={{ fontSize: 10, color: theme.colors.indigo, fontWeight: 800 }}>Primary</span>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled={svcImageBusy}
+                                style={{ fontSize: 10, padding: 2, cursor: "pointer" }}
+                                onClick={() => void makeServicePhotoPrimary(s.id, p.id)}
+                              >
+                                Set primary
+                              </button>
+                            )}
+                            <div style={{ display: "flex", gap: 2 }}>
+                              <button
+                                type="button"
+                                disabled={svcImageBusy || idx === 0}
+                                style={{ flex: 1, fontSize: 10, padding: 2, cursor: "pointer" }}
+                                onClick={() => void moveServicePhoto(s.id, photos, idx, -1)}
+                              >
+                                ↑
+                              </button>
+                              <button
+                                type="button"
+                                disabled={svcImageBusy || idx === photos.length - 1}
+                                style={{ flex: 1, fontSize: 10, padding: 2, cursor: "pointer" }}
+                                onClick={() => void moveServicePhoto(s.id, photos, idx, 1)}
+                              >
+                                ↓
+                              </button>
+                              <button
+                                type="button"
+                                disabled={svcImageBusy}
+                                style={{ flex: 1, fontSize: 10, padding: 2, cursor: "pointer", color: "#f87171" }}
+                                onClick={() => void removeServicePhoto(s.id, p.id)}
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
-                <Button variant="indigo" type="button" onClick={() => removeService(s.id)}>
-                  Delete
-                </Button>
-              </div>
-            ))}
+              );
+            })}
             {!services.length ? <div style={{ color: theme.colors.muted, fontSize: 13 }}>No services yet.</div> : null}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 100px 120px auto", gap: 8, alignItems: "end" }}>
               <label style={{ display: "grid", gap: 6, fontSize: 12, color: theme.colors.muted, fontWeight: 800 }}>
