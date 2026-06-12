@@ -14,9 +14,21 @@ export const PUBLIC_LEGAL = {
   terms: "/terms",
 };
 
-/** TestFlight — replace when public beta link is available. */
-export const TESTFLIGHT_CTA = {
-  label: "Get the iOS app (TestFlight)",
-  href: "mailto:service@ifcdc.org?subject=IFCDC%20Barbers%20TestFlight%20access",
-  hint: "Email service@ifcdc.org for TestFlight access while we expand public beta.",
+/** App Store listing (ASC app id 6766149605). */
+export const APP_STORE_URL = "https://apps.apple.com/app/id6766149605";
+
+/** Google Play listing (same package as mobile app.json). */
+export const PLAY_STORE_URL =
+  "https://play.google.com/store/apps/details?id=com.ifcdc.barbers";
+
+export const APP_DOWNLOAD_CTA = {
+  label: "Download the App",
+  href: APP_STORE_URL,
 };
+
+/** Native store link for marketing CTAs (iOS → App Store, Android → Play). */
+export function resolveAppDownloadHref(userAgent = "") {
+  const ua = String(userAgent || "");
+  if (/android/i.test(ua)) return PLAY_STORE_URL;
+  return APP_STORE_URL;
+}

@@ -344,7 +344,7 @@ export default function BookingWizard() {
     <div className="ifcdc-book-wizard">
       <h1 className="ifcdc-page-title">Book appointment</h1>
       <p className="ifcdc-page-lead">
-        Step {step} of 5 — same secure checkout as the IFCDC TestFlight app.
+        Step {step} of 5 — secure PayPal checkout with instant confirmation.
       </p>
 
       <div className="ifcdc-book-wizard__steps" aria-hidden>

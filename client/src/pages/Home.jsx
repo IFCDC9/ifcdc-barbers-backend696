@@ -5,9 +5,10 @@ import StyleCoverImage from "../components/StyleCoverImage.jsx";
 import { formatNanpUsDisplay, nanpDialString } from "../lib/formatNanp.js";
 import { useAuraContactPhone } from "../lib/useAuraContactPhone.js";
 import {
+  APP_DOWNLOAD_CTA,
   PUBLIC_CONTACT_EMAIL,
   PUBLIC_LEGAL,
-  TESTFLIGHT_CTA,
+  resolveAppDownloadHref,
 } from "../lib/publicSite.js";
 
 function getDistanceKm(lat1, lon1, lat2, lon2) {
@@ -116,6 +117,13 @@ export default function Home() {
   const auraPhoneRaw = useAuraContactPhone();
   const auraPhoneTel = nanpDialString(auraPhoneRaw);
   const auraPhoneDisplay = formatNanpUsDisplay(auraPhoneRaw);
+  const appDownloadHref = useMemo(
+    () =>
+      typeof navigator !== "undefined"
+        ? resolveAppDownloadHref(navigator.userAgent)
+        : APP_DOWNLOAD_CTA.href,
+    [],
+  );
 
   const requestLocation = useCallback(async () => {
     if (typeof navigator === "undefined" || !navigator.geolocation) {
@@ -222,18 +230,22 @@ export default function Home() {
           and professional scheduling for customers, barbers, and shop owners.
         </p>
         <div className="app-marketing-hero__actions">
-          <a href={TESTFLIGHT_CTA.href} className="app-marketing-hero__btn app-marketing-hero__btn--gold">
-            {TESTFLIGHT_CTA.label}
+          <a
+            href={appDownloadHref}
+            className="app-marketing-hero__btn app-marketing-hero__btn--gold"
+            rel="noopener noreferrer"
+          >
+            {APP_DOWNLOAD_CTA.label}
           </a>
           <Link to="/booking" className="app-marketing-hero__btn app-marketing-hero__btn--outline">
-            Book on the web
+            Book on the Web
+          </Link>
+          <Link to="/login" className="app-marketing-hero__btn app-marketing-hero__btn--outline">
+            Sign In
           </Link>
         </div>
-        <p className="app-marketing-hero__hint">{TESTFLIGHT_CTA.hint}</p>
         <div className="app-marketing-hero__owner">
           <span>Barber or shop owner?</span>
-          <Link to="/login">Sign in</Link>
-          <span className="app-marketing-hero__sep">·</span>
           <a href={`mailto:${PUBLIC_CONTACT_EMAIL}?subject=IFCDC%20shop%20onboarding`}>
             Request access
           </a>
