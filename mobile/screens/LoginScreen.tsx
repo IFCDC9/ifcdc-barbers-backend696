@@ -1,10 +1,14 @@
 import React from "react";
-import { Alert, StyleSheet, Text, View } from "react-native";
+import { Alert, Platform, StyleSheet, Text, View } from "react-native";
 import * as Google from "expo-auth-session/providers/google";
 import { useTranslation } from "react-i18next";
 import CardContainer from "../components/CardContainer";
 import GlowButton from "../components/GlowButton";
 import GoogleButton from "../components/GoogleButton";
+import AppleSignInButton, {
+  isAppleSignInAvailable,
+  requestAppleCredential,
+} from "../components/AppleSignInButton";
 import IFCDCInput from "../components/IFCDCInput";
 import IFCDCFooter from "../components/IFCDCFooter";
 import { palette, radius, typography } from "../constants/theme";
@@ -13,6 +17,7 @@ import { useAuth } from "../services/authContext";
 import { EXPO_GO_GOOGLE_PROMPT_OPTIONS } from "../auth/expoGooglePromptOptions";
 import { getGoogleIdTokenAuthConfig } from "../auth/googleAuthRequestConfig";
 import { exchangeGoogleIdToken } from "../auth/googleBackendLogin";
+import { exchangeAppleIdentityToken } from "../auth/appleBackendLogin";
 import { loginWithEmailPassword } from "../auth/authSessionApi";
 import { userFacingApiError } from "../utils/userFacingApiError";
 import { UX } from "../utils/uxCopy";
@@ -30,7 +35,13 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [busy, setBusy] = React.useState(false);
+  const [appleAvailable, setAppleAvailable] = React.useState(false);
   const submittingRef = React.useRef(false);
+
+  React.useEffect(() => {
+    if (Platform.OS !== "ios") return;
+    isAppleSignInAvailable().then(setAppleAvailable).catch(() => setAppleAvailable(false));
+  }, []);
 
   const googleAuthConfig = React.useMemo(() => getGoogleIdTokenAuthConfig(), []);
   const googleConfigured = Boolean(
@@ -123,6 +134,32 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
     }
   }, [response, signInWithToken]);
 
+  const startApple = async () => {
+    if (!appleAvailable) {
+      Alert.alert(t("auth.appleSignIn"), t("auth.appleSignInUnavailable"));
+      return;
+    }
+    try {
+      setBusy(true);
+      const credential = await requestAppleCredential();
+      const responseData = await exchangeAppleIdentityToken(BACKEND_URL, credential.identityToken, {
+        email: credential.email,
+        fullName: credential.fullName,
+      });
+      if (responseData.token) {
+        await signInWithToken(responseData.token);
+        return;
+      }
+      Alert.alert(t("auth.appleSignIn"), t("auth.appleSignInFailed"));
+    } catch (e: unknown) {
+      const code = (e as { code?: string })?.code;
+      if (code === "ERR_REQUEST_CANCELED") return;
+      Alert.alert(t("auth.appleSignIn"), userFacingApiError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const startGoogle = async () => {
     if (!googleConfigured) {
       Alert.alert("Google sign-in", UX.googleSignInUnavailable);
@@ -178,6 +215,13 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
       <Text style={styles.tagline}>{t("auth.signInTagline")}</Text>
 
       <CardContainer glow style={{ width: "100%" }}>
+        {appleAvailable ? (
+          <>
+            <AppleSignInButton onPress={startApple} disabled={busy} />
+            <View style={{ height: 12 }} />
+          </>
+        ) : null}
+
         {googleConfigured && request ? (
           <>
             <GoogleButton onPress={startGoogle} disabled={!request || busy} />

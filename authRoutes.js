@@ -12,6 +12,8 @@ import { jwtClaimsFromAppUser, publicUserFromAppUser } from "./authPlatformJwt.j
 import { writeSecurityAudit } from "./auditSecurity.js";
 import { CANONICAL_SUPER_ADMIN_EMAIL, isForbiddenPublicSignupRole, isSuperAdminEmail, resolveRoleFromTrustedSource } from "./rolePolicy.js";
 import { recordSignupAcceptanceBatch } from "./legalRoutes.js";
+import { verifyAppleIdentityToken } from "./authAppleVerify.js";
+import { deleteAppUserAccount } from "./accountDeletionService.js";
 
 const require = createRequire(import.meta.url);
 const jwt = require("jsonwebtoken");
@@ -616,6 +618,200 @@ export function createAuthRouter({ sendEmail }) {
         success: false,
         error: "server_error",
         message: "Google sign-in failed",
+      });
+    }
+  });
+
+  router.post("/apple", async (req, res) => {
+    try {
+      const identityToken = String(req.body?.identityToken || "").trim();
+      if (!identityToken) {
+        return res.status(400).json({
+          ok: false,
+          success: false,
+          error: "identityToken_required",
+          message: "Missing Apple credential. Try signing in again.",
+        });
+      }
+
+      let verified;
+      try {
+        verified = await verifyAppleIdentityToken(identityToken);
+      } catch (e) {
+        const msg = String(e?.message || "apple_token_invalid");
+        console.error("[auth/apple] verify failed", msg);
+        return res.status(401).json({
+          ok: false,
+          success: false,
+          error: "apple_token_invalid",
+          message: "Apple could not verify this sign-in. Try again.",
+        });
+      }
+
+      const appleId = String(verified.sub || "").trim();
+      const emailFromToken = verified.email ? normalizeEmail(verified.email) : "";
+      const emailFromClient = normalizeEmail(req.body?.email);
+      const email = emailFromToken || emailFromClient;
+      const name = String(req.body?.fullName || req.body?.name || "").trim();
+
+      if (!appleId) {
+        return res.status(401).json({
+          ok: false,
+          success: false,
+          error: "apple_payload_invalid",
+          message: "Apple did not return enough profile data to sign you in.",
+        });
+      }
+
+      const byApple = await dbQuery(
+        "SELECT id, name, email, password_hash, role, barber_id, business_id, apple_id FROM app_users WHERE apple_id = $1 LIMIT 1",
+        [appleId],
+      );
+      const userByApple = byApple.rows?.[0] || null;
+      if (userByApple) {
+        const claims = jwtClaimsFromAppUser(userByApple);
+        const token = signTokenForAppUser(userByApple);
+        const publicUser = publicUserFromAppUser(userByApple);
+        console.log("[auth] apple_success", {
+          email: publicUser.email,
+          role: publicUser.role,
+          redirect: postLoginRedirectFromClaims(claims),
+        });
+        return res.json({
+          ok: true,
+          success: true,
+          token,
+          user: publicUser,
+          redirect: postLoginRedirectFromClaims(claims),
+        });
+      }
+
+      if (!email) {
+        return res.status(401).json({
+          ok: false,
+          success: false,
+          error: "apple_email_required",
+          message:
+            "Apple did not share an email for this sign-in. Choose Share My Email on the Apple prompt, or sign in with email.",
+        });
+      }
+
+      if (verified.email && verified.email_verified === false) {
+        return res.status(401).json({
+          ok: false,
+          success: false,
+          error: "apple_email_unverified",
+          message: "Verify this email in your Apple ID, then try again.",
+        });
+      }
+
+      const byEmail = await dbQuery(
+        "SELECT id, name, email, password_hash, role, barber_id, business_id, apple_id FROM app_users WHERE lower(trim(email::text)) = $1 LIMIT 1",
+        [email],
+      );
+      const userByEmail = byEmail.rows?.[0] || null;
+      if (userByEmail) {
+        if (userByEmail.apple_id && String(userByEmail.apple_id) !== appleId) {
+          return res.status(409).json({
+            ok: false,
+            success: false,
+            error: "apple_account_conflict",
+            message: "This email is already linked to a different Apple ID.",
+          });
+        }
+        await dbQuery("UPDATE app_users SET apple_id = $1 WHERE id = $2::uuid", [appleId, userByEmail.id]);
+        const refreshed = { ...userByEmail, apple_id: appleId };
+        const claims = jwtClaimsFromAppUser(refreshed);
+        const token = signTokenForAppUser(refreshed);
+        const publicUser = publicUserFromAppUser(refreshed);
+        console.log("[auth] apple_success", {
+          email: publicUser.email,
+          role: publicUser.role,
+          redirect: postLoginRedirectFromClaims(claims),
+        });
+        return res.json({
+          ok: true,
+          success: true,
+          token,
+          user: publicUser,
+          redirect: postLoginRedirectFromClaims(claims),
+        });
+      }
+
+      const pw = randomPlaceholderPasswordForOAuth();
+      const passwordHash = await hashPassword(pw);
+      const created = await dbQuery(
+        `INSERT INTO app_users (name, email, password_hash, role, apple_id)
+         VALUES ($1, $2, $3, 'user', $4)
+         RETURNING id, name, email, role, barber_id, business_id, apple_id`,
+        [name || email.split("@")[0] || "User", email, passwordHash, appleId],
+      );
+      const nu = created.rows?.[0];
+      if (!nu) {
+        return res.status(500).json({
+          ok: false,
+          success: false,
+          error: "apple_create_user_failed",
+          message: "Could not create your account. Try again.",
+        });
+      }
+      const claims = jwtClaimsFromAppUser(nu);
+      const token = signTokenForAppUser(nu);
+      const publicUser = publicUserFromAppUser(nu);
+      console.log("[auth] apple_success", {
+        email: publicUser.email,
+        role: publicUser.role,
+        redirect: postLoginRedirectFromClaims(claims),
+      });
+      return res.json({
+        ok: true,
+        success: true,
+        token,
+        user: publicUser,
+        redirect: postLoginRedirectFromClaims(claims),
+      });
+    } catch (e) {
+      console.error("[auth/apple] error:", e?.stack || e);
+      return res.status(500).json({
+        ok: false,
+        success: false,
+        error: "server_error",
+        message: "Apple sign-in failed",
+      });
+    }
+  });
+
+  router.delete("/account", requireAuth, async (req, res) => {
+    try {
+      const id = String(req.user?.id || "").trim();
+      if (!id) {
+        return res.status(401).json({ ok: false, error: "unauthorized", message: "Invalid session" });
+      }
+      const result = await deleteAppUserAccount(id);
+      if (!result.ok) {
+        const status = result.error === "account_protected" ? 403 : 400;
+        return res.status(status).json({
+          ok: false,
+          success: false,
+          error: result.error,
+          message: result.message || "Account could not be deleted.",
+        });
+      }
+      void writeSecurityAudit({
+        eventType: "account_deleted",
+        actorUserId: id,
+        actorEmail: String(req.user?.email || ""),
+        req,
+        metadata: { source: "mobile_app" },
+      });
+      return res.json({ ok: true, success: true, message: "Account deleted." });
+    } catch (e) {
+      console.error("[auth] DELETE /account error:", e);
+      return res.status(500).json({
+        ok: false,
+        success: false,
+        error: "server_error",
+        message: "Account deletion failed",
       });
     }
   });

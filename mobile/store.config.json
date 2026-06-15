@@ -3,23 +3,52 @@
   "apple": {
     "version": "1.0",
     "copyright": "2026 IFCDC Barbers",
-    "categories": ["LIFESTYLE", "BUSINESS"],
     "release": {
       "automaticRelease": true
     },
     "info": {
       "en-US": {
+        "description": "IFCDC Barbers makes it easy to book professional barbershop appointments. Browse real haircut and style photos, choose your service, pick a barber and time, and pay securely with PayPal.\n\nFeatures:\n• Book appointments with live availability\n• View service photos and style gallery before you book\n• Secure PayPal checkout and email confirmations\n• AURA assistant for quick booking help\n• Manage your profile and booking history\n\nOfficial app for IFCDC Barbers — smart booking powered by real style photos.",
+        "keywords": [
+          "barber",
+          "haircut",
+          "fade",
+          "booking",
+          "appointments",
+          "IFCDC",
+          "barbershop"
+        ],
+        "marketingUrl": "https://ifcdcbarbersapp.com",
+        "promoText": "Book your next cut — browse styles, pick a barber, pay with PayPal.",
+        "supportUrl": "https://ifcdcbarbersapp.com",
         "title": "IFCDC Barbers",
         "subtitle": "Book cuts with style photos",
-        "description": "IFCDC Barbers makes it easy to book professional barbershop appointments. Browse real haircut and style photos, choose your service, pick a barber and time, and pay securely with PayPal.\n\nFeatures:\n• Book appointments with live availability\n• View service photos and style gallery before you book\n• Secure PayPal checkout and email confirmations\n• AURA assistant for quick booking help\n• Manage your profile and booking history\n\nOfficial app for IFCDC Barbers — smart booking powered by real style photos.",
-        "keywords": ["barber", "haircut", "fade", "booking", "appointments", "IFCDC", "barbershop"],
-        "promoText": "Book your next cut — browse styles, pick a barber, pay with PayPal.",
-        "marketingUrl": "https://ifcdcbarbersapp.com",
-        "supportUrl": "https://ifcdcbarbersapp.com",
         "privacyPolicyUrl": "https://ifcdcbarbersapp.com/privacy",
-        "releaseNotes": "Build 35 — final App Store readiness release with style photo persistence, booking photo sync across platforms, per-service photo management, PayPal checkout, and AURA assistant."
+        "releaseNotes": "Build 36 — App Store compliance: Sign in with Apple, in-app account deletion (Profile → Delete account), and updated photo library permission text.",
+        "screenshots": {
+          "APP_IPAD_PRO_3GEN_129": [
+            "store/apple/screenshot/en-US/APP_IPAD_PRO_3GEN_129/iPad Pro 13-inch (M4)-06_AURA.png",
+            "store/apple/screenshot/en-US/APP_IPAD_PRO_3GEN_129/iPad Pro 13-inch (M4)-05_Profile.png",
+            "store/apple/screenshot/en-US/APP_IPAD_PRO_3GEN_129/iPad Pro 13-inch (M4)-04_Services_Styles.png",
+            "store/apple/screenshot/en-US/APP_IPAD_PRO_3GEN_129/iPad Pro 13-inch (M4)-03_Booking.png",
+            "store/apple/screenshot/en-US/APP_IPAD_PRO_3GEN_129/iPad Pro 13-inch (M4)-02_Barbers.png",
+            "store/apple/screenshot/en-US/APP_IPAD_PRO_3GEN_129/iPad Pro 13-inch (M4)-01_Home.png"
+          ],
+          "APP_IPHONE_65": [
+            "store/apple/screenshot/en-US/APP_IPHONE_65/iPhone 16 Plus-06_AURA.png",
+            "store/apple/screenshot/en-US/APP_IPHONE_65/iPhone 16 Plus-05_Profile.png",
+            "store/apple/screenshot/en-US/APP_IPHONE_65/iPhone 16 Plus-04_Services_Styles.png",
+            "store/apple/screenshot/en-US/APP_IPHONE_65/iPhone 16 Plus-03_Booking.png",
+            "store/apple/screenshot/en-US/APP_IPHONE_65/iPhone 16 Plus-02_Barbers.png",
+            "store/apple/screenshot/en-US/APP_IPHONE_65/iPhone 16 Plus-01_Home.png"
+          ]
+        }
       }
     },
+    "categories": [
+      "LIFESTYLE",
+      "BUSINESS"
+    ],
     "advisory": {
       "ageRatingOverride": "NONE",
       "alcoholTobaccoOrDrugUseOrReferences": "NONE",
@@ -54,8 +83,10 @@
       "lastName": "Allah",
       "email": "ifcdcbarbersapp@gmail.com",
       "phone": "+1 202 555 0100",
-      "demoRequired": false,
-      "notes": "IFCDC Barbers is a barbershop booking app. Reviewers can register a free customer account in-app or on https://ifcdcbarbersapp.com/register to test booking. PayPal sandbox/live checkout is enabled; use any valid email at checkout. Style and service photos are loaded from our production API. AURA chat is available from the booking flow. No special hardware required."
+      "demoUsername": "apple.review@ifcdcbarbersapp.com",
+      "demoPassword": "IFCDC-Review2026!",
+      "demoRequired": true,
+      "notes": "Sign-in is required. Use the demo account credentials provided in App Review Information (email + password), or Sign in with Apple / Google on the login screen.\n\nAccount deletion (Guideline 5.1.1(v)): Profile tab → Delete account → type DELETE → confirm. Permanently removes the account and personal data.\n\nTesting steps:\n1. Open IFCDC Barbers and go to Profile → Sign In.\n2. Enter the demo email and password exactly as supplied (or use Sign in with Apple).\n3. Book tab → select barber → service → date/time → PayPal checkout.\n4. AURA tab → ask about booking, services, or hours.\n5. Browse service/style photos during the booking flow.\n\nThe demo account is a standard customer with full access to booking, profile, and AURA. No admin credentials are needed."
     }
   }
 }

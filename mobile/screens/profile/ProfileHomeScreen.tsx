@@ -53,6 +53,7 @@ export default function ProfileHomeScreen() {
     { key: "LanguageSettings", label: t("profile.menuLanguage") },
     { key: "SupportHelp", label: t("profile.menuSupport") },
     { key: "LegalPolicies", label: t("profile.menuLegal") },
+    { key: "DeleteAccount", label: t("profile.menuDeleteAccount") },
   ];
 
   return (
@@ -92,7 +93,14 @@ export default function ProfileHomeScreen() {
                 pressed && styles.menuRowPressed,
               ]}
             >
-              <Text style={styles.menuLabel}>{item.label}</Text>
+              <Text
+                style={[
+                  styles.menuLabel,
+                  item.key === "DeleteAccount" ? styles.menuLabelDanger : null,
+                ]}
+              >
+                {item.label}
+              </Text>
               <Text style={styles.menuChevron}>›</Text>
             </Pressable>
           ))}
@@ -166,6 +174,7 @@ const styles = StyleSheet.create({
   },
   menuRowPressed: { backgroundColor: "rgba(245,200,66,0.06)" },
   menuLabel: { ...typography.heading, fontSize: 16, fontWeight: "600" },
+  menuLabelDanger: { color: "#ff6b6b" },
   menuChevron: { color: palette.gold, fontSize: 22, fontWeight: "300" },
   signOutCard: { marginTop: 4 },
 });

@@ -99,3 +99,13 @@ export async function ensureGoogleAuthSupport() {
   `);
 }
 
+/** Sign in with Apple: stable link on `app_users`. Safe to run every boot. */
+export async function ensureAppleAuthSupport() {
+  await dbQuery(`ALTER TABLE app_users ADD COLUMN IF NOT EXISTS apple_id TEXT;`);
+  await dbQuery(`
+    CREATE UNIQUE INDEX IF NOT EXISTS app_users_apple_id_ux
+    ON app_users (apple_id)
+    WHERE apple_id IS NOT NULL AND btrim(apple_id) <> '';
+  `);
+}
+

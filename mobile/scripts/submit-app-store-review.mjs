@@ -18,7 +18,7 @@ import { createSign } from "node:crypto";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ASC_APP_ID = "6766149605";
 const VERSION_STRING = "1.0";
-const BUILD_NUMBER = "35";
+const BUILD_NUMBER = "36";
 
 function loadEnvFile(filePath) {
   if (!fs.existsSync(filePath)) return {};

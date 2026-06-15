@@ -87,6 +87,17 @@ export function mapAuthErrorToMessage(json: JsonAuth | null, status: number): st
   if (code === "google_email_unverified") return msg || "Verify this email in Google, then try again.";
   if (code === "google_payload_invalid") return msg || "Google did not return enough profile data.";
 
+  if (code === "apple_token_invalid") return msg || "Apple could not verify this sign-in. Try again.";
+  if (code === "apple_email_required") {
+    return msg || "Apple did not share an email. Choose Share My Email on the Apple prompt.";
+  }
+  if (code === "apple_account_conflict") return msg || "This email is linked to a different Apple ID.";
+  if (code === "apple_email_unverified") return msg || "Verify this email in your Apple ID, then try again.";
+  if (code === "apple_payload_invalid") return msg || "Apple did not return enough profile data.";
+
+  if (code === "account_protected") return msg || "This account cannot be deleted from the app.";
+  if (code === "user_not_found" && status === 400) return msg || "Account not found.";
+
   if (code === "email_exists" || status === 409) return msg || "This email is already registered. Try signing in.";
   if (code === "weak_password") return msg || "Password is too weak.";
   if (code === "name_required") return msg || "Name is required.";
@@ -285,4 +296,33 @@ export async function requestPasswordReset(email: string): Promise<string> {
     return String(json.message || NEUTRAL_RESET_MESSAGE);
   }
   throw new Error(mapAuthErrorToMessage(json, status));
+}
+
+/** DELETE /api/auth/account — permanently removes the signed-in user (App Store 5.1.1(v)). */
+export async function deleteMyAccount(token: string): Promise<void> {
+  const url = apiFullUrl("/api/auth/account");
+  let res: Response;
+  try {
+    res = await fetchWithTimeout(url, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+      timeoutMs: 28_000,
+    });
+  } catch (e) {
+    const name = e instanceof Error ? e.name : "";
+    if (name === "AbortError") throw new Error(UX.errorConnection);
+    throw new Error(mapAuthErrorToMessage(null, 0));
+  }
+
+  const raw = await res.text();
+  let json: JsonAuth = {};
+  try {
+    json = raw ? (JSON.parse(raw) as JsonAuth) : {};
+  } catch {
+    throw new Error(UX.errorGeneric);
+  }
+
+  if (res.status < 200 || res.status >= 300 || json.ok === false || json.success === false) {
+    throw new Error(mapAuthErrorToMessage(json, res.status));
+  }
 }

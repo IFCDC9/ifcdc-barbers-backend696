@@ -19,9 +19,12 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.ifcdc.barbers",
-      "buildNumber": "35",
+      "buildNumber": "36",
+      "usesAppleSignIn": true,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
+        "NSPhotoLibraryUsageDescription": "IFCDC Barbers uses your photo library so barbers can upload haircut style photos, profile images, and gallery photos that customers can view when booking appointments.",
+        "NSPhotoLibraryAddUsageDescription": "IFCDC Barbers saves photos you choose to upload for your profile or barber style gallery.",
         "NSMicrophoneUsageDescription": "IFCDC Barbers uses the microphone only if you choose to use voice features with AURA or speak appointment details.",
         "NSSpeechRecognitionUsageDescription": "IFCDC Barbers uses speech recognition only if you choose to use voice features with AURA, so the app can understand spoken appointment or service requests.",
         "NSAppTransportSecurity": {
@@ -40,7 +43,7 @@
     },
     "android": {
       "package": "com.ifcdc.barbers",
-      "versionCode": 28,
+      "versionCode": 29,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#050505"
@@ -48,7 +51,8 @@
       "usesCleartextTraffic": true
     },
     "plugins": [
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-apple-authentication"
     ],
     "extra": {
       "eas": {

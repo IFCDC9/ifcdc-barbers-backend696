@@ -13,7 +13,13 @@ import session from "express-session";
 import { mountProductionBarbersRoutes } from "./productionBarbersRoutes.js";
 import { mountProductionCms } from "./mountProductionCms.js";
 import { createAuthRouter, resolveAuthPayload } from "./authRoutes.js";
-import { ensureUsersRoleColumn, ensureGoogleAuthSupport, ensurePendingInvitesTable, ensurePasswordRecoveryColumns } from "./authDbMigrations.js";
+import {
+  ensureUsersRoleColumn,
+  ensureGoogleAuthSupport,
+  ensureAppleAuthSupport,
+  ensurePendingInvitesTable,
+  ensurePasswordRecoveryColumns,
+} from "./authDbMigrations.js";
 import { ensureInitialSuperAdmin } from "./seedSuperAdmin.js";
 import { ensureStylesTables, seedSampleStylesIfEmpty } from "./stylesMigrations.js";
 import { createStylesRouter } from "./stylesRoutes.js";
@@ -1010,6 +1016,7 @@ async function startServer() {
   try {
     await ensureUsersRoleColumn();
     await ensureGoogleAuthSupport();
+    await ensureAppleAuthSupport();
     await ensurePendingInvitesTable();
     await ensurePasswordRecoveryColumns();
   } catch (e) {

@@ -8,7 +8,7 @@ import CancelBookingScreen from "../screens/profile/CancelBookingScreen";
 import RescheduleBookingScreen from "../screens/profile/RescheduleBookingScreen";
 import NotificationsScreen from "../screens/profile/NotificationsScreen";
 import LanguageSettingsScreen from "../screens/profile/LanguageSettingsScreen";
-import SupportHelpScreen from "../screens/profile/SupportHelpScreen";
+import DeleteAccountScreen from "../screens/profile/DeleteAccountScreen";
 import TermsPrivacyScreen from "../screens/profile/TermsPrivacyScreen";
 import LegalPoliciesIndexScreen from "../screens/legal/LegalPoliciesIndexScreen";
 import PrivacyPolicyScreen from "../screens/legal/PrivacyPolicyScreen";
@@ -46,6 +46,7 @@ export type ProfileStackParamList = {
   Notifications: undefined;
   LanguageSettings: undefined;
   SupportHelp: undefined;
+  DeleteAccount: undefined;
   TermsPrivacy: undefined;
   LegalPolicies: undefined;
   PrivacyPolicy: undefined;
@@ -88,6 +89,7 @@ export default function ProfileStack() {
         <Stack.Screen key={name} name={name} component={component} />
       ))}
       <Stack.Screen name="SupportHelp" component={SupportHelpScreen} />
+      <Stack.Screen name="DeleteAccount" component={DeleteAccountScreen} />
       <Stack.Screen name="TermsPrivacy" component={TermsPrivacyScreen} />
       <Stack.Screen name="LegalPolicies" component={LegalPoliciesIndexScreen} />
       <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicyScreen} />
