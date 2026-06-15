@@ -1,5 +1,6 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
+import DeleteAccountSection from "../components/DeleteAccountSection.jsx";
 import { getApiOrigin } from "../services/api.js";
 
 function readUser() {
@@ -123,6 +124,8 @@ export default function Profile() {
       <button type="button" className="ifcdc-book-wizard__back" onClick={logout}>
         Sign out
       </button>
+
+      <DeleteAccountSection user={user} onDeleted={logout} />
     </div>
   );
 }

@@ -4539,7 +4539,7 @@ a.payments-page__cta {
   display: block;
 }
 
-/* —— App-parity booking wizard (TestFlight flow) —— */
+/* —— App-parity booking wizard (mobile app flow) —— */
 .ifcdc-book-wizard {
   max-width: 42rem;
   margin: 0 auto;
@@ -4712,6 +4712,118 @@ a.payments-page__cta {
   color: var(--muted);
   cursor: pointer;
   font-size: 0.9rem;
+}
+
+.ifcdc-delete-account {
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid rgba(212, 175, 55, 0.15);
+  max-width: min(100%, 28rem);
+}
+
+.ifcdc-delete-account__title {
+  font-size: 0.85rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 0.75rem;
+}
+
+.ifcdc-delete-account__toggle {
+  padding: 0;
+  border: none;
+  background: none;
+  color: #f87171;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.ifcdc-delete-account__toggle:hover {
+  color: #fca5a5;
+}
+
+.ifcdc-delete-account__panel {
+  padding: 1rem;
+  border-radius: 10px;
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  background: rgba(40, 10, 10, 0.45);
+}
+
+.ifcdc-delete-account__warning {
+  margin: 0 0 0.75rem;
+  color: #fecaca;
+  font-weight: 700;
+  font-size: 0.92rem;
+}
+
+.ifcdc-delete-account__list {
+  margin: 0 0 1rem 1.1rem;
+  padding: 0;
+  color: rgba(228, 228, 231, 0.88);
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
+
+.ifcdc-delete-account__email {
+  margin: 0 0 1rem;
+  font-size: 0.88rem;
+  color: var(--gold-soft);
+}
+
+.ifcdc-delete-account__label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.ifcdc-delete-account__input {
+  width: 100%;
+  padding: 0.65rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid rgba(248, 113, 113, 0.4);
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--text);
+  font-size: 0.95rem;
+  letter-spacing: 0.06em;
+}
+
+.ifcdc-delete-account__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  align-items: center;
+}
+
+.ifcdc-delete-account__btn {
+  padding: 0.7rem 1rem;
+  border: none;
+  border-radius: 8px;
+  background: #b91c1c;
+  color: #fff;
+  font-weight: 800;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+
+.ifcdc-delete-account__btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ifcdc-delete-account__cancel {
+  padding: 0.5rem 0.25rem;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 0.88rem;
+  cursor: pointer;
 }
 
 .ifcdc-aura-page__panel {

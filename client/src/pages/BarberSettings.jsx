@@ -1,5 +1,6 @@
 import React from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import DeleteAccountSection from "../components/DeleteAccountSection.jsx";
 import { Page, PageHeader } from "../components/ui/Page.jsx";
 import { Card, CardTitle } from "../components/ui/Card.jsx";
 import { Button } from "../components/ui/Button.jsx";
@@ -65,6 +66,7 @@ const inputStyle = {
 };
 
 export default function BarberSettings() {
+  const navigate = useNavigate();
   const user = readUser();
   const role = String(user?.role || "");
   const isAdmin = role === "admin" || role === "super_admin";
@@ -1169,6 +1171,19 @@ export default function BarberSettings() {
           </div>
         </Card>
       ) : null}
+
+      <DeleteAccountSection
+        user={user}
+        onDeleted={() => {
+          try {
+            window.localStorage.removeItem("token");
+            window.localStorage.removeItem("user");
+          } catch {
+            /* ignore */
+          }
+          navigate("/", { replace: true });
+        }}
+      />
     </Page>
   );
 }

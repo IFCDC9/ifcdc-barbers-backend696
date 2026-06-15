@@ -4,6 +4,56 @@
 import { dbQuery } from "./db.js";
 import { isSuperAdminEmail } from "./rolePolicy.js";
 
+async function deleteSupabaseBridgeUser(userId) {
+  try {
+    const bridge = await dbQuery(
+      `SELECT supabase_user_id::text AS sid FROM auth_bridge WHERE backend_sub = $1 LIMIT 1`,
+      [userId],
+    );
+    const supabaseUserId = bridge.rows?.[0]?.sid;
+    if (!supabaseUserId) {
+      await dbQuery(`DELETE FROM auth_bridge WHERE backend_sub = $1`, [userId]).catch(() => {});
+      return;
+    }
+
+    try {
+      const mod = await import("./src/db/supabaseServiceClient.js");
+      const supabaseService = mod.default;
+      if (supabaseService?.auth?.admin?.deleteUser) {
+        await supabaseService.auth.admin.deleteUser(supabaseUserId).catch(() => {});
+      }
+    } catch {
+      /* Supabase optional */
+    }
+
+    await dbQuery(`DELETE FROM auth_bridge WHERE backend_sub = $1`, [userId]).catch(() => {});
+  } catch {
+    /* best effort */
+  }
+}
+
+async function deleteBarberRecordsForUser(userId, barberIdFromUser) {
+  const barberIds = new Set();
+  if (barberIdFromUser != null && String(barberIdFromUser).trim() !== "") {
+    const n = Number(barberIdFromUser);
+    if (Number.isFinite(n) && n > 0) barberIds.add(n);
+  }
+
+  const linked = await dbQuery(`SELECT id FROM barbers WHERE user_id = $1::uuid`, [userId]).catch(() => ({
+    rows: [],
+  }));
+  for (const row of linked.rows || []) {
+    const n = Number(row.id);
+    if (Number.isFinite(n) && n > 0) barberIds.add(n);
+  }
+
+  for (const bid of barberIds) {
+    await dbQuery(`DELETE FROM barbers WHERE id = $1`, [bid]).catch((e) => {
+      console.warn("[account-delete] barber row delete failed:", bid, e?.message || e);
+    });
+  }
+}
+
 /**
  * @param {string} userId — app_users.id (uuid)
  * @returns {Promise<{ ok: true } | { ok: false, error: string, message?: string }>}
@@ -15,7 +65,7 @@ export async function deleteAppUserAccount(userId) {
   }
 
   const found = await dbQuery(
-    `SELECT id, email, role FROM app_users WHERE id = $1::uuid LIMIT 1`,
+    `SELECT id, email, role, barber_id, business_id FROM app_users WHERE id = $1::uuid LIMIT 1`,
     [id],
   );
   const user = found.rows?.[0];
@@ -45,6 +95,13 @@ export async function deleteAppUserAccount(userId) {
      WHERE user_id = $1::uuid`,
     [id, anonEmail, anonName],
   );
+
+  await deleteBarberRecordsForUser(id, user.barber_id);
+
+  await dbQuery(`DELETE FROM push_tokens WHERE user_id = $1::uuid`, [id]).catch(() => {});
+  await dbQuery(`DELETE FROM notification_preferences WHERE user_id = $1::uuid`, [id]).catch(() => {});
+
+  await deleteSupabaseBridgeUser(id);
 
   await dbQuery(`DELETE FROM legal_acceptances WHERE user_id = $1::uuid`, [id]).catch(() => {});
 

@@ -34,6 +34,40 @@ export function getApiOrigin() {
   return String(import.meta.env.VITE_API_URL || "").trim() || "";
 }
 
+/** DELETE /api/auth/account — permanently removes the signed-in user (App Store 5.1.1(v)). */
+export async function deleteMyAccount() {
+  const origin = getApiOrigin();
+  let token = "";
+  try {
+    token = localStorage.getItem("token") || "";
+  } catch {
+    /* ignore */
+  }
+  if (!token) {
+    throw new Error("Sign in again to delete your account.");
+  }
+
+  const res = await fetch(`${origin}/api/auth/account`, {
+    method: "DELETE",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/json",
+      "X-Client-Source": "website",
+    },
+  });
+  const text = await res.text();
+  let data = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    throw new Error(`Account deletion failed (HTTP ${res.status}).`);
+  }
+  if (!res.ok) {
+    throw new Error(data?.message || data?.error || `Account deletion failed (HTTP ${res.status})`);
+  }
+  return data;
+}
+
 export async function login(email, password) {
   const origin = getApiOrigin();
   const payload = { email, password };

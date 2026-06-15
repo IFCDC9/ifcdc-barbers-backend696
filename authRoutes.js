@@ -802,7 +802,7 @@ export function createAuthRouter({ sendEmail }) {
         actorUserId: id,
         actorEmail: String(req.user?.email || ""),
         req,
-        metadata: { source: "mobile_app" },
+        metadata: { source: String(req.headers["x-client-source"] || "app").slice(0, 64) },
       });
       return res.json({ ok: true, success: true, message: "Account deleted." });
     } catch (e) {
