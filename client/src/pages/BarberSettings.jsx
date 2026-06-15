@@ -547,6 +547,22 @@ export default function BarberSettings() {
 
       {quickLinksCard}
 
+      <section className="ifcdc-profile-account ifcdc-profile-account--shop" aria-label="Account settings">
+        <DeleteAccountSection
+          user={user}
+          inputId="delete-account-confirm-shop"
+          onDeleted={() => {
+            try {
+              window.localStorage.removeItem("token");
+              window.localStorage.removeItem("user");
+            } catch {
+              /* ignore */
+            }
+            navigate("/", { replace: true });
+          }}
+        />
+      </section>
+
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 16 }}>
         {tabs.map((t) => (
           <button key={t.id} type="button" style={tabBtn(tab === t.id)} onClick={() => setTab(t.id)}>
@@ -1171,19 +1187,6 @@ export default function BarberSettings() {
           </div>
         </Card>
       ) : null}
-
-      <DeleteAccountSection
-        user={user}
-        onDeleted={() => {
-          try {
-            window.localStorage.removeItem("token");
-            window.localStorage.removeItem("user");
-          } catch {
-            /* ignore */
-          }
-          navigate("/", { replace: true });
-        }}
-      />
     </Page>
   );
 }

@@ -4715,42 +4715,47 @@ a.payments-page__cta {
 }
 
 .ifcdc-delete-account {
-  margin-top: 2rem;
-  padding-top: 1.5rem;
-  border-top: 1px solid rgba(212, 175, 55, 0.15);
-  max-width: min(100%, 28rem);
+  margin-top: 1rem;
+  padding-top: 0;
+  border-top: none;
+  max-width: min(100%, 32rem);
+}
+
+.ifcdc-profile-account {
+  margin: 1.75rem 0 2rem;
+  padding: 1.25rem;
+  border-radius: 12px;
+  border: 1px solid rgba(212, 175, 55, 0.22);
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.ifcdc-profile-account--shop {
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.ifcdc-profile {
+  padding-bottom: calc(var(--bottom-nav-height, 4rem) + 2.5rem);
 }
 
 .ifcdc-delete-account__title {
-  font-size: 0.85rem;
+  font-size: 1rem;
   font-weight: 800;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--muted);
-  margin: 0 0 0.75rem;
+  color: var(--gold-soft);
+  margin: 0 0 0.85rem;
 }
 
 .ifcdc-delete-account__toggle {
-  padding: 0;
-  border: none;
-  background: none;
-  color: #f87171;
-  font-size: 0.9rem;
-  font-weight: 600;
-  cursor: pointer;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-.ifcdc-delete-account__toggle:hover {
-  color: #fca5a5;
+  display: none;
 }
 
 .ifcdc-delete-account__panel {
   padding: 1rem;
   border-radius: 10px;
   border: 1px solid rgba(248, 113, 113, 0.35);
-  background: rgba(40, 10, 10, 0.45);
+  background: rgba(40, 10, 10, 0.35);
 }
 
 .ifcdc-delete-account__warning {

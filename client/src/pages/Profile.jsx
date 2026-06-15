@@ -103,6 +103,14 @@ export default function Profile() {
         </Link>
       ) : null}
 
+      <section className="ifcdc-profile-account" aria-label="Account actions">
+        <h2 className="ifcdc-book-wizard__heading">Account</h2>
+        <button type="button" className="ifcdc-book-wizard__back" onClick={logout}>
+          Sign out
+        </button>
+        <DeleteAccountSection user={user} onDeleted={logout} />
+      </section>
+
       <h2 className="ifcdc-book-wizard__heading">My bookings</h2>
       {loading ? <p className="ifcdc-page-hint">Loading…</p> : null}
       {error ? <p className="ifcdc-error-msg">{error}</p> : null}
@@ -120,12 +128,6 @@ export default function Profile() {
           </li>
         ))}
       </ul>
-
-      <button type="button" className="ifcdc-book-wizard__back" onClick={logout}>
-        Sign out
-      </button>
-
-      <DeleteAccountSection user={user} onDeleted={logout} />
     </div>
   );
 }
