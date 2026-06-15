@@ -11,7 +11,15 @@
 1. **Deploy backend** — Push `main` so Render serves:
    - `POST /api/auth/apple`
    - `DELETE /api/auth/account`
-2. **Apple Developer** — Ensure **Sign in with Apple** capability is enabled for `com.ifcdc.barbers` (EAS usually applies via `usesAppleSignIn: true`).
+2. **Apple Developer** — Enable **Sign in with Apple** for App ID `com.ifcdc.barbers` (Identifiers → your app → Capabilities).
+3. **Regenerate provisioning profile** (required once after adding Apple Sign In):
+
+```bash
+cd mobile
+eas credentials:configure-build -p ios -e production
+```
+
+Choose to log in to Apple (or use your App Store Connect API key), then **regenerate the provisioning profile** so it includes the `com.apple.developer.applesignin` entitlement.
 
 ## Build & upload
 

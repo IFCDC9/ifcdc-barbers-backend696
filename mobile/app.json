@@ -21,6 +21,9 @@
       "bundleIdentifier": "com.ifcdc.barbers",
       "buildNumber": "36",
       "usesAppleSignIn": true,
+      "entitlements": {
+        "com.apple.developer.applesignin": ["Default"]
+      },
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSPhotoLibraryUsageDescription": "IFCDC Barbers uses your photo library so barbers can upload haircut style photos, profile images, and gallery photos that customers can view when booking appointments.",
