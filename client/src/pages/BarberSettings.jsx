@@ -1,6 +1,5 @@
 import React from "react";
-import { Link, useNavigate } from "react-router-dom";
-import DeleteAccountSection from "../components/DeleteAccountSection.jsx";
+import { Link } from "react-router-dom";
 import { Page, PageHeader } from "../components/ui/Page.jsx";
 import { Card, CardTitle } from "../components/ui/Card.jsx";
 import { Button } from "../components/ui/Button.jsx";
@@ -66,7 +65,6 @@ const inputStyle = {
 };
 
 export default function BarberSettings() {
-  const navigate = useNavigate();
   const user = readUser();
   const role = String(user?.role || "");
   const isAdmin = role === "admin" || role === "super_admin";
@@ -548,19 +546,13 @@ export default function BarberSettings() {
       {quickLinksCard}
 
       <section className="ifcdc-profile-account ifcdc-profile-account--shop" aria-label="Account settings">
-        <DeleteAccountSection
-          user={user}
-          inputId="delete-account-confirm-shop"
-          onDeleted={() => {
-            try {
-              window.localStorage.removeItem("token");
-              window.localStorage.removeItem("user");
-            } catch {
-              /* ignore */
-            }
-            navigate("/", { replace: true });
-          }}
-        />
+        <h2 className="ifcdc-book-wizard__heading">Account</h2>
+        <Link to="/profile/delete-account" className="ifcdc-delete-account__nav-btn">
+          Delete account permanently
+        </Link>
+        <p className="ifcdc-page-hint ifcdc-delete-account__hint">
+          Permanently remove your IFCDC sign-in and personal data. Type DELETE to confirm on the next screen.
+        </p>
       </section>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 16 }}>
@@ -734,6 +726,20 @@ export default function BarberSettings() {
             <Button variant="indigo" type="button" onClick={saveProfile}>
               Save profile
             </Button>
+          </div>
+          <div style={{ marginTop: 20, paddingTop: 16, borderTop: `1px solid ${theme.colors.border}` }}>
+            <CardTitle>IFCDC account</CardTitle>
+            <p style={{ fontSize: 13, color: theme.colors.muted, marginTop: 8, lineHeight: 1.5 }}>
+              This is your shop profile for customers. To permanently delete your IFCDC sign-in and
+              personal account, use the account deletion page.
+            </p>
+            <Link
+              to="/profile/delete-account"
+              className="ifcdc-delete-account__nav-btn"
+              style={{ display: "inline-block", marginTop: 12 }}
+            >
+              Delete account permanently
+            </Link>
           </div>
         </Card>
       ) : null}

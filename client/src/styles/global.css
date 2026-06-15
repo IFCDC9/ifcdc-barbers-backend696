@@ -4738,6 +4738,35 @@ a.payments-page__cta {
   padding-bottom: calc(var(--bottom-nav-height, 4rem) + 2.5rem);
 }
 
+.ifcdc-delete-account__nav-btn {
+  display: block;
+  width: 100%;
+  margin-top: 0.85rem;
+  padding: 0.85rem 1rem;
+  border-radius: 10px;
+  border: 2px solid #dc2626;
+  background: rgba(127, 29, 29, 0.45);
+  color: #fecaca;
+  font-weight: 800;
+  font-size: 0.95rem;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.ifcdc-delete-account__nav-btn:hover {
+  background: rgba(153, 27, 27, 0.65);
+  color: #fff;
+}
+
+.ifcdc-delete-account__hint {
+  margin: 0.65rem 0 0;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
 .ifcdc-delete-account__title {
   font-size: 1rem;
   font-weight: 800;

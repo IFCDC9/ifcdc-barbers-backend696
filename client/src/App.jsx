@@ -9,6 +9,7 @@ import Home from "./pages/Home.jsx";
 import BookingWizard from "./pages/BookingWizard.jsx";
 import AuraPage from "./pages/AuraPage.jsx";
 import Profile from "./pages/Profile.jsx";
+import DeleteAccount from "./pages/DeleteAccount.jsx";
 import About from "./pages/About.jsx";
 import Login from "./pages/Login.jsx";
 import Register from "./pages/Register.jsx";
@@ -60,6 +61,7 @@ function AppShell() {
             <Route path="/booking-legacy" element={<Booking />} />
             <Route path="/aura" element={<AuraPage />} />
             <Route path="/profile" element={<Profile />} />
+            <Route path="/profile/delete-account" element={<DeleteAccount />} />
             <Route path="/checkout" element={<Navigate to="/booking" replace />} />
             <Route path="/payment" element={<Navigate to="/booking" replace />} />
             <Route path="/confirmation" element={<ConfirmationRoute />} />
