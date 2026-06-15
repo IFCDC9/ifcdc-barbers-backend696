@@ -24,7 +24,7 @@
         "title": "IFCDC Barbers",
         "subtitle": "Book cuts with style photos",
         "privacyPolicyUrl": "https://ifcdcbarbersapp.com/privacy",
-        "releaseNotes": "Build 36 — App Store compliance: Sign in with Apple, in-app account deletion (Profile → Delete account), and updated photo library permission text.",
+        "releaseNotes": "Build 37 — Fix Profile tab crash on open (missing SupportHelp screen import). Sign in with Apple and in-app account deletion remain available.",
         "screenshots": {
           "APP_IPAD_PRO_3GEN_129": [
             "store/apple/screenshot/en-US/APP_IPAD_PRO_3GEN_129/iPad Pro 13-inch (M4)-06_AURA.png",
@@ -86,7 +86,7 @@
       "demoUsername": "apple.review@ifcdcbarbersapp.com",
       "demoPassword": "IFCDC-Review2026!",
       "demoRequired": true,
-      "notes": "Sign-in is required. Use the demo account credentials provided in App Review Information (email + password), or Sign in with Apple / Google on the login screen.\n\nAccount deletion (Guideline 5.1.1(v)): Profile tab → Delete account → type DELETE → confirm. Permanently removes the account and personal data.\n\nTesting steps:\n1. Open IFCDC Barbers and go to Profile → Sign In.\n2. Enter the demo email and password exactly as supplied (or use Sign in with Apple).\n3. Book tab → select barber → service → date/time → PayPal checkout.\n4. AURA tab → ask about booking, services, or hours.\n5. Browse service/style photos during the booking flow.\n\nThe demo account is a standard customer with full access to booking, profile, and AURA. No admin credentials are needed."
+      "notes": "APP REVIEW NOTES\n\nReview Account:\nEmail: apple.review@ifcdcbarbersapp.com\nPassword: IFCDC-Review2026!\n\nProfile tab (Build 37 fix):\nBuild 36 crashed on Profile due to a missing screen import. Build 37 fixes this. Tap Profile tab → menu should load (no error screen).\n\nAccount Deletion Feature:\nUsers can permanently delete their account directly within the app without contacting support.\n\nDeletion Path:\nProfile → Delete Account → Type DELETE → Confirm\n\nSupplemental Account Deletion Demo Video:\nhttps://vtkxuagevtiwtoheomjt.supabase.co/storage/v1/object/public/barber-styles/app-review/account-deletion-demo-build36.mp4\n\nTest Account for Deletion Demo:\ndelete.demo.2026@ifcdcbarbersapp.com / IFCDC-DeleteDemo2026!\n\nBuild Reviewed:\nVersion 1.0 (Build 37)\n\nAdditional Notes:\n• Full payment booking flow is active.\n• Password reset functionality is operational.\n• Email booking confirmations are operational.\n• Service photo management is operational.\n• User account deletion is available directly inside the application.\n• No support contact is required to delete an account."
     }
   }
 }

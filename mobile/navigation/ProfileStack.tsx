@@ -8,6 +8,7 @@ import CancelBookingScreen from "../screens/profile/CancelBookingScreen";
 import RescheduleBookingScreen from "../screens/profile/RescheduleBookingScreen";
 import NotificationsScreen from "../screens/profile/NotificationsScreen";
 import LanguageSettingsScreen from "../screens/profile/LanguageSettingsScreen";
+import SupportHelpScreen from "../screens/profile/SupportHelpScreen";
 import DeleteAccountScreen from "../screens/profile/DeleteAccountScreen";
 import TermsPrivacyScreen from "../screens/profile/TermsPrivacyScreen";
 import LegalPoliciesIndexScreen from "../screens/legal/LegalPoliciesIndexScreen";
