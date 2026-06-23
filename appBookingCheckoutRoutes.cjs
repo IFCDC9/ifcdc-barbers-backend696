@@ -539,12 +539,22 @@ router.post("/start", async (req, res) => {
       });
     }
 
-    const platformFee = round2(await loadTier());
+    const tenantBiz = resolved.businessId;
+
+    let platformFee = round2(await loadTier());
+    if (tenantBiz != null && Number.isFinite(Number(tenantBiz))) {
+      try {
+        const { resolveShopPlatformFeeUsd } = await import("./shopAccessPolicy.js");
+        platformFee = round2(await resolveShopPlatformFeeUsd(tenantBiz, platformFee));
+      } catch (feeErr) {
+        console.warn("[app-bookings] platform fee resolve:", feeErr?.message || feeErr);
+      }
+    }
+
     const haircutPrice = round2(Number(serviceRow.price));
     const serviceTitle = String(serviceRow.name || "Service").trim();
     const total = round2(haircutPrice + platformFee);
     const barberPayout = round2(Math.max(0, haircutPrice - platformFee));
-    const tenantBiz = resolved.businessId;
 
     let ins;
     try {

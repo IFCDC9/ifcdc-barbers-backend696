@@ -9,6 +9,7 @@ export async function loadShopAccessRow(businessId) {
   const r = await dbQuery(
     `SELECT id, name, plan, subscription_status, account_status, approval_status, access_plan,
             free_access_enabled, paid_subscription_required, bookings_enabled, payment_processing_enabled,
+            platform_fees_enabled, subscription_enabled, website_access_enabled, mobile_app_access_enabled,
             trial_started_at, trial_ends_at, monthly_price
      FROM businesses WHERE id = $1::bigint LIMIT 1`,
     [bid],
@@ -82,7 +83,17 @@ export function effectiveShopAccess(row) {
     }
   }
 
-  if (accessPlan === "paid" && row.paid_subscription_required !== false && sub !== "active") {
+  const subscriptionEnabled = row.subscription_enabled !== false;
+  const platformFeesEnabled = row.platform_fees_enabled !== false;
+  const websiteAccessEnabled = row.website_access_enabled !== false;
+  const mobileAppAccessEnabled = row.mobile_app_access_enabled !== false;
+
+  if (
+    subscriptionEnabled &&
+    accessPlan === "paid" &&
+    row.paid_subscription_required !== false &&
+    sub !== "active"
+  ) {
     bookingsEnabled = false;
     paymentProcessingEnabled = false;
     return {
@@ -91,6 +102,25 @@ export function effectiveShopAccess(row) {
       paymentProcessingEnabled: false,
       limitedAccess: true,
       reason: "subscription_inactive",
+      subscriptionEnabled,
+      platformFeesEnabled,
+      websiteAccessEnabled,
+      mobileAppAccessEnabled,
+    };
+  }
+
+  if (accessPlan === "lifetime_free") {
+    return {
+      approved: true,
+      bookingsEnabled: Boolean(bookingsEnabled),
+      paymentProcessingEnabled: Boolean(paymentProcessingEnabled),
+      limitedAccess: !bookingsEnabled,
+      reason: bookingsEnabled ? null : "bookings_disabled",
+      accessPlan,
+      subscriptionEnabled: false,
+      platformFeesEnabled,
+      websiteAccessEnabled,
+      mobileAppAccessEnabled,
     };
   }
 
@@ -105,7 +135,20 @@ export function effectiveShopAccess(row) {
     limitedAccess: !bookingsEnabled,
     reason: bookingsEnabled ? null : "bookings_disabled",
     accessPlan,
+    subscriptionEnabled,
+    platformFeesEnabled,
+    websiteAccessEnabled,
+    mobileAppAccessEnabled,
   };
+}
+
+/** Platform fee for checkout — zero when Super Admin disabled fees for the shop. */
+export async function resolveShopPlatformFeeUsd(businessId, defaultFeeUsd = 0.99) {
+  const row = await loadShopAccessRow(businessId);
+  if (!row) return defaultFeeUsd;
+  const access = effectiveShopAccess(row);
+  if (!access.platformFeesEnabled) return 0;
+  return defaultFeeUsd;
 }
 
 export async function getShopAccess(businessId) {
@@ -151,5 +194,6 @@ export async function resolveBusinessIdForBarber(dbQueryFn, barberDbId) {
     String(barberDbId),
   ]);
   const bid = r.rows?.[0]?.business_id;
-  return bid != null && bid !== "" ? Number(bid) : null;
+  const text = bid != null ? String(bid).trim() : "";
+  return text && /^[0-9]+$/.test(text) ? Number(text) : null;
 }

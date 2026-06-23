@@ -164,6 +164,9 @@ export default function AdminShops() {
                     <Button variant="ghost" type="button" onClick={() => void quickApprove(row.businessId, "paid")}>
                       Approve — Paid
                     </Button>
+                    <Button variant="ghost" type="button" onClick={() => void quickApprove(row.businessId, "lifetime_free")}>
+                      Approve — Lifetime free
+                    </Button>
                     <Button variant="ghost" type="button" onClick={() => void quickReject(row.businessId)}>
                       Reject
                     </Button>

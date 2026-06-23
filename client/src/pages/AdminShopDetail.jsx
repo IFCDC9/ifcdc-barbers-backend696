@@ -220,6 +220,9 @@ export default function AdminShopDetail() {
                 <Button variant="ghost" type="button" onClick={() => void approve("paid")} disabled={busy}>
                   Approve — Paid
                 </Button>
+                <Button variant="ghost" type="button" onClick={() => void approve("lifetime_free")} disabled={busy}>
+                  Approve — Lifetime free
+                </Button>
                 <Button variant="ghost" type="button" onClick={() => void reject()} disabled={busy}>
                   Reject
                 </Button>
@@ -257,7 +260,11 @@ export default function AdminShopDetail() {
               <CardTitle>Platform access controls</CardTitle>
               <p style={{ color: theme.colors.muted, fontSize: 13, marginBottom: 12 }}>
                 Bookings: {shop.bookingsEnabled ? "enabled" : "disabled"} · Payments:{" "}
-                {shop.paymentProcessingEnabled ? "enabled" : "disabled"} · Free access:{" "}
+                {shop.paymentProcessingEnabled ? "enabled" : "disabled"} · Platform fees:{" "}
+                {shop.platformFeesEnabled !== false ? "on" : "off"} · Subscriptions:{" "}
+                {shop.subscriptionEnabled !== false ? "on" : "off"} · Website:{" "}
+                {shop.websiteAccessEnabled !== false ? "on" : "off"} · Mobile app:{" "}
+                {shop.mobileAppAccessEnabled !== false ? "on" : "off"} · Free access:{" "}
                 {shop.freeAccessEnabled ? "on" : "off"} · Paid subscription required:{" "}
                 {shop.paidSubscriptionRequired ? "yes" : "no"}
               </p>
@@ -293,6 +300,46 @@ export default function AdminShopDetail() {
                   onClick={() => void toggleAccess({ paymentProcessingEnabled: !shop.paymentProcessingEnabled })}
                 >
                   {shop.paymentProcessingEnabled ? "Disable payments" : "Enable payments"}
+                </Button>
+                <Button
+                  variant="ghost"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void toggleAccess({ platformFeesEnabled: shop.platformFeesEnabled === false })}
+                >
+                  {shop.platformFeesEnabled === false ? "Enable platform fees" : "Disable platform fees"}
+                </Button>
+                <Button
+                  variant="ghost"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void toggleAccess({ subscriptionEnabled: shop.subscriptionEnabled === false })}
+                >
+                  {shop.subscriptionEnabled === false ? "Enable subscriptions" : "Disable subscriptions"}
+                </Button>
+                <Button
+                  variant="ghost"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void toggleAccess({ websiteAccessEnabled: shop.websiteAccessEnabled === false })}
+                >
+                  {shop.websiteAccessEnabled === false ? "Enable website" : "Disable website"}
+                </Button>
+                <Button
+                  variant="ghost"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void toggleAccess({ mobileAppAccessEnabled: shop.mobileAppAccessEnabled === false })}
+                >
+                  {shop.mobileAppAccessEnabled === false ? "Enable mobile app" : "Disable mobile app"}
+                </Button>
+                <Button
+                  variant="ghost"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void toggleAccess({ accessPlan: "lifetime_free", subscriptionEnabled: false })}
+                >
+                  Set lifetime free
                 </Button>
                 <Button
                   variant="ghost"

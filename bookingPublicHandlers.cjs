@@ -3,6 +3,25 @@
  */
 const { fetchPublicBarberServices, stripQuotes } = require("./bookingServicesCatalog.cjs");
 
+const BARBER_BUSINESS_ID_SQL = `CASE
+  WHEN b.business_id IS NOT NULL AND btrim(b.business_id) ~ '^[0-9]+$' THEN btrim(b.business_id)::bigint
+  ELSE NULL
+END`;
+
+function shopChannelAccessSql(channel) {
+  const col = channel === "mobile" ? "mobile_app_access_enabled" : "website_access_enabled";
+  return `(
+    ${BARBER_BUSINESS_ID_SQL} IS NULL
+    OR EXISTS (
+      SELECT 1 FROM businesses biz
+      WHERE biz.id = ${BARBER_BUSINESS_ID_SQL}
+        AND COALESCE(biz.${col}, true) = true
+        AND lower(coalesce(biz.approval_status, 'approved')) = 'approved'
+        AND lower(coalesce(biz.account_status, 'active')) NOT IN ('suspended', 'disabled')
+    )
+  )`;
+}
+
 async function resolveBarberRowByName(dbQuery, barberName) {
   const br = await dbQuery(
     `SELECT id, name, business_id FROM barbers WHERE lower(trim(name)) = lower(trim($1)) ORDER BY id ASC LIMIT 1`,
@@ -62,6 +81,7 @@ async function handlePublicBarbersListGet(_req, res, dbQuery) {
         ON p.id::text = b.id::text
         OR lower(trim(p.name)) = lower(trim(b.name))
       WHERE COALESCE(NULLIF(trim(p.name), ''), NULLIF(trim(b.name), '')) IS NOT NULL
+        AND ${shopChannelAccessSql("mobile")}
       ORDER BY lower(COALESCE(NULLIF(trim(p.name), ''), NULLIF(trim(b.name), ''))) ASC
       LIMIT 500
       `,
@@ -69,10 +89,11 @@ async function handlePublicBarbersListGet(_req, res, dbQuery) {
     rows = r.rows || [];
   } catch {
     const r = await dbQuery(
-      `SELECT id, name, profile_image AS photo
-       FROM barbers
-       WHERE name IS NOT NULL AND trim(name) <> ''
-       ORDER BY lower(trim(name)) ASC
+      `SELECT b.id, b.name, b.profile_image AS photo
+       FROM barbers b
+       WHERE b.name IS NOT NULL AND trim(b.name) <> ''
+         AND ${shopChannelAccessSql("mobile")}
+       ORDER BY lower(trim(b.name)) ASC
        LIMIT 500`,
     );
     rows = r.rows || [];

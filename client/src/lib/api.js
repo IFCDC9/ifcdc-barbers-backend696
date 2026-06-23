@@ -1,4 +1,4 @@
-import { API_BASE_URL } from "../config/api.js"
+import { API_BASE_URL, PRODUCTION_API_ORIGIN } from "../config/api.js"
 
 export { API_BASE_URL }
 
@@ -22,7 +22,20 @@ function resolveApiOrigin() {
       : env?.VITE_API_URL != null
         ? String(env.VITE_API_URL).trim()
         : ""
-  const base = fromEnv || API_BASE_URL
+  if (fromEnv) return fromEnv.replace(/\/$/, "")
+  // Split-host production (ifcdcbarbersapp.com static → backend696 API).
+  if (typeof window !== "undefined" && window.location?.origin) {
+    const host = String(window.location.hostname || "").toLowerCase()
+    if (
+      env.PROD &&
+      (host === "ifcdcbarbersapp.com" ||
+        host.endsWith(".ifcdcbarbersapp.com") ||
+        host.includes("ifcdc-barbers-frontend"))
+    ) {
+      return PRODUCTION_API_ORIGIN
+    }
+  }
+  const base = API_BASE_URL
   return base.replace(/\/$/, "")
 }
 

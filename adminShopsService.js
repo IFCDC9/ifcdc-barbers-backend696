@@ -1,9 +1,9 @@
 /**
  * Global shop roster for super admin / shop-scoped owners.
  */
-import { dbQuery } from "./db.js";
-import { parseLocationFields } from "./adminBarberService.js";
+import { barberBusinessIdSql, parseLocationFields } from "./adminBarberService.js";
 import { effectiveShopAccess } from "./shopAccessPolicy.js";
+import { dbQuery } from "./db.js";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
@@ -67,6 +67,10 @@ function rowToAdminShop(row) {
     paidSubscriptionRequired: row.paid_subscription_required !== false,
     bookingsEnabled: access.bookingsEnabled,
     paymentProcessingEnabled: access.paymentProcessingEnabled,
+    platformFeesEnabled: access.platformFeesEnabled !== false,
+    subscriptionEnabled: access.subscriptionEnabled !== false,
+    websiteAccessEnabled: access.websiteAccessEnabled !== false,
+    mobileAppAccessEnabled: access.mobileAppAccessEnabled !== false,
     limitedAccess: access.limitedAccess,
     trialStartedAt: row.trial_started_at ? new Date(row.trial_started_at).toISOString() : null,
     trialEndsAt: row.trial_ends_at ? new Date(row.trial_ends_at).toISOString() : null,
@@ -99,6 +103,10 @@ const SHOP_SELECT = `
     b.paid_subscription_required,
     b.bookings_enabled,
     b.payment_processing_enabled,
+    b.platform_fees_enabled,
+    b.subscription_enabled,
+    b.website_access_enabled,
+    b.mobile_app_access_enabled,
     b.trial_started_at,
     b.trial_ends_at,
     b.monthly_price,
@@ -129,12 +137,12 @@ const SHOP_SELECT = `
   ) AS owner_account_status,
   (
     SELECT br.location FROM barbers br
-    WHERE br.business_id = b.id
+    WHERE ${barberBusinessIdSql("br")} = b.id
     ORDER BY br.created_at ASC NULLS LAST
     LIMIT 1
   ) AS barber_location,
   (
-    SELECT COUNT(*)::int FROM barbers br WHERE br.business_id = b.id
+    SELECT COUNT(*)::int FROM barbers br WHERE ${barberBusinessIdSql("br")} = b.id
   ) AS barber_count,
   (
     SELECT COUNT(*)::int FROM bookings bk WHERE bk.business_id = b.id
@@ -236,7 +244,7 @@ export async function getAdminShopDetail(businessId) {
       `SELECT b.id, b.name, b.phone, b.verification_status, u.email, u.account_status
        FROM barbers b
        LEFT JOIN app_users u ON u.id = b.user_id
-       WHERE b.business_id = $1::bigint
+       WHERE ${barberBusinessIdSql("b")} = $1::bigint
        ORDER BY b.name ASC NULLS LAST
        LIMIT 200`,
       [Number(businessId)],
@@ -245,7 +253,7 @@ export async function getAdminShopDetail(businessId) {
       `SELECT s.id, s.name, s.price::float8 AS price, s.duration_minutes, s.is_active, s.barber_id, b.name AS barber_name
        FROM barber_services s
        JOIN barbers b ON b.id = s.barber_id
-       WHERE b.business_id = $1::bigint
+       WHERE ${barberBusinessIdSql("b")} = $1::bigint
        ORDER BY b.name, s.name
        LIMIT 500`,
       [Number(businessId)],
@@ -275,7 +283,7 @@ export async function getAdminShopDetail(businessId) {
     `SELECT st.id, st.title, st.image_url, st.barber_id, b.name AS barber_name
      FROM styles st
      JOIN barbers b ON b.id::text = st.barber_id::text
-     WHERE b.business_id = $1::bigint
+     WHERE ${barberBusinessIdSql("b")} = $1::bigint
      ORDER BY st.created_at DESC NULLS LAST
      LIMIT 100`,
     [Number(businessId)],
@@ -477,12 +485,18 @@ const PLAN_DEFAULTS = {
   free: { plan: "free", subscription_status: "active", monthly_price: 0, paid_subscription_required: false },
   trial: { plan: "pro", subscription_status: "trial", monthly_price: 0, paid_subscription_required: true },
   paid: { plan: "pro", subscription_status: "active", monthly_price: 9.99, paid_subscription_required: true },
+  lifetime_free: {
+    plan: "free",
+    subscription_status: "active",
+    monthly_price: 0,
+    paid_subscription_required: false,
+  },
 };
 
 export async function approveShop(businessId, { plan = "free", trialDays = 14, monthlyPrice }, actorId) {
   const accessPlan = String(plan || "free").toLowerCase();
-  if (!["free", "trial", "paid"].includes(accessPlan)) {
-    return { ok: false, message: "plan must be free, trial, or paid" };
+  if (!["free", "trial", "paid", "lifetime_free"].includes(accessPlan)) {
+    return { ok: false, message: "plan must be free, trial, paid, or lifetime_free" };
   }
   const defs = PLAN_DEFAULTS[accessPlan];
   const price = monthlyPrice != null ? Number(monthlyPrice) : defs.monthly_price;
@@ -504,12 +518,13 @@ export async function approveShop(businessId, { plan = "free", trialDays = 14, m
        monthly_price = $5,
        paid_subscription_required = $6,
        free_access_enabled = $7,
+       subscription_enabled = $8,
        bookings_enabled = true,
        payment_processing_enabled = true,
-       trial_started_at = $8,
-       trial_ends_at = $9,
+       trial_started_at = $9,
+       trial_ends_at = $10,
        approved_at = NOW(),
-       approved_by = $10::uuid,
+       approved_by = $11::uuid,
        rejection_reason = NULL
      WHERE id = $1::bigint`,
     [
@@ -518,8 +533,9 @@ export async function approveShop(businessId, { plan = "free", trialDays = 14, m
       defs.plan,
       defs.subscription_status,
       price,
-      accessPlan === "free" ? false : true,
-      accessPlan === "free",
+      accessPlan === "paid" || accessPlan === "trial",
+      accessPlan === "free" || accessPlan === "lifetime_free",
+      accessPlan === "lifetime_free" ? false : true,
       trialStart,
       trialEnd,
       actorId || null,
@@ -565,12 +581,27 @@ export async function updateShopAccessControls(businessId, controls = {}) {
     ["paidSubscriptionRequired", "paid_subscription_required"],
     ["bookingsEnabled", "bookings_enabled"],
     ["paymentProcessingEnabled", "payment_processing_enabled"],
+    ["platformFeesEnabled", "platform_fees_enabled"],
+    ["subscriptionEnabled", "subscription_enabled"],
+    ["websiteAccessEnabled", "website_access_enabled"],
+    ["mobileAppAccessEnabled", "mobile_app_access_enabled"],
   ];
   for (const [key, col] of boolFields) {
     if (controls[key] !== undefined) {
       sets.push(`${col} = $${i++}`);
       params.push(Boolean(controls[key]));
     }
+  }
+  if (controls.accessPlan != null) {
+    const plan = String(controls.accessPlan).trim().toLowerCase();
+    if (["free", "trial", "paid", "lifetime_free", "pending"].includes(plan)) {
+      sets.push(`access_plan = $${i++}`);
+      params.push(plan);
+    }
+  }
+  if (controls.subscriptionStatus != null) {
+    sets.push(`subscription_status = $${i++}`);
+    params.push(String(controls.subscriptionStatus).trim().toLowerCase());
   }
   if (controls.monthlyPrice != null) {
     sets.push(`monthly_price = $${i++}`);

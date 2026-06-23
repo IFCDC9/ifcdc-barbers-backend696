@@ -10,6 +10,7 @@ import RescheduleBookingScreen from "../screens/profile/RescheduleBookingScreen"
 import AdminBarbersScreen from "../screens/admin/AdminBarbersScreen";
 import AdminGlobalBarbersScreen from "../screens/admin/AdminGlobalBarbersScreen";
 import AdminShopScreen from "../screens/admin/AdminShopScreen";
+import AdminShopDetailScreen from "../screens/admin/AdminShopDetailScreen";
 import AdminPayoutScreen from "../screens/admin/AdminPayoutScreen";
 import PlatformFeeDetailScreen from "../screens/admin/payout/PlatformFeeDetailScreen";
 import TotalCollectedDetailScreen from "../screens/admin/payout/TotalCollectedDetailScreen";
@@ -51,6 +52,7 @@ export type AdminStackParamList = {
   AdminBarbers: undefined;
   AdminGlobalBarbers: undefined;
   AdminShop: undefined;
+  AdminShopDetail: { shopId: string; shopName: string };
   AdminPayout: undefined;
   PlatformFeeDetail: undefined;
   TotalCollectedDetail: undefined;
@@ -93,6 +95,7 @@ function AdminStackInner() {
       <Stack.Screen name="AdminBarbers" component={AdminBarbersScreen} />
       <Stack.Screen name="AdminGlobalBarbers" component={AdminGlobalBarbersScreen} />
       <Stack.Screen name="AdminShop" component={AdminShopScreen} />
+      <Stack.Screen name="AdminShopDetail" component={AdminShopDetailScreen} />
       <Stack.Screen name="AdminPayout" component={AdminPayoutScreen} />
       <Stack.Screen name="PlatformFeeDetail" component={PlatformFeeDetailScreen} />
       <Stack.Screen name="TotalCollectedDetail" component={TotalCollectedDetailScreen} />

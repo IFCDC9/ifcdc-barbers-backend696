@@ -181,6 +181,12 @@ export function createAdminShopsRouter() {
         paidSubscriptionRequired: req.body?.paidSubscriptionRequired,
         bookingsEnabled: req.body?.bookingsEnabled,
         paymentProcessingEnabled: req.body?.paymentProcessingEnabled,
+        platformFeesEnabled: req.body?.platformFeesEnabled,
+        subscriptionEnabled: req.body?.subscriptionEnabled,
+        websiteAccessEnabled: req.body?.websiteAccessEnabled,
+        mobileAppAccessEnabled: req.body?.mobileAppAccessEnabled,
+        accessPlan: req.body?.accessPlan,
+        subscriptionStatus: req.body?.subscriptionStatus,
         monthlyPrice: req.body?.monthlyPrice,
       });
       const detail = await getAdminShopDetail(businessId);

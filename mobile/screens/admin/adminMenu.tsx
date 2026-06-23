@@ -38,7 +38,7 @@ export const ADMIN_MENU: AdminMenuItem[] = [
   {
     key: "shop",
     title: "Shop management",
-    subtitle: "Platform businesses and shop settings",
+    subtitle: "Shops, locations, monetization & access",
     icon: "🏪",
     route: "AdminShop",
   },

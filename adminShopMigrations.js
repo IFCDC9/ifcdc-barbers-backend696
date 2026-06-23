@@ -17,6 +17,10 @@ export async function ensureAdminShopManagementSchema() {
   await dbQuery(`ALTER TABLE businesses ADD COLUMN IF NOT EXISTS paid_subscription_required BOOLEAN DEFAULT false;`);
   await dbQuery(`ALTER TABLE businesses ADD COLUMN IF NOT EXISTS bookings_enabled BOOLEAN DEFAULT true;`);
   await dbQuery(`ALTER TABLE businesses ADD COLUMN IF NOT EXISTS payment_processing_enabled BOOLEAN DEFAULT true;`);
+  await dbQuery(`ALTER TABLE businesses ADD COLUMN IF NOT EXISTS platform_fees_enabled BOOLEAN DEFAULT true;`);
+  await dbQuery(`ALTER TABLE businesses ADD COLUMN IF NOT EXISTS subscription_enabled BOOLEAN DEFAULT true;`);
+  await dbQuery(`ALTER TABLE businesses ADD COLUMN IF NOT EXISTS website_access_enabled BOOLEAN DEFAULT true;`);
+  await dbQuery(`ALTER TABLE businesses ADD COLUMN IF NOT EXISTS mobile_app_access_enabled BOOLEAN DEFAULT true;`);
   await dbQuery(`ALTER TABLE businesses ADD COLUMN IF NOT EXISTS trial_started_at TIMESTAMPTZ;`);
   await dbQuery(`ALTER TABLE businesses ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMPTZ;`);
   await dbQuery(`ALTER TABLE businesses ADD COLUMN IF NOT EXISTS monthly_price NUMERIC(10,2) DEFAULT 0;`);
@@ -41,6 +45,10 @@ export async function ensureAdminShopManagementSchema() {
   await dbQuery(`UPDATE businesses SET bookings_enabled = true WHERE bookings_enabled IS NULL;`);
   await dbQuery(`UPDATE businesses SET payment_processing_enabled = true WHERE payment_processing_enabled IS NULL;`);
   await dbQuery(`UPDATE businesses SET free_access_enabled = true WHERE free_access_enabled IS NULL;`);
+  await dbQuery(`UPDATE businesses SET platform_fees_enabled = true WHERE platform_fees_enabled IS NULL;`);
+  await dbQuery(`UPDATE businesses SET subscription_enabled = true WHERE subscription_enabled IS NULL;`);
+  await dbQuery(`UPDATE businesses SET website_access_enabled = true WHERE website_access_enabled IS NULL;`);
+  await dbQuery(`UPDATE businesses SET mobile_app_access_enabled = true WHERE mobile_app_access_enabled IS NULL;`);
 
   ready = true;
 }

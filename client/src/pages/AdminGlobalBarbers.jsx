@@ -4,8 +4,9 @@ import { Page, PageHeader } from "../components/ui/Page.jsx";
 import { Card, CardTitle } from "../components/ui/Card.jsx";
 import { Button } from "../components/ui/Button.jsx";
 import { theme } from "../components/ui/theme.js";
-import { apiGet, apiUrl, fetchWithTimeout } from "../lib/api.js";
+import { apiUrl, fetchWithTimeout } from "../lib/api.js";
 import { getAdminAuthHeaders, getStoredToken, getStoredUser } from "../lib/authHeaders.js";
+import { fetchAdminBarbers } from "../services/api.js";
 
 const inputStyle = {
   width: "100%",
@@ -56,17 +57,14 @@ export default function AdminGlobalBarbers() {
     setLoading(true);
     setError("");
     try {
-      const q = new URLSearchParams();
-      if (shop.trim()) q.set("shop", shop.trim());
-      if (city.trim()) q.set("city", city.trim());
-      if (state.trim()) q.set("state", state.trim());
-      if (active) q.set("active", active);
-      if (pendingOnly) q.set("pendingApproval", "true");
-      if (sort === "oldest") q.set("sort", "asc");
-      else if (sort === "name") q.set("sort", "name");
-      else if (sort === "shop") q.set("sort", "shop");
-      const suffix = q.toString() ? `?${q.toString()}` : "";
-      const j = await apiGet(`/api/admin/barbers${suffix}`, { headers: getAdminAuthHeaders() });
+      const j = await fetchAdminBarbers({
+        shop: shop.trim() || undefined,
+        city: city.trim() || undefined,
+        state: state.trim() || undefined,
+        active: active || undefined,
+        pendingApproval: pendingOnly ? "true" : undefined,
+        sort: sort === "oldest" ? "asc" : sort === "name" || sort === "shop" ? sort : undefined,
+      });
       setRows(Array.isArray(j?.barbers) ? j.barbers : []);
     } catch (e) {
       setError(e?.message || "Failed to load barbers");
@@ -138,7 +136,11 @@ export default function AdminGlobalBarbers() {
       {loading ? <p style={{ marginTop: 16, color: theme.colors.muted }}>Loading…</p> : null}
       {error ? <p style={{ marginTop: 16, color: "#f87171" }}>{error}</p> : null}
       {!loading && !error && !rows.length ? (
-        <p style={{ marginTop: 16, color: theme.colors.muted }}>No barbers match these filters.</p>
+        <p style={{ marginTop: 16, color: theme.colors.muted }}>
+          {shop.trim() || city.trim() || state.trim() || active || pendingOnly
+            ? "No barbers match these filters."
+            : "No barbers found."}
+        </p>
       ) : null}
 
       <div style={{ display: "grid", gap: 12, marginTop: 16 }}>

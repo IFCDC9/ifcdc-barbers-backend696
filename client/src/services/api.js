@@ -923,6 +923,27 @@ export async function deleteServicePhoto(serviceId, photoId, scopeQuery = "") {
   return data;
 }
 
+/** Global barber roster for super admin / shop owners (GET /api/admin/barbers). */
+export async function fetchAdminBarbers(filters = {}) {
+  const origin = getApiOrigin();
+  const q = new URLSearchParams();
+  if (filters.shop) q.set("shop", filters.shop);
+  if (filters.city) q.set("city", filters.city);
+  if (filters.state) q.set("state", filters.state);
+  if (filters.active) q.set("active", filters.active);
+  if (filters.activeInactive) q.set("activeInactive", filters.activeInactive);
+  if (filters.pendingApproval) q.set("pendingApproval", "true");
+  if (filters.sort) q.set("sort", filters.sort);
+  if (filters.registrationDate) q.set("registrationDate", filters.registrationDate);
+  const suffix = q.toString() ? `?${q.toString()}` : "";
+  const res = await fetch(`${origin}/api/admin/barbers${suffix}`, {
+    headers: { Accept: "application/json", ...getAdminAuthHeaders() },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.message || data?.error || `HTTP ${res.status}`);
+  return data;
+}
+
 /** Global shop roster for super admin / shop owners (GET /api/admin/shops). */
 export async function fetchAdminShops(filters = {}) {
   const origin = getApiOrigin();

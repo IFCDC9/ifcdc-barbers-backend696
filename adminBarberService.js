@@ -7,6 +7,17 @@ import { dbQuery } from "./db.js";
 const require = createRequire(import.meta.url);
 const pushNotifier = require("./pushNotifier.cjs");
 
+/** `barbers.business_id` is TEXT in some DBs (e.g. legacy `default`); `businesses.id` is BIGINT. */
+export function barberBusinessIdSql(alias = "b") {
+  return `CASE
+    WHEN ${alias}.business_id IS NOT NULL AND btrim(${alias}.business_id) ~ '^[0-9]+$' THEN btrim(${alias}.business_id)::bigint
+    ELSE NULL
+  END`;
+}
+
+const BARBER_BUSINESS_ID_SQL = barberBusinessIdSql("b");
+const BARBER_BUSINESS_JOIN = `biz.id = ${BARBER_BUSINESS_ID_SQL}`;
+
 export function parseLocationFields(locationRaw, businessCity, businessState) {
   let city = String(businessCity || "").trim();
   let state = String(businessState || "").trim();
@@ -81,7 +92,10 @@ function rowToAdminBarber(row) {
     verificationStatus: verificationStatus.charAt(0).toUpperCase() + verificationStatus.slice(1),
     isActive,
     pendingApproval: verificationStatus === "pending",
-    businessId: row.business_id != null ? Number(row.business_id) : null,
+    businessId:
+      row.business_id != null && /^[0-9]+$/.test(String(row.business_id).trim())
+        ? Number(row.business_id)
+        : null,
   };
 }
 
@@ -95,7 +109,7 @@ export async function listAdminBarbers(scope, filters = {}) {
 
   if (!scope.all) {
     params.push(Number(scope.businessId));
-    where.push(`b.business_id = $${params.length}::bigint`);
+    where.push(`${BARBER_BUSINESS_ID_SQL} = $${params.length}::bigint`);
   }
 
   const shop = String(filters.shop || "").trim();
@@ -176,7 +190,7 @@ export async function listAdminBarbers(scope, filters = {}) {
       END AS location_text
     FROM barbers b
     LEFT JOIN app_users u ON u.id = b.user_id
-    LEFT JOIN businesses biz ON biz.id = b.business_id
+    LEFT JOIN businesses biz ON ${BARBER_BUSINESS_JOIN}
     LEFT JOIN barber_settings bs ON bs.barber_id = b.id
     WHERE ${where.join(" AND ")}
     ORDER BY ${orderBy}

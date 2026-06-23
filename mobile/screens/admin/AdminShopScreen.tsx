@@ -1,5 +1,3 @@
-import ShopRosterScreen from "../shop/ShopRosterScreen";
+import AdminShopsScreen from "./AdminShopsScreen";
 
-export default function AdminShopScreen() {
-  return <ShopRosterScreen />;
-}
+export default AdminShopsScreen;

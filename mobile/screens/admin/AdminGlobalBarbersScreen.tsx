@@ -142,7 +142,15 @@ export default function AdminGlobalBarbersScreen() {
 
       {loading ? <ScreenLoading /> : null}
       {error ? <ScreenError message={error} /> : null}
-      {!loading && !error && rows.length === 0 ? <ScreenEmpty message="No barbers match these filters." /> : null}
+      {!loading && !error && rows.length === 0 ? (
+        <ScreenEmpty
+          message={
+            shop.trim() || city.trim() || state.trim() || activeFilter || pendingOnly
+              ? "No barbers match these filters."
+              : "No barbers found."
+          }
+        />
+      ) : null}
 
       {rows.map((row) => (
         <Pressable

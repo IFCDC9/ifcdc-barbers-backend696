@@ -85,8 +85,20 @@ function mapProfileToBarber(p, extra = {}) {
 }
 
 async function listPublicBarbersFromDb() {
+  const channelFilter = `(
+    b.business_id IS NULL OR btrim(b.business_id) = '' OR NOT (btrim(b.business_id) ~ '^[0-9]+$')
+    OR EXISTS (
+      SELECT 1 FROM businesses biz
+      WHERE biz.id = btrim(b.business_id)::bigint
+        AND COALESCE(biz.website_access_enabled, true) = true
+        AND lower(coalesce(biz.approval_status, 'approved')) = 'approved'
+        AND lower(coalesce(biz.account_status, 'active')) NOT IN ('suspended', 'disabled')
+    )
+  )`;
   const r = await dbQuery(
-    `SELECT id, name, bio, profile_image, location FROM barbers ORDER BY LOWER(name) NULLS LAST LIMIT 500`,
+    `SELECT id, name, bio, profile_image, location FROM barbers b
+     WHERE ${channelFilter}
+     ORDER BY LOWER(name) NULLS LAST LIMIT 500`,
   );
   if (r.rows?.length) {
     const rows = [];
