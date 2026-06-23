@@ -2,7 +2,7 @@ import { apiFetch } from "./api";
 
 export type AdminBarberRow = {
   id: string;
-  barberId: number;
+  barberId: string;
   userId: string | null;
   fullName: string;
   shopName: string;

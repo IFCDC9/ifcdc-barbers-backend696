@@ -89,8 +89,8 @@ export default function AdminGlobalBarbersScreen() {
 
   const approveBarber = async (row: AdminBarberRow) => {
     try {
-      await patchBarberVerification(row.barberId, "approved");
-      await patchBarberAccountStatus(row.barberId, "approved");
+      await patchBarberVerification(row.id, "approved");
+      await patchBarberAccountStatus(row.id, "approved");
       await load();
     } catch (e) {
       setError(userFacingApiError(e));
@@ -99,7 +99,7 @@ export default function AdminGlobalBarbersScreen() {
 
   const suspendBarber = async (row: AdminBarberRow) => {
     try {
-      await patchBarberAccountStatus(row.barberId, "suspended");
+      await patchBarberAccountStatus(row.id, "suspended");
       await load();
     } catch (e) {
       setError(userFacingApiError(e));

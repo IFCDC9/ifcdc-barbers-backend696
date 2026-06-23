@@ -3,10 +3,18 @@ import { resolveAuthPayload } from "./authRoutes.js";
 import { isJwtGlobalSuperScope } from "./authPlatformJwt.js";
 import { dbQuery } from "./db.js";
 import {
+  assertBarberInScope,
+  assignBarberToShop,
+  deleteAdminBarber,
+  getAdminBarberById,
   listAdminBarbers,
   listAdminNotifications,
   notifySuperAdminsNewBarber,
   parseLocationFields,
+  updateAdminBarberProfile,
+  updateBarberAccountStatus,
+  updateBarberSubscriptionTier,
+  updateBarberVerification,
 } from "./adminBarberService.js";
 
 async function resolveBarberManagementScope(req, res) {
@@ -47,6 +55,15 @@ async function resolveBarberManagementScope(req, res) {
   return null;
 }
 
+async function loadScopedBarber(scope, barberId, res) {
+  const barber = await getAdminBarberById(scope, barberId);
+  if (!barber) {
+    res.status(404).json({ ok: false, message: "Barber not found" });
+    return null;
+  }
+  return barber;
+}
+
 export function createAdminBarbersRouter() {
   const router = express.Router();
 
@@ -72,6 +89,49 @@ export function createAdminBarbersRouter() {
     }
   });
 
+  router.get("/api/admin/barbers/:id", async (req, res) => {
+    const scope = await resolveBarberManagementScope(req, res);
+    if (!scope) return;
+    try {
+      const barber = await loadScopedBarber(scope, req.params.id, res);
+      if (!barber) return;
+      return res.json({ ok: true, barber });
+    } catch (e) {
+      console.error("[admin/barbers] detail failed:", e?.message || e);
+      return res.status(500).json({ ok: false, message: "Failed to load barber" });
+    }
+  });
+
+  router.patch("/api/admin/barbers/:id", async (req, res) => {
+    const scope = await resolveBarberManagementScope(req, res);
+    if (!scope) return;
+    if (!scope.all) {
+      return res.status(403).json({ ok: false, message: "Only platform admins can edit barber profiles." });
+    }
+
+    try {
+      const row = await dbQuery(`SELECT business_id FROM barbers WHERE id::text = $1::text LIMIT 1`, [
+        String(req.params.id),
+      ]);
+      const access = assertBarberInScope(scope, row.rows?.[0]);
+      if (!access.ok) return res.status(access.message === "Barber not found" ? 404 : 403).json(access);
+
+      const result = await updateAdminBarberProfile(req.params.id, {
+        name: req.body?.name ?? req.body?.fullName,
+        shopName: req.body?.shopName,
+        phone: req.body?.phone,
+        location: req.body?.location ?? req.body?.locationLabel,
+        email: req.body?.email,
+      });
+      if (!result.ok) return res.status(400).json(result);
+      const barber = await getAdminBarberById(scope, req.params.id);
+      return res.json({ ok: true, barber });
+    } catch (e) {
+      console.error("[admin/barbers] patch failed:", e?.message || e);
+      return res.status(500).json({ ok: false, message: "Failed to update barber" });
+    }
+  });
+
   router.patch("/api/admin/barbers/:id/verification", async (req, res) => {
     const scope = await resolveBarberManagementScope(req, res);
     if (!scope) return;
@@ -79,19 +139,12 @@ export function createAdminBarbersRouter() {
       return res.status(403).json({ ok: false, message: "Only platform admins can update verification." });
     }
 
-    const barberId = Number(req.params.id);
     const status = String(req.body?.status || req.body?.verificationStatus || "").trim().toLowerCase();
-    if (!Number.isFinite(barberId) || !["pending", "approved", "rejected"].includes(status)) {
-      return res.status(400).json({ ok: false, message: "Invalid barber id or verification status." });
-    }
-
     try {
-      const r = await dbQuery(
-        `UPDATE barbers SET verification_status = $1 WHERE id = $2 RETURNING id`,
-        [status, barberId],
-      );
-      if (!r.rows?.length) return res.status(404).json({ ok: false, message: "Barber not found" });
-      return res.json({ ok: true, barberId, verificationStatus: status });
+      const result = await updateBarberVerification(req.params.id, status);
+      if (!result.ok) return res.status(400).json(result);
+      const barber = await getAdminBarberById(scope, req.params.id);
+      return res.json({ ok: true, ...result, barber });
     } catch (e) {
       console.error("[admin/barbers] verification patch failed:", e?.message || e);
       return res.status(500).json({ ok: false, message: "Failed to update verification" });
@@ -102,44 +155,86 @@ export function createAdminBarbersRouter() {
     const scope = await resolveBarberManagementScope(req, res);
     if (!scope) return;
 
-    const barberId = Number(req.params.id);
     const status = String(req.body?.status || req.body?.accountStatus || "").trim().toLowerCase();
-    const mapped =
-      status === "suspended" || status === "disabled"
-        ? "disabled"
-        : status === "pending"
-          ? "pending"
-          : status === "approved" || status === "active"
-            ? "active"
-            : "";
-    if (!Number.isFinite(barberId) || !mapped) {
-      return res.status(400).json({ ok: false, message: "Invalid barber id or account status." });
-    }
-
     try {
-      const barber = await dbQuery(`SELECT user_id, business_id FROM barbers WHERE id = $1 LIMIT 1`, [barberId]);
-      const row = barber.rows?.[0];
-      if (!row) return res.status(404).json({ ok: false, message: "Barber not found" });
+      const row = await dbQuery(`SELECT id, user_id, business_id FROM barbers WHERE id::text = $1::text LIMIT 1`, [
+        String(req.params.id),
+      ]);
+      const access = assertBarberInScope(scope, row.rows?.[0]);
+      if (!access.ok) return res.status(access.message === "Barber not found" ? 404 : 403).json(access);
 
-      if (!scope.all) {
-        const biz = row.business_id != null ? Number(row.business_id) : NaN;
-        if (!Number.isFinite(biz) || biz !== scope.businessId) {
-          return res.status(403).json({ ok: false, message: "You cannot manage this barber." });
-        }
-      }
-
-      if (!row.user_id) {
-        return res.status(400).json({ ok: false, message: "Barber is not linked to a user account." });
-      }
-
-      await dbQuery(`UPDATE app_users SET account_status = $1 WHERE id = $2::uuid`, [mapped, row.user_id]);
-      if (mapped === "active" && scope.all) {
-        await dbQuery(`UPDATE barbers SET verification_status = 'approved' WHERE id = $1`, [barberId]);
-      }
-      return res.json({ ok: true, barberId, accountStatus: mapped });
+      const result = await updateBarberAccountStatus(req.params.id, status, {
+        autoApproveVerification: scope.all,
+      });
+      if (!result.ok) return res.status(400).json(result);
+      const barber = await getAdminBarberById(scope, req.params.id);
+      return res.json({ ok: true, ...result, barber });
     } catch (e) {
       console.error("[admin/barbers] account-status patch failed:", e?.message || e);
       return res.status(500).json({ ok: false, message: "Failed to update account status" });
+    }
+  });
+
+  router.patch("/api/admin/barbers/:id/assign-shop", async (req, res) => {
+    const scope = await resolveBarberManagementScope(req, res);
+    if (!scope) return;
+    if (!scope.all) {
+      return res.status(403).json({ ok: false, message: "Only platform admins can assign shops." });
+    }
+
+    try {
+      const result = await assignBarberToShop(
+        req.params.id,
+        req.body?.businessId ?? req.body?.shopId,
+        req.body?.shopName,
+      );
+      if (!result.ok) return res.status(400).json(result);
+      const barber = await getAdminBarberById(scope, req.params.id);
+      return res.json({ ok: true, ...result, barber });
+    } catch (e) {
+      console.error("[admin/barbers] assign-shop failed:", e?.message || e);
+      return res.status(500).json({ ok: false, message: "Failed to assign shop" });
+    }
+  });
+
+  router.patch("/api/admin/barbers/:id/subscription", async (req, res) => {
+    const scope = await resolveBarberManagementScope(req, res);
+    if (!scope) return;
+    if (!scope.all) {
+      return res.status(403).json({ ok: false, message: "Only platform admins can change subscription tier." });
+    }
+
+    const tier = String(req.body?.tier || req.body?.subscriptionTier || "").trim().toLowerCase();
+    try {
+      const result = await updateBarberSubscriptionTier(req.params.id, tier);
+      if (!result.ok) return res.status(400).json(result);
+      const barber = await getAdminBarberById(scope, req.params.id);
+      return res.json({ ok: true, ...result, barber });
+    } catch (e) {
+      console.error("[admin/barbers] subscription patch failed:", e?.message || e);
+      return res.status(500).json({ ok: false, message: "Failed to update subscription" });
+    }
+  });
+
+  router.delete("/api/admin/barbers/:id", async (req, res) => {
+    const scope = await resolveBarberManagementScope(req, res);
+    if (!scope) return;
+    if (!scope.all) {
+      return res.status(403).json({ ok: false, message: "Only platform admins can delete barbers." });
+    }
+
+    try {
+      const row = await dbQuery(`SELECT business_id FROM barbers WHERE id::text = $1::text LIMIT 1`, [
+        String(req.params.id),
+      ]);
+      const access = assertBarberInScope(scope, row.rows?.[0]);
+      if (!access.ok) return res.status(access.message === "Barber not found" ? 404 : 403).json(access);
+
+      const result = await deleteAdminBarber(req.params.id);
+      return res.json(result);
+    } catch (e) {
+      console.error("[admin/barbers] delete failed:", e?.message || e);
+      return res.status(500).json({ ok: false, message: "Failed to delete barber" });
     }
   });
 

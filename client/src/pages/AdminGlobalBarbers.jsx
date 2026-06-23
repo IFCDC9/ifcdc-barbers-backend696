@@ -4,9 +4,18 @@ import { Page, PageHeader } from "../components/ui/Page.jsx";
 import { Card, CardTitle } from "../components/ui/Card.jsx";
 import { Button } from "../components/ui/Button.jsx";
 import { theme } from "../components/ui/theme.js";
-import { apiUrl, fetchWithTimeout } from "../lib/api.js";
-import { getAdminAuthHeaders, getStoredToken, getStoredUser } from "../lib/authHeaders.js";
-import { fetchAdminBarbers } from "../services/api.js";
+import { getStoredToken, getStoredUser } from "../lib/authHeaders.js";
+import {
+  assignAdminBarberShop,
+  deleteAdminBarber,
+  fetchAdminBarberDetail,
+  fetchAdminBarbers,
+  fetchAdminShops,
+  patchAdminBarberAccountStatus,
+  patchAdminBarberProfile,
+  patchAdminBarberSubscription,
+  patchAdminBarberVerification,
+} from "../services/api.js";
 
 const inputStyle = {
   width: "100%",
@@ -16,6 +25,14 @@ const inputStyle = {
   backgroundColor: "rgba(0,0,0,0.25)",
   color: theme.colors.text,
   fontSize: 14,
+  boxSizing: "border-box",
+};
+
+const btnRowStyle = {
+  display: "flex",
+  flexWrap: "wrap",
+  gap: 8,
+  marginTop: 12,
 };
 
 function pillStyle(tone) {
@@ -36,7 +53,14 @@ function pillStyle(tone) {
     background: colors.bg,
     color: colors.fg,
     marginRight: 6,
+    marginBottom: 4,
   };
+}
+
+function formatDate(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString();
 }
 
 export default function AdminGlobalBarbers() {
@@ -50,8 +74,15 @@ export default function AdminGlobalBarbers() {
   const [pendingOnly, setPendingOnly] = React.useState(false);
   const [sort, setSort] = React.useState("newest");
   const [rows, setRows] = React.useState([]);
+  const [shops, setShops] = React.useState([]);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState("");
+  const [actionMsg, setActionMsg] = React.useState("");
+  const [busyId, setBusyId] = React.useState("");
+  const [selected, setSelected] = React.useState(null);
+  const [editForm, setEditForm] = React.useState(null);
+  const [assignShopId, setAssignShopId] = React.useState("");
+  const [subscriptionTier, setSubscriptionTier] = React.useState("free");
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -78,14 +109,53 @@ export default function AdminGlobalBarbers() {
     void load();
   }, [load]);
 
-  const patch = async (barberId, path, body) => {
-    const res = await fetchWithTimeout(apiUrl(`/api/admin/barbers/${barberId}/${path}`), {
-      method: "PATCH",
-      headers: { ...getAdminAuthHeaders(), "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const j = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(j?.message || `Update failed (${res.status})`);
+  React.useEffect(() => {
+    if (!user || user.role === "shop_owner") return;
+    void fetchAdminShops()
+      .then((j) => setShops(Array.isArray(j?.shops) ? j.shops : []))
+      .catch(() => setShops([]));
+  }, [user]);
+
+  const runAction = async (barberId, fn, successMessage) => {
+    setBusyId(barberId);
+    setActionMsg("");
+    setError("");
+    try {
+      await fn();
+      setActionMsg(successMessage || "Updated.");
+      await load();
+      if (selected?.id === barberId) {
+        const detail = await fetchAdminBarberDetail(barberId);
+        setSelected(detail?.barber || null);
+      }
+    } catch (e) {
+      setError(e?.message || "Action failed");
+    } finally {
+      setBusyId("");
+    }
+  };
+
+  const openDetails = async (row) => {
+    setBusyId(row.id);
+    setError("");
+    try {
+      const detail = await fetchAdminBarberDetail(row.id);
+      const barber = detail?.barber || row;
+      setSelected(barber);
+      setEditForm({
+        name: barber.fullName === "—" ? "" : barber.fullName,
+        shopName: barber.shopName === "Unassigned" ? "" : barber.shopName,
+        email: barber.email === "Not linked" ? "" : barber.email,
+        phone: barber.phone || "",
+        location: barber.locationLabel === "—" ? "" : barber.locationLabel,
+      });
+      setAssignShopId(barber.businessId ? String(barber.businessId) : "");
+      setSubscriptionTier(barber.subscriptionTier || "free");
+    } catch (e) {
+      setError(e?.message || "Failed to load barber details");
+    } finally {
+      setBusyId("");
+    }
   };
 
   if (!user || !token || (user.role !== "admin" && user.role !== "super_admin" && user.role !== "shop_owner")) {
@@ -135,6 +205,7 @@ export default function AdminGlobalBarbers() {
 
       {loading ? <p style={{ marginTop: 16, color: theme.colors.muted }}>Loading…</p> : null}
       {error ? <p style={{ marginTop: 16, color: "#f87171" }}>{error}</p> : null}
+      {actionMsg ? <p style={{ marginTop: 16, color: "#86efac" }}>{actionMsg}</p> : null}
       {!loading && !error && !rows.length ? (
         <p style={{ marginTop: 16, color: theme.colors.muted }}>
           {shop.trim() || city.trim() || state.trim() || active || pendingOnly
@@ -144,58 +215,211 @@ export default function AdminGlobalBarbers() {
       ) : null}
 
       <div style={{ display: "grid", gap: 12, marginTop: 16 }}>
-        {rows.map((row) => (
-          <Card key={row.id}>
-            <CardTitle>{row.fullName}</CardTitle>
-            <p style={{ margin: "8px 0 0", color: theme.colors.muted, fontSize: 14 }}>
-              <strong>Shop:</strong> {row.shopName}
-              <br />
-              <strong>Location:</strong> {row.locationLabel}
-              <br />
-              <strong>Email:</strong> {row.email}
-              {row.phone ? (
-                <>
-                  <br />
-                  <strong>Phone:</strong> {row.phone}
-                </>
-              ) : null}
-              <br />
-              <strong>Registered:</strong>{" "}
-              {row.registrationDate ? new Date(row.registrationDate).toLocaleDateString() : "—"}
-            </p>
-            <div style={{ marginTop: 10 }}>
-              <span style={pillStyle("gold")}>{row.accountStatus}</span>
-              <span style={pillStyle("green")}>{row.subscriptionStatus}</span>
-              <span style={pillStyle(row.verificationStatus === "Pending" ? "gold" : "green")}>{row.verificationStatus}</span>
-            </div>
-            {isSuper && row.pendingApproval ? (
-              <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
-                <Button
-                  variant="indigo"
-                  type="button"
-                  onClick={async () => {
-                    await patch(row.barberId, "verification", { status: "approved" });
-                    await patch(row.barberId, "account-status", { status: "approved" });
-                    await load();
-                  }}
-                >
-                  Approve
-                </Button>
-                <Button
-                  variant="ghost"
-                  type="button"
-                  onClick={async () => {
-                    await patch(row.barberId, "account-status", { status: "suspended" });
-                    await load();
-                  }}
-                >
-                  Suspend
-                </Button>
+        {rows.map((row) => {
+          const isBusy = busyId === row.id;
+          const suspended = row.accountStatus === "Suspended";
+          return (
+            <Card key={row.id}>
+              <CardTitle>{row.fullName}</CardTitle>
+              <p style={{ margin: "8px 0 0", color: theme.colors.muted, fontSize: 14, lineHeight: 1.6 }}>
+                <strong>Shop:</strong> {row.shopName}
+                <br />
+                <strong>Location:</strong> {row.locationLabel}
+                <br />
+                <strong>Email:</strong> {row.email}
+                {row.phone ? (
+                  <>
+                    <br />
+                    <strong>Phone:</strong> {row.phone}
+                  </>
+                ) : null}
+                <br />
+                <strong>Registered:</strong> {formatDate(row.registrationDate)}
+              </p>
+              <div style={{ marginTop: 10 }}>
+                <span style={pillStyle("gold")}>Account: {row.accountStatus}</span>
+                <span style={pillStyle("green")}>Subscription: {row.subscriptionStatus}</span>
+                <span style={pillStyle(row.verificationStatus === "Pending" ? "gold" : row.verificationStatus === "Rejected" ? "red" : "green")}>
+                  Verification: {row.verificationStatus}
+                </span>
               </div>
-            ) : null}
-          </Card>
-        ))}
+
+              {isSuper ? (
+                <div style={btnRowStyle}>
+                  <Button variant="ghost" type="button" disabled={isBusy} onClick={() => void openDetails(row)}>
+                    View details
+                  </Button>
+                  <Button
+                    variant="indigo"
+                    type="button"
+                    disabled={isBusy}
+                    onClick={() =>
+                      void runAction(row.id, async () => {
+                        await patchAdminBarberVerification(row.id, "approved");
+                        await patchAdminBarberAccountStatus(row.id, "approved");
+                      }, `${row.fullName} approved.`)
+                    }
+                  >
+                    Approve
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    type="button"
+                    disabled={isBusy}
+                    onClick={() =>
+                      void runAction(
+                        row.id,
+                        () => patchAdminBarberAccountStatus(row.id, suspended ? "active" : "suspended"),
+                        suspended ? `${row.fullName} reactivated.` : `${row.fullName} suspended.`,
+                      )
+                    }
+                  >
+                    {suspended ? "Reactivate" : "Suspend"}
+                  </Button>
+                  <Button variant="ghost" type="button" disabled={isBusy} onClick={() => void openDetails(row)}>
+                    Edit / assign
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    type="button"
+                    disabled={isBusy}
+                    onClick={() => {
+                      if (!window.confirm(`Delete ${row.fullName}? Barbers with bookings will be suspended instead.`)) return;
+                      void runAction(row.id, () => deleteAdminBarber(row.id), "Barber removed or suspended.");
+                    }}
+                  >
+                    Delete
+                  </Button>
+                </div>
+              ) : null}
+            </Card>
+          );
+        })}
       </div>
+
+      {selected && editForm ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.72)",
+            zIndex: 1000,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16,
+          }}
+          onClick={() => setSelected(null)}
+        >
+          <div
+            style={{ width: "min(100%, 520px)", maxHeight: "90vh", overflow: "auto" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+          <Card style={{ margin: 0 }}>
+            <CardTitle>{selected.fullName} — details</CardTitle>
+            <p style={{ color: theme.colors.muted, fontSize: 14, lineHeight: 1.6, marginTop: 12 }}>
+              <strong>ID:</strong> {selected.id}
+              <br />
+              <strong>Shop:</strong> {selected.shopName}
+              <br />
+              <strong>Location:</strong> {selected.locationLabel}
+              <br />
+              <strong>Email:</strong> {selected.email}
+              <br />
+              <strong>Registered:</strong> {formatDate(selected.registrationDate)}
+              <br />
+              <strong>Account:</strong> {selected.accountStatus} · <strong>Verification:</strong> {selected.verificationStatus} ·{" "}
+              <strong>Subscription:</strong> {selected.subscriptionStatus}
+            </p>
+
+            <CardTitle style={{ marginTop: 16, fontSize: 16 }}>Edit barber</CardTitle>
+            <input style={inputStyle} placeholder="Full name" value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} />
+            <input style={inputStyle} placeholder="Shop display name" value={editForm.shopName} onChange={(e) => setEditForm({ ...editForm, shopName: e.target.value })} />
+            <input style={inputStyle} placeholder="Email" value={editForm.email} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} />
+            <input style={inputStyle} placeholder="Phone" value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} />
+            <input style={inputStyle} placeholder="Location" value={editForm.location} onChange={(e) => setEditForm({ ...editForm, location: e.target.value })} />
+            <Button
+              variant="indigo"
+              type="button"
+              disabled={busyId === selected.id}
+              style={{ marginTop: 8 }}
+              onClick={() =>
+                void runAction(
+                  selected.id,
+                  () =>
+                    patchAdminBarberProfile(selected.id, {
+                      name: editForm.name,
+                      shopName: editForm.shopName,
+                      email: editForm.email,
+                      phone: editForm.phone,
+                      location: editForm.location,
+                    }),
+                  "Barber profile saved.",
+                )
+              }
+            >
+              Save changes
+            </Button>
+
+            <CardTitle style={{ marginTop: 16, fontSize: 16 }}>Assign to shop / location</CardTitle>
+            <select style={inputStyle} value={assignShopId} onChange={(e) => setAssignShopId(e.target.value)}>
+              <option value="">Select a shop…</option>
+              {shops.map((s) => (
+                <option key={s.id} value={s.businessId || s.id}>
+                  {s.shopName} {s.locationLabel && s.locationLabel !== "—" ? `(${s.locationLabel})` : ""}
+                </option>
+              ))}
+            </select>
+            <Button
+              variant="ghost"
+              type="button"
+              disabled={!assignShopId || busyId === selected.id}
+              style={{ marginTop: 8 }}
+              onClick={() => {
+                const shopRow = shops.find((s) => String(s.businessId || s.id) === assignShopId);
+                void runAction(
+                  selected.id,
+                  () => assignAdminBarberShop(selected.id, Number(assignShopId), shopRow?.shopName),
+                  "Shop assignment saved.",
+                );
+              }}
+            >
+              Assign shop
+            </Button>
+
+            <CardTitle style={{ marginTop: 16, fontSize: 16 }}>Subscription / access tier</CardTitle>
+            <select style={inputStyle} value={subscriptionTier} onChange={(e) => setSubscriptionTier(e.target.value)}>
+              <option value="free">Free</option>
+              <option value="pro">Pro</option>
+              <option value="elite">Elite</option>
+            </select>
+            <Button
+              variant="ghost"
+              type="button"
+              disabled={busyId === selected.id}
+              style={{ marginTop: 8 }}
+              onClick={() =>
+                void runAction(
+                  selected.id,
+                  () => patchAdminBarberSubscription(selected.id, subscriptionTier),
+                  "Subscription tier updated.",
+                )
+              }
+            >
+              Update subscription
+            </Button>
+
+            <div style={{ ...btnRowStyle, marginTop: 20 }}>
+              <Button variant="ghost" type="button" onClick={() => setSelected(null)}>
+                Close
+              </Button>
+            </div>
+          </Card>
+          </div>
+        </div>
+      ) : null}
     </Page>
   );
 }

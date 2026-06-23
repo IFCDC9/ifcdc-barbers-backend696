@@ -944,6 +944,63 @@ export async function fetchAdminBarbers(filters = {}) {
   return data;
 }
 
+function adminBarberId(id) {
+  return encodeURIComponent(String(id ?? "").trim());
+}
+
+async function adminBarberPatch(path, body) {
+  const origin = getApiOrigin();
+  const res = await fetch(`${origin}${path}`, {
+    method: "PATCH",
+    headers: { Accept: "application/json", "Content-Type": "application/json", ...getAdminAuthHeaders() },
+    body: JSON.stringify(body ?? {}),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.message || data?.error || `HTTP ${res.status}`);
+  return data;
+}
+
+export async function fetchAdminBarberDetail(barberId) {
+  const origin = getApiOrigin();
+  const res = await fetch(`${origin}/api/admin/barbers/${adminBarberId(barberId)}`, {
+    headers: { Accept: "application/json", ...getAdminAuthHeaders() },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.message || data?.error || `HTTP ${res.status}`);
+  return data;
+}
+
+export async function patchAdminBarberVerification(barberId, status) {
+  return adminBarberPatch(`/api/admin/barbers/${adminBarberId(barberId)}/verification`, { status });
+}
+
+export async function patchAdminBarberAccountStatus(barberId, status) {
+  return adminBarberPatch(`/api/admin/barbers/${adminBarberId(barberId)}/account-status`, { status });
+}
+
+export async function patchAdminBarberProfile(barberId, body) {
+  return adminBarberPatch(`/api/admin/barbers/${adminBarberId(barberId)}`, body);
+}
+
+export async function assignAdminBarberShop(barberId, businessId, shopName) {
+  return adminBarberPatch(`/api/admin/barbers/${adminBarberId(barberId)}/assign-shop`, { businessId, shopName });
+}
+
+export async function patchAdminBarberSubscription(barberId, tier) {
+  return adminBarberPatch(`/api/admin/barbers/${adminBarberId(barberId)}/subscription`, { tier });
+}
+
+export async function deleteAdminBarber(barberId) {
+  const origin = getApiOrigin();
+  const res = await fetch(`${origin}/api/admin/barbers/${adminBarberId(barberId)}`, {
+    method: "DELETE",
+    headers: { Accept: "application/json", ...getAdminAuthHeaders() },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.message || data?.error || `HTTP ${res.status}`);
+  return data;
+}
+
 /** Global shop roster for super admin / shop owners (GET /api/admin/shops). */
 export async function fetchAdminShops(filters = {}) {
   const origin = getApiOrigin();
