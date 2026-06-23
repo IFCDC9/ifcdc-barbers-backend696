@@ -602,9 +602,17 @@ function AdminDashboard() {
     <div style={pageStyle}>
       <div style={wrapStyle}>
         <h1 style={h1Style}>Admin Control Panel</h1>
-        <p style={{ ...muted, textAlign: "center", marginBottom: 32 }}>
+        <p style={{ ...muted, textAlign: "center", marginBottom: 16 }}>
           API: <code style={{ color: "#d4af37" }}>{apiLabel}</code>
         </p>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 10, justifyContent: "center", marginBottom: 28 }}>
+          <a href="/admin/shops" style={{ ...goldButton, textDecoration: "none", display: "inline-block" }}>
+            Shops / Locations
+          </a>
+          <a href="/admin/barbers" style={{ ...goldButton, textDecoration: "none", display: "inline-block", background: "#222", color: "#d4af37", border: "1px solid #d4af37" }}>
+            Barber management
+          </a>
+        </div>
 
         {/* —— Money Dashboard (paid bookings + PayPal) —— */}
         <h2 style={h2Style}>Money &amp; payments</h2>

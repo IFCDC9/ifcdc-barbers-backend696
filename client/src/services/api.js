@@ -922,3 +922,66 @@ export async function deleteServicePhoto(serviceId, photoId, scopeQuery = "") {
   if (!res.ok) throw new Error(data?.message || data?.error || `HTTP ${res.status}`);
   return data;
 }
+
+/** Global shop roster for super admin / shop owners (GET /api/admin/shops). */
+export async function fetchAdminShops(filters = {}) {
+  const origin = getApiOrigin();
+  const q = new URLSearchParams();
+  if (filters.shop) q.set("shop", filters.shop);
+  if (filters.city) q.set("city", filters.city);
+  if (filters.state) q.set("state", filters.state);
+  if (filters.status) q.set("status", filters.status);
+  if (filters.sort) q.set("sort", filters.sort);
+  const suffix = q.toString() ? `?${q.toString()}` : "";
+  const res = await fetch(`${origin}/api/admin/shops${suffix}`, {
+    headers: { Accept: "application/json", ...getAdminAuthHeaders() },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.message || data?.error || `HTTP ${res.status}`);
+  return data;
+}
+
+export async function fetchAdminShopDetail(shopId) {
+  const origin = getApiOrigin();
+  const res = await fetch(`${origin}/api/admin/shops/${encodeURIComponent(String(shopId))}`, {
+    headers: { Accept: "application/json", ...getAdminAuthHeaders() },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.message || data?.error || `HTTP ${res.status}`);
+  return data;
+}
+
+export async function patchAdminShop(shopId, body) {
+  const origin = getApiOrigin();
+  const res = await fetch(`${origin}/api/admin/shops/${encodeURIComponent(String(shopId))}`, {
+    method: "PATCH",
+    headers: { Accept: "application/json", "Content-Type": "application/json", ...getAdminAuthHeaders() },
+    body: JSON.stringify(body || {}),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.message || data?.error || `HTTP ${res.status}`);
+  return data;
+}
+
+export async function patchAdminShopAccountStatus(shopId, status) {
+  const origin = getApiOrigin();
+  const res = await fetch(`${origin}/api/admin/shops/${encodeURIComponent(String(shopId))}/account-status`, {
+    method: "PATCH",
+    headers: { Accept: "application/json", "Content-Type": "application/json", ...getAdminAuthHeaders() },
+    body: JSON.stringify({ status }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.message || data?.error || `HTTP ${res.status}`);
+  return data;
+}
+
+export async function deleteAdminShop(shopId) {
+  const origin = getApiOrigin();
+  const res = await fetch(`${origin}/api/admin/shops/${encodeURIComponent(String(shopId))}`, {
+    method: "DELETE",
+    headers: { Accept: "application/json", ...getAdminAuthHeaders() },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.message || data?.error || `HTTP ${res.status}`);
+  return data;
+}
