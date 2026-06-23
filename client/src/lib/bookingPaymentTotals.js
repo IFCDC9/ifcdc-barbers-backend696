@@ -6,7 +6,7 @@ function round2(n) {
 }
 
 /**
- * Checkout total: full service price + platform fee (matches TestFlight app).
+ * Checkout total: full service price + platform fee (matches the mobile app).
  */
 export function calculateFinalBookingTotal({
   haircutPrice = 25,

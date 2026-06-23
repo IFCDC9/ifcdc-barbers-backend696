@@ -19,6 +19,7 @@ import { isSuperAdminEmail } from "./rolePolicy.js";
 import { issueAppUserJwt, requireAuth } from "./authRoutes.js";
 import { resolveScopedBarberId } from "./barberScope.js";
 import { ensureStylesTables } from "./stylesMigrations.js";
+import { notifySuperAdminsNewBarber, persistBusinessLocation } from "./adminBarberService.js";
 
 const DEFAULT_STYLE_IMAGE =
   "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=1200&q=70";
@@ -221,6 +222,16 @@ export function mountBarberOnboardingRoutes(app, { uploadDir } = {}) {
 
       if (isSuperAdminEmail(email)) {
         await dbQuery(`UPDATE app_users SET role = 'super_admin' WHERE id = $1::uuid`, [user.id]);
+      } else {
+        const loc = await persistBusinessLocation(businessNumericId, address, null, null);
+        void notifySuperAdminsNewBarber({
+          barberId,
+          fullName: displayName || ownerName,
+          shopName: shopName || businessLabel,
+          city: loc.city,
+          state: loc.state,
+          email,
+        });
       }
 
       const uFinal = await dbQuery(

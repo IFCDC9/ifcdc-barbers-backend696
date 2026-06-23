@@ -5,6 +5,7 @@ import { normalizeEmail } from "./authStore.js";
 import { isSuperAdminEmail } from "./rolePolicy.js";
 import { roundMoney2 } from "./styleBookingPricing.js";
 import { issueAppUserJwt } from "./authRoutes.js";
+import { notifySuperAdminsNewBarber } from "./adminBarberService.js";
 
 /**
  * POST /api/onboarding/business — one-shot shop signup (user + business + barber + service).
@@ -144,6 +145,15 @@ export function mountOnboardingBusinessRoutes(app) {
 
       if (isSuperAdminEmail(email)) {
         await dbQuery(`UPDATE app_users SET role = 'super_admin' WHERE id = $1::uuid`, [user.id]);
+      } else {
+        void notifySuperAdminsNewBarber({
+          barberId,
+          fullName: barberName || name,
+          shopName: businessName,
+          city: null,
+          state: null,
+          email,
+        });
       }
 
       const uFinal = await dbQuery(

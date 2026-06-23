@@ -1,4 +1,4 @@
-/** Offline fallback when service catalog API is unreachable (same as TestFlight). */
+/** Offline fallback when service catalog API is unreachable (same as the mobile app). */
 export const DEFAULT_BOOKING_SERVICES = [
   { id: "local-regular-haircut", name: "Regular Haircut", description: "Classic cut and style", price: 25, duration_minutes: 30, icon: "✂️" },
   { id: "local-fade", name: "Fade", description: "Clean fade with crisp lines", price: 30, duration_minutes: 30, icon: "💈" },

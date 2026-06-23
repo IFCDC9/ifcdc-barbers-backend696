@@ -49,7 +49,7 @@ const NAV_ICONS = {
   ),
 };
 
-/** TestFlight-parity tab bar: Home · Book · AURA · Profile · Shop/Admin */
+/** Mobile-parity tab bar: Home · Book · AURA · Profile · Shop/Admin */
 export default function AppNav({ variant = "bottom" }) {
   const navigate = useNavigate();
 

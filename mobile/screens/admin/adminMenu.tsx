@@ -31,9 +31,9 @@ export const ADMIN_MENU: AdminMenuItem[] = [
   {
     key: "barbers",
     title: "Barber management",
-    subtitle: "Barbers on the platform",
+    subtitle: "Global platform barbers with filters",
     icon: "✂️",
-    route: "AdminBarbers",
+    route: "AdminGlobalBarbers",
   },
   {
     key: "shop",

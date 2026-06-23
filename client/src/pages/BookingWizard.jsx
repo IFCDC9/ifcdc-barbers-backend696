@@ -169,7 +169,7 @@ export default function BookingWizard() {
     void pingBookingApi();
   }, [step]);
 
-  /** PayPal return — finalize booking (same as TestFlight app). */
+  /** PayPal return — finalize booking (same as the mobile app). */
   useEffect(() => {
     const token = searchParams.get("token");
     if (!token) return;

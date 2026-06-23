@@ -9,6 +9,15 @@ export default function AdminDashboard() {
       </div>
       <div className="grid-cards">
         <div className="card">
+          <h3>Barber management</h3>
+          <p className="muted" style={{ margin: "0 0 12px" }}>
+            Global view of every barber who registers across the platform.
+          </p>
+          <a href="/admin/barbers" style={{ color: "var(--gold)", fontWeight: 800 }}>
+            Open global barber list →
+          </a>
+        </div>
+        <div className="card">
           <h3>Today</h3>
           <p style={{ fontSize: "2rem", margin: "0.25rem 0", fontFamily: "var(--ifcdc-font-display)" }}>—</p>
           <p className="muted" style={{ margin: 0 }}>

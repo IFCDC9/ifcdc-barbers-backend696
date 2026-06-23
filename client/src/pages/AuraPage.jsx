@@ -1,6 +1,6 @@
 import AuraChat from "../components/AuraChat.jsx";
 
-/** Dedicated AURA tab — matches TestFlight app (full-screen chat, not floating orb). */
+/** Dedicated AURA tab — matches the mobile app (full-screen chat, not floating orb). */
 export default function AuraPage() {
   return (
     <div className="ifcdc-aura-page">

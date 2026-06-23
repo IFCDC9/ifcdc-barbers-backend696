@@ -3,7 +3,7 @@ import { isNonPayPalTokenPath, looksLikePasswordResetToken } from "../lib/queryT
 
 /**
  * PayPal full-page return — route to app-parity booking wizard for finalize.
- * BookingWizard calls POST /api/app-bookings/finalize (same as TestFlight).
+ * BookingWizard calls POST /api/app-bookings/finalize (same as the mobile app).
  *
  * Must NOT steal ?token= on /reset-password, /invite, etc. (password reset uses 64-char hex).
  */

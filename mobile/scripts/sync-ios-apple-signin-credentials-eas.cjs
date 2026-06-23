@@ -42,7 +42,55 @@ async function main() {
   const { SetUpBuildCredentials } = req("eas-cli/build/credentials/ios/actions/SetUpBuildCredentials");
   const { getProvisioningProfileAsync } = req("eas-cli/build/credentials/ios/actions/BuildCredentialsUtils");
   const { RemoveProvisioningProfiles } = req("eas-cli/build/credentials/ios/actions/RemoveProvisioningProfile");
+  const { ConfigureProvisioningProfile } = req("eas-cli/build/credentials/ios/actions/ConfigureProvisioningProfile");
+  const { getDistributionCertificateAsync } = req("eas-cli/build/credentials/ios/actions/BuildCredentialsUtils");
+  const { revokeProvisioningProfileAsync } = req("eas-cli/build/credentials/ios/appstore/provisioningProfile");
+  const { ApplePlatform } = req("eas-cli/build/credentials/ios/appstore/constants");
+  const { authenticateAsync, getRequestContext } = req("eas-cli/build/credentials/ios/appstore/authenticate");
+  const { BundleId } = req("@expo/apple-utils");
+  const { parse: parseProvisioningProfile } = req("eas-cli/build/credentials/ios/utils/provisioningProfile");
   const { IosDistributionType } = req("eas-cli/build/graphql/generated");
+
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  const APPLE_DEVELOPER_BUNDLE_URL =
+    "https://developer.apple.com/account/resources/identifiers/bundleId/edit/SY9B9V5RNU";
+
+  async function assertAppleSignInEnabledOnBundle(authCtx) {
+    const context = getRequestContext(authCtx);
+    const bundleId = await BundleId.findAsync(context, { identifier: BUNDLE_ID });
+    const caps = await bundleId.getBundleIdCapabilitiesAsync();
+    const types = caps.map((c) => c.attributes?.capabilityType || c.id.replace(`${bundleId.id}_`, ""));
+    if (!types.includes("APPLE_ID_AUTH")) {
+      throw new Error(
+        `Sign in with Apple is not enabled on App ID ${BUNDLE_ID}.\n` +
+          `The ASC API key cannot enable this capability — enable it manually in Apple Developer, then re-run this script:\n` +
+          `  ${APPLE_DEVELOPER_BUNDLE_URL}\n` +
+          `  Capabilities → Sign in with Apple → Save → Confirm`,
+      );
+    }
+    console.log("[ios] Verified APPLE_ID_AUTH capability on bundle identifier");
+  }
+
+  async function assertProfileIncludesAppleSignIn(credentialsCtx, appWithBundle) {
+    const profile = await getProvisioningProfileAsync(
+      credentialsCtx,
+      appWithBundle,
+      IosDistributionType.AppStore,
+    );
+    if (!profile?.provisioningProfile) {
+      throw new Error("Provisioning profile missing after sync — re-run this script.");
+    }
+    const plist = parseProvisioningProfile(Buffer.from(profile.provisioningProfile, "base64"));
+    const entitlements = plist.Entitlements || {};
+    if (!entitlements["com.apple.developer.applesignin"]) {
+      throw new Error(
+        `Provisioning profile ${profile.developerPortalIdentifier} still lacks com.apple.developer.applesignin.\n` +
+          `Enable Sign in with Apple on the App ID in Apple Developer (link above), wait ~1 minute, then re-run this script.`,
+      );
+    }
+    console.log("[ios] Verified provisioning profile includes Sign in with Apple entitlement");
+  }
 
   const analytics = await createAnalyticsAsync();
   const sessionManager = new SessionManager(analytics);
@@ -120,6 +168,8 @@ async function main() {
     teamType: AppleTeamType.COMPANY_OR_ORGANIZATION,
   });
 
+  await assertAppleSignInEnabledOnBundle(credentialsCtx.appStore.authCtx);
+
   const xcodeBuildContext = await resolveXcodeBuildContextAsync(
     { projectDir, nonInteractive: true, exp, vcsClient },
     buildProfile,
@@ -135,6 +185,13 @@ async function main() {
   const app = { account, projectName: exp.slug };
   const appWithBundle = { ...app, bundleIdentifier: BUNDLE_ID };
 
+  console.log("[ios] Revoking App Store profiles on Apple Developer Portal…");
+  await revokeProvisioningProfileAsync(
+    credentialsCtx.appStore.authCtx,
+    BUNDLE_ID,
+    ApplePlatform.IOS,
+  );
+
   const oldProfile = await getProvisioningProfileAsync(
     credentialsCtx,
     appWithBundle,
@@ -147,6 +204,9 @@ async function main() {
     console.log("[ios] No existing App Store provisioning profile on EAS — creating fresh");
   }
 
+  console.log("[ios] Waiting for Apple capability propagation…");
+  await sleep(12_000);
+
   console.log("[ios] Syncing Sign in with Apple capability and regenerating provisioning profile…");
   await new SetUpBuildCredentials({
     app,
@@ -154,6 +214,29 @@ async function main() {
     distribution: buildProfile.distribution,
     enterpriseProvisioning: buildProfile.enterpriseProvisioning,
   }).runAsync(credentialsCtx);
+
+  const target = targets[0];
+  const distCert = await getDistributionCertificateAsync(
+    credentialsCtx,
+    appWithBundle,
+    IosDistributionType.AppStore,
+  );
+  const newProfile = await getProvisioningProfileAsync(
+    credentialsCtx,
+    appWithBundle,
+    IosDistributionType.AppStore,
+  );
+  if (distCert && newProfile) {
+    console.log("[ios] Regenerating provisioning profile to include Sign in with Apple entitlement…");
+    await new ConfigureProvisioningProfile(
+      appWithBundle,
+      target,
+      distCert,
+      newProfile,
+    ).runAsync(credentialsCtx);
+  }
+
+  await assertProfileIncludesAppleSignIn(credentialsCtx, appWithBundle);
 
   console.log("[ios] SUCCESS — credentials ready for Build 36 with Sign in with Apple.");
 }

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { StyleSheet, Text } from "react-native";
 import ProfileScreenLayout from "../../components/ProfileScreenLayout";
 import ProfileCard from "../../components/ProfileCard";
@@ -6,11 +6,27 @@ import { useAuth } from "../../services/authContext";
 import { AdminMenuList } from "./adminMenu";
 import { UX } from "../../utils/uxCopy";
 import { palette, typography } from "../../constants/theme";
+import { fetchAdminNotifications } from "../../services/adminBarbersApi";
+import { appendNotificationFeed } from "../../services/notificationFeedStore";
 
 type Nav = { navigate: (name: string) => void };
 
 export default function AdminHomeScreen({ navigation }: { navigation: Nav }) {
-  const { user } = useAuth();
+  const { user, isPlatformAdmin } = useAuth();
+
+  useEffect(() => {
+    if (!isPlatformAdmin) return;
+    void (async () => {
+      try {
+        const notes = await fetchAdminNotifications(true);
+        for (const n of notes.slice(0, 5)) {
+          await appendNotificationFeed({ title: n.title, body: n.body });
+        }
+      } catch {
+        /* ignore */
+      }
+    })();
+  }, [isPlatformAdmin]);
 
   return (
     <ProfileScreenLayout title="Admin" subtitle={UX.adminTools} standalone>

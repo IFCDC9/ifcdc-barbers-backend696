@@ -18,7 +18,7 @@ process.chdir(mobileDir);
 const req = createRequire(path.join(mobileDir, "node_modules/eas-cli/package.json"));
 
 const VERSION_STRING = "1.0";
-const BUILD_NUMBER = "36";
+const BUILD_NUMBER = "37";
 
 async function main() {
   const { createAnalyticsAsync } = req("eas-cli/build/analytics/AnalyticsManager");
@@ -121,12 +121,21 @@ async function main() {
       `[asc] Build ${BUILD_NUMBER} id=${build.id} processing=${build.attributes.processingState}`,
     );
     await version.updateBuildAsync({ buildId: build.id });
-    console.log("[asc] Attached Build 35 to version 1.0");
+    console.log(`[asc] Attached Build ${BUILD_NUMBER} to version ${VERSION_STRING}`);
   }
 
-  let reviewSubmission =
-    (await app.getReadyReviewSubmissionAsync({ platform: ApplePlatform.IOS })) ||
-    (await app.getInProgressReviewSubmissionAsync({ platform: ApplePlatform.IOS }));
+  let reviewSubmission = await app.getReadyReviewSubmissionAsync({ platform: ApplePlatform.IOS });
+
+  if (!reviewSubmission) {
+    const inProgress = await app.getInProgressReviewSubmissionAsync({ platform: ApplePlatform.IOS });
+    if (inProgress?.attributes?.state === "UNRESOLVED_ISSUES") {
+      console.log(`[asc] Cancelling unresolved submission ${inProgress.id}`);
+      await inProgress.cancelSubmissionAsync();
+      reviewSubmission = null;
+    } else if (inProgress && inProgress.attributes?.state !== "COMPLETE") {
+      reviewSubmission = inProgress;
+    }
+  }
 
   if (reviewSubmission) {
     console.log(
@@ -153,7 +162,7 @@ async function main() {
 
   await reviewSubmission.submitForReviewAsync();
   console.log(`[asc] Review submission ${reviewSubmission.id} submitted for App Review`);
-  console.log("[asc] SUCCESS — IFCDC Barbers v1.0 (Build 35) resubmitted for App Review.");
+  console.log(`[asc] SUCCESS — IFCDC Barbers v${VERSION_STRING} (Build ${BUILD_NUMBER}) resubmitted for App Review.`);
 }
 
 main().catch((e) => {

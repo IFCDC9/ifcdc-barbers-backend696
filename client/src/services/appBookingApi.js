@@ -1,5 +1,5 @@
 /**
- * TestFlight-parity booking APIs — same endpoints as mobile/services/bookingPayPalApi.js
+ * Mobile booking APIs — same endpoints as mobile/services/bookingPayPalApi.js
  */
 import { getApiOrigin } from "./api.js";
 import { DEFAULT_BOOKING_SERVICES } from "../lib/defaultBookingServices.js";

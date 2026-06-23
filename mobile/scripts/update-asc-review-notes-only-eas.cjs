@@ -132,10 +132,21 @@ async function main() {
     notes,
   });
 
-  if (fs.existsSync(videoPath)) {
-    console.log(`[asc] Uploading review attachment: ${videoPath}`);
-    await reviewDetail.uploadAttachmentAsync(videoPath);
-    console.log("[asc] Review attachment uploaded.");
+  const refreshedBefore = await version.getAppStoreReviewDetailAsync();
+  if (fs.existsSync(videoPath) && process.env.SKIP_REVIEW_ATTACHMENT !== "1") {
+    const existing =
+      refreshedBefore?.attributes?.appStoreReviewAttachments ||
+      reviewDetail.attributes?.appStoreReviewAttachments ||
+      [];
+    if (existing.length > 0) {
+      console.log(`[asc] Review attachment already present (${existing.length}) — skipping upload.`);
+    } else {
+      console.log(`[asc] Uploading review attachment: ${videoPath}`);
+      await reviewDetail.uploadAttachmentAsync(videoPath);
+      console.log("[asc] Review attachment uploaded.");
+    }
+  } else if (process.env.SKIP_REVIEW_ATTACHMENT === "1") {
+    console.log("[asc] Review attachment upload skipped (SKIP_REVIEW_ATTACHMENT=1).");
   } else {
     console.warn(`[asc] Review attachment skipped (file not found): ${videoPath}`);
   }

@@ -26,11 +26,13 @@
     "verify:domains": "node scripts/verify-public-domains.mjs",
     "verify:invite": "node scripts/verify-invite-deployment.mjs",
     "verify:cleanup": "node scripts/verify-production-cleanup.mjs",
+    "capture:asc-screenshots": "node scripts/capture-asc-screenshots.mjs",
+    "upload:asc-screenshots": "node scripts/upload-asc-screenshots.mjs",
     "test:resend": "node scripts/test-resend.cjs",
     "test:paypal": "node scripts/verify-paypal-oauth.cjs",
     "test:security": "node tests/securityPolicy.test.mjs",
-  "test:photos": "node --import ./loadBackendEnv.mjs scripts/test-photo-pipeline.mjs",
-  "test:photos:prod": "node --import ./loadBackendEnv.mjs scripts/test-photo-production-verification.mjs",
+    "test:photos": "node --import ./loadBackendEnv.mjs scripts/test-photo-pipeline.mjs",
+    "test:photos:prod": "node --import ./loadBackendEnv.mjs scripts/test-photo-production-verification.mjs",
     "bootstrap-super-admin": "node scripts/setSuperAdminPassword.mjs --generate"
   },
   "dependencies": {
@@ -57,6 +59,8 @@
   "devDependencies": {
     "concurrently": "^9.1.2",
     "kill-port": "^2.0.1",
-    "nodemon": "^3.1.9"
+    "nodemon": "^3.1.9",
+    "playwright": "^1.60.0",
+    "sharp": "^0.35.1"
   }
 }

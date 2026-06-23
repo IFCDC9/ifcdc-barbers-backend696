@@ -35,6 +35,8 @@ import { handleBarberAvailableSlotsGet } from "./barberAvailableSlotsRoute.js";
 import { createBookingsRouter, insertAuraVoiceBookingRow } from "./bookingsRoutes.js";
 import { createBookingsAdminGuard } from "./bookingsAdminGuard.js";
 import { createAdminUsersRouter } from "./adminUsersRoutes.js";
+import { createAdminBarbersRouter } from "./adminBarbersRoutes.js";
+import { ensureAdminBarberManagementSchema } from "./adminBarberMigrations.js";
 import { dbQuery } from "./db.js";
 import { resolvePublicBusinessPhone } from "./src/services/publicContactConfig.js";
 import { ensureSecurityAuditTable, ensureSecurityTenantColumns } from "./securityTenantMigrations.js";
@@ -618,8 +620,9 @@ app.use(bookingsRouter);
 
 const adminUsersRouter = createAdminUsersRouter({ sendEmail });
 app.use(adminUsersRouter);
+app.use(createAdminBarbersRouter());
 console.log(
-  "[admin] routes mounted: invite, audit, password-reset (POST /api/admin/send-password-reset, POST /api/admin/reset-password, PUT /api/admin/force-password-change)",
+  "[admin] routes mounted: invite, audit, password-reset, barbers, notifications",
 );
 
 const barberBusinessUploadDir = path.join(__dirname, "backend", "uploads");
@@ -1024,6 +1027,7 @@ async function startServer() {
   }
   try {
     await ensureBarberBusinessTables();
+    await ensureAdminBarberManagementSchema();
     console.log("[migrate] barber business tables: ok");
   } catch (e) {
     console.error("[migrate] barber business failed:", e?.message || e);

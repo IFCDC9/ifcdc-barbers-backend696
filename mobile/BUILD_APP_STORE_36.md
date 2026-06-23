@@ -11,15 +11,25 @@
 1. **Deploy backend** — Push `main` so Render serves:
    - `POST /api/auth/apple`
    - `DELETE /api/auth/account`
-2. **Apple Developer** — Enable **Sign in with Apple** for App ID `com.ifcdc.barbers` (Identifiers → your app → Capabilities).
-3. **Regenerate provisioning profile** (required once after adding Apple Sign In):
+2. **Apple Developer (manual — required)** — The ASC API key **cannot** enable Sign in with Apple. You must do this in the browser:
+
+   - Open [com.ifcdc.barbers App ID](https://developer.apple.com/account/resources/identifiers/bundleId/edit/SY9B9V5RNU)
+   - **Capabilities** → enable **Sign in with Apple** → **Save** → **Confirm**
+
+3. **Regenerate provisioning profile** (after step 2):
 
 ```bash
 cd mobile
-eas credentials:configure-build -p ios -e production
+node scripts/sync-ios-apple-signin-credentials-eas.cjs
 ```
 
-Choose to log in to Apple (or use your App Store Connect API key), then **regenerate the provisioning profile** so it includes the `com.apple.developer.applesignin` entitlement.
+The script verifies `APPLE_ID_AUTH` on the App ID and `com.apple.developer.applesignin` in the profile before succeeding.
+
+4. **Alternative** (interactive Apple login instead of step 2–3):
+
+```bash
+eas credentials:configure-build -p ios -e production
+```
 
 ## Build & upload
 

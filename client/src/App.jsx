@@ -16,6 +16,7 @@ import Register from "./pages/Register.jsx";
 import ForgotPassword from "./pages/ForgotPassword.jsx";
 import ResetPassword from "./pages/ResetPassword.jsx";
 import Admin from "./pages/Admin.jsx";
+import AdminGlobalBarbers from "./pages/AdminGlobalBarbers.jsx";
 import BarberSettings from "./pages/BarberSettings.jsx";
 import RequireRole from "./components/RequireRole.jsx";
 import Invite from "./pages/Invite.jsx";
@@ -94,6 +95,14 @@ function AppShell() {
               element={
                 <RequireRole roles={["admin", "super_admin"]}>
                   <Admin />
+                </RequireRole>
+              }
+            />
+            <Route
+              path="/admin/barbers"
+              element={
+                <RequireRole roles={["admin", "super_admin", "shop_owner"]}>
+                  <AdminGlobalBarbers />
                 </RequireRole>
               }
             />
