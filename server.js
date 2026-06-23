@@ -25,6 +25,7 @@ import { ensureStylesTables, seedSampleStylesIfEmpty } from "./stylesMigrations.
 import { createStylesRouter } from "./stylesRoutes.js";
 import { ensureBookingsTable } from "./bookingsMigrations.js";
 import { ensureBarberBusinessTables } from "./barberBusinessMigrations.js";
+import { createBarberBusinessRouter } from "./barberBusinessRoutes.js";
 import { ensureBookingStatusHistoryTable } from "./bookingStatusEngine.js";
 import { ensurePushNotificationsSchema } from "./pushNotificationsMigrations.js";
 import { createNotificationRouter } from "./notificationRoutes.js";
