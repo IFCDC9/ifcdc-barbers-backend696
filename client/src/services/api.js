@@ -931,6 +931,7 @@ export async function fetchAdminShops(filters = {}) {
   if (filters.city) q.set("city", filters.city);
   if (filters.state) q.set("state", filters.state);
   if (filters.status) q.set("status", filters.status);
+  if (filters.pendingApproval) q.set("pendingApproval", "true");
   if (filters.sort) q.set("sort", filters.sort);
   const suffix = q.toString() ? `?${q.toString()}` : "";
   const res = await fetch(`${origin}/api/admin/shops${suffix}`, {
@@ -979,6 +980,75 @@ export async function deleteAdminShop(shopId) {
   const origin = getApiOrigin();
   const res = await fetch(`${origin}/api/admin/shops/${encodeURIComponent(String(shopId))}`, {
     method: "DELETE",
+    headers: { Accept: "application/json", ...getAdminAuthHeaders() },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.message || data?.error || `HTTP ${res.status}`);
+  return data;
+}
+
+export async function fetchAdminShopDashboard() {
+  const origin = getApiOrigin();
+  const res = await fetch(`${origin}/api/admin/shops/dashboard`, {
+    headers: { Accept: "application/json", ...getAdminAuthHeaders() },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.message || data?.error || `HTTP ${res.status}`);
+  return data;
+}
+
+export async function approveAdminShop(shopId, body = {}) {
+  const origin = getApiOrigin();
+  const res = await fetch(`${origin}/api/admin/shops/${encodeURIComponent(String(shopId))}/approve`, {
+    method: "POST",
+    headers: { Accept: "application/json", "Content-Type": "application/json", ...getAdminAuthHeaders() },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.message || data?.error || `HTTP ${res.status}`);
+  return data;
+}
+
+export async function rejectAdminShop(shopId, reason = "") {
+  const origin = getApiOrigin();
+  const res = await fetch(`${origin}/api/admin/shops/${encodeURIComponent(String(shopId))}/reject`, {
+    method: "POST",
+    headers: { Accept: "application/json", "Content-Type": "application/json", ...getAdminAuthHeaders() },
+    body: JSON.stringify({ reason }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.message || data?.error || `HTTP ${res.status}`);
+  return data;
+}
+
+export async function patchAdminShopAccess(shopId, body) {
+  const origin = getApiOrigin();
+  const res = await fetch(`${origin}/api/admin/shops/${encodeURIComponent(String(shopId))}/access`, {
+    method: "PATCH",
+    headers: { Accept: "application/json", "Content-Type": "application/json", ...getAdminAuthHeaders() },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.message || data?.error || `HTTP ${res.status}`);
+  return data;
+}
+
+export async function startAdminShopTrial(shopId, trialDays = 14) {
+  const origin = getApiOrigin();
+  const res = await fetch(`${origin}/api/admin/shops/${encodeURIComponent(String(shopId))}/trial/start`, {
+    method: "POST",
+    headers: { Accept: "application/json", "Content-Type": "application/json", ...getAdminAuthHeaders() },
+    body: JSON.stringify({ trialDays }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.message || data?.error || `HTTP ${res.status}`);
+  return data;
+}
+
+export async function endAdminShopTrial(shopId) {
+  const origin = getApiOrigin();
+  const res = await fetch(`${origin}/api/admin/shops/${encodeURIComponent(String(shopId))}/trial/end`, {
+    method: "POST",
     headers: { Accept: "application/json", ...getAdminAuthHeaders() },
   });
   const data = await res.json().catch(() => ({}));

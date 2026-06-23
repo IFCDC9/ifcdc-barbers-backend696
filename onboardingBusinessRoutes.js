@@ -6,6 +6,7 @@ import { isSuperAdminEmail } from "./rolePolicy.js";
 import { roundMoney2 } from "./styleBookingPricing.js";
 import { issueAppUserJwt } from "./authRoutes.js";
 import { notifySuperAdminsNewBarber } from "./adminBarberService.js";
+import { notifySuperAdminsNewShop } from "./adminShopsService.js";
 
 /**
  * POST /api/onboarding/business — one-shot shop signup (user + business + barber + service).
@@ -33,8 +34,11 @@ export function mountOnboardingBusinessRoutes(app) {
       await dbQuery(`ALTER TABLE barber_services ADD COLUMN IF NOT EXISTS business_id BIGINT;`);
 
       const biz = await dbQuery(
-        `INSERT INTO businesses (name, phone, plan, subscription_status)
-         VALUES ($1, $2, 'pro', 'active')
+        `INSERT INTO businesses (
+           name, phone, plan, subscription_status, account_status, approval_status, access_plan,
+           free_access_enabled, paid_subscription_required, bookings_enabled, payment_processing_enabled
+         )
+         VALUES ($1, $2, 'free', 'inactive', 'pending', 'pending', 'pending', false, true, false, false)
          RETURNING id`,
         [businessName, businessPhone],
       );
@@ -150,6 +154,14 @@ export function mountOnboardingBusinessRoutes(app) {
           barberId,
           fullName: barberName || name,
           shopName: businessName,
+          city: null,
+          state: null,
+          email,
+        });
+        void notifySuperAdminsNewShop({
+          businessId,
+          shopName: businessName,
+          ownerName: barberName || name,
           city: null,
           state: null,
           email,

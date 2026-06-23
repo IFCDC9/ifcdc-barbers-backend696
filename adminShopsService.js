@@ -3,6 +3,11 @@
  */
 import { dbQuery } from "./db.js";
 import { parseLocationFields } from "./adminBarberService.js";
+import { effectiveShopAccess } from "./shopAccessPolicy.js";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+const pushNotifier = require("./pushNotifier.cjs");
 
 function computeShopAccountStatus(businessStatus, subscriptionStatus, ownerStatus) {
   const biz = String(businessStatus || "active").toLowerCase();
@@ -37,7 +42,11 @@ function rowToAdminShop(row) {
       : null) ||
     [loc.city, loc.state].filter(Boolean).join(", ") ||
     null;
+  const access = effectiveShopAccess(row);
+  const approvalStatus = String(row.approval_status || "pending").toLowerCase();
   const accountStatus = computeShopAccountStatus(row.account_status, row.subscription_status, row.owner_account_status);
+  const accessPlan = String(row.access_plan || row.plan || "pending").toLowerCase();
+
   return {
     id: String(row.business_id),
     businessId: Number(row.business_id),
@@ -52,13 +61,24 @@ function rowToAdminShop(row) {
     registrationDate: row.created_at ? new Date(row.created_at).toISOString() : null,
     subscriptionStatus: formatSubscriptionStatus(row.plan, row.subscription_status),
     accountStatus,
+    approvalStatus: approvalStatus.charAt(0).toUpperCase() + approvalStatus.slice(1),
+    accessPlan: accessPlan.charAt(0).toUpperCase() + accessPlan.slice(1),
+    freeAccessEnabled: row.free_access_enabled === true,
+    paidSubscriptionRequired: row.paid_subscription_required !== false,
+    bookingsEnabled: access.bookingsEnabled,
+    paymentProcessingEnabled: access.paymentProcessingEnabled,
+    limitedAccess: access.limitedAccess,
+    trialStartedAt: row.trial_started_at ? new Date(row.trial_started_at).toISOString() : null,
+    trialEndsAt: row.trial_ends_at ? new Date(row.trial_ends_at).toISOString() : null,
+    monthlyPrice: Number(row.monthly_price) || 0,
     barberCount: Number(row.barber_count) || 0,
     bookingCount: Number(row.booking_count) || 0,
+    customerCount: Number(row.customer_count) || 0,
     totalRevenue: Number(row.total_revenue) || 0,
     platformFees: Number(row.platform_fees) || 0,
     plan: row.plan || "free",
-    isActive: accountStatus === "Active",
-    pendingApproval: accountStatus === "Pending",
+    isActive: accountStatus === "Active" && approvalStatus === "approved",
+    pendingApproval: approvalStatus === "pending",
   };
 }
 
@@ -73,6 +93,15 @@ const SHOP_SELECT = `
     b.plan,
     b.subscription_status,
     b.account_status,
+    b.approval_status,
+    b.access_plan,
+    b.free_access_enabled,
+    b.paid_subscription_required,
+    b.bookings_enabled,
+    b.payment_processing_enabled,
+    b.trial_started_at,
+    b.trial_ends_at,
+    b.monthly_price,
     b.created_at,
   (
     SELECT u.name FROM app_users u
@@ -117,7 +146,12 @@ const SHOP_SELECT = `
   (
     SELECT COALESCE(SUM(bk.platform_fee) FILTER (WHERE bk.is_paid_booking = true), 0)::float8
     FROM bookings bk WHERE bk.business_id = b.id
-  ) AS platform_fees
+  ) AS platform_fees,
+  (
+    SELECT COUNT(DISTINCT lower(bk.customer_email))::int
+    FROM bookings bk
+    WHERE bk.business_id = b.id AND bk.customer_email IS NOT NULL AND btrim(bk.customer_email) <> ''
+  ) AS customer_count
   FROM businesses b
 `;
 
@@ -153,15 +187,21 @@ export async function listAdminShops(scope, filters = {}) {
   }
 
   const status = String(filters.status || filters.accountStatus || "").toLowerCase();
-  if (status === "active") {
+  if (String(filters.pendingApproval || "").toLowerCase() === "true") {
+    where.push(`lower(coalesce(b.approval_status, 'pending')) = 'pending'`);
+  } else if (status === "active") {
+    where.push(`lower(coalesce(b.approval_status, 'pending')) = 'approved'`);
     where.push(`lower(coalesce(b.account_status, 'active')) = 'active'`);
-    where.push(`lower(coalesce(b.subscription_status, 'inactive')) = 'active'`);
   } else if (status === "suspended") {
     where.push(`lower(coalesce(b.account_status, 'active')) IN ('suspended', 'disabled')`);
   } else if (status === "pending") {
-    where.push(
-      `(lower(coalesce(b.account_status, 'active')) = 'pending' OR lower(coalesce(b.subscription_status, 'inactive')) IN ('inactive', 'pending'))`,
-    );
+    where.push(`lower(coalesce(b.approval_status, 'pending')) = 'pending'`);
+  } else if (status === "trial") {
+    where.push(`lower(coalesce(b.access_plan, '')) = 'trial'`);
+  } else if (status === "free") {
+    where.push(`lower(coalesce(b.access_plan, '')) = 'free'`);
+  } else if (status === "paid") {
+    where.push(`lower(coalesce(b.access_plan, '')) = 'paid'`);
   }
 
   let orderBy = "b.created_at DESC NULLS LAST";
@@ -351,4 +391,224 @@ export async function deleteAdminShop(businessId) {
   await dbQuery(`UPDATE app_users SET business_id = NULL WHERE business_id = $1`, [bid]).catch(() => {});
   await dbQuery(`DELETE FROM businesses WHERE id = $1`, [bid]);
   return { ok: true, softDeleted: false };
+}
+
+export async function getAdminShopDashboard() {
+  const r = await dbQuery(`
+    SELECT
+      COUNT(*)::int AS total_shops,
+      COUNT(*) FILTER (WHERE lower(coalesce(approval_status, 'pending')) = 'pending')::int AS pending_approval,
+      COUNT(*) FILTER (
+        WHERE lower(coalesce(approval_status, '')) = 'approved'
+          AND lower(coalesce(access_plan, '')) = 'paid'
+          AND lower(coalesce(account_status, 'active')) = 'active'
+          AND lower(coalesce(subscription_status, '')) = 'active'
+      )::int AS active_paid_shops,
+      COUNT(*) FILTER (
+        WHERE lower(coalesce(approval_status, '')) = 'approved'
+          AND lower(coalesce(access_plan, '')) = 'free'
+      )::int AS free_shops,
+      COUNT(*) FILTER (
+        WHERE lower(coalesce(access_plan, '')) = 'trial'
+          AND (trial_ends_at IS NULL OR trial_ends_at > NOW())
+      )::int AS trial_shops,
+      COUNT(*) FILTER (
+        WHERE lower(coalesce(account_status, 'active')) IN ('suspended', 'disabled')
+      )::int AS suspended_shops,
+      COALESCE(SUM(monthly_price) FILTER (
+        WHERE lower(coalesce(access_plan, '')) = 'paid'
+          AND lower(coalesce(subscription_status, '')) = 'active'
+          AND lower(coalesce(account_status, 'active')) = 'active'
+      ), 0)::float8 AS mrr
+    FROM businesses
+  `);
+  const feesR = await dbQuery(
+    `SELECT COALESCE(SUM(platform_fee) FILTER (WHERE is_paid_booking = true), 0)::float8 AS platform_fee_revenue FROM bookings`,
+  );
+  const row = r.rows?.[0] || {};
+  return {
+    totalShops: Number(row.total_shops) || 0,
+    pendingApproval: Number(row.pending_approval) || 0,
+    activePaidShops: Number(row.active_paid_shops) || 0,
+    freeShops: Number(row.free_shops) || 0,
+    trialShops: Number(row.trial_shops) || 0,
+    suspendedShops: Number(row.suspended_shops) || 0,
+    mrr: Number(row.mrr) || 0,
+    platformFeeRevenue: Number(feesR.rows?.[0]?.platform_fee_revenue) || 0,
+  };
+}
+
+export async function resolveSuperAdminUserIds() {
+  const r = await dbQuery(`SELECT id FROM app_users WHERE role = 'super_admin'`);
+  return (r.rows || []).map((row) => String(row.id)).filter(Boolean);
+}
+
+export async function notifySuperAdminsNewShop({ businessId, shopName, ownerName, city, state, email }) {
+  const title = "New shop registration";
+  const location = [city, state].filter(Boolean).join(", ");
+  const body = `${shopName || "A new shop"} registered${ownerName ? ` by ${ownerName}` : ""}${location ? ` (${location})` : ""} — awaiting approval.`;
+
+  const adminIds = await resolveSuperAdminUserIds();
+  if (!adminIds.length) return { ok: true, notified: 0 };
+
+  const payload = { businessId: Number(businessId), email: email || null, shopName: shopName || null };
+
+  for (const userId of adminIds) {
+    await dbQuery(
+      `INSERT INTO admin_user_notifications (user_id, kind, title, body, payload)
+       VALUES ($1::uuid, 'shop_registered', $2, $3, $4::jsonb)`,
+      [userId, title, body, JSON.stringify(payload)],
+    ).catch(() => {});
+  }
+
+  void pushNotifier.sendPushToUsers({
+    dbQuery,
+    userIds: adminIds,
+    kind: "admin_alert",
+    title,
+    body,
+    data: { businessId: String(businessId), type: "shop_registered" },
+  }).catch(() => {});
+
+  return { ok: true, notified: adminIds.length };
+}
+
+const PLAN_DEFAULTS = {
+  free: { plan: "free", subscription_status: "active", monthly_price: 0, paid_subscription_required: false },
+  trial: { plan: "pro", subscription_status: "trial", monthly_price: 0, paid_subscription_required: true },
+  paid: { plan: "pro", subscription_status: "active", monthly_price: 9.99, paid_subscription_required: true },
+};
+
+export async function approveShop(businessId, { plan = "free", trialDays = 14, monthlyPrice }, actorId) {
+  const accessPlan = String(plan || "free").toLowerCase();
+  if (!["free", "trial", "paid"].includes(accessPlan)) {
+    return { ok: false, message: "plan must be free, trial, or paid" };
+  }
+  const defs = PLAN_DEFAULTS[accessPlan];
+  const price = monthlyPrice != null ? Number(monthlyPrice) : defs.monthly_price;
+
+  let trialStart = null;
+  let trialEnd = null;
+  if (accessPlan === "trial") {
+    trialStart = new Date();
+    trialEnd = new Date(Date.now() + Number(trialDays || 14) * 24 * 60 * 60 * 1000);
+  }
+
+  await dbQuery(
+    `UPDATE businesses SET
+       approval_status = 'approved',
+       account_status = 'active',
+       access_plan = $2,
+       plan = $3,
+       subscription_status = $4,
+       monthly_price = $5,
+       paid_subscription_required = $6,
+       free_access_enabled = $7,
+       bookings_enabled = true,
+       payment_processing_enabled = true,
+       trial_started_at = $8,
+       trial_ends_at = $9,
+       approved_at = NOW(),
+       approved_by = $10::uuid,
+       rejection_reason = NULL
+     WHERE id = $1::bigint`,
+    [
+      Number(businessId),
+      accessPlan,
+      defs.plan,
+      defs.subscription_status,
+      price,
+      accessPlan === "free" ? false : true,
+      accessPlan === "free",
+      trialStart,
+      trialEnd,
+      actorId || null,
+    ],
+  );
+
+  await dbQuery(
+    `UPDATE app_users SET account_status = 'active'
+     WHERE business_id = $1::bigint AND role IN ('shop_owner', 'barber')`,
+    [Number(businessId)],
+  ).catch(() => {});
+
+  return { ok: true };
+}
+
+export async function rejectShop(businessId, reason, actorId) {
+  await dbQuery(
+    `UPDATE businesses SET
+       approval_status = 'rejected',
+       account_status = 'disabled',
+       bookings_enabled = false,
+       payment_processing_enabled = false,
+       rejection_reason = $2,
+       approved_by = $3::uuid
+     WHERE id = $1::bigint`,
+    [Number(businessId), reason ? String(reason).slice(0, 500) : null, actorId || null],
+  );
+  await dbQuery(
+    `UPDATE app_users SET account_status = 'disabled'
+     WHERE business_id = $1::bigint AND role IN ('shop_owner', 'barber')`,
+    [Number(businessId)],
+  ).catch(() => {});
+  return { ok: true };
+}
+
+export async function updateShopAccessControls(businessId, controls = {}) {
+  const sets = [];
+  const params = [Number(businessId)];
+  let i = 2;
+
+  const boolFields = [
+    ["freeAccessEnabled", "free_access_enabled"],
+    ["paidSubscriptionRequired", "paid_subscription_required"],
+    ["bookingsEnabled", "bookings_enabled"],
+    ["paymentProcessingEnabled", "payment_processing_enabled"],
+  ];
+  for (const [key, col] of boolFields) {
+    if (controls[key] !== undefined) {
+      sets.push(`${col} = $${i++}`);
+      params.push(Boolean(controls[key]));
+    }
+  }
+  if (controls.monthlyPrice != null) {
+    sets.push(`monthly_price = $${i++}`);
+    params.push(Number(controls.monthlyPrice) || 0);
+  }
+  if (!sets.length) return { ok: true };
+  await dbQuery(`UPDATE businesses SET ${sets.join(", ")} WHERE id = $1::bigint`, params);
+  return { ok: true };
+}
+
+export async function startShopTrial(businessId, trialDays = 14) {
+  const start = new Date();
+  const end = new Date(Date.now() + Number(trialDays || 14) * 24 * 60 * 60 * 1000);
+  await dbQuery(
+    `UPDATE businesses SET
+       access_plan = 'trial',
+       subscription_status = 'trial',
+       trial_started_at = $2,
+       trial_ends_at = $3,
+       bookings_enabled = true,
+       payment_processing_enabled = true,
+       approval_status = 'approved',
+       account_status = 'active'
+     WHERE id = $1::bigint`,
+    [Number(businessId), start, end],
+  );
+  return { ok: true, trialEndsAt: end.toISOString() };
+}
+
+export async function endShopTrial(businessId) {
+  await dbQuery(
+    `UPDATE businesses SET
+       trial_ends_at = NOW(),
+       bookings_enabled = false,
+       payment_processing_enabled = false,
+       subscription_status = 'inactive'
+     WHERE id = $1::bigint`,
+    [Number(businessId)],
+  );
+  return { ok: true };
 }

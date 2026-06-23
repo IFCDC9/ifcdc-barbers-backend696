@@ -440,6 +440,25 @@ router.post("/start", async (req, res) => {
       });
     }
 
+    const bizR = await dbQuery(`SELECT business_id FROM barbers WHERE id::text = $1 LIMIT 1`, [
+      String(resolvedBarberDbId),
+    ]);
+    const shopBusinessId = bizR.rows?.[0]?.business_id;
+    if (shopBusinessId != null && shopBusinessId !== "") {
+      const { assertShopCanAcceptBookings, assertShopCanProcessPayments } = await import(
+        "./shopAccessPolicy.js"
+      );
+      const bookingGate = await assertShopCanAcceptBookings(Number(shopBusinessId));
+      if (!bookingGate.ok) {
+        return res.status(403).json({
+          success: false,
+          error: bookingGate.code,
+          message: bookingGate.message,
+        });
+      }
+      req._shopBusinessId = Number(shopBusinessId);
+    }
+
     console.log("[checkout] barber identity resolved", {
       barberName: resolved.barberName,
       resolvedBarberDbId,
@@ -639,6 +658,18 @@ router.post("/start", async (req, res) => {
       bookingId,
       environment: getPayPalEnvironmentMeta(),
     });
+
+    if (req._shopBusinessId != null) {
+      const { assertShopCanProcessPayments } = await import("./shopAccessPolicy.js");
+      const payGate = await assertShopCanProcessPayments(req._shopBusinessId);
+      if (!payGate.ok) {
+        return res.status(403).json({
+          success: false,
+          error: payGate.code,
+          message: payGate.message,
+        });
+      }
+    }
 
     console.log("[paypal] creating order", {
       amount: paypalAmount,

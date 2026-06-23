@@ -5,10 +5,15 @@ import { Card, CardTitle } from "../components/ui/Card.jsx";
 import { Button } from "../components/ui/Button.jsx";
 import { theme } from "../components/ui/theme.js";
 import {
+  approveAdminShop,
   deleteAdminShop,
+  endAdminShopTrial,
   fetchAdminShopDetail,
   patchAdminShop,
+  patchAdminShopAccess,
   patchAdminShopAccountStatus,
+  rejectAdminShop,
+  startAdminShopTrial,
 } from "../services/api.js";
 import { getStoredToken, getStoredUser } from "../lib/authHeaders.js";
 
@@ -125,6 +130,43 @@ export default function AdminShopDetail() {
     }
   };
 
+  const approve = async (plan) => {
+    setBusy(true);
+    try {
+      await approveAdminShop(shopId, { plan });
+      await load();
+    } catch (e) {
+      setError(e?.message || "Approval failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const reject = async () => {
+    const reason = window.prompt("Rejection reason (optional):") || "";
+    setBusy(true);
+    try {
+      await rejectAdminShop(shopId, reason);
+      await load();
+    } catch (e) {
+      setError(e?.message || "Rejection failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggleAccess = async (patch) => {
+    setBusy(true);
+    try {
+      await patchAdminShopAccess(shopId, patch);
+      await load();
+    } catch (e) {
+      setError(e?.message || "Update failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <Page>
       <PageHeader
@@ -152,13 +194,37 @@ export default function AdminShopDetail() {
               <br />
               <strong>Address:</strong> {shop.address}
               <br />
-              <strong>Status:</strong> {shop.accountStatus} · <strong>Subscription:</strong> {shop.subscriptionStatus}
+              <strong>Status:</strong> {shop.accountStatus} · <strong>Approval:</strong> {shop.approvalStatus} ·{" "}
+              <strong>Plan:</strong> {shop.accessPlan} · <strong>Subscription:</strong> {shop.subscriptionStatus}
               <br />
-              <strong>Barbers:</strong> {shop.barberCount} · <strong>Bookings:</strong> {shop.bookingCount}
+              <strong>Customers:</strong> {shop.customerCount} · <strong>Barbers:</strong> {shop.barberCount} ·{" "}
+              <strong>Bookings:</strong> {shop.bookingCount}
               <br />
               <strong>Revenue:</strong> ${Number(shop.totalRevenue || 0).toFixed(2)} ·{" "}
               <strong>Platform fees:</strong> ${Number(shop.platformFees || 0).toFixed(2)}
+              {shop.trialEndsAt ? (
+                <>
+                  <br />
+                  <strong>Trial ends:</strong> {new Date(shop.trialEndsAt).toLocaleString()}
+                </>
+              ) : null}
             </p>
+            {shop.pendingApproval && isSuper ? (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+                <Button variant="indigo" type="button" onClick={() => void approve("free")} disabled={busy}>
+                  Approve — Free
+                </Button>
+                <Button variant="ghost" type="button" onClick={() => void approve("trial")} disabled={busy}>
+                  Approve — Trial (14 days)
+                </Button>
+                <Button variant="ghost" type="button" onClick={() => void approve("paid")} disabled={busy}>
+                  Approve — Paid
+                </Button>
+                <Button variant="ghost" type="button" onClick={() => void reject()} disabled={busy}>
+                  Reject
+                </Button>
+              </div>
+            ) : null}
             <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 12 }}>
               <Button variant="indigo" type="button" onClick={() => setEditing((v) => !v)} disabled={busy}>
                 {editing ? "Cancel edit" : "Edit shop"}
@@ -185,6 +251,92 @@ export default function AdminShopDetail() {
               </Link>
             </div>
           </Card>
+
+          {isSuper ? (
+            <Card style={{ marginTop: 16 }}>
+              <CardTitle>Platform access controls</CardTitle>
+              <p style={{ color: theme.colors.muted, fontSize: 13, marginBottom: 12 }}>
+                Bookings: {shop.bookingsEnabled ? "enabled" : "disabled"} · Payments:{" "}
+                {shop.paymentProcessingEnabled ? "enabled" : "disabled"} · Free access:{" "}
+                {shop.freeAccessEnabled ? "on" : "off"} · Paid subscription required:{" "}
+                {shop.paidSubscriptionRequired ? "yes" : "no"}
+              </p>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                <Button
+                  variant="ghost"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void toggleAccess({ freeAccessEnabled: !shop.freeAccessEnabled })}
+                >
+                  {shop.freeAccessEnabled ? "Disable free access" : "Enable free access"}
+                </Button>
+                <Button
+                  variant="ghost"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void toggleAccess({ paidSubscriptionRequired: !shop.paidSubscriptionRequired })}
+                >
+                  {shop.paidSubscriptionRequired ? "Waive paid requirement" : "Require paid subscription"}
+                </Button>
+                <Button
+                  variant="ghost"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void toggleAccess({ bookingsEnabled: !shop.bookingsEnabled })}
+                >
+                  {shop.bookingsEnabled ? "Disable bookings" : "Enable bookings"}
+                </Button>
+                <Button
+                  variant="ghost"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void toggleAccess({ paymentProcessingEnabled: !shop.paymentProcessingEnabled })}
+                >
+                  {shop.paymentProcessingEnabled ? "Disable payments" : "Enable payments"}
+                </Button>
+                <Button
+                  variant="ghost"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    void (async () => {
+                      setBusy(true);
+                      try {
+                        await startAdminShopTrial(shopId, 14);
+                        await load();
+                      } catch (e) {
+                        setError(e?.message || "Trial start failed");
+                      } finally {
+                        setBusy(false);
+                      }
+                    })();
+                  }}
+                >
+                  Start trial
+                </Button>
+                <Button
+                  variant="ghost"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    void (async () => {
+                      setBusy(true);
+                      try {
+                        await endAdminShopTrial(shopId);
+                        await load();
+                      } catch (e) {
+                        setError(e?.message || "Trial end failed");
+                      } finally {
+                        setBusy(false);
+                      }
+                    })();
+                  }}
+                >
+                  End trial
+                </Button>
+              </div>
+            </Card>
+          ) : null}
 
           {editing ? (
             <Card style={{ marginTop: 16 }}>

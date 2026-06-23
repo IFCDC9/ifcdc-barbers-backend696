@@ -30,7 +30,8 @@ import { ensurePushNotificationsSchema } from "./pushNotificationsMigrations.js"
 import { createNotificationRouter } from "./notificationRoutes.js";
 import { ensureLegalAcceptanceSchema } from "./legalAcceptanceMigrations.js";
 import { createLegalRouter } from "./legalRoutes.js";
-import { createBarberBusinessRouter } from "./barberBusinessRoutes.js";
+import { mountBarberOnboardingRoutes } from "./barberOnboardingRoutes.js";
+import { mountOnboardingBusinessRoutes } from "./onboardingBusinessRoutes.js";
 import { handleBarberAvailableSlotsGet } from "./barberAvailableSlotsRoute.js";
 import { createBookingsRouter, insertAuraVoiceBookingRow } from "./bookingsRoutes.js";
 import { createBookingsAdminGuard } from "./bookingsAdminGuard.js";
@@ -630,6 +631,8 @@ console.log(
 
 const barberBusinessUploadDir = path.join(__dirname, "backend", "uploads");
 app.use(createBarberBusinessRouter({ uploadDir: barberBusinessUploadDir }));
+mountBarberOnboardingRoutes(app, { uploadDir: barberBusinessUploadDir });
+mountOnboardingBusinessRoutes(app);
 
 const insertAuraVoiceRow = (body) =>
   insertAuraVoiceBookingRow(body, require("./bookingEmail.cjs").sendAuraVoiceBookingEmail);
