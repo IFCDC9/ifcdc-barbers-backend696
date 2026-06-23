@@ -1,26 +1,23 @@
 import { Navigate, useLocation } from "react-router-dom";
+import { getStoredToken, getStoredUser } from "../lib/authHeaders.js";
 
 function normalizeRole(r) {
   return String(r || "").trim().toLowerCase();
 }
 
-export function getStoredUser() {
-  try {
-    const raw = window.localStorage.getItem("user");
-    if (!raw) return null;
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
+/** @deprecated Use getStoredUser from ../lib/authHeaders.js */
+export function getStoredUserLegacy() {
+  return getStoredUser();
 }
 
 export default function RequireRole({ roles, children }) {
   const location = useLocation();
   const u = getStoredUser();
+  const token = getStoredToken();
   const role = normalizeRole(u?.role);
   const allowed = Array.isArray(roles) ? roles.map(normalizeRole) : [normalizeRole(roles)];
 
-  if (!role) {
+  if (!role || !token) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
   if (!allowed.includes(role)) {
@@ -28,4 +25,3 @@ export default function RequireRole({ roles, children }) {
   }
   return children;
 }
-

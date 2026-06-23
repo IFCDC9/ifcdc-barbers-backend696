@@ -4,9 +4,9 @@
  * - **Production:** leave unset for same-origin `/api/...` when serving static + API together.
  */
 
-import { ADMIN_KEY_STORAGE, getResolvedAdminApiKey } from "../config/adminClient.js";
 import { API_BASE_URL, PRODUCTION_API_ORIGIN } from "../config/api.js";
 import { resolveStyleImageUrl } from "../lib/styleImageUrl.js";
+import { getAdminAuthHeaders, getAdminKeyHeadersOnly, getStoredToken } from "../lib/authHeaders.js";
 
 /**
  * Resolved API origin for absolute URLs (e.g. `/api/book`, `/api/login`).
@@ -39,7 +39,7 @@ export async function deleteMyAccount() {
   const origin = getApiOrigin();
   let token = "";
   try {
-    token = localStorage.getItem("token") || "";
+    token = getStoredToken();
   } catch {
     /* ignore */
   }
@@ -318,40 +318,11 @@ export async function fetchBookingQuote(barberId, body) {
   return data;
 }
 
-function isJwtExpired(token) {
-  try {
-    const parts = String(token || "").split(".");
-    if (parts.length < 2) return true;
-    const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
-    const exp = Number(payload?.exp);
-    if (!Number.isFinite(exp)) return false;
-    return exp * 1000 <= Date.now() + 5000;
-  } catch {
-    return true;
-  }
-}
-
-function getAdminKeyHeadersOnly() {
-  try {
-    const k = window.localStorage.getItem(ADMIN_KEY_STORAGE) || getResolvedAdminApiKey();
-    if (k) return { "x-admin-key": k };
-  } catch {
-    /* ignore */
-  }
-  return {};
-}
-
 /**
- * Valid JWT first; otherwise `x-admin-key` (skip expired JWT so admin key can be used).
+ * Valid JWT first; otherwise `x-admin-key` (legacy dev / ops fallback).
  */
 function getJwtOrAdminKeyHeaders() {
-  try {
-    const token = window.localStorage.getItem("token");
-    if (token && !isJwtExpired(token)) return { Authorization: `Bearer ${token}` };
-  } catch {
-    /* ignore */
-  }
-  return getAdminKeyHeadersOnly();
+  return getAdminAuthHeaders();
 }
 
 async function fetchStylesList(url, headers) {

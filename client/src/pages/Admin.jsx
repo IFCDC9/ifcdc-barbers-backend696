@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { getStoredToken, getStoredUser } from "../lib/authHeaders.js";
 import { Navigate } from "react-router-dom";
 import {
   createBarberFormData,
@@ -1069,14 +1070,10 @@ function AdminDashboard() {
 }
 
 export default function Admin() {
-  let user = null;
-  try {
-    user = JSON.parse(localStorage.getItem("user"));
-  } catch {
-    user = null;
-  }
+  const user = getStoredUser();
+  const token = getStoredToken();
 
-  if (!user || (user.role !== "admin" && user.role !== "super_admin")) {
+  if (!user || !token || (user.role !== "admin" && user.role !== "super_admin")) {
     return <Navigate to="/login" replace />;
   }
 

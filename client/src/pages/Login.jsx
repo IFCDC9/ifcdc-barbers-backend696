@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { login } from "../services/api.js";
+import { persistAuthSession } from "../lib/authHeaders.js";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -23,10 +24,9 @@ export default function Login() {
       setSubmitting(true);
       const data = await login(form.email, form.password);
 
-      if (data.success) {
-        console.log("USER:", data.user);
-        if (data.token) localStorage.setItem("token", String(data.token));
-        localStorage.setItem("user", JSON.stringify(data.user));
+      const authed = data.success === true || (data.ok === true && data.token);
+      if (authed && data.token && data.user) {
+        persistAuthSession({ token: data.token, user: data.user });
         const role = data?.user?.role;
         navigate(
           role === "super_admin" || role === "admin"

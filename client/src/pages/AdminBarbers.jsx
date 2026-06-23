@@ -1,16 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiGet } from "../lib/api.js";
-
-function authHeaders() {
-  try {
-    const token = window.localStorage.getItem("token");
-    if (token) return { Authorization: `Bearer ${token}` };
-  } catch {
-    /* ignore */
-  }
-  return {};
-}
+import { getAdminAuthHeaders } from "../lib/authHeaders.js";
 
 const wrap = { maxWidth: "56rem", margin: "0 auto", padding: "1rem 1rem 2rem", color: "#e4e4e7" };
 const h2 = { color: "#d4af37", marginBottom: "1rem", fontSize: "1.35rem" };
@@ -34,7 +25,7 @@ export default function AdminBarbers() {
       setLoading(true);
       setError(null);
       try {
-        const data = await apiGet("/api/barbers", { headers: authHeaders() });
+        const data = await apiGet("/api/barbers", { headers: getAdminAuthHeaders() });
         const rows = Array.isArray(data?.barbers) ? data.barbers : Array.isArray(data) ? data : [];
         if (!cancelled) setBarbers(rows);
       } catch (e) {

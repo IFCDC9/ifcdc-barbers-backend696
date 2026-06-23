@@ -1,4 +1,5 @@
 import { NavLink, useNavigate } from "react-router-dom";
+import { clearAuthSession } from "../lib/authHeaders.js";
 
 const NAV_ICONS = {
   home: (
@@ -106,12 +107,7 @@ export default function AppNav({ variant = "bottom" }) {
           type="button"
           className="ifcdc-bottom-nav__link ifcdc-bottom-nav__link--button ifcdc-nav-tab"
           onClick={() => {
-            try {
-              localStorage.removeItem("token");
-              localStorage.removeItem("user");
-            } catch {
-              /* ignore */
-            }
+            clearAuthSession();
             navigate("/", { replace: true });
           }}
           aria-label="Logout"

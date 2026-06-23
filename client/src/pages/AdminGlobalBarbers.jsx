@@ -5,16 +5,7 @@ import { Card, CardTitle } from "../components/ui/Card.jsx";
 import { Button } from "../components/ui/Button.jsx";
 import { theme } from "../components/ui/theme.js";
 import { apiGet, apiUrl, fetchWithTimeout } from "../lib/api.js";
-
-function authHeaders() {
-  try {
-    const token = window.localStorage.getItem("token");
-    if (token) return { Authorization: `Bearer ${token}`, Accept: "application/json" };
-  } catch {
-    /* ignore */
-  }
-  return { Accept: "application/json" };
-}
+import { getAdminAuthHeaders, getStoredToken, getStoredUser } from "../lib/authHeaders.js";
 
 const inputStyle = {
   width: "100%",
@@ -48,12 +39,8 @@ function pillStyle(tone) {
 }
 
 export default function AdminGlobalBarbers() {
-  let user = null;
-  try {
-    user = JSON.parse(localStorage.getItem("user") || "null");
-  } catch {
-    user = null;
-  }
+  const user = getStoredUser();
+  const token = getStoredToken();
 
   const [shop, setShop] = React.useState("");
   const [city, setCity] = React.useState("");
@@ -79,7 +66,7 @@ export default function AdminGlobalBarbers() {
       else if (sort === "name") q.set("sort", "name");
       else if (sort === "shop") q.set("sort", "shop");
       const suffix = q.toString() ? `?${q.toString()}` : "";
-      const j = await apiGet(`/api/admin/barbers${suffix}`, { headers: authHeaders() });
+      const j = await apiGet(`/api/admin/barbers${suffix}`, { headers: getAdminAuthHeaders() });
       setRows(Array.isArray(j?.barbers) ? j.barbers : []);
     } catch (e) {
       setError(e?.message || "Failed to load barbers");
@@ -96,14 +83,14 @@ export default function AdminGlobalBarbers() {
   const patch = async (barberId, path, body) => {
     const res = await fetchWithTimeout(apiUrl(`/api/admin/barbers/${barberId}/${path}`), {
       method: "PATCH",
-      headers: { ...authHeaders(), "Content-Type": "application/json" },
+      headers: { ...getAdminAuthHeaders(), "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
     const j = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(j?.message || `Update failed (${res.status})`);
   };
 
-  if (!user || (user.role !== "admin" && user.role !== "super_admin" && user.role !== "shop_owner")) {
+  if (!user || !token || (user.role !== "admin" && user.role !== "super_admin" && user.role !== "shop_owner")) {
     return <Navigate to="/login" replace />;
   }
 
