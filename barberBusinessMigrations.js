@@ -43,6 +43,34 @@ export async function ensureBarberBusinessTables() {
   await dbQuery(`ALTER TABLE barbers ADD COLUMN IF NOT EXISTS business_id BIGINT;`);
   await dbQuery(`ALTER TABLE barbers ADD COLUMN IF NOT EXISTS shop_name TEXT;`);
 
+  // Legacy databases may have barbers.user_id FK pointing at auth.users instead of app_users.
+  try {
+    await dbQuery(`
+      DO $fk$
+      BEGIN
+        IF to_regclass('public.barbers') IS NULL OR to_regclass('public.app_users') IS NULL THEN
+          RETURN;
+        END IF;
+        IF EXISTS (
+          SELECT 1 FROM pg_constraint
+          WHERE conrelid = 'public.barbers'::regclass AND conname = 'barbers_user_id_fkey'
+        ) THEN
+          ALTER TABLE barbers DROP CONSTRAINT barbers_user_id_fkey;
+        END IF;
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint
+          WHERE conrelid = 'public.barbers'::regclass AND conname = 'barbers_user_id_fkey'
+        ) THEN
+          ALTER TABLE barbers
+            ADD CONSTRAINT barbers_user_id_fkey
+            FOREIGN KEY (user_id) REFERENCES app_users(id) ON DELETE SET NULL;
+        END IF;
+      END $fk$;
+    `);
+  } catch (e) {
+    console.warn("[migrate] barbers_user_id_fkey align skipped:", e?.message || e);
+  }
+
   await dbQuery(`
     CREATE TABLE IF NOT EXISTS barber_services (
       id BIGSERIAL PRIMARY KEY,
