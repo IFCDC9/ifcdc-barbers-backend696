@@ -322,7 +322,14 @@ export function createAuthRouter({ sendEmail }) {
         return res.status(409).json({ error: "email_exists", message: "Email is already registered" });
       }
       console.error("[auth] register error:", e);
-      return res.status(500).json({ ok: false, success: false, error: "server_error", message: "Register failed" });
+      const hint = String(e?.message || "").slice(0, 200) || null;
+      return res.status(500).json({
+        ok: false,
+        success: false,
+        error: "server_error",
+        message: "Register failed",
+        hint,
+      });
     }
   });
 

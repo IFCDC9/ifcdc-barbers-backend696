@@ -22,33 +22,39 @@ function buildLocationJson({ address, city, state, location }) {
 async function insertPendingBusiness({ name, phone, address, city, state }) {
   await ensureAdminShopManagementSchema();
   const d = NEW_SHOP_PENDING_DEFAULTS;
-  const r = await dbQuery(
-    `INSERT INTO businesses (
-       name, phone, address, city, state, plan, subscription_status,
-       account_status, approval_status, access_plan,
-       free_access_enabled, paid_subscription_required,
-       bookings_enabled, payment_processing_enabled
-     )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-     RETURNING id`,
-    [
-      name,
-      phone,
-      address || null,
-      city || null,
-      state || null,
-      d.plan,
-      d.subscription_status,
-      d.account_status,
-      d.approval_status,
-      d.access_plan,
-      d.free_access_enabled,
-      d.paid_subscription_required,
-      d.bookings_enabled,
-      d.payment_processing_enabled,
-    ],
-  );
-  return r.rows?.[0]?.id;
+  try {
+    const r = await dbQuery(
+      `INSERT INTO businesses (
+         name, phone, address, city, state, plan, subscription_status,
+         account_status, approval_status, access_plan,
+         free_access_enabled, paid_subscription_required,
+         bookings_enabled, payment_processing_enabled
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+       RETURNING id`,
+      [
+        name,
+        phone,
+        address || null,
+        city || null,
+        state || null,
+        d.plan,
+        d.subscription_status,
+        d.account_status,
+        d.approval_status,
+        d.access_plan,
+        d.free_access_enabled,
+        d.paid_subscription_required,
+        d.bookings_enabled,
+        d.payment_processing_enabled,
+      ],
+    );
+    return r.rows?.[0]?.id;
+  } catch (e) {
+    const err = new Error(`business_insert_failed: ${e?.message || e}`);
+    err.code = e?.code;
+    throw err;
+  }
 }
 
 async function linkAppUserToBarberRecords({ userId, role, phoneVal, barberId, businessId, forcePending = true }) {
@@ -78,14 +84,29 @@ async function linkAppUserToBarberRecords({ userId, role, phoneVal, barberId, bu
 }
 
 async function insertBarberSettingsRow(barberId) {
-  const { coerceBarberIdForTable } = await import("./barberIdentity.cjs");
-  const bid = await coerceBarberIdForTable(dbQuery, "barber_settings", barberId);
-  await dbQuery(
-    `INSERT INTO barber_settings (barber_id, subscription_tier)
-     VALUES ($1, 'pro')
-     ON CONFLICT (barber_id) DO NOTHING`,
-    [bid],
-  );
+  if (barberId == null) return;
+  const colType = await getTableBarberIdType("barber_settings");
+  try {
+    if (colType === "uuid") {
+      await dbQuery(
+        `INSERT INTO barber_settings (barber_id, subscription_tier)
+         VALUES ($1::uuid, 'pro')
+         ON CONFLICT (barber_id) DO NOTHING`,
+        [String(barberId)],
+      );
+      return;
+    }
+    if (/^\d+$/.test(String(barberId))) {
+      await dbQuery(
+        `INSERT INTO barber_settings (barber_id, subscription_tier)
+         VALUES ($1, 'pro')
+         ON CONFLICT (barber_id) DO NOTHING`,
+        [Number(barberId)],
+      );
+    }
+  } catch (e) {
+    console.warn("[signup] barber_settings insert skipped:", e?.message || e);
+  }
 }
 
 async function createBarberRowForUser({
@@ -98,20 +119,27 @@ async function createBarberRowForUser({
   verificationStatus = "pending",
 }) {
   const barbersIdType = await getBarbersIdColumnType();
-  const barberIns =
-    barbersIdType === "uuid"
-      ? await dbQuery(
-          `INSERT INTO barbers (id, name, shop_name, business_id, user_id, phone, location, verification_status)
-           VALUES (gen_random_uuid(), $1, $2, $3, $4::uuid, $5, $6, $7)
-           RETURNING id`,
-          [displayName, shop, businessId, userId, phoneVal, locationJson, verificationStatus],
-        )
-      : await dbQuery(
-          `INSERT INTO barbers (name, shop_name, business_id, user_id, phone, location, verification_status)
-           VALUES ($1, $2, $3, $4::uuid, $5, $6, $7)
-           RETURNING id`,
-          [displayName, shop, businessId, userId, phoneVal, locationJson, verificationStatus],
-        );
+  let barberIns;
+  try {
+    barberIns =
+      barbersIdType === "uuid"
+        ? await dbQuery(
+            `INSERT INTO barbers (id, name, shop_name, business_id, user_id, phone, location, verification_status)
+             VALUES (gen_random_uuid(), $1, $2, $3, $4::uuid, $5, $6, $7)
+             RETURNING id`,
+            [displayName, shop, businessId, userId, phoneVal, locationJson, verificationStatus],
+          )
+        : await dbQuery(
+            `INSERT INTO barbers (name, shop_name, business_id, user_id, phone, location, verification_status)
+             VALUES ($1, $2, $3, $4::uuid, $5, $6, $7)
+             RETURNING id`,
+            [displayName, shop, businessId, userId, phoneVal, locationJson, verificationStatus],
+          );
+  } catch (e) {
+    const err = new Error(`barber_insert_failed: ${e?.message || e}`);
+    err.code = e?.code;
+    throw err;
+  }
   const barberId = barberIns.rows?.[0]?.id;
   if (barberId == null) throw new Error("barber_insert_failed");
   return barberId;
