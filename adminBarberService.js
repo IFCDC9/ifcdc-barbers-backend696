@@ -323,12 +323,45 @@ export async function updateBarberVerification(barberIdRaw, status) {
   if (!barberId || !["pending", "approved", "rejected"].includes(normalized)) {
     return { ok: false, message: "Invalid barber id or verification status." };
   }
-  const r = await dbQuery(`UPDATE barbers SET verification_status = $1 WHERE id::text = $2::text RETURNING id`, [
+  const r = await dbQuery(`UPDATE barbers SET verification_status = $1 WHERE id::text = $2::text RETURNING id, business_id, user_id`, [
     normalized,
     barberId,
   ]);
   if (!r.rows?.length) return { ok: false, message: "Barber not found" };
+  const row = r.rows[0];
+  if (normalized === "approved") {
+    await syncLinkedBusinessForBarberApproval(row.business_id, row.user_id);
+  }
+  if (normalized === "rejected" && row.user_id) {
+    await dbQuery(`UPDATE app_users SET account_status = 'disabled' WHERE id = $1::uuid`, [row.user_id]);
+  }
   return { ok: true, barberId, verificationStatus: normalized };
+}
+
+async function syncLinkedBusinessForBarberApproval(businessIdRaw, userId) {
+  const bizText = String(businessIdRaw ?? "").trim();
+  const bizId = /^[0-9]+$/.test(bizText) ? Number(bizText) : NaN;
+  if (Number.isFinite(bizId)) {
+    await dbQuery(
+      `UPDATE businesses SET
+         approval_status = 'approved',
+         account_status = 'active',
+         access_plan = CASE WHEN lower(coalesce(access_plan, 'pending')) = 'pending' THEN 'free' ELSE access_plan END,
+         bookings_enabled = true,
+         payment_processing_enabled = true,
+         approved_at = COALESCE(approved_at, NOW())
+       WHERE id = $1::bigint
+         AND lower(coalesce(approval_status, 'pending')) IN ('pending', 'approved')`,
+      [bizId],
+    );
+    await dbQuery(
+      `UPDATE app_users SET account_status = 'active'
+       WHERE business_id = $1::bigint AND role IN ('barber', 'shop_owner')`,
+      [bizId],
+    );
+  } else if (userId) {
+    await dbQuery(`UPDATE app_users SET account_status = 'active' WHERE id = $1::uuid`, [userId]);
+  }
 }
 
 export async function updateBarberAccountStatus(barberIdRaw, status, { autoApproveVerification = false } = {}) {
@@ -356,6 +389,12 @@ export async function updateBarberAccountStatus(barberIdRaw, status, { autoAppro
   await dbQuery(`UPDATE app_users SET account_status = $1 WHERE id = $2::uuid`, [mapped, row.user_id]);
   if ((mapped === "active" || mapped === "approved") && autoApproveVerification) {
     await dbQuery(`UPDATE barbers SET verification_status = 'approved' WHERE id::text = $1::text`, [barberId]);
+  }
+  if (mapped === "active") {
+    await syncLinkedBusinessForBarberApproval(row.business_id, row.user_id);
+  }
+  if (mapped === "disabled") {
+    await dbQuery(`UPDATE barbers SET verification_status = 'rejected' WHERE id::text = $1::text`, [barberId]);
   }
   return { ok: true, barberId, accountStatus: mapped };
 }

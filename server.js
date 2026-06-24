@@ -40,6 +40,8 @@ import { createAdminUsersRouter } from "./adminUsersRoutes.js";
 import { createAdminBarbersRouter } from "./adminBarbersRoutes.js";
 import { createAdminShopsRouter } from "./adminShopsRoutes.js";
 import { ensureAdminBarberManagementSchema } from "./adminBarberMigrations.js";
+import { ensureAppUsersBarberIdTypeAligned } from "./authDbMigrations.js";
+import { backfillOrphanBarberRegistrations } from "./signupProvisioningService.js";
 import { ensureAdminShopManagementSchema } from "./adminShopMigrations.js";
 import { dbQuery } from "./db.js";
 import { resolvePublicBusinessPhone } from "./src/services/publicContactConfig.js";
@@ -1036,6 +1038,20 @@ async function startServer() {
     await ensureBarberBusinessTables();
     await ensureAdminBarberManagementSchema();
     await ensureAdminShopManagementSchema();
+    try {
+      const aligned = await ensureAppUsersBarberIdTypeAligned();
+      if (aligned?.converted) console.log("[migrate] app_users.barber_id aligned to uuid");
+    } catch (alignErr) {
+      console.warn("[migrate] app_users.barber_id align:", alignErr?.message || alignErr);
+    }
+    try {
+      const backfill = await backfillOrphanBarberRegistrations({ notify: true });
+      if (backfill.fixed > 0) {
+        console.log("[migrate] backfilled orphan barber registrations:", backfill);
+      }
+    } catch (bfErr) {
+      console.warn("[migrate] orphan barber backfill:", bfErr?.message || bfErr);
+    }
     console.log("[migrate] barber business tables: ok");
   } catch (e) {
     console.error("[migrate] barber business failed:", e?.message || e);

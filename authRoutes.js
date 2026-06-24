@@ -14,6 +14,11 @@ import { CANONICAL_SUPER_ADMIN_EMAIL, isForbiddenPublicSignupRole, isSuperAdminE
 import { recordSignupAcceptanceBatch } from "./legalRoutes.js";
 import { verifyAppleIdentityToken } from "./authAppleVerify.js";
 import { deleteAppUserAccount } from "./accountDeletionService.js";
+import {
+  provisionBarberSignup,
+  provisionShopOwnerSignup,
+  resolveUserApprovalState,
+} from "./signupProvisioningService.js";
 
 const require = createRequire(import.meta.url);
 const jwt = require("jsonwebtoken");
@@ -181,21 +186,87 @@ export function createAuthRouter({ sendEmail }) {
         return res.status(400).json({ error: "weak_password", message: pwCheck.message });
       }
 
+      const phone = String(req.body?.phone || "").trim();
+      const shopName = String(req.body?.shopName || req.body?.shop_name || "").trim();
+      const businessName = String(req.body?.businessName || req.body?.business_name || shopName).trim();
+      const address = String(req.body?.address || req.body?.location || "").trim();
+      const city = String(req.body?.city || "").trim();
+      const state = String(req.body?.state || "").trim();
+
+      if (role === "barber") {
+        if (!phone) return res.status(400).json({ error: "phone_required", message: "Phone number is required." });
+        if (!shopName) return res.status(400).json({ error: "shop_name_required", message: "Shop name is required." });
+        if (!address && !(city && state)) {
+          return res.status(400).json({
+            error: "location_required",
+            message: "Location (address or city and state) is required.",
+          });
+        }
+      }
+      if (role === "shop_owner") {
+        if (!phone) return res.status(400).json({ error: "phone_required", message: "Phone number is required." });
+        if (!businessName) {
+          return res.status(400).json({ error: "business_name_required", message: "Shop name is required." });
+        }
+        if (!address) return res.status(400).json({ error: "address_required", message: "Shop address is required." });
+        if (!city) return res.status(400).json({ error: "city_required", message: "City is required." });
+        if (!state) return res.status(400).json({ error: "state_required", message: "State is required." });
+      }
+
       const passwordHash = await hashPassword(password);
+      const initialAccountStatus = role === "user" ? "active" : "pending";
       const created = await dbQuery(
-        `INSERT INTO app_users (name, email, password_hash, role)
-         VALUES ($1, $2, $3, $4)
-         RETURNING id, name, email, role, barber_id, business_id, created_at`,
-        [name || null, email, passwordHash, role]
+        `INSERT INTO app_users (name, email, password_hash, role, phone, account_status)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING id, name, email, role, phone, barber_id, business_id, account_status, created_at`,
+        [name || null, email, passwordHash, role, phone || null, initialAccountStatus],
       );
       const user = created.rows?.[0];
-      const claims = jwtClaimsFromAppUser(user);
-      const token = signTokenForAppUser(user);
-      const publicUser = publicUserFromAppUser(user);
+      if (!user?.id) throw new Error("user_insert_failed");
+
+      let approvalPending = false;
+      if (role === "barber") {
+        await provisionBarberSignup({
+          userId: user.id,
+          name,
+          email,
+          phone,
+          shopName,
+          location: address,
+          address,
+          city,
+          state,
+        });
+        approvalPending = true;
+      } else if (role === "shop_owner") {
+        await provisionShopOwnerSignup({
+          userId: user.id,
+          name,
+          email,
+          phone,
+          businessName,
+          address,
+          city,
+          state,
+        });
+        approvalPending = true;
+      }
+
+      const refreshed = await dbQuery(
+        `SELECT id, name, email, phone, profile_image_url, role, barber_id, business_id, account_status, created_at
+         FROM app_users WHERE id = $1::uuid LIMIT 1`,
+        [user.id],
+      );
+      const finalUser = refreshed.rows?.[0] || user;
+      const claims = jwtClaimsFromAppUser(finalUser);
+      const token = signTokenForAppUser(finalUser);
+      const publicUser = publicUserFromAppUser(finalUser);
+      const approval = await resolveUserApprovalState(finalUser);
       console.log("[auth] register_success", {
         email: publicUser.email,
         role: publicUser.role,
         redirect: postLoginRedirectFromClaims(claims),
+        approvalPending,
       });
 
       // Best-effort: persist signup-time legal acceptances if the client sent them.
@@ -237,7 +308,8 @@ export function createAuthRouter({ sendEmail }) {
         ok: true,
         success: true,
         token,
-        user: publicUser,
+        user: { ...publicUser, ...approval },
+        approvalPending,
         redirect: postLoginRedirectFromClaims(claims),
       });
     } catch (e) {
@@ -322,7 +394,7 @@ export function createAuthRouter({ sendEmail }) {
         });
       }
       const found = await dbQuery(
-        `SELECT id, name, email, phone, profile_image_url, role, barber_id, business_id, created_at
+        `SELECT id, name, email, phone, profile_image_url, role, barber_id, business_id, account_status, created_at
          FROM app_users WHERE id = $1::uuid LIMIT 1`,
         [id],
       );
@@ -337,11 +409,13 @@ export function createAuthRouter({ sendEmail }) {
       }
       const claims = jwtClaimsFromAppUser(user);
       const publicUser = publicUserFromAppUser(user);
+      const approval = await resolveUserApprovalState(user);
       const redirect = postLoginRedirectFromClaims(claims);
       return res.json({
         ok: true,
         success: true,
-        user: publicUser,
+        user: { ...publicUser, ...approval },
+        approvalPending: approval.limitedAccess === true,
         redirect,
       });
     } catch (e) {

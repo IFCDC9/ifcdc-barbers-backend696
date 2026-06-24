@@ -1,4 +1,5 @@
 import { dbQuery } from "./db.js";
+import { getBarbersIdColumnType, getTableBarberIdType } from "./barberScheduleMigrations.js";
 
 export const ALLOWED_ROLES = ["super_admin", "admin", "shop_owner", "barber", "user"];
 
@@ -46,6 +47,38 @@ export async function ensureUsersRoleColumn() {
   await dbQuery(
     `CREATE INDEX IF NOT EXISTS app_users_business_id_idx ON app_users (business_id) WHERE business_id IS NOT NULL;`,
   );
+}
+
+/** When `barbers.id` is UUID, align `app_users.barber_id` so signup provisioning can link accounts. */
+export async function ensureAppUsersBarberIdTypeAligned() {
+  const barbersType = await getBarbersIdColumnType();
+  if (barbersType !== "uuid") return { aligned: false, reason: "barbers_not_uuid" };
+
+  const appType = await getTableBarberIdType("app_users");
+  if (appType === "uuid") return { aligned: true, already: true };
+  if (!appType) {
+    await dbQuery(`ALTER TABLE app_users ADD COLUMN IF NOT EXISTS barber_id UUID`);
+    await dbQuery(
+      `CREATE INDEX IF NOT EXISTS app_users_barber_id_idx ON app_users (barber_id) WHERE barber_id IS NOT NULL`,
+    );
+    return { aligned: true, created: true };
+  }
+
+  await dbQuery(`ALTER TABLE app_users ADD COLUMN IF NOT EXISTS barber_id_uuid UUID`);
+  await dbQuery(`
+    UPDATE app_users u
+    SET barber_id_uuid = b.id
+    FROM barbers b
+    WHERE b.user_id = u.id AND u.barber_id_uuid IS NULL
+  `);
+  if (appType === "bigint" || appType === "integer") {
+    await dbQuery(`ALTER TABLE app_users DROP COLUMN IF EXISTS barber_id`);
+  }
+  await dbQuery(`ALTER TABLE app_users RENAME COLUMN barber_id_uuid TO barber_id`);
+  await dbQuery(
+    `CREATE INDEX IF NOT EXISTS app_users_barber_id_idx ON app_users (barber_id) WHERE barber_id IS NOT NULL`,
+  );
+  return { aligned: true, converted: true };
 }
 
 /** Admin onboarding invites — pending users until they accept and complete signup. */

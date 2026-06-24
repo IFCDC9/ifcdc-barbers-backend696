@@ -548,6 +548,12 @@ export async function approveShop(businessId, { plan = "free", trialDays = 14, m
     [Number(businessId)],
   ).catch(() => {});
 
+  await dbQuery(
+    `UPDATE barbers SET verification_status = 'approved'
+     WHERE business_id IS NOT NULL AND btrim(business_id::text) = $1::text`,
+    [String(businessId)],
+  ).catch(() => {});
+
   return { ok: true };
 }
 

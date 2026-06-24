@@ -16,6 +16,10 @@ import {
   updateBarberSubscriptionTier,
   updateBarberVerification,
 } from "./adminBarberService.js";
+import {
+  backfillOrphanBarberRegistrations,
+  getBarberSignupAudit,
+} from "./signupProvisioningService.js";
 
 async function resolveBarberManagementScope(req, res) {
   const hdr = String(req.get("authorization") || "");
@@ -72,6 +76,18 @@ export function createAdminBarbersRouter() {
     if (!scope) return;
 
     try {
+      let backfill = null;
+      if (scope.all) {
+        try {
+          backfill = await backfillOrphanBarberRegistrations({ notify: false });
+          if (backfill?.fixed > 0) {
+            console.log("[admin/barbers] backfilled orphan registrations:", backfill);
+          }
+        } catch (bfErr) {
+          console.warn("[admin/barbers] orphan backfill skipped:", bfErr?.message || bfErr);
+        }
+      }
+
       const barbers = await listAdminBarbers(scope, {
         shop: req.query.shop,
         city: req.query.city,
@@ -82,10 +98,31 @@ export function createAdminBarbersRouter() {
         sort: req.query.sort,
         registrationDate: req.query.registrationDate,
       });
-      return res.json({ ok: true, barbers, total: barbers.length, scope: scope.all ? "global" : "shop" });
+      return res.json({
+        ok: true,
+        barbers,
+        total: barbers.length,
+        scope: scope.all ? "global" : "shop",
+        backfill,
+      });
     } catch (e) {
       console.error("[admin/barbers] list failed:", e?.message || e);
       return res.status(500).json({ ok: false, message: "Failed to load barbers" });
+    }
+  });
+
+  router.get("/api/admin/barbers/signup-audit", async (req, res) => {
+    const scope = await resolveBarberManagementScope(req, res);
+    if (!scope) return;
+    if (!scope.all) {
+      return res.status(403).json({ ok: false, message: "Platform admin only." });
+    }
+    try {
+      const audit = await getBarberSignupAudit();
+      return res.json({ ok: true, audit });
+    } catch (e) {
+      console.error("[admin/barbers] signup-audit failed:", e?.message || e);
+      return res.status(500).json({ ok: false, message: "Audit failed" });
     }
   });
 

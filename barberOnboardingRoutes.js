@@ -159,9 +159,11 @@ export function mountBarberOnboardingRoutes(app, { uploadDir } = {}) {
         const promoteBarber =
           role !== "barber" && role !== "admin" && role !== "super_admin" && role !== "shop_owner";
         await dbQuery(
-          `UPDATE app_users SET name = $1::text, role = CASE WHEN $3::boolean THEN 'barber' ELSE role END
+          `UPDATE app_users SET name = $1::text, phone = COALESCE($4, phone),
+                  role = CASE WHEN $3::boolean THEN 'barber' ELSE role END,
+                  account_status = CASE WHEN $3::boolean THEN 'pending' ELSE account_status END
            WHERE id = $2::uuid`,
-          [acctName, existingRow.id, promoteBarber],
+          [acctName, existingRow.id, promoteBarber, phone],
         );
         const refreshed = await dbQuery(
           `SELECT id, name, email, role, barber_id, business_id FROM app_users WHERE id = $1::uuid LIMIT 1`,
@@ -172,10 +174,10 @@ export function mountBarberOnboardingRoutes(app, { uploadDir } = {}) {
       } else {
         const passwordHash = await hashPassword(password);
         const userIns = await dbQuery(
-          `INSERT INTO app_users (name, email, password_hash, role, business_id)
-           VALUES ($1, $2, $3, 'barber', $4)
+          `INSERT INTO app_users (name, email, password_hash, role, business_id, phone, account_status)
+           VALUES ($1, $2, $3, 'barber', $4, $5, 'pending')
            RETURNING id, name, email, role, business_id`,
-          [ownerName, email, passwordHash, businessNumericId],
+          [ownerName, email, passwordHash, businessNumericId, phone],
         );
         user = userIns.rows?.[0];
         if (!user?.id) throw new Error("user_insert_failed");
@@ -185,8 +187,8 @@ export function mountBarberOnboardingRoutes(app, { uploadDir } = {}) {
 
       if (!Number.isFinite(barberId)) {
         const barberIns = await dbQuery(
-          `INSERT INTO barbers (name, shop_name, business_id, user_id, phone, bio, location)
-           VALUES ($1, $2, $3, $4::uuid, $5, $6, $7)
+          `INSERT INTO barbers (name, shop_name, business_id, user_id, phone, bio, location, verification_status)
+           VALUES ($1, $2, $3, $4::uuid, $5, $6, $7, 'pending')
            RETURNING id`,
           [displayName, shopName, businessNumericId, user.id, phone, bio || null, locationJson],
         );
@@ -201,8 +203,8 @@ export function mountBarberOnboardingRoutes(app, { uploadDir } = {}) {
         );
         if (!upd.rows?.length) {
           const barberIns = await dbQuery(
-            `INSERT INTO barbers (name, shop_name, business_id, user_id, phone, bio, location)
-             VALUES ($1, $2, $3, $4::uuid, $5, $6, $7)
+            `INSERT INTO barbers (name, shop_name, business_id, user_id, phone, bio, location, verification_status)
+             VALUES ($1, $2, $3, $4::uuid, $5, $6, $7, 'pending')
              RETURNING id`,
             [displayName, shopName, businessNumericId, user.id, phone, bio || null, locationJson],
           );
@@ -211,7 +213,7 @@ export function mountBarberOnboardingRoutes(app, { uploadDir } = {}) {
         }
       }
 
-      await dbQuery(`UPDATE app_users SET barber_id = $1, business_id = $2 WHERE id = $3::uuid`, [
+      await dbQuery(`UPDATE app_users SET barber_id = $1, business_id = $2, account_status = 'pending' WHERE id = $3::uuid`, [
         barberId,
         businessNumericId,
         user.id,

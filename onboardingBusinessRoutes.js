@@ -21,6 +21,9 @@ export function mountOnboardingBusinessRoutes(app) {
       const password = String(req.body?.password || "");
       const businessName = String(req.body?.businessName || req.body?.business_name || "").trim();
       const businessPhone = String(req.body?.businessPhone || req.body?.business_phone || "").trim() || null;
+      const address = String(req.body?.address || "").trim();
+      const city = String(req.body?.city || "").trim();
+      const state = String(req.body?.state || "").trim();
       const barberName = String(req.body?.barberName || req.body?.barber_name || name || "Owner").trim();
       const serviceName = String(req.body?.serviceName || req.body?.service_name || "General cut").trim();
       const servicePrice = roundMoney2(Number(req.body?.servicePrice ?? req.body?.service_price ?? 25));
@@ -35,12 +38,12 @@ export function mountOnboardingBusinessRoutes(app) {
 
       const biz = await dbQuery(
         `INSERT INTO businesses (
-           name, phone, plan, subscription_status, account_status, approval_status, access_plan,
+           name, phone, address, city, state, plan, subscription_status, account_status, approval_status, access_plan,
            free_access_enabled, paid_subscription_required, bookings_enabled, payment_processing_enabled
          )
-         VALUES ($1, $2, 'free', 'inactive', 'pending', 'pending', 'pending', false, true, false, false)
+         VALUES ($1, $2, $3, $4, $5, 'free', 'inactive', 'pending', 'pending', 'pending', false, true, false, false)
          RETURNING id`,
-        [businessName, businessPhone],
+        [businessName, businessPhone, address || null, city || null, state || null],
       );
       const businessId = biz.rows?.[0]?.id;
       if (!businessId) throw new Error("business_insert_failed");
@@ -69,12 +72,13 @@ export function mountOnboardingBusinessRoutes(app) {
         existingAccount = true;
         const displayName = name || String(existingRow.name || "").trim() || "Owner";
         const role = String(existingRow.role || "").toLowerCase();
-        const promoteBarber =
-          role !== "barber" && role !== "admin" && role !== "super_admin" && role !== "shop_owner";
+        const promoteOwner =
+          role !== "shop_owner" && role !== "admin" && role !== "super_admin";
         await dbQuery(
-          `UPDATE app_users SET name = $1::text, role = CASE WHEN $3::boolean THEN 'barber' ELSE role END
+          `UPDATE app_users SET name = $1::text, role = CASE WHEN $3::boolean THEN 'shop_owner' ELSE role END,
+                  account_status = CASE WHEN $3::boolean THEN 'pending' ELSE account_status END
            WHERE id = $2::uuid`,
-          [displayName, existingRow.id, promoteBarber],
+          [displayName, existingRow.id, promoteOwner],
         );
         const refreshed = await dbQuery(
           `SELECT id, name, email, role, barber_id, business_id FROM app_users WHERE id = $1::uuid LIMIT 1`,
@@ -85,10 +89,10 @@ export function mountOnboardingBusinessRoutes(app) {
       } else {
         const passwordHash = await hashPassword(password);
         const userIns = await dbQuery(
-          `INSERT INTO app_users (name, email, password_hash, role, business_id)
-           VALUES ($1, $2, $3, 'barber', $4)
+          `INSERT INTO app_users (name, email, password_hash, role, business_id, phone, account_status)
+           VALUES ($1, $2, $3, 'shop_owner', $4, $5, 'pending')
            RETURNING id, name, email, role, business_id`,
-          [name, email, passwordHash, businessId],
+          [name, email, passwordHash, businessId, businessPhone],
         );
         user = userIns.rows?.[0];
         if (!user?.id) throw new Error("user_insert_failed");
@@ -98,8 +102,8 @@ export function mountOnboardingBusinessRoutes(app) {
 
       if (!Number.isFinite(barberId)) {
         const barberIns = await dbQuery(
-          `INSERT INTO barbers (name, business_id, user_id, phone)
-           VALUES ($1, $2, $3::uuid, $4)
+          `INSERT INTO barbers (name, business_id, user_id, phone, verification_status)
+           VALUES ($1, $2, $3::uuid, $4, 'pending')
            RETURNING id`,
           [barberName, businessId, user.id, businessPhone],
         );
@@ -119,8 +123,8 @@ export function mountOnboardingBusinessRoutes(app) {
         );
         if (!upd.rows?.length) {
           const barberIns = await dbQuery(
-            `INSERT INTO barbers (name, business_id, user_id, phone)
-             VALUES ($1, $2, $3::uuid, $4)
+            `INSERT INTO barbers (name, business_id, user_id, phone, verification_status)
+             VALUES ($1, $2, $3::uuid, $4, 'pending')
              RETURNING id`,
             [barberName, businessId, user.id, businessPhone],
           );
@@ -154,16 +158,16 @@ export function mountOnboardingBusinessRoutes(app) {
           barberId,
           fullName: barberName || name,
           shopName: businessName,
-          city: null,
-          state: null,
+          city,
+          state,
           email,
         });
         void notifySuperAdminsNewShop({
           businessId,
           shopName: businessName,
           ownerName: barberName || name,
-          city: null,
-          state: null,
+          city,
+          state,
           email,
         });
       }
