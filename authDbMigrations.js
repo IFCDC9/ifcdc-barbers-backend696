@@ -25,19 +25,20 @@ export async function ensureUsersRoleColumn() {
   await dbQuery(`ALTER TABLE app_users ADD COLUMN IF NOT EXISTS account_status TEXT DEFAULT 'active';`);
   await dbQuery(`UPDATE app_users SET account_status = 'active' WHERE account_status IS NULL;`);
 
-  // Enforce allowed values via CHECK constraint (idempotent).
+  // Enforce allowed values via CHECK constraint (idempotent; recreate when shop_owner was missing).
   await dbQuery(`
     DO $$
     BEGIN
-      IF NOT EXISTS (
+      IF EXISTS (
         SELECT 1
         FROM pg_constraint
         WHERE conname = 'app_users_role_allowed'
       ) THEN
-        ALTER TABLE app_users
-          ADD CONSTRAINT app_users_role_allowed
-          CHECK (role IN ('super_admin','admin','shop_owner','barber','user'));
+        ALTER TABLE app_users DROP CONSTRAINT app_users_role_allowed;
       END IF;
+      ALTER TABLE app_users
+        ADD CONSTRAINT app_users_role_allowed
+        CHECK (role IN ('super_admin','admin','shop_owner','barber','user'));
     END $$;
   `);
 
