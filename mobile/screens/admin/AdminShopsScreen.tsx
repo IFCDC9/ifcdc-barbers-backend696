@@ -12,6 +12,7 @@ import {
   approveAdminShop,
   fetchAdminShopDashboard,
   fetchAdminShops,
+  patchAdminShopAccountStatus,
   rejectAdminShop,
   type AdminShopDashboard,
   type AdminShopRow,
@@ -82,6 +83,29 @@ export default function AdminShopsScreen() {
     } catch (e) {
       setError(userFacingApiError(e));
     }
+  };
+
+  const suspendShop = async (id: string) => {
+    try {
+      await patchAdminShopAccountStatus(id, "suspended");
+      await load();
+    } catch (e) {
+      setError(userFacingApiError(e));
+    }
+  };
+
+  const reactivateShop = async (id: string) => {
+    try {
+      await patchAdminShopAccountStatus(id, "active");
+      await load();
+    } catch (e) {
+      setError(userFacingApiError(e));
+    }
+  };
+
+  const shopSuspended = (row: AdminShopRow) => {
+    const s = `${row.accountStatus} ${row.approvalStatus}`.toLowerCase();
+    return s.includes("suspend") || s.includes("disabled") || s.includes("reject");
   };
 
   return (
@@ -168,6 +192,28 @@ export default function AdminShopsScreen() {
               <Text style={styles.meta}>
                 Barbers {row.barberCount} · Bookings {row.bookingCount} · Revenue ${Number(row.totalRevenue || 0).toFixed(2)}
               </Text>
+              {isPlatformAdmin ? (
+                <View style={styles.actions}>
+                  {row.pendingApproval ? (
+                    <>
+                      <Pressable style={styles.approveBtn} onPress={() => void approve(row.id, "free")}>
+                        <Text style={styles.actionText}>Approve</Text>
+                      </Pressable>
+                      <Pressable style={styles.rejectBtn} onPress={() => void reject(row.id)}>
+                        <Text style={styles.actionText}>Reject</Text>
+                      </Pressable>
+                    </>
+                  ) : shopSuspended(row) ? (
+                    <Pressable style={styles.approveBtn} onPress={() => void reactivateShop(row.id)}>
+                      <Text style={styles.actionText}>Reactivate</Text>
+                    </Pressable>
+                  ) : (
+                    <Pressable style={styles.rejectBtn} onPress={() => void suspendShop(row.id)}>
+                      <Text style={styles.actionText}>Suspend</Text>
+                    </Pressable>
+                  )}
+                </View>
+              ) : null}
             </ProfileCard>
           </Pressable>
         ))}

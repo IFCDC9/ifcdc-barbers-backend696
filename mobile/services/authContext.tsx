@@ -15,6 +15,7 @@ type AuthContextValue = {
   user: AppUser | null;
   sessionKind: SessionKind;
   isPlatformAdmin: boolean;
+  approvalPending: boolean;
   signInWithToken: (token: string) => Promise<void>;
   signOut: () => Promise<void>;
   refresh: () => Promise<void>;
@@ -109,6 +110,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [applySession]);
 
   const isPlatformAdmin = isSuperAdminUser(user, token);
+  const approvalPending = user?.limitedAccess === true;
 
   const value: AuthContextValue = {
     loading,
@@ -116,6 +118,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     user,
     sessionKind,
     isPlatformAdmin,
+    approvalPending,
     signInWithToken,
     signOut,
     refresh,

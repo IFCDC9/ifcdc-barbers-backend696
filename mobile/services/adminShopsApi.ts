@@ -79,22 +79,31 @@ export async function fetchAdminShopDashboard(): Promise<{
   const res = await apiFetch("/api/admin/shops/dashboard");
   const json = (await res.json()) as {
     ok?: boolean;
-    dashboard?: AdminShopDashboard;
+    dashboard?: AdminShopDashboard & {
+      pendingApproval?: number;
+      activePaidShops?: number;
+      mrr?: number;
+    };
     pendingQueue?: AdminShopRow[];
     message?: string;
   };
   if (!res.ok || json.ok === false) throw new Error(json.message || `Failed to load dashboard (${res.status})`);
+  const raw = (json.dashboard || {}) as AdminShopDashboard & {
+    pendingApproval?: number;
+    activePaidShops?: number;
+    mrr?: number;
+  };
   return {
-    dashboard: json.dashboard || {
-      totalShops: 0,
-      activeShops: 0,
-      pendingShops: 0,
-      suspendedShops: 0,
-      paidShops: 0,
-      freeShops: 0,
-      trialShops: 0,
-      monthlyRecurringRevenue: 0,
-      platformFeeRevenue: 0,
+    dashboard: {
+      totalShops: Number(raw.totalShops) || 0,
+      activeShops: Number(raw.activeShops ?? raw.activePaidShops) || 0,
+      pendingShops: Number(raw.pendingShops ?? raw.pendingApproval) || 0,
+      suspendedShops: Number(raw.suspendedShops) || 0,
+      paidShops: Number(raw.paidShops) || 0,
+      freeShops: Number(raw.freeShops) || 0,
+      trialShops: Number(raw.trialShops) || 0,
+      monthlyRecurringRevenue: Number(raw.monthlyRecurringRevenue ?? raw.mrr) || 0,
+      platformFeeRevenue: Number(raw.platformFeeRevenue) || 0,
     },
     pendingQueue: Array.isArray(json.pendingQueue) ? json.pendingQueue : [],
   };

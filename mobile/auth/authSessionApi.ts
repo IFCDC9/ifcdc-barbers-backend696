@@ -17,8 +17,12 @@ export type JsonAuth = {
     createdAt?: string | null;
     businessId?: number | null;
     barberId?: number | null;
+    approvalStatus?: string;
+    limitedAccess?: boolean;
+    message?: string;
   };
   redirect?: string;
+  approvalPending?: boolean;
   error?: string;
   message?: string;
   detail?: string;
@@ -101,6 +105,12 @@ export function mapAuthErrorToMessage(json: JsonAuth | null, status: number): st
   if (code === "email_exists" || status === 409) return msg || "This email is already registered. Try signing in.";
   if (code === "weak_password") return msg || "Password is too weak.";
   if (code === "name_required") return msg || "Name is required.";
+  if (code === "phone_required") return msg || "Phone number is required.";
+  if (code === "shop_name_required" || code === "business_name_required") return msg || "Shop name is required.";
+  if (code === "address_required") return msg || "Shop address is required.";
+  if (code === "city_required") return msg || "City is required.";
+  if (code === "state_required") return msg || "State is required.";
+  if (code === "location_required") return msg || "Location is required.";
   if (code === "email_failed" || code === "email_unconfigured") {
     return msg || "Could not send reset email. Please try again later.";
   }
@@ -193,12 +203,14 @@ export type RegisterExtras = {
   acceptances?: SignupAcceptanceItem[];
   appVersion?: string;
   platform?: string;
-  /**
-   * Forward-compatible profile hint (Phase 3 / Final pass). The current backend
-   * ignores unknown fields, so this is safe to send today; when the backend
-   * persists a per-user language, no client change will be required.
-   */
   language?: string;
+  phone?: string;
+  shopName?: string;
+  businessName?: string;
+  address?: string;
+  location?: string;
+  city?: string;
+  state?: string;
 };
 
 export async function registerWithEmailPassword(
@@ -215,6 +227,13 @@ export async function registerWithEmailPassword(
   if (extras.appVersion) body.appVersion = extras.appVersion;
   if (extras.platform) body.platform = extras.platform;
   if (extras.language) body.language = extras.language;
+  if (extras.phone) body.phone = extras.phone;
+  if (extras.shopName) body.shopName = extras.shopName;
+  if (extras.businessName) body.businessName = extras.businessName;
+  if (extras.address) body.address = extras.address;
+  if (extras.location) body.location = extras.location;
+  if (extras.city) body.city = extras.city;
+  if (extras.state) body.state = extras.state;
   const { json, status } = await postAuthJson("/api/auth/register", body);
   if (loginResponseSucceeded(status, json)) {
     return { token: String(json.token).trim(), json };

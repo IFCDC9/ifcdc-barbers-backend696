@@ -17,7 +17,9 @@
       "distribution": "store",
       "env": {
         "EAS_BUILD_NO_EXPO_GO_WARNING": "true",
-        "EXPO_PUBLIC_WEB_URL": "https://ifcdcbarbersapp.com"
+        "EXPO_PUBLIC_WEB_URL": "https://ifcdcbarbersapp.com",
+        "EXPO_PUBLIC_API_URL": "https://ifcdc-barbers-backend696.onrender.com",
+        "EXPO_PUBLIC_BACKEND_URL": "https://ifcdc-barbers-backend696.onrender.com"
       },
       "ios": {
         "resourceClass": "medium"

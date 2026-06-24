@@ -38,7 +38,7 @@
  */
 
 import React from "react";
-import { Platform, StyleSheet, View } from "react-native";
+import { Platform, StyleSheet, Text, View } from "react-native";
 import { createBottomTabNavigator, BottomTabBar } from "@react-navigation/bottom-tabs";
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import { Ionicons } from "@expo/vector-icons";
@@ -117,8 +117,13 @@ export default function HomeTabs() {
   // useAuth is wrapped in try/catch so even a transient AuthProvider hiccup
   // (token refresh during a re-render, etc.) cannot crash the tab navigator.
   let isPlatformAdmin = false;
+  let approvalPending = false;
+  let approvalMessage = "";
   try {
-    isPlatformAdmin = Boolean(useAuth().isPlatformAdmin);
+    const auth = useAuth();
+    isPlatformAdmin = Boolean(auth.isPlatformAdmin);
+    approvalPending = Boolean(auth.approvalPending);
+    approvalMessage = String(auth.user?.message || "Your account is pending Super Admin approval.");
   } catch (e) {
     console.warn("[nav] useAuth() failed inside HomeTabs (admin tab hidden):", String(e));
   }
@@ -128,7 +133,14 @@ export default function HomeTabs() {
   }, [isPlatformAdmin]);
 
   return (
-    <Tab.Navigator
+    <View style={{ flex: 1 }}>
+      {approvalPending && !isPlatformAdmin ? (
+        <View style={pendingBannerStyles.wrap}>
+          <Text style={pendingBannerStyles.title}>Pending approval</Text>
+          <Text style={pendingBannerStyles.body}>{approvalMessage}</Text>
+        </View>
+      ) : null}
+      <Tab.Navigator
       tabBar={(props) => <TabBarWithFooter {...props} />}
       screenOptions={{
         headerShown: false,
@@ -187,8 +199,21 @@ export default function HomeTabs() {
         />
       ) : null}
     </Tab.Navigator>
+    </View>
   );
 }
+
+const pendingBannerStyles = StyleSheet.create({
+  wrap: {
+    backgroundColor: "rgba(245,200,66,0.15)",
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(245,200,66,0.35)",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  title: { color: palette.gold, fontWeight: "800", fontSize: 13 },
+  body: { color: palette.textMuted, fontSize: 12, marginTop: 4, lineHeight: 17 },
+});
 
 const tabBarShellStyles = StyleSheet.create({
   wrap: {

@@ -97,6 +97,16 @@ export default function AdminGlobalBarbersScreen() {
     }
   };
 
+  const rejectBarber = async (row: AdminBarberRow) => {
+    try {
+      await patchBarberVerification(row.id, "rejected");
+      await patchBarberAccountStatus(row.id, "suspended");
+      await load();
+    } catch (e) {
+      setError(userFacingApiError(e));
+    }
+  };
+
   const suspendBarber = async (row: AdminBarberRow) => {
     try {
       await patchBarberAccountStatus(row.id, "suspended");
@@ -104,6 +114,21 @@ export default function AdminGlobalBarbersScreen() {
     } catch (e) {
       setError(userFacingApiError(e));
     }
+  };
+
+  const reactivateBarber = async (row: AdminBarberRow) => {
+    try {
+      await patchBarberVerification(row.id, "approved");
+      await patchBarberAccountStatus(row.id, "approved");
+      await load();
+    } catch (e) {
+      setError(userFacingApiError(e));
+    }
+  };
+
+  const isSuspended = (row: AdminBarberRow) => {
+    const s = `${row.accountStatus} ${row.verificationStatus}`.toLowerCase();
+    return s.includes("suspend") || s.includes("disabled") || s.includes("reject") || s.includes("inactive");
   };
 
   return (
@@ -170,14 +195,26 @@ export default function AdminGlobalBarbersScreen() {
               <StatusPill label={row.subscriptionStatus} tone={toneForStatus(row.subscriptionStatus)} />
               <StatusPill label={row.verificationStatus} tone={toneForStatus(row.verificationStatus)} />
             </View>
-            {isPlatformAdmin && row.pendingApproval ? (
+            {isPlatformAdmin ? (
               <View style={styles.actions}>
-                <Pressable style={styles.approveBtn} onPress={() => void approveBarber(row)}>
-                  <Text style={styles.actionText}>Approve</Text>
-                </Pressable>
-                <Pressable style={styles.suspendBtn} onPress={() => void suspendBarber(row)}>
-                  <Text style={styles.actionText}>Suspend</Text>
-                </Pressable>
+                {row.pendingApproval || row.verificationStatus.toLowerCase().includes("pending") ? (
+                  <>
+                    <Pressable style={styles.approveBtn} onPress={() => void approveBarber(row)}>
+                      <Text style={styles.actionText}>Approve</Text>
+                    </Pressable>
+                    <Pressable style={styles.rejectBtn} onPress={() => void rejectBarber(row)}>
+                      <Text style={styles.actionText}>Reject</Text>
+                    </Pressable>
+                  </>
+                ) : isSuspended(row) ? (
+                  <Pressable style={styles.approveBtn} onPress={() => void reactivateBarber(row)}>
+                    <Text style={styles.actionText}>Reactivate</Text>
+                  </Pressable>
+                ) : (
+                  <Pressable style={styles.suspendBtn} onPress={() => void suspendBarber(row)}>
+                    <Text style={styles.actionText}>Suspend</Text>
+                  </Pressable>
+                )}
               </View>
             ) : null}
           </ProfileCard>
@@ -228,5 +265,6 @@ const styles = StyleSheet.create({
   actions: { flexDirection: "row", gap: 10, marginTop: 12 },
   approveBtn: { backgroundColor: "rgba(34,197,94,0.25)", borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8 },
   suspendBtn: { backgroundColor: "rgba(248,113,113,0.25)", borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8 },
+  rejectBtn: { backgroundColor: "rgba(248,113,113,0.35)", borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8 },
   actionText: { color: theme.colors.text, fontWeight: "700", fontSize: 12 },
 });

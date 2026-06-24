@@ -1,7 +1,7 @@
 {
   "configVersion": 0,
   "apple": {
-    "version": "1.0",
+    "version": "1.1",
     "copyright": "2026 IFCDC Barbers",
     "release": {
       "automaticRelease": true
@@ -24,7 +24,7 @@
         "title": "IFCDC Barbers",
         "subtitle": "Book cuts with style photos",
         "privacyPolicyUrl": "https://ifcdcbarbersapp.com/privacy",
-        "releaseNotes": "Build 37 — Fix Profile tab crash on open (missing SupportHelp screen import). Sign in with Apple and in-app account deletion remain available.",
+        "releaseNotes": "Version 1.1 — Super Admin platform management: global Shops & Locations, barber approval and management actions, monetization and access controls (bookings, payments, subscriptions, platform fees), and full sync with the live production backend. Includes performance improvements and bug fixes from Builds 37–39.",
         "screenshots": {
           "APP_IPAD_PRO_3GEN_129": [
             "store/apple/screenshot/en-US/APP_IPAD_PRO_3GEN_129/iPad Pro 13-inch (M4)-06_AURA.png",
@@ -86,7 +86,7 @@
       "demoUsername": "apple.review@ifcdcbarbersapp.com",
       "demoPassword": "IFCDC-Review2026!",
       "demoRequired": true,
-      "notes": "APP REVIEW NOTES — Build 37\n\nReview Account:\nEmail: apple.review@ifcdcbarbersapp.com\nPassword: IFCDC-Review2026!\n\nGuideline 2.1(a) fix:\nBuild 37 resolves the Profile screen failure in Build 36. A missing navigation import caused a runtime ReferenceError and \"Feature unavailable\" on Profile. Fixed in Build 37. Profile, Support & Help, and Account Deletion tested and working.\n\nAccount Deletion:\nProfile → Delete Account → Type DELETE → Confirm\n\nDemo video:\nhttps://vtkxuagevtiwtoheomjt.supabase.co/storage/v1/object/public/barber-styles/app-review/account-deletion-demo-build36.mp4\n\nDeletion test account:\ndelete.demo.2026@ifcdcbarbersapp.com / IFCDC-DeleteDemo2026!\n\nBuild: Version 1.0 (Build 37)"
+      "notes": "APP REVIEW NOTES — Build 39 (Version 1.1)\n\nReview Account:\nEmail: apple.review@ifcdcbarbersapp.com\nPassword: IFCDC-Review2026!\n\nWhat's new in 1.1:\nSuper Admin users (platform owner) can open Admin → Shop management for global Shops & Locations, pending shop approvals, and per-shop monetization/access toggles. Admin → Barber management supports approve, suspend, edit, assign shop, and subscription tier updates. All admin features use the live production API with Bearer authentication.\n\nHow to test admin (optional):\nSign in with the review account above if configured as platform admin, or use apple.review@ifcdcbarbersapp.com after we enable admin role for review.\n\nCustomer booking flow (required):\nHome → Book → select barber → service → time → PayPal checkout.\n\nAccount Deletion:\nProfile → Delete Account → Type DELETE → Confirm\n\nDemo video:\nhttps://vtkxuagevtiwtoheomjt.supabase.co/storage/v1/object/public/barber-styles/app-review/account-deletion-demo-build36.mp4\n\nBuild: Version 1.1 (Build 39)"
     }
   }
 }

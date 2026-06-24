@@ -13,7 +13,7 @@ const mobileDir = path.resolve(__dirname, "..");
 process.chdir(mobileDir);
 
 const req = createRequire(path.join(mobileDir, "node_modules/eas-cli/package.json"));
-const VERSION_STRING = "1.0";
+const VERSION_STRING = "1.1";
 
 function readReviewConfig() {
   const storePath = path.join(mobileDir, "store.config.json");

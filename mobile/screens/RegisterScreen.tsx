@@ -55,6 +55,11 @@ export default function RegisterScreen({ navigation }: { navigation: any }) {
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [accountType, setAccountType] = React.useState<"customer" | "barber" | "shop_owner">("customer");
+  const [phone, setPhone] = React.useState("");
+  const [shopName, setShopName] = React.useState("");
+  const [address, setAddress] = React.useState("");
+  const [city, setCity] = React.useState("");
+  const [stateProv, setStateProv] = React.useState("");
   const [acceptedTerms, setAcceptedTerms] = React.useState(false);
   const [acceptedPrivacy, setAcceptedPrivacy] = React.useState(false);
   const [acceptedNotifications, setAcceptedNotifications] = React.useState(false);
@@ -227,6 +232,18 @@ export default function RegisterScreen({ navigation }: { navigation: any }) {
         acceptedPrivacy,
         acceptedNotifications,
       });
+      const profileExtras =
+        accountType === "barber"
+          ? { phone: phone.trim(), shopName: shopName.trim(), address: address.trim(), city: city.trim(), state: stateProv.trim() }
+          : accountType === "shop_owner"
+            ? {
+                phone: phone.trim(),
+                businessName: shopName.trim(),
+                address: address.trim(),
+                city: city.trim(),
+                state: stateProv.trim(),
+              }
+            : {};
       const { token, json } = await registerWithEmailPassword(
         fullName.trim(),
         email.trim(),
@@ -236,9 +253,8 @@ export default function RegisterScreen({ navigation }: { navigation: any }) {
           acceptances,
           appVersion: appVersionString(),
           platform: Platform.OS,
-          // Forward-compatible profile hint. Backend safely ignores unknown
-          // fields today; once a `language` column lands it is persisted.
           language: activeLang,
+          ...profileExtras,
         },
       );
       const u = json?.user;
@@ -251,6 +267,15 @@ export default function RegisterScreen({ navigation }: { navigation: any }) {
         await signInWithToken(token);
       } catch (saveErr) {
         Alert.alert("Session", userFacingApiError(saveErr));
+      }
+      if (json?.approvalPending || u?.limitedAccess) {
+        Alert.alert(
+          "Pending approval",
+          String(
+            (u as { message?: string })?.message ||
+              "Your account was created and is pending Super Admin approval. You will receive full access once approved.",
+          ),
+        );
       }
     } catch (e) {
       Alert.alert("Create account", userFacingApiError(e));
@@ -361,6 +386,59 @@ export default function RegisterScreen({ navigation }: { navigation: any }) {
           variant={accountType === "shop_owner" ? "primary" : "outline"}
           disabled={busy}
         />
+        {accountType !== "customer" ? (
+          <>
+            <View style={{ height: 10 }} />
+            <TextInput
+              value={phone}
+              onChangeText={setPhone}
+              placeholder="Phone number"
+              placeholderTextColor="rgba(255,255,255,0.45)"
+              keyboardType="phone-pad"
+              style={styles.input}
+              editable={!busy}
+            />
+            <View style={{ height: 10 }} />
+            <TextInput
+              value={shopName}
+              onChangeText={setShopName}
+              placeholder={accountType === "shop_owner" ? "Shop name" : "Shop name or assigned shop"}
+              placeholderTextColor="rgba(255,255,255,0.45)"
+              style={styles.input}
+              editable={!busy}
+            />
+            <View style={{ height: 10 }} />
+            <TextInput
+              value={address}
+              onChangeText={setAddress}
+              placeholder={accountType === "shop_owner" ? "Shop address" : "Location / address"}
+              placeholderTextColor="rgba(255,255,255,0.45)"
+              style={styles.input}
+              editable={!busy}
+            />
+            <View style={{ height: 10 }} />
+            <View style={styles.roleRow}>
+              <TextInput
+                value={city}
+                onChangeText={setCity}
+                placeholder="City"
+                placeholderTextColor="rgba(255,255,255,0.45)"
+                style={[styles.input, { flex: 1, marginBottom: 0 }]}
+                editable={!busy}
+              />
+              <View style={{ width: 10 }} />
+              <TextInput
+                value={stateProv}
+                onChangeText={setStateProv}
+                placeholder="State"
+                placeholderTextColor="rgba(255,255,255,0.45)"
+                autoCapitalize="characters"
+                style={[styles.input, { flex: 1, marginBottom: 0 }]}
+                editable={!busy}
+              />
+            </View>
+          </>
+        ) : null}
         <View style={{ height: 10 }} />
         <TextInput
           value={email}
