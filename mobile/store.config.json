@@ -24,7 +24,7 @@
         "title": "IFCDC Barbers",
         "subtitle": "Book cuts with style photos",
         "privacyPolicyUrl": "https://ifcdcbarbersapp.com/privacy",
-        "releaseNotes": "Version 1.1 — Super Admin platform management: global Shops & Locations, barber approval and management actions, monetization and access controls (bookings, payments, subscriptions, platform fees), and full sync with the live production backend. Includes performance improvements and bug fixes from Builds 37–39.",
+        "releaseNotes": "Version 1.1 — Super Admin platform management: global Shops & Locations, barber and shop signup with pending approval, approve/reject/suspend/reactivate from iPhone and iPad, monetization and access controls, and full sync with the live production backend. Includes signup pipeline fixes and performance improvements from Builds 37–40.",
         "screenshots": {
           "APP_IPAD_PRO_3GEN_129": [
             "store/apple/screenshot/en-US/APP_IPAD_PRO_3GEN_129/iPad Pro 13-inch (M4)-06_AURA.png",
