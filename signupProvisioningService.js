@@ -77,6 +77,17 @@ async function linkAppUserToBarberRecords({ userId, role, phoneVal, barberId, bu
   );
 }
 
+async function insertBarberSettingsRow(barberId) {
+  const { coerceBarberIdForTable } = await import("./barberIdentity.cjs");
+  const bid = await coerceBarberIdForTable(dbQuery, "barber_settings", barberId);
+  await dbQuery(
+    `INSERT INTO barber_settings (barber_id, subscription_tier)
+     VALUES ($1, 'pro')
+     ON CONFLICT (barber_id) DO NOTHING`,
+    [bid],
+  );
+}
+
 async function createBarberRowForUser({
   userId,
   displayName,
@@ -86,12 +97,21 @@ async function createBarberRowForUser({
   locationJson,
   verificationStatus = "pending",
 }) {
-  const barberIns = await dbQuery(
-    `INSERT INTO barbers (name, shop_name, business_id, user_id, phone, location, verification_status)
-     VALUES ($1, $2, $3, $4::uuid, $5, $6, $7)
-     RETURNING id`,
-    [displayName, shop, businessId, userId, phoneVal, locationJson, verificationStatus],
-  );
+  const barbersIdType = await getBarbersIdColumnType();
+  const barberIns =
+    barbersIdType === "uuid"
+      ? await dbQuery(
+          `INSERT INTO barbers (id, name, shop_name, business_id, user_id, phone, location, verification_status)
+           VALUES (gen_random_uuid(), $1, $2, $3, $4::uuid, $5, $6, $7)
+           RETURNING id`,
+          [displayName, shop, businessId, userId, phoneVal, locationJson, verificationStatus],
+        )
+      : await dbQuery(
+          `INSERT INTO barbers (name, shop_name, business_id, user_id, phone, location, verification_status)
+           VALUES ($1, $2, $3, $4::uuid, $5, $6, $7)
+           RETURNING id`,
+          [displayName, shop, businessId, userId, phoneVal, locationJson, verificationStatus],
+        );
   const barberId = barberIns.rows?.[0]?.id;
   if (barberId == null) throw new Error("barber_insert_failed");
   return barberId;
@@ -148,12 +168,7 @@ export async function provisionBarberSignup({
     forcePending: true,
   });
 
-  await dbQuery(
-    `INSERT INTO barber_settings (barber_id, subscription_tier, aura_enabled, payment_method)
-     VALUES ($1, 'pro', true, 'paypal')
-     ON CONFLICT (barber_id) DO NOTHING`,
-    [barberId],
-  );
+  await insertBarberSettingsRow(barberId);
 
   void notifySuperAdminsNewBarber({
     barberId,
@@ -226,12 +241,7 @@ export async function provisionShopOwnerSignup({
     forcePending: true,
   });
 
-  await dbQuery(
-    `INSERT INTO barber_settings (barber_id, subscription_tier, aura_enabled)
-     VALUES ($1, 'pro', true)
-     ON CONFLICT (barber_id) DO NOTHING`,
-    [barberId],
-  );
+  await insertBarberSettingsRow(barberId);
 
   await dbQuery(
     `INSERT INTO barber_services (barber_id, business_id, name, price, duration_minutes, is_active)
@@ -423,11 +433,7 @@ export async function backfillOrphanBarberRegistrations({ notify = false } = {})
           businessId,
           forcePending: String(row.account_status || "").toLowerCase() !== "active",
         });
-        await dbQuery(
-          `INSERT INTO barber_settings (barber_id, subscription_tier, aura_enabled)
-           VALUES ($1, 'pro', true) ON CONFLICT (barber_id) DO NOTHING`,
-          [barberId],
-        ).catch(() => {});
+        await insertBarberSettingsRow(barberId);
         fixed += 1;
         continue;
       }

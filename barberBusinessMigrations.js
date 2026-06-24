@@ -105,6 +105,8 @@ export async function ensureBarberBusinessTables() {
   );
   await dbQuery(`ALTER TABLE barber_settings ADD COLUMN IF NOT EXISTS pro_transaction_id TEXT;`);
   await dbQuery(`ALTER TABLE barber_settings ADD COLUMN IF NOT EXISTS pro_purchased_at TIMESTAMPTZ;`);
+  await dbQuery(`ALTER TABLE barber_settings ADD COLUMN IF NOT EXISTS aura_enabled BOOLEAN NOT NULL DEFAULT TRUE;`);
+  await dbQuery(`ALTER TABLE barber_settings ADD COLUMN IF NOT EXISTS payment_method TEXT NOT NULL DEFAULT 'paypal';`);
 
   await dbQuery(`
     CREATE TABLE IF NOT EXISTS barber_clients (

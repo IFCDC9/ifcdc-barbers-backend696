@@ -225,31 +225,36 @@ export function createAuthRouter({ sendEmail }) {
       if (!user?.id) throw new Error("user_insert_failed");
 
       let approvalPending = false;
-      if (role === "barber") {
-        await provisionBarberSignup({
-          userId: user.id,
-          name,
-          email,
-          phone,
-          shopName,
-          location: address,
-          address,
-          city,
-          state,
-        });
-        approvalPending = true;
-      } else if (role === "shop_owner") {
-        await provisionShopOwnerSignup({
-          userId: user.id,
-          name,
-          email,
-          phone,
-          businessName,
-          address,
-          city,
-          state,
-        });
-        approvalPending = true;
+      try {
+        if (role === "barber") {
+          await provisionBarberSignup({
+            userId: user.id,
+            name,
+            email,
+            phone,
+            shopName,
+            location: address,
+            address,
+            city,
+            state,
+          });
+          approvalPending = true;
+        } else if (role === "shop_owner") {
+          await provisionShopOwnerSignup({
+            userId: user.id,
+            name,
+            email,
+            phone,
+            businessName,
+            address,
+            city,
+            state,
+          });
+          approvalPending = true;
+        }
+      } catch (provisionErr) {
+        await dbQuery(`DELETE FROM app_users WHERE id = $1::uuid`, [user.id]).catch(() => {});
+        throw provisionErr;
       }
 
       const refreshed = await dbQuery(
