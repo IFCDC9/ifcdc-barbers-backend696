@@ -25,6 +25,7 @@ const {
   logBookingInsertSuccess,
 } = require("./barberIdentity.cjs");
 const { handlePublicBarberServicesGet, handlePublicBarbersListGet } = require("./bookingPublicHandlers.cjs");
+const { isBarberBookable } = require("./barberBookingPolicy.cjs");
 const {
   DEFAULT_PLATFORM_FEE: SETTLEMENT_PLATFORM_FEE,
   resolvePlatformFeeUsd,
@@ -295,6 +296,10 @@ async function resolveAvailableSlotsQuery(req) {
   if (!resolved) {
     return { dateStr, barberId: null, barberName, barberRow: null, resolved: null };
   }
+  const barberKey = resolved.barberRow?.id ?? resolved.barberUuid ?? resolved.barberDbId;
+  if (!(await isBarberBookable(dbQuery, barberKey, { channel: "mobile" }))) {
+    return { dateStr, barberId: null, barberName, barberRow: null, resolved: null };
+  }
 
   const scheduleId = scheduleBarberIdFromResolved(resolved, barbersIdType);
   return {
@@ -355,6 +360,10 @@ router.get("/occupied-slots", async (req, res) => {
     if (!resolved) {
       return res.json({ ok: true, times: [] });
     }
+    const barberKey = resolved.barberRow?.id ?? resolved.barberUuid ?? resolved.barberDbId;
+    if (!(await isBarberBookable(dbQuery, barberKey, { channel: "mobile" }))) {
+      return res.json({ ok: true, times: [] });
+    }
     const scheduleId = scheduleBarberIdFromResolved(resolved, barbersIdType);
     const slotEngine = await loadSlotEngine();
     const times = await slotEngine.loadOccupiedSlotLabels(scheduleId, dateStr, resolved.barberName);
@@ -394,6 +403,14 @@ router.post("/start", async (req, res) => {
         success: false,
         error: "barber_unresolved",
         message: BARBER_RESOLVE_MSG,
+      });
+    }
+    const barberKey = resolved.barberRow?.id ?? resolved.barberUuid ?? resolved.barberDbId;
+    if (!(await isBarberBookable(dbQuery, barberKey, { channel: "mobile" }))) {
+      return res.status(403).json({
+        success: false,
+        error: "barber_not_bookable",
+        message: "This barber is not available for booking.",
       });
     }
 

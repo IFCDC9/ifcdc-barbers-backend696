@@ -11,6 +11,7 @@ import {
   listAdminNotifications,
   notifySuperAdminsNewBarber,
   parseLocationFields,
+  setBarberBookingHidden,
   updateAdminBarberProfile,
   updateBarberAccountStatus,
   updateBarberSubscriptionTier,
@@ -285,6 +286,56 @@ export function createAdminBarbersRouter() {
     } catch (e) {
       console.error("[admin/barbers] subscription patch failed:", e?.message || e);
       return res.status(500).json({ ok: false, message: "Failed to update subscription" });
+    }
+  });
+
+  router.patch("/api/admin/barbers/:id/booking-visibility", async (req, res) => {
+    const scope = await resolveBarberManagementScope(req, res);
+    if (!scope) return;
+    if (!scope.all) {
+      return res.status(403).json({ ok: false, message: "Only platform admins can hide barbers from booking." });
+    }
+
+    const hidden =
+      req.body?.hidden ??
+      req.body?.bookingHidden ??
+      req.body?.archive ??
+      req.body?.archived;
+    if (hidden == null) {
+      return res.status(400).json({ ok: false, message: "Pass hidden: true or false." });
+    }
+
+    try {
+      const row = await dbQuery(`SELECT business_id FROM barbers WHERE id::text = $1::text LIMIT 1`, [
+        String(req.params.id),
+      ]);
+      const access = assertBarberInScope(scope, row.rows?.[0]);
+      if (!access.ok) return res.status(access.message === "Barber not found" ? 404 : 403).json(access);
+
+      const barberDetail = await getAdminBarberById(scope, req.params.id);
+      const targetEmail = String(barberDetail?.email || barberDetail?.userEmail || "").trim();
+      const result = await setBarberBookingHidden(req.params.id, Boolean(hidden));
+      if (!result.ok) return res.status(400).json(result);
+
+      void logAdminActivity({
+        eventType: result.bookingHidden
+          ? ADMIN_ACTIVITY.BARBER_BOOKING_HIDDEN
+          : ADMIN_ACTIVITY.BARBER_BOOKING_VISIBLE,
+        adminUserId: scope.actorId,
+        userEmail: targetEmail || null,
+        userName: barberDetail?.fullName || barberDetail?.name || null,
+        detail: result.bookingHidden
+          ? `Barber hidden from bookings: ${barberDetail?.fullName || req.params.id}`
+          : `Barber restored to bookings: ${barberDetail?.fullName || req.params.id}`,
+        metadata: { barberId: req.params.id, bookingHidden: result.bookingHidden },
+        req,
+      });
+
+      const barber = await getAdminBarberById(scope, req.params.id);
+      return res.json({ ok: true, ...result, barber });
+    } catch (e) {
+      console.error("[admin/barbers] booking-visibility patch failed:", e?.message || e);
+      return res.status(500).json({ ok: false, message: "Failed to update booking visibility" });
     }
   });
 

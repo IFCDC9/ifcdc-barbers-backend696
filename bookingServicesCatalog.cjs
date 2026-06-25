@@ -72,6 +72,7 @@ const {
   enrichServicesWithGalleryPhotos,
 } = require("./servicePhotoResolver.cjs");
 const { FALLBACK_STYLE_IMAGE_URL } = require("./styleImageUrl.cjs");
+const { isBarberBookable } = require("./barberBookingPolicy.cjs");
 
 function mapServiceRow(row, imageSources = null) {
   if (!row) return null;
@@ -204,6 +205,11 @@ async function fetchPublicBarberServices(dbQuery, { barberIdRaw, barberName }) {
       return { barberId: null, services: [], fallbackUsed: false, error };
     }
     barberId = barberRow.id;
+    if (!(await isBarberBookable(dbQuery, barberId, { channel: "mobile" }))) {
+      error = "barber_not_found";
+      console.log(`[services] barberId=${barberIdRaw || "—"}, count=0, fallbackUsed=false, error=${error}`);
+      return { barberId: null, services: [], fallbackUsed: false, error };
+    }
     const serviceKey = await serviceBarberKey(dbQuery, barberRow, barberName || barberRow.name);
     if (serviceKey == null) {
       error = "barber_not_found";

@@ -2,6 +2,7 @@
  * Public booking handlers — no auth. Used by server.js early mounts and app-bookings router.
  */
 const { fetchPublicBarberServices, stripQuotes } = require("./bookingServicesCatalog.cjs");
+const { bookableBarberWhereSql } = require("./barberBookingPolicy.cjs");
 
 const BARBER_BUSINESS_ID_SQL = `CASE
   WHEN b.business_id IS NOT NULL AND btrim(b.business_id) ~ '^[0-9]+$' THEN btrim(b.business_id)::bigint
@@ -81,7 +82,7 @@ async function handlePublicBarbersListGet(_req, res, dbQuery) {
         ON p.id::text = b.id::text
         OR lower(trim(p.name)) = lower(trim(b.name))
       WHERE COALESCE(NULLIF(trim(p.name), ''), NULLIF(trim(b.name), '')) IS NOT NULL
-        AND ${shopChannelAccessSql("mobile")}
+        AND ${bookableBarberWhereSql({ channel: "mobile" })}
       ORDER BY lower(COALESCE(NULLIF(trim(p.name), ''), NULLIF(trim(b.name), ''))) ASC
       LIMIT 500
       `,
@@ -92,7 +93,7 @@ async function handlePublicBarbersListGet(_req, res, dbQuery) {
       `SELECT b.id, b.name, b.profile_image AS photo
        FROM barbers b
        WHERE b.name IS NOT NULL AND trim(b.name) <> ''
-         AND ${shopChannelAccessSql("mobile")}
+         AND ${bookableBarberWhereSql({ channel: "mobile" })}
        ORDER BY lower(trim(b.name)) ASC
        LIMIT 500`,
     );

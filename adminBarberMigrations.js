@@ -26,6 +26,10 @@ export async function ensureAdminBarberManagementSchema() {
   await dbQuery(`ALTER TABLE businesses ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();`);
 
   await dbQuery(`ALTER TABLE barbers ADD COLUMN IF NOT EXISTS verification_status TEXT DEFAULT 'pending';`);
+  await dbQuery(`ALTER TABLE barbers ADD COLUMN IF NOT EXISTS booking_hidden BOOLEAN DEFAULT false;`);
+  await dbQuery(
+    `UPDATE barbers SET booking_hidden = false WHERE booking_hidden IS NULL;`,
+  );
   await dbQuery(
     `UPDATE barbers SET verification_status = 'approved' WHERE verification_status IS NULL OR btrim(verification_status) = '';`,
   );

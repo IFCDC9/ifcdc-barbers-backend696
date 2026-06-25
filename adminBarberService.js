@@ -11,6 +11,7 @@ import {
 
 const require = createRequire(import.meta.url);
 const pushNotifier = require("./pushNotifier.cjs");
+const { isQaTestEmail, isQaTestLabel } = require("./barberBookingPolicy.cjs");
 
 /** `barbers.business_id` is TEXT in some DBs (e.g. legacy `default`); `businesses.id` is BIGINT. */
 export function barberBusinessIdSql(alias = "b") {
@@ -161,6 +162,7 @@ function rowToAdminBarber(row) {
         ? Number(row.business_id)
         : null,
     hasUserAccount: Boolean(row.user_id),
+    bookingHidden: Boolean(row.booking_hidden),
   };
 }
 
@@ -172,6 +174,7 @@ const ADMIN_BARBER_SELECT = `
     b.phone AS barber_phone,
     b.location,
     b.verification_status,
+    COALESCE(b.booking_hidden, false) AS booking_hidden,
     b.business_id,
     b.created_at AS barber_created_at,
     u.id AS user_id,
@@ -300,11 +303,49 @@ async function loadBarberScopeRow(barberIdRaw) {
   const barberId = normalizeBarberId(barberIdRaw);
   if (!barberId) return null;
   const r = await dbQuery(
-    `SELECT id, user_id, business_id, name, shop_name, verification_status
-     FROM barbers WHERE id::text = $1::text LIMIT 1`,
+    `SELECT b.id, b.user_id, b.business_id, b.name, b.shop_name, b.verification_status,
+            COALESCE(b.booking_hidden, false) AS booking_hidden,
+            u.email AS user_email
+     FROM barbers b
+     LEFT JOIN app_users u ON u.id = b.user_id
+     WHERE b.id::text = $1::text LIMIT 1`,
     [barberId],
   );
   return r.rows?.[0] || null;
+}
+
+function isQaBarberRow(row) {
+  if (!row) return false;
+  return (
+    isQaTestLabel(row.name) ||
+    isQaTestLabel(row.shop_name) ||
+    isQaTestEmail(row.user_email)
+  );
+}
+
+async function purgeBarberRecords(barberId, { deleteUser = false, userId = null } = {}) {
+  const id = String(barberId);
+  await dbQuery(`DELETE FROM bookings WHERE barber_id::text = $1::text`, [id]).catch(() => {});
+  const childTables = [
+    "barber_services",
+    "barber_settings",
+    "barber_availability",
+    "barber_availability_breaks",
+    "barber_blocked_dates",
+    "barber_clients",
+    "barber_portfolio_images",
+    "barber_styles",
+    "styles",
+  ];
+  for (const table of childTables) {
+    await dbQuery(`DELETE FROM ${table} WHERE barber_id::text = $1::text`, [id]).catch(() => {});
+  }
+  await dbQuery(`DELETE FROM barber_profiles WHERE id::text = $1::text`, [id]).catch(() => {});
+  await dbQuery(`UPDATE app_users SET barber_id = NULL WHERE barber_id::text = $1::text`, [id]).catch(() => {});
+  await dbQuery(`DELETE FROM barbers WHERE id::text = $1::text`, [id]);
+  if (deleteUser && userId) {
+    await dbQuery(`DELETE FROM app_users WHERE id = $1::uuid`, [userId]).catch(() => {});
+  }
 }
 
 function barberBusinessIdNumber(raw) {
@@ -533,24 +574,66 @@ export async function updateBarberSubscriptionTier(barberIdRaw, tier) {
   return { ok: true, barberId, subscriptionTier: normalized };
 }
 
+export async function setBarberBookingHidden(barberIdRaw, hidden) {
+  const barberId = normalizeBarberId(barberIdRaw);
+  if (!barberId) return { ok: false, message: "Invalid barber id." };
+  const row = await loadBarberScopeRow(barberId);
+  if (!row) return { ok: false, message: "Barber not found" };
+
+  const bookingHidden = Boolean(hidden);
+  await dbQuery(`UPDATE barbers SET booking_hidden = $2 WHERE id::text = $1::text`, [barberId, bookingHidden]);
+  return {
+    ok: true,
+    barberId,
+    bookingHidden,
+    message: bookingHidden
+      ? "Barber hidden from customer bookings. Appointment history is preserved."
+      : "Barber is visible on customer booking screens again.",
+  };
+}
+
 export async function deleteAdminBarber(barberIdRaw) {
   const barberId = normalizeBarberId(barberIdRaw);
   if (!barberId) return { ok: false, message: "Invalid barber id." };
   const row = await loadBarberScopeRow(barberId);
   if (!row) return { ok: false, message: "Barber not found" };
 
+  if (isQaBarberRow(row)) {
+    await purgeBarberRecords(barberId, { deleteUser: true, userId: row.user_id });
+    return {
+      ok: true,
+      softDeleted: false,
+      deleted: true,
+      qaPurge: true,
+      message: "QA/test barber permanently removed.",
+    };
+  }
+
   const bookings = await dbQuery(`SELECT COUNT(*)::int AS n FROM bookings WHERE barber_id::text = $1::text`, [barberId]);
   const count = Number(bookings.rows?.[0]?.n) || 0;
   if (count > 0) {
-    await dbQuery(`UPDATE barbers SET verification_status = 'rejected' WHERE id::text = $1::text`, [barberId]);
+    await dbQuery(
+      `UPDATE barbers SET verification_status = 'rejected', booking_hidden = true WHERE id::text = $1::text`,
+      [barberId],
+    );
     if (row.user_id) {
       await dbQuery(`UPDATE app_users SET account_status = 'disabled' WHERE id = $1::uuid`, [row.user_id]);
     }
-    return { ok: true, softDeleted: true, message: "Barber has bookings — suspended instead of deleted." };
+    return {
+      ok: true,
+      softDeleted: true,
+      hiddenFromBooking: true,
+      message: "Barber has bookings — hidden from booking and suspended (history preserved).",
+    };
   }
 
-  await dbQuery(`DELETE FROM barbers WHERE id::text = $1::text`, [barberId]);
-  return { ok: true, softDeleted: false, deleted: true };
+  await purgeBarberRecords(barberId, { deleteUser: false, userId: row.user_id });
+  if (row.user_id) {
+    await dbQuery(`UPDATE app_users SET barber_id = NULL, account_status = 'disabled' WHERE id = $1::uuid`, [
+      row.user_id,
+    ]).catch(() => {});
+  }
+  return { ok: true, softDeleted: false, deleted: true, message: "Barber permanently deleted." };
 }
 
 export async function persistBusinessLocation(businessId, address, city, state) {

@@ -990,6 +990,10 @@ export async function patchAdminBarberSubscription(barberId, tier) {
   return adminBarberPatch(`/api/admin/barbers/${adminBarberId(barberId)}/subscription`, { tier });
 }
 
+export async function patchAdminBarberBookingVisibility(barberId, hidden) {
+  return adminBarberPatch(`/api/admin/barbers/${adminBarberId(barberId)}/booking-visibility`, { hidden });
+}
+
 export async function deleteAdminBarber(barberId) {
   const origin = getApiOrigin();
   const res = await fetch(`${origin}/api/admin/barbers/${adminBarberId(barberId)}`, {

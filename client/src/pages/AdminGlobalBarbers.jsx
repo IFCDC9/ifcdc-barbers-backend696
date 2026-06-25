@@ -12,6 +12,7 @@ import {
   fetchAdminBarbers,
   fetchAdminShops,
   patchAdminBarberAccountStatus,
+  patchAdminBarberBookingVisibility,
   patchAdminBarberProfile,
   patchAdminBarberSubscription,
   patchAdminBarberVerification,
@@ -242,6 +243,7 @@ export default function AdminGlobalBarbers() {
                 <span style={pillStyle(row.verificationStatus === "Pending" ? "gold" : row.verificationStatus === "Rejected" ? "red" : "green")}>
                   Verification: {row.verificationStatus}
                 </span>
+                {row.bookingHidden ? <span style={pillStyle("gold")}>Hidden from booking</span> : null}
               </div>
 
               {isSuper ? (
@@ -283,9 +285,29 @@ export default function AdminGlobalBarbers() {
                     variant="ghost"
                     type="button"
                     disabled={isBusy}
+                    onClick={() =>
+                      void runAction(
+                        row.id,
+                        () => patchAdminBarberBookingVisibility(row.id, !row.bookingHidden),
+                        row.bookingHidden ? `${row.fullName} is visible for booking again.` : `${row.fullName} hidden from booking.`,
+                      )
+                    }
+                  >
+                    {row.bookingHidden ? "Show on booking" : "Hide from booking"}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    type="button"
+                    disabled={isBusy}
                     onClick={() => {
-                      if (!window.confirm(`Delete ${row.fullName}? Barbers with bookings will be suspended instead.`)) return;
-                      void runAction(row.id, () => deleteAdminBarber(row.id), "Barber removed or suspended.");
+                      if (
+                        !window.confirm(
+                          `Delete ${row.fullName}? Barbers with bookings will be hidden from booking and suspended instead.`,
+                        )
+                      ) {
+                        return;
+                      }
+                      void runAction(row.id, () => deleteAdminBarber(row.id), "Barber removed or hidden.");
                     }}
                   >
                     Delete
@@ -332,6 +354,12 @@ export default function AdminGlobalBarbers() {
               <br />
               <strong>Account:</strong> {selected.accountStatus} · <strong>Verification:</strong> {selected.verificationStatus} ·{" "}
               <strong>Subscription:</strong> {selected.subscriptionStatus}
+              {selected.bookingHidden ? (
+                <>
+                  <br />
+                  <strong>Booking:</strong> Hidden from customer booking screens
+                </>
+              ) : null}
             </p>
 
             <CardTitle style={{ marginTop: 16, fontSize: 16 }}>Edit barber</CardTitle>
@@ -409,6 +437,22 @@ export default function AdminGlobalBarbers() {
               }
             >
               Update subscription
+            </Button>
+
+            <Button
+              variant="ghost"
+              type="button"
+              disabled={busyId === selected.id}
+              style={{ marginTop: 8 }}
+              onClick={() =>
+                void runAction(
+                  selected.id,
+                  () => patchAdminBarberBookingVisibility(selected.id, !selected.bookingHidden),
+                  selected.bookingHidden ? "Barber is visible for booking again." : "Barber hidden from customer bookings.",
+                )
+              }
+            >
+              {selected.bookingHidden ? "Show on booking" : "Hide from booking"}
             </Button>
 
             <div style={{ ...btnRowStyle, marginTop: 20 }}>
