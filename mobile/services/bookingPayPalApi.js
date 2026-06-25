@@ -407,12 +407,15 @@ export async function finalizeAppBookingCheckout(orderID) {
  * Available 30-minute slots for a barber on a date (server-generated from schedule).
  * @returns {Promise<{ slots: { time: string, available: boolean, reason?: string }[], timezone?: string, intervalMinutes?: number }>}
  */
-export async function fetchAvailableSlots({ barberName, barberId, dateLabel }) {
+export async function fetchAvailableSlots({ barberName, barberId, dateLabel, durationMinutes }) {
   logApiEnvOnce();
   const q = new URLSearchParams();
   if (barberId != null && String(barberId).trim()) q.set("barberId", String(barberId));
   if (barberName) q.set("barberName", barberName);
   if (dateLabel) q.set("dateLabel", dateLabel);
+  if (durationMinutes != null && Number(durationMinutes) > 0) {
+    q.set("durationMinutes", String(Math.round(Number(durationMinutes))));
+  }
   const url = apiFullUrl(`/api/app-bookings/available-slots?${q.toString()}`);
   console.log("[IFCDC] AVAILABLE SLOTS GET:", url);
 

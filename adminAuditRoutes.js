@@ -1,6 +1,7 @@
 import { dbQuery } from "./db.js";
 import { resolveAuthPayload } from "./authRoutes.js";
 import { isJwtGlobalSuperScope } from "./authPlatformJwt.js";
+import { adminActivityLabel } from "./adminActivityLog.js";
 
 const SECURITY_EVENT_TYPES = new Set([
   "login_failed",
@@ -30,13 +31,29 @@ const BOOKING_EVENT_TYPES = new Set([
 
 const CONTENT_EVENT_TYPES = new Set(["message_deleted", "notification_deleted", "media_deleted"]);
 
+const ONBOARDING_ACTIVITY_TYPES = [
+  "signup_received",
+  "barber_approved",
+  "shop_owner_approved",
+  "account_denied",
+  "account_suspended",
+  "account_deleted",
+  "role_changed",
+];
+
 const USER_EVENT_TYPES = new Set([
   "invite_sent",
   "invite_revoked",
   "role_change",
+  "role_changed",
   "account_suspended",
   "account_reactivated",
   "user_created",
+  "signup_received",
+  "barber_approved",
+  "shop_owner_approved",
+  "account_denied",
+  "account_deleted",
 ]);
 
 const ADMIN_EVENT_TYPES = new Set(["admin_change", "role_change", "invite_sent", "settings_change"]);
@@ -60,6 +77,12 @@ function formatAction(eventType) {
     admin_change: "Admin settings changed",
     suspicious_activity: "Suspicious activity flagged",
     user_created: "User account created",
+    signup_received: "New signup received",
+    barber_approved: "Barber approved",
+    shop_owner_approved: "Shop owner approved",
+    account_denied: "Account denied",
+    account_deleted: "Account deleted",
+    role_changed: "Role changed",
     booking_cancel_admin: "Booking cancelled by admin",
     booking_create_admin: "Booking created by admin",
     booking_deleted: "Booking deleted",
@@ -111,12 +134,14 @@ function simplifyDevice(ua) {
 function rowToAuditEvent(row) {
   const meta = row.metadata && typeof row.metadata === "object" ? row.metadata : {};
   const eventType = String(row.event_type || "unknown");
+  const targetEmail = meta.userEmail || meta.targetEmail || null;
   return {
     id: String(row.id),
     user: String(meta.userName || meta.name || row.actor_email || "Platform user"),
     email: row.actor_email || null,
+    targetUserEmail: targetEmail,
     role: String(meta.role || meta.targetRole || "—"),
-    action: formatAction(eventType),
+    action: meta.actionPerformed || adminActivityLabel(eventType) || formatAction(eventType),
     actionKey: eventType,
     category: categorizeEvent(eventType),
     timestamp: row.created_at ? new Date(row.created_at).toISOString() : null,
@@ -219,6 +244,40 @@ async function queryAuditEvents({ days, category, securityOnly }) {
 
 /** Register audit routes on the admin users router. */
 export function registerAdminAuditRoutes(router) {
+  router.get("/api/admin/activity-log", async (req, res) => {
+    const scope = await resolveAuditScope(req, res);
+    if (!scope) return;
+
+    try {
+      const days = parseDays(req.query?.days);
+      const r = await dbQuery(
+        `SELECT id, created_at, event_type, actor_user_id, actor_email, ip_text, user_agent, metadata
+         FROM security_audit_log
+         WHERE created_at >= NOW() - ($1::int || ' days')::interval
+           AND event_type = ANY($2::text[])
+         ORDER BY created_at DESC
+         LIMIT 200`,
+        [String(days), ONBOARDING_ACTIVITY_TYPES],
+      );
+      const entries = (r.rows || []).map((row) => {
+        const event = rowToAuditEvent(row);
+        return {
+          id: event.id,
+          timestamp: event.timestamp,
+          adminEmail: event.email,
+          userEmail: event.targetUserEmail,
+          action: event.action,
+          actionKey: event.actionKey,
+          detail: event.detail,
+        };
+      });
+      return res.json({ ok: true, success: true, entries, days });
+    } catch (e) {
+      console.error("[admin/activity-log] list failed:", e?.message || e);
+      return res.status(500).json({ ok: false, success: false, message: "Failed to load activity log" });
+    }
+  });
+
   router.get("/api/admin/audit-logs", async (req, res) => {
     const scope = await resolveAuditScope(req, res);
     if (!scope) return;

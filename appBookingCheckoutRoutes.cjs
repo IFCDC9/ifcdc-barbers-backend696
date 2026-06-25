@@ -7,6 +7,8 @@ const path = require("node:path");
 const paypalSdk = require("@paypal/checkout-server-sdk");
 const {
   resolveServiceForBooking,
+  resolveServicesForBooking,
+  summarizeBookingServices,
   resolveBarberIdentity,
   scheduleBarberIdFromResolved,
   barberIdForTable,
@@ -321,8 +323,12 @@ router.get("/available-slots", async (req, res) => {
       });
     }
     const slotEngine = await loadSlotEngine();
-    const payload = await slotEngine.getAvailableSlotsForBarberDate(barberId, dateStr, resolved.barberName);
-    return res.json({ ok: true, date: dateStr, barberId, ...payload });
+    const durationRaw = stripQuotes(req.query.durationMinutes ?? req.query.duration);
+    const durationMinutes = Math.max(1, Number(durationRaw) || 30);
+    const payload = await slotEngine.getAvailableSlotsForBarberDate(barberId, dateStr, resolved.barberName, {
+      durationMinutes,
+    });
+    return res.json({ ok: true, date: dateStr, barberId, durationMinutes, ...payload });
   } catch (e) {
     console.error("[app-bookings] available-slots:", e?.stack || e);
     const barberErr = bookingStartErrorResponse(res, e);
@@ -486,6 +492,7 @@ router.post("/start", async (req, res) => {
     }
     const serviceNameRaw = stripQuotes(body.serviceName ?? body.service_name);
     const serviceIdRaw = body.serviceId ?? body.service_id;
+    const serviceIdsRaw = body.serviceIds ?? body.service_ids ?? body.services;
     const confirmedBarberName = resolved.barberName;
 
     if ((!barberName && !barberLookupId) || !dateLabel || !timeLabel || !redirectUri) {
@@ -496,13 +503,48 @@ router.post("/start", async (req, res) => {
       });
     }
 
-    if (serviceIdRaw == null || String(serviceIdRaw).trim() === "") {
+    const serviceIdList = Array.isArray(serviceIdsRaw)
+      ? serviceIdsRaw
+          .map((item) => {
+            if (item != null && typeof item === "object") {
+              return item.id ?? item.serviceId ?? item.service_id;
+            }
+            return item;
+          })
+          .filter((v) => v != null && String(v).trim() !== "")
+      : serviceIdRaw != null && String(serviceIdRaw).trim() !== ""
+        ? [serviceIdRaw]
+        : [];
+
+    if (!serviceIdList.length && serviceNameRaw) {
+      serviceIdList.push(serviceNameRaw);
+    }
+
+    if (!serviceIdList.length) {
       return res.status(400).json({
         success: false,
         error: "service_required",
-        message: "Select a service before checkout.",
+        message: "Select at least one service before checkout.",
       });
     }
+
+    const serviceRows = await resolveServicesForBooking(
+      dbQuery,
+      serviceBarberKey,
+      serviceIdList,
+      serviceNameRaw ? [serviceNameRaw] : [],
+      confirmedBarberName,
+    );
+    if (!serviceRows.length) {
+      return res.status(400).json({
+        success: false,
+        error: "unknown_service",
+        message: "Selected service(s) are not available.",
+      });
+    }
+
+    const serviceSummary = summarizeBookingServices(serviceRows);
+    const totalDurationMinutes = serviceSummary.totalDuration;
 
     const dateStr = resolveDateLabelToYmd(dateLabel);
     if (!dateStr) {
@@ -514,7 +556,13 @@ router.post("/start", async (req, res) => {
     }
 
     const slotEngine = await loadSlotEngine();
-    const slotCheck = await slotEngine.validateBookingSlot(scheduleId, dateStr, timeLabel, confirmedBarberName);
+    const slotCheck = await slotEngine.validateBookingSlot(
+      scheduleId,
+      dateStr,
+      timeLabel,
+      confirmedBarberName,
+      { durationMinutes: totalDurationMinutes },
+    );
     if (!slotCheck.ok) {
       return res.status(409).json({
         success: false,
@@ -523,21 +571,6 @@ router.post("/start", async (req, res) => {
       });
     }
     const timeSql = slotCheck.timeSql;
-
-    const serviceRow = await resolveServiceForBooking(
-      dbQuery,
-      serviceBarberKey,
-      serviceIdRaw,
-      serviceNameRaw,
-      confirmedBarberName,
-    );
-    if (!serviceRow) {
-      return res.status(400).json({
-        success: false,
-        error: "unknown_service",
-        message: "Selected service is not available.",
-      });
-    }
 
     const tenantBiz = resolved.businessId;
 
@@ -551,8 +584,16 @@ router.post("/start", async (req, res) => {
       }
     }
 
-    const haircutPrice = round2(Number(serviceRow.price));
-    const serviceTitle = String(serviceRow.name || "Service").trim();
+    const haircutPrice = round2(serviceSummary.totalPrice);
+    const serviceTitle = serviceSummary.title;
+    const servicesJson = JSON.stringify(
+      serviceRows.map((s) => ({
+        id: s.id,
+        name: s.name,
+        price: Number(s.price) || 0,
+        duration_minutes: Number(s.duration_minutes) || 30,
+      })),
+    );
     const total = round2(haircutPrice + platformFee);
     const barberPayout = round2(Math.max(0, haircutPrice - platformFee));
 
@@ -573,15 +614,15 @@ router.post("/start", async (req, res) => {
       }
       ins = await dbQuery(
         `INSERT INTO bookings (
-         user_id, customer_name, customer_email, barber_name, barber_id, service, service_duration_minutes, date, time, amount,
+         user_id, customer_name, customer_email, barber_name, barber_id, service, service_duration_minutes, services_json, date, time, amount,
          total_price, deposit_amount, amount_paid, remaining_balance, balance_due, payment_type, payment_status, payment_provider,
          paypal_order_id, platform_fee, total_amount, booking_status, is_paid_booking,
          platform_fee_status, barber_payout_amount, barber_fee_billed, tip_amount, total_paid, business_id
        ) VALUES (
-         NULL, $1, $2, $3, $4, $5, $6, $7::date, $8::time, $9,
-         $10, 0, 0, 0, 0, 'full', 'unpaid', 'paypal',
-         NULL, $11, $12, 'pending_payment', false,
-         'pending', $13, false, 0, 0, $14
+         NULL, $1, $2, $3, $4, $5, $6, $7::jsonb, $8::date, $9::time, $10,
+         $11, 0, 0, 0, 0, 'full', 'unpaid', 'paypal',
+         NULL, $12, $13, 'pending_payment', false,
+         'pending', $14, false, 0, 0, $15
        )
        RETURNING id`,
         [
@@ -590,7 +631,8 @@ router.post("/start", async (req, res) => {
           confirmedBarberName,
           insertBarberId,
           serviceTitle,
-          Number(serviceRow.duration_minutes) || 30,
+          totalDurationMinutes,
+          servicesJson,
           dateStr,
           timeSql,
           haircutPrice,
@@ -606,9 +648,10 @@ router.post("/start", async (req, res) => {
            service_price = COALESCE(service_price, $2),
            balance_due = 0,
            remaining_balance = 0,
-           amount_charged = COALESCE(amount_charged, 0)
+           amount_charged = COALESCE(amount_charged, 0),
+           services_json = COALESCE(services_json, $3::jsonb)
          WHERE id = $1::uuid`,
-        [ins.rows[0].id, haircutPrice],
+        [ins.rows[0].id, haircutPrice, servicesJson],
       ).catch((colErr) => {
         if (colErr?.code !== "42703") {
           console.warn("[app-bookings] optional payment columns update skipped:", colErr?.message);
@@ -652,10 +695,11 @@ router.post("/start", async (req, res) => {
         insertBarberId,
       },
       resolvedService: {
-        id: serviceRow.id,
-        name: serviceTitle,
+        count: serviceRows.length,
+        names: serviceTitle,
         price: haircutPrice,
-        duration: serviceRow.duration_minutes,
+        duration: totalDurationMinutes,
+        services: serviceRows.map((s) => ({ id: s.id, name: s.name })),
       },
       amounts: {
         haircutPrice,
@@ -685,7 +729,7 @@ router.post("/start", async (req, res) => {
       amount: paypalAmount,
       amountString,
       barberId: insertBarberId,
-      serviceId: serviceRow.id,
+      serviceIds: serviceRows.map((s) => s.id),
       environment: getPayPalEnvironmentMeta().environment,
       apiBase: getPayPalEnvironmentMeta().apiBase,
     });
@@ -794,7 +838,7 @@ router.post("/start", async (req, res) => {
       haircutPrice,
       depositAmount: 0,
       bookingId,
-      serviceId: serviceRow.id,
+      serviceIds: serviceRows.map((s) => s.id),
       serviceName: serviceTitle,
     };
     console.log("[app-bookings] CHECKOUT START OK:", {

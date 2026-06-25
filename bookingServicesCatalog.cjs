@@ -252,29 +252,92 @@ async function resolveServiceByName(dbQuery, barberServiceKey, serviceName) {
 
 /** Resolve a selected service for checkout (server-side price authority). */
 async function resolveServiceForBooking(dbQuery, barberServiceKey, serviceId, serviceName, barberName = "") {
-  if (barberServiceKey == null || String(barberServiceKey).trim() === "") return null;
+  const list = await resolveServicesForBooking(dbQuery, barberServiceKey, [serviceId], serviceName ? [serviceName] : [], barberName);
+  return list?.[0] || null;
+}
+
+/**
+ * Resolve one or more services for checkout — server-side price/duration authority.
+ * @returns {Promise<Array<{ id, name, price, duration_minutes }>>}
+ */
+async function resolveServicesForBooking(
+  dbQuery,
+  barberServiceKey,
+  serviceIds,
+  serviceNames = [],
+  barberName = "",
+) {
+  if (barberServiceKey == null || String(barberServiceKey).trim() === "") return [];
   const sk = String(barberServiceKey);
 
-  const sid = Number(serviceId);
-  if (Number.isFinite(sid) && sid > 0) {
-    const r = await dbQuery(
-      `SELECT id, barber_id, business_id, name, description, category, icon, image_url,
-              price::float8 AS price, duration_minutes, is_active
-       FROM barber_services
-       WHERE id = $1 AND barber_id::text = $2::text AND is_active = true
-       LIMIT 1`,
-      [sid, sk],
-    );
-    const hit = mapServiceRow(r.rows?.[0]);
-    if (hit) return hit;
+  const ids = (Array.isArray(serviceIds) ? serviceIds : [serviceIds])
+    .map((v) => String(v || "").trim())
+    .filter(Boolean);
+  const names = (Array.isArray(serviceNames) ? serviceNames : [serviceNames])
+    .map((v) => String(v || "").trim())
+    .filter(Boolean);
+
+  if (!ids.length && !names.length) return [];
+
+  const resolved = [];
+  const seen = new Set();
+
+  for (const rawId of ids) {
+    const sid = Number(rawId);
+    if (Number.isFinite(sid) && sid > 0) {
+      const r = await dbQuery(
+        `SELECT id, barber_id, business_id, name, description, category, icon, image_url,
+                price::float8 AS price, duration_minutes, is_active
+         FROM barber_services
+         WHERE id = $1 AND barber_id::text = $2::text AND is_active = true
+         LIMIT 1`,
+        [sid, sk],
+      );
+      const hit = mapServiceRow(r.rows?.[0]);
+      if (hit && !seen.has(String(hit.id))) {
+        seen.add(String(hit.id));
+        resolved.push(hit);
+        continue;
+      }
+    }
+    const fallbackName = fallbackServiceNameFromId(rawId) || "";
+    if (fallbackName) {
+      await ensureBarberServices(dbQuery, barberServiceKey, barberName);
+      const byName = await resolveServiceByName(dbQuery, barberServiceKey, fallbackName);
+      if (byName && !seen.has(String(byName.id))) {
+        seen.add(String(byName.id));
+        resolved.push(byName);
+      }
+    }
   }
 
-  const fallbackName =
-    String(serviceName || "").trim() || fallbackServiceNameFromId(serviceId) || "";
-  if (!fallbackName) return null;
+  for (const name of names) {
+    await ensureBarberServices(dbQuery, barberServiceKey, barberName);
+    const byName = await resolveServiceByName(dbQuery, barberServiceKey, name);
+    if (byName && !seen.has(String(byName.id))) {
+      seen.add(String(byName.id));
+      resolved.push(byName);
+    }
+  }
 
-  await ensureBarberServices(dbQuery, barberServiceKey, barberName);
-  return resolveServiceByName(dbQuery, barberServiceKey, fallbackName);
+  return resolved;
+}
+
+function summarizeBookingServices(services) {
+  const list = Array.isArray(services) ? services : [];
+  const totalPrice = list.reduce((sum, s) => sum + (Number(s.price) || 0), 0);
+  const totalDuration = list.reduce((sum, s) => sum + (Number(s.duration_minutes) || 30), 0);
+  const title = list.map((s) => String(s.name || "Service").trim()).filter(Boolean).join(", ");
+  return {
+    services: list,
+    totalPrice: round2(totalPrice),
+    totalDuration: Math.max(1, totalDuration),
+    title: title || "Service",
+  };
+}
+
+function round2(n) {
+  return Math.round(Number(n) * 100) / 100;
 }
 
 module.exports = {
@@ -294,6 +357,8 @@ module.exports = {
   fetchPublicBarberServices,
   resolveServiceByName,
   resolveServiceForBooking,
+  resolveServicesForBooking,
+  summarizeBookingServices,
   fallbackServiceNameFromId,
   coerceBarberIdForTable,
   barberIdForTable,

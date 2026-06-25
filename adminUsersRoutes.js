@@ -7,6 +7,7 @@ import { isSuperAdminEmail } from "./rolePolicy.js";
 import { registerAdminInviteRoutes, registerPublicInviteRoutes } from "./adminInviteRoutes.js";
 import { registerAdminAuditRoutes } from "./adminAuditRoutes.js";
 import { registerAdminPasswordResetRoutes } from "./adminPasswordResetRoutes.js";
+import { logAdminActivity, ADMIN_ACTIVITY } from "./adminActivityLog.js";
 
 function rowToUser(row) {
   return {
@@ -149,6 +150,32 @@ async function applyUserPatch(scope, userId, patch, res) {
     row.business_id,
   ]);
   row.business_name = bizJoin.rows?.[0]?.business_name ?? null;
+
+  if (patch.role != null && String(existing.role).toLowerCase() !== String(row.role).toLowerCase()) {
+    void logAdminActivity({
+      eventType: ADMIN_ACTIVITY.ROLE_CHANGED,
+      adminUserId: scope.actorId,
+      userEmail: row.email,
+      userName: row.name,
+      detail: `Role changed from ${existing.role} to ${row.role}`,
+      metadata: { userId, previousRole: existing.role, newRole: row.role },
+      req: scope.req,
+    });
+  }
+  if (patch.status != null && String(existing.account_status).toLowerCase() !== String(row.account_status).toLowerCase()) {
+    if (String(row.account_status).toLowerCase() === "disabled") {
+      void logAdminActivity({
+        eventType: ADMIN_ACTIVITY.ACCOUNT_SUSPENDED,
+        adminUserId: scope.actorId,
+        userEmail: row.email,
+        userName: row.name,
+        detail: `Account suspended: ${row.email}`,
+        metadata: { userId, previousStatus: existing.account_status },
+        req: scope.req,
+      });
+    }
+  }
+
   return res.json({ ok: true, user: rowToUser(row) });
 }
 
@@ -210,6 +237,7 @@ export function createAdminUsersRouter(options = {}) {
       return res.status(400).json({ ok: false, message: "userId and role are required." });
     }
     try {
+      scope.req = req;
       return await applyUserPatch(scope, userId, { role }, res);
     } catch (e) {
       console.error("[admin/users] user-role failed:", e?.message || e);
@@ -226,6 +254,7 @@ export function createAdminUsersRouter(options = {}) {
       return res.status(400).json({ ok: false, message: "userId and status are required." });
     }
     try {
+      scope.req = req;
       return await applyUserPatch(scope, userId, { status }, res);
     } catch (e) {
       console.error("[admin/users] user-status failed:", e?.message || e);

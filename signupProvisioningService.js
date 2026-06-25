@@ -7,6 +7,7 @@ import { ensureAdminShopManagementSchema, NEW_SHOP_PENDING_DEFAULTS } from "./ad
 import { ensureAdminBarberManagementSchema } from "./adminBarberMigrations.js";
 import { notifySuperAdminsNewBarber, parseLocationFields } from "./adminBarberService.js";
 import { notifySuperAdminsNewShop } from "./adminShopsService.js";
+import { logAdminActivity, ADMIN_ACTIVITY } from "./adminActivityLog.js";
 import { getShopAccess } from "./shopAccessPolicy.js";
 import { ensureAppUsersBarberIdTypeAligned } from "./authDbMigrations.js";
 import { getBarbersIdColumnType, getTableBarberIdType } from "./barberScheduleMigrations.js";
@@ -198,24 +199,44 @@ export async function provisionBarberSignup({
 
   await insertBarberSettingsRow(barberId);
 
-  void notifySuperAdminsNewBarber({
+  const barberNotify = await notifySuperAdminsNewBarber({
     barberId,
     fullName: displayName,
     shopName: shop,
     city: loc.city,
     state: loc.state,
     email,
+    phone: phoneVal,
+    registeredAt: new Date(),
+    sendSignupEmail: true,
   });
-  void notifySuperAdminsNewShop({
+  await notifySuperAdminsNewShop({
     businessId,
     shopName: shop,
     ownerName: displayName,
     city: loc.city,
     state: loc.state,
     email,
+    phone: phoneVal,
+    registeredAt: new Date(),
+    sendSignupEmail: false,
   });
 
-  return { barberId, businessId, approvalStatus: "pending" };
+  void logAdminActivity({
+    eventType: ADMIN_ACTIVITY.SIGNUP_RECEIVED,
+    userEmail: email,
+    userName: displayName,
+    detail: `New barber signup: ${displayName} (${shop})`,
+    metadata: { role: "barber", businessName: shop, phone: phoneVal, barberId, businessId },
+  });
+
+  return {
+    barberId,
+    businessId,
+    approvalStatus: "pending",
+    adminEmailSent: Boolean(barberNotify?.adminEmailSent),
+    adminEmailMessageId: barberNotify?.adminEmailMessageId || null,
+  };
 }
 
 /**
@@ -277,24 +298,44 @@ export async function provisionShopOwnerSignup({
     [barberId, businessId],
   ).catch(() => {});
 
-  void notifySuperAdminsNewBarber({
+  await notifySuperAdminsNewBarber({
     barberId,
     fullName: ownerName,
     shopName: shop,
     city: cityVal,
     state: stateVal,
     email,
+    phone: phoneVal,
+    registeredAt: new Date(),
+    sendSignupEmail: false,
   });
-  void notifySuperAdminsNewShop({
+  const shopNotify = await notifySuperAdminsNewShop({
     businessId,
     shopName: shop,
     ownerName,
     city: cityVal,
     state: stateVal,
     email,
+    phone: phoneVal,
+    registeredAt: new Date(),
+    sendSignupEmail: true,
   });
 
-  return { barberId, businessId, approvalStatus: "pending" };
+  void logAdminActivity({
+    eventType: ADMIN_ACTIVITY.SIGNUP_RECEIVED,
+    userEmail: email,
+    userName: ownerName,
+    detail: `New shop owner signup: ${ownerName} (${shop})`,
+    metadata: { role: "shop_owner", businessName: shop, phone: phoneVal, businessId },
+  });
+
+  return {
+    barberId,
+    businessId,
+    approvalStatus: "pending",
+    adminEmailSent: Boolean(shopNotify?.adminEmailSent),
+    adminEmailMessageId: shopNotify?.adminEmailMessageId || null,
+  };
 }
 
 /** Effective approval / access state for session responses. */

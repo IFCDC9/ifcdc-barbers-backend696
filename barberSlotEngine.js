@@ -193,6 +193,108 @@ function sortSlotMinutes(minutes) {
   });
 }
 
+function intervalsOverlap(aStart, aDuration, bStart, bDuration) {
+  if (aStart == null || bStart == null) return false;
+  const aDur = Math.max(1, Number(aDuration) || 30);
+  const bDur = Math.max(1, Number(bDuration) || 30);
+  return aStart < bStart + bDur && aStart + aDur > bStart;
+}
+
+/** Slot start times blocked by an appointment of given duration. */
+export function blockedSlotStartsForBooking(startMinutes, durationMinutes, intervalMinutes) {
+  const start = Number(startMinutes);
+  const duration = Math.max(1, Number(durationMinutes) || 30);
+  const interval = Math.max(5, Number(intervalMinutes) || DEFAULT_INTERVAL);
+  if (!Number.isFinite(start)) return [];
+  const blocked = [];
+  for (let m = start; m < start + duration; m += interval) {
+    blocked.push(m);
+  }
+  return blocked;
+}
+
+/**
+ * Load confirmed/pending bookings for a barber on a date (with duration).
+ * @returns {Promise<{ startMinutes: number, durationMinutes: number, timeLabel: string }[]>}
+ */
+export async function loadBookingsForDate(barberId, dateStr, barberName = "", options = {}) {
+  const { excludeBookingId = null } = options || {};
+  const { coerceBarberIdForTable } = await import("./barberIdentity.cjs");
+  const name = String(barberName || "").trim();
+  const bookingBid = await coerceBarberIdForTable(dbQuery, "bookings", barberId, barberName);
+  const exclude = excludeBookingId ? String(excludeBookingId) : null;
+  const holdSql = `($4::text || ' minutes')::interval`;
+
+  const statusSql = `(
+    (
+      booking_status IN ('confirmed', 'completed')
+      AND is_paid_booking = true
+      AND payment_status IN ('paid', 'paid_full', 'deposit_paid')
+    )
+    OR (
+      booking_status IN ('pending', 'pending_payment')
+      AND paypal_order_id IS NOT NULL
+      AND created_at > NOW() - ${holdSql}
+    )
+  )`;
+
+  const r =
+    bookingBid != null
+      ? await dbQuery(
+          `SELECT to_char(time, 'HH12:MI AM') AS slot,
+                  time AS time_raw,
+                  COALESCE(NULLIF(service_duration_minutes, 0), 30) AS duration_minutes
+           FROM bookings
+           WHERE date = $2::date
+             AND ($5::text IS NULL OR id::text <> $5::text)
+             AND (
+               barber_id = $1
+               OR ($3 <> '' AND lower(trim(barber_name)) = lower(trim($3)))
+             )
+             AND deleted_at IS NULL
+             AND ${statusSql}
+           ORDER BY time`,
+          [bookingBid, dateStr, name, String(PENDING_HOLD_MINUTES), exclude],
+        )
+      : await dbQuery(
+          `SELECT to_char(time, 'HH12:MI AM') AS slot,
+                  time AS time_raw,
+                  COALESCE(NULLIF(service_duration_minutes, 0), 30) AS duration_minutes
+           FROM bookings
+           WHERE date = $1::date
+             AND ($4::text IS NULL OR id::text <> $4::text)
+             AND $2 <> ''
+             AND lower(trim(barber_name)) = lower(trim($2))
+             AND deleted_at IS NULL
+             AND (
+               (
+                 booking_status IN ('confirmed', 'completed')
+                 AND is_paid_booking = true
+                 AND payment_status IN ('paid', 'paid_full', 'deposit_paid')
+               )
+               OR (
+                 booking_status IN ('pending', 'pending_payment')
+                 AND paypal_order_id IS NOT NULL
+                 AND created_at > NOW() - ($3::text || ' minutes')::interval
+               )
+             )
+           ORDER BY time`,
+          [dateStr, name, String(PENDING_HOLD_MINUTES), exclude],
+        );
+
+  return (r.rows || [])
+    .map((row) => {
+      const startMinutes = parseTimeToMinutes(row.time_raw);
+      if (startMinutes == null) return null;
+      return {
+        startMinutes,
+        durationMinutes: Math.max(1, Number(row.duration_minutes) || 30),
+        timeLabel: String(row.slot || "").trim(),
+      };
+    })
+    .filter(Boolean);
+}
+
 /**
  * @param {number} barberId
  * @param {string} dateStr YYYY-MM-DD
@@ -205,7 +307,8 @@ export async function getAvailableSlotsForBarberDate(
   barberName = "",
   options = {},
 ) {
-  const { excludeBookingId = null } = options || {};
+  const { excludeBookingId = null, durationMinutes = 30 } = options || {};
+  const requestedDuration = Math.max(1, Number(durationMinutes) || 30);
   const schedule = await loadBarberSchedule(barberId, barberName);
   let minuteStarts = buildScheduleSlotMinutes(schedule, dateStr);
   let reasonIfEmpty = null;
@@ -225,25 +328,36 @@ export async function getAvailableSlotsForBarberDate(
     }
   }
 
-  const occupied = await loadOccupiedSlotLabels(barberId, dateStr, barberName, {
+  const existingBookings = await loadBookingsForDate(barberId, dateStr, barberName, {
     excludeBookingId,
   });
-  const occupiedSet = new Set(occupied.map(normalizeSlotLabel));
+  const interval = schedule.intervalMinutes;
 
   const slots = minuteStarts.map((m) => {
     const time = minutesToSlotLabel(m);
-    const taken = occupiedSet.has(normalizeSlotLabel(time));
-    return {
-      time,
-      available: !taken,
-      ...(taken ? { reason: "booked" } : {}),
-    };
+
+    for (const booking of existingBookings) {
+      if (intervalsOverlap(m, requestedDuration, booking.startMinutes, booking.durationMinutes)) {
+        const isExactStart =
+          normalizeSlotLabel(time) === normalizeSlotLabel(booking.timeLabel);
+        return {
+          time,
+          available: false,
+          reason: isExactStart ? "booked" : "unavailable",
+        };
+      }
+    }
+
+    return { time, available: true };
   });
 
   console.log(
     "[slots]",
     barberId,
     dateStr,
+    `duration=${requestedDuration}`,
+    slots.filter((s) => s.available).length,
+    "/",
     slots.length,
     reasonIfEmpty || (usedFallback ? "demo_fallback" : "ok"),
   );
@@ -254,75 +368,31 @@ export async function getAvailableSlotsForBarberDate(
     slots,
     usedFallback,
     reasonIfEmpty,
+    durationMinutes: requestedDuration,
   };
 }
 
 /**
- * Paid + recent pending PayPal holds block a slot.
- *
- * Pass `options.excludeBookingId` to omit a specific booking row when checking
- * availability for that booking — used by the reschedule flow so a row doesn't
- * see itself as a conflict when the customer keeps the same date.
+ * Paid + recent pending PayPal holds block slots (duration-aware).
  */
 export async function loadOccupiedSlotLabels(barberId, dateStr, barberName = "", options = {}) {
   const { excludeBookingId = null } = options || {};
-  const { coerceBarberIdForTable } = await import("./barberIdentity.cjs");
-  const name = String(barberName || "").trim();
-  const bookingBid = await coerceBarberIdForTable(dbQuery, "bookings", barberId, barberName);
-  const exclude = excludeBookingId ? String(excludeBookingId) : null;
+  const schedule = await loadBarberSchedule(barberId, barberName);
+  const bookings = await loadBookingsForDate(barberId, dateStr, barberName, { excludeBookingId });
+  const interval = schedule.intervalMinutes;
+  const labelSet = new Set();
 
-  const holdSql = `($4::text || ' minutes')::interval`;
-  const r =
-    bookingBid != null
-      ? await dbQuery(
-          `SELECT to_char(time, 'HH12:MI AM') AS slot
-           FROM bookings
-           WHERE date = $2::date
-             AND ($5::text IS NULL OR id::text <> $5::text)
-             AND (
-               barber_id = $1
-               OR ($3 <> '' AND lower(trim(barber_name)) = lower(trim($3)))
-             )
-             AND deleted_at IS NULL
-             AND (
-               (
-                 booking_status = 'confirmed'
-                 AND is_paid_booking = true
-                 AND payment_status IN ('paid', 'paid_full', 'deposit_paid')
-               )
-               OR (
-                 booking_status = 'pending'
-                 AND paypal_order_id IS NOT NULL
-                 AND created_at > NOW() - ${holdSql}
-               )
-             )
-           ORDER BY time`,
-          [bookingBid, dateStr, name, String(PENDING_HOLD_MINUTES), exclude],
-        )
-      : await dbQuery(
-          `SELECT to_char(time, 'HH12:MI AM') AS slot
-           FROM bookings
-           WHERE date = $1::date
-             AND ($4::text IS NULL OR id::text <> $4::text)
-             AND $2 <> ''
-             AND lower(trim(barber_name)) = lower(trim($2))
-             AND deleted_at IS NULL
-             AND (
-               (
-                 booking_status = 'confirmed'
-                 AND is_paid_booking = true
-                 AND payment_status IN ('paid', 'paid_full', 'deposit_paid')
-               )
-               OR (
-                 booking_status = 'pending'
-                 AND paypal_order_id IS NOT NULL
-                 AND created_at > NOW() - ($3::text || ' minutes')::interval
-               )
-             )
-           ORDER BY time`,
-          [dateStr, name, String(PENDING_HOLD_MINUTES), exclude],
-        );
-  return (r.rows || []).map((row) => String(row.slot || "").trim()).filter(Boolean);
+  for (const booking of bookings) {
+    for (const m of blockedSlotStartsForBooking(
+      booking.startMinutes,
+      booking.durationMinutes,
+      interval,
+    )) {
+      labelSet.add(minutesToSlotLabel(m));
+    }
+  }
+
+  return [...labelSet];
 }
 
 /**
@@ -335,7 +405,8 @@ export async function validateBookingSlot(
   barberName = "",
   options = {},
 ) {
-  const { excludeBookingId = null } = options || {};
+  const { excludeBookingId = null, durationMinutes = 30 } = options || {};
+  const requestedDuration = Math.max(1, Number(durationMinutes) || 30);
   if (barberId == null || String(barberId).trim() === "" || String(barberId) === "NaN") {
     return { ok: false, code: "invalid_barber", message: "Invalid barber" };
   }
@@ -363,13 +434,19 @@ export async function validateBookingSlot(
     return { ok: false, code: "outside_hours", message: "That time is not available for this barber." };
   }
 
-  const occupied = await loadOccupiedSlotLabels(barberId, dateStr, barberName, {
+  const existingBookings = await loadBookingsForDate(barberId, dateStr, barberName, {
     excludeBookingId,
   });
-  const norm = normalizeSlotLabel(timeLabel);
-  if (occupied.some((s) => normalizeSlotLabel(s) === norm)) {
-    return { ok: false, code: "slot_taken", message: "That time was just booked — pick another slot." };
+
+  for (const booking of existingBookings) {
+    if (intervalsOverlap(bookingMin, requestedDuration, booking.startMinutes, booking.durationMinutes)) {
+      return {
+        ok: false,
+        code: "slot_taken",
+        message: "That time was just booked — pick another slot.",
+      };
+    }
   }
 
-  return { ok: true, timeSql };
+  return { ok: true, timeSql, durationMinutes: requestedDuration };
 }

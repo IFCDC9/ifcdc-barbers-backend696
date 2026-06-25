@@ -49,7 +49,7 @@ export default function BookingWizard() {
   const [step, setStep] = useState(1);
   const [barber, setBarber] = useState(null);
   const [date, setDate] = useState(null);
-  const [selectedService, setSelectedService] = useState(null);
+  const [selectedServices, setSelectedServices] = useState([]);
   const [services, setServices] = useState([]);
   const [servicesLoading, setServicesLoading] = useState(false);
   const [servicesUsingFallback, setServicesUsingFallback] = useState(false);
@@ -68,20 +68,25 @@ export default function BookingWizard() {
 
   const dates = useMemo(() => buildDateOptions(7), []);
   const user = useMemo(() => readUser(), []);
-  const servicePrice = Number(selectedService?.price);
-
+  const cartTotalPrice = useMemo(
+    () => selectedServices.reduce((sum, s) => sum + (Number(s?.price) || 0), 0),
+    [selectedServices],
+  );
+  const cartTotalDuration = useMemo(
+    () =>
+      Math.max(
+        1,
+        selectedServices.reduce((sum, s) => sum + (Number(s?.duration_minutes) || 30), 0),
+      ),
+    [selectedServices],
+  );
   const pricing = useMemo(
     () =>
       calculateFinalBookingTotal({
         haircutPrice:
-          Number.isFinite(servicePrice) && servicePrice > 0 ? servicePrice : FALLBACK_SERVICE_PRICE,
+          Number.isFinite(cartTotalPrice) && cartTotalPrice > 0 ? cartTotalPrice : FALLBACK_SERVICE_PRICE,
       }),
-    [servicePrice],
-  );
-
-  const openSlotTimes = useMemo(
-    () => availableSlots.filter((s) => s.available).map((s) => s.time),
-    [availableSlots],
+    [cartTotalPrice],
   );
 
   const loadBarbers = useCallback(async () => {
@@ -148,6 +153,7 @@ export default function BookingWizard() {
           barberId: barber.id,
           barberName: barber.name,
           dateLabel: date,
+          durationMinutes: cartTotalDuration,
         });
         if (!cancelled) setAvailableSlots(result.slots || []);
       } catch (e) {
@@ -162,7 +168,7 @@ export default function BookingWizard() {
     return () => {
       cancelled = true;
     };
-  }, [step, barber, date]);
+  }, [step, barber, date, cartTotalDuration]);
 
   useEffect(() => {
     if (step !== 5) return;
@@ -222,8 +228,16 @@ export default function BookingWizard() {
     return String(guestEmail || "").trim();
   };
 
+  const toggleService = (service) => {
+    setSelectedServices((prev) => {
+      const exists = prev.some((s) => String(s.id) === String(service.id));
+      if (exists) return prev.filter((s) => String(s.id) !== String(service.id));
+      return [...prev, service];
+    });
+  };
+
   const onConfirmPayAndBook = async () => {
-    if (processingPayment || !barber?.name || !date || !time || !selectedService?.id) return;
+    if (processingPayment || !barber?.name || !date || !time || !selectedServices.length) return;
 
     const customerEmail = resolveCustomerEmail();
     if (!customerEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail)) {
@@ -240,6 +254,7 @@ export default function BookingWizard() {
         barberId: barber.id,
         barberName: barber.name,
         dateLabel: date,
+        durationMinutes: cartTotalDuration,
       });
       const stillOpen = slotCheck.slots?.some((s) => s.available && s.time === time);
       if (!stillOpen) {
@@ -261,8 +276,9 @@ export default function BookingWizard() {
         barberUuid,
         dateLabel: date,
         timeLabel: time,
-        serviceId: selectedService.id,
-        serviceName: selectedService.name,
+        serviceIds: selectedServices.map((s) => s.id),
+        serviceId: selectedServices[0]?.id,
+        serviceName: selectedServices.map((s) => s.name).join(", "),
         redirectUri,
         customerEmail,
         customerName: String(user?.name || "").trim() || "Web customer",
@@ -274,7 +290,7 @@ export default function BookingWizard() {
           barber: barber.name,
           date,
           time,
-          service: selectedService.name,
+          service: selectedServices.map((s) => s.name).join(", "),
           orderId: started.orderId,
         }),
       );
@@ -292,7 +308,7 @@ export default function BookingWizard() {
     setStep(1);
     setBarber(null);
     setDate(null);
-    setSelectedService(null);
+    setSelectedServices([]);
     setServices([]);
     setTime(null);
     setAvailableSlots([]);
@@ -414,21 +430,21 @@ export default function BookingWizard() {
 
       {step === 3 ? (
         <section className="ifcdc-book-wizard__panel">
-          <h2 className="ifcdc-book-wizard__heading">Choose a service</h2>
+          <h2 className="ifcdc-book-wizard__heading">Choose services</h2>
           <p className="ifcdc-page-hint">
-            {barber?.name} · {date}
+            {barber?.name} · {date} · select one or more
             {servicesUsingFallback ? " · offline menu" : ""}
           </p>
           {servicesLoading ? <p className="ifcdc-page-hint">Loading services…</p> : null}
           <ul className="ifcdc-book-wizard__services">
             {services.map((s) => {
-              const selected = String(selectedService?.id) === String(s.id);
+              const selected = selectedServices.some((x) => String(x.id) === String(s.id));
               return (
                 <li key={s.id}>
                   <button
                     type="button"
                     className={`ifcdc-book-wizard__service${selected ? " ifcdc-book-wizard__service--on" : ""}`}
-                    onClick={() => setSelectedService(s)}
+                    onClick={() => toggleService(s)}
                   >
                     <div className="ifcdc-cover-media ifcdc-book-wizard__service-img">
                       <StyleCoverImage
@@ -454,11 +470,27 @@ export default function BookingWizard() {
               );
             })}
           </ul>
+          {selectedServices.length ? (
+            <div className="ifcdc-book-wizard__summary" style={{ marginBottom: 16 }}>
+              <p>
+                <strong>Cart ({cartTotalDuration} min)</strong>
+              </p>
+              {selectedServices.map((s) => (
+                <p key={s.id}>
+                  {s.name} — ${Number(s.price || 0).toFixed(2)}
+                </p>
+              ))}
+              <p>
+                <strong>Services total:</strong> ${cartTotalPrice.toFixed(2)}
+              </p>
+            </div>
+          ) : null}
           <button
             type="button"
             className="ifcdc-book-wizard__cta"
-            disabled={!selectedService}
+            disabled={!selectedServices.length}
             onClick={() => {
+              setTime(null);
               setStep(4);
               setError(null);
             }}
@@ -475,29 +507,40 @@ export default function BookingWizard() {
         <section className="ifcdc-book-wizard__panel">
           <h2 className="ifcdc-book-wizard__heading">Select a time</h2>
           <p className="ifcdc-page-hint">
-            {barber?.name} · {date} · {selectedService?.name}
+            {barber?.name} · {date} · {selectedServices.map((s) => s.name).join(", ")} · {cartTotalDuration} min
           </p>
           {slotsLoading ? <p className="ifcdc-page-hint">Loading times…</p> : null}
           {slotsError ? <p className="ifcdc-error-msg">{slotsError}</p> : null}
-          {!slotsLoading && !openSlotTimes.length ? (
-            <p className="ifcdc-page-hint">No open times for this date. Try another day.</p>
+          {!slotsLoading && !availableSlots.length ? (
+            <p className="ifcdc-page-hint">No times for this date. Try another day.</p>
           ) : null}
           <ul className="ifcdc-book-wizard__list ifcdc-book-wizard__list--grid">
-            {openSlotTimes.map((t) => (
+            {availableSlots.map((slot) => {
+              const t = slot.time;
+              const available = slot.available !== false;
+              return (
               <li key={t}>
                 <button
                   type="button"
-                  className={`ifcdc-book-wizard__pick${time === t ? " ifcdc-book-wizard__pick--on" : ""}`}
+                  disabled={!available}
+                  className={`ifcdc-book-wizard__pick${time === t ? " ifcdc-book-wizard__pick--on" : ""}${!available ? " ifcdc-book-wizard__pick--disabled" : ""}`}
                   onClick={() => {
+                    if (!available) return;
                     setTime(t);
                     setStep(5);
                     setError(null);
                   }}
                 >
                   {t}
+                  {!available ? (
+                    <span className="ifcdc-book-wizard__pick-tag">
+                      {slot.reason === "booked" ? "Booked" : "Unavailable"}
+                    </span>
+                  ) : null}
                 </button>
               </li>
-            ))}
+            );
+            })}
           </ul>
           <button type="button" className="ifcdc-book-wizard__back" onClick={() => setStep(3)}>
             ← Change service
@@ -513,14 +556,19 @@ export default function BookingWizard() {
               <strong>Barber:</strong> {barber?.name}
             </p>
             <p>
-              <strong>Service:</strong> {selectedService?.name}
+              <strong>Services:</strong> {selectedServices.map((s) => s.name).join(", ")}
+            </p>
+            <p>
+              <strong>Duration:</strong> {cartTotalDuration} min
             </p>
             <p>
               <strong>When:</strong> {date} at {time}
             </p>
-            <p>
-              <strong>Service price:</strong> ${pricing.haircutPrice.toFixed(2)}
-            </p>
+            {selectedServices.map((s) => (
+              <p key={s.id}>
+                {s.name}: ${Number(s.price || 0).toFixed(2)}
+              </p>
+            ))}
             <p>
               <strong>Platform fee:</strong> ${pricing.platformFee.toFixed(2)}
             </p>

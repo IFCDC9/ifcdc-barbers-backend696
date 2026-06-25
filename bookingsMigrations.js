@@ -29,6 +29,7 @@ export async function ensureBookingsTable() {
   await dbQuery(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS payment_type TEXT;`);
   await dbQuery(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS barber_name TEXT;`);
   await dbQuery(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS service_duration_minutes INT;`);
+  await dbQuery(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS services_json JSONB;`);
   await dbQuery(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS style_id UUID;`);
   await dbQuery(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS style_title TEXT;`);
   await dbQuery(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS style_image_url TEXT;`);

@@ -4609,6 +4609,23 @@ a.payments-page__cta {
   color: var(--gold-soft);
 }
 
+.ifcdc-book-wizard__pick--disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  border-color: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.ifcdc-book-wizard__pick-tag {
+  display: block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-top: 0.2rem;
+  color: rgba(255, 255, 255, 0.4);
+}
+
 .ifcdc-book-wizard__services {
   list-style: none;
   margin: 0 0 1rem;

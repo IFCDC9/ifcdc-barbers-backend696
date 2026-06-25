@@ -15,6 +15,17 @@ import {
   updateAdminShop,
   updateShopAccessControls,
 } from "./adminShopsService.js";
+import { logAdminActivity, ADMIN_ACTIVITY } from "./adminActivityLog.js";
+
+async function loadShopOwnerEmail(businessId) {
+  const r = await dbQuery(
+    `SELECT email, name FROM app_users
+     WHERE business_id = $1::bigint AND lower(coalesce(role, '')) = 'shop_owner'
+     LIMIT 1`,
+    [Number(businessId)],
+  );
+  return r.rows?.[0] || null;
+}
 
 async function resolveShopManagementScope(req, res) {
   const hdr = String(req.get("authorization") || "");
@@ -135,14 +146,24 @@ export function createAdminShopsRouter() {
     }
     const plan = String(req.body?.plan || "free").toLowerCase();
     try {
+      const ownerBefore = await loadShopOwnerEmail(businessId);
       const result = await approveShop(
         businessId,
         { plan, trialDays: req.body?.trialDays, monthlyPrice: req.body?.monthlyPrice },
         scope.actorId,
       );
       if (!result.ok) return res.status(400).json(result);
+      void logAdminActivity({
+        eventType: ADMIN_ACTIVITY.SHOP_OWNER_APPROVED,
+        adminUserId: scope.actorId,
+        userEmail: ownerBefore?.email || null,
+        userName: ownerBefore?.name || null,
+        detail: `Shop owner approved for business ${businessId}`,
+        metadata: { businessId, plan },
+        req,
+      });
       const detail = await getAdminShopDetail(businessId);
-      return res.json({ ok: true, ...detail });
+      return res.json({ ok: true, ...result, ...detail });
     } catch (e) {
       console.error("[admin/shops] approve failed:", e?.message || e);
       return res.status(500).json({ ok: false, message: "Failed to approve shop" });
@@ -158,9 +179,19 @@ export function createAdminShopsRouter() {
       return res.status(400).json({ ok: false, message: "Invalid shop id" });
     }
     try {
-      await rejectShop(businessId, req.body?.reason, scope.actorId);
+      const ownerBefore = await loadShopOwnerEmail(businessId);
+      const result = await rejectShop(businessId, req.body?.reason, scope.actorId);
+      void logAdminActivity({
+        eventType: ADMIN_ACTIVITY.ACCOUNT_DENIED,
+        adminUserId: scope.actorId,
+        userEmail: ownerBefore?.email || null,
+        userName: ownerBefore?.name || null,
+        detail: `Shop owner application denied for business ${businessId}`,
+        metadata: { businessId, reason: req.body?.reason || null },
+        req,
+      });
       const detail = await getAdminShopDetail(businessId);
-      return res.json({ ok: true, ...detail });
+      return res.json({ ok: true, ...result, ...detail });
     } catch (e) {
       console.error("[admin/shops] reject failed:", e?.message || e);
       return res.status(500).json({ ok: false, message: "Failed to reject shop" });

@@ -148,11 +148,14 @@ export async function fetchBarbersList() {
   return Array.isArray(json) ? json : Array.isArray(json.barbers) ? json.barbers : [];
 }
 
-export async function fetchAvailableSlots({ barberName, barberId, dateLabel }) {
+export async function fetchAvailableSlots({ barberName, barberId, dateLabel, durationMinutes }) {
   const q = new URLSearchParams();
   if (barberId != null && String(barberId).trim()) q.set("barberId", String(barberId));
   if (barberName) q.set("barberName", barberName);
   if (dateLabel) q.set("dateLabel", dateLabel);
+  if (durationMinutes != null && Number(durationMinutes) > 0) {
+    q.set("durationMinutes", String(Math.round(Number(durationMinutes))));
+  }
   const url = apiUrl(`/api/app-bookings/available-slots?${q.toString()}`);
   const res = await bookingFetch(url, { headers: { Accept: "application/json" } });
   const json = await parseJson(res);

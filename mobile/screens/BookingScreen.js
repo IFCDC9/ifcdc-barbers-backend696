@@ -26,7 +26,7 @@ import {
 } from '../services/bookingPayPalApi.js';
 import { reportConnectionFailure } from '../services/connectionAlerts';
 import { subscribeScheduleUpdated } from '../services/scheduleEvents';
-import AppointmentTimeDropdown from '../components/AppointmentTimeDropdown';
+import AppointmentTimeSlotList from '../components/AppointmentTimeSlotList';
 import ServicePickerCard from '../components/ServicePickerCard';
 import ShareButton from '../components/ShareButton';
 import { DEFAULT_BOOKING_SERVICES } from '../lib/defaultBookingServices.js';
@@ -106,7 +106,7 @@ function BookingScreen() {
   const [step, setStep] = useState(1);
   const [barber, setBarber] = useState(null);
   const [date, setDate] = useState(null);
-  const [selectedService, setSelectedService] = useState(null);
+  const [selectedServices, setSelectedServices] = useState([]);
   const [services, setServices] = useState([]);
   const [servicesLoading, setServicesLoading] = useState(false);
   const [servicesUsingFallback, setServicesUsingFallback] = useState(false);
@@ -118,13 +118,26 @@ function BookingScreen() {
   const [processingPayment, setProcessingPayment] = useState(false);
   const [phaseLabel, setPhaseLabel] = useState('');
   const [guestEmail, setGuestEmail] = useState('');
-  const servicePrice = Number(selectedService?.price);
+  const cartTotalPrice = useMemo(
+    () =>
+      selectedServices.reduce((sum, s) => sum + (Number(s?.price) || 0), 0),
+    [selectedServices],
+  );
+  const cartTotalDuration = useMemo(
+    () =>
+      Math.max(
+        1,
+        selectedServices.reduce((sum, s) => sum + (Number(s?.duration_minutes) || 30), 0),
+      ),
+    [selectedServices],
+  );
   const pricing = useMemo(
     () =>
       calculateFinalBookingTotal({
-        haircutPrice: Number.isFinite(servicePrice) && servicePrice > 0 ? servicePrice : FALLBACK_SERVICE_PRICE,
+        haircutPrice:
+          Number.isFinite(cartTotalPrice) && cartTotalPrice > 0 ? cartTotalPrice : FALLBACK_SERVICE_PRICE,
       }),
-    [servicePrice],
+    [cartTotalPrice],
   );
 
   const [successPayload, setSuccessPayload] = useState(null);
@@ -218,10 +231,7 @@ function BookingScreen() {
           return { ...prev, id: resolvedId };
         });
       }
-      setSelectedService((prev) => {
-        if (prev && !list.some((s) => String(s.id) === String(prev.id))) return null;
-        return prev;
-      });
+      setSelectedServices((prev) => prev.filter((s) => list.some((x) => String(x.id) === String(s.id))));
     };
 
     const load = async () => {
@@ -275,6 +285,7 @@ function BookingScreen() {
           barberId: barber?.id,
           barberName: barber?.name,
           dateLabel: date,
+          durationMinutes: cartTotalDuration,
         });
         if (!cancelled) setAvailableSlots(result.slots || []);
       } catch (e) {
@@ -291,13 +302,13 @@ function BookingScreen() {
     return () => {
       cancelled = true;
     };
-  }, [step, barber, date, scheduleRefreshKey]);
+  }, [step, barber, date, scheduleRefreshKey, cartTotalDuration]);
 
   const resetFlow = () => {
     setStep(1);
     setBarber(null);
     setDate(null);
-    setSelectedService(null);
+    setSelectedServices([]);
     setServices([]);
     setServicesUsingFallback(false);
     setServicesLoadKey(0);
@@ -314,9 +325,17 @@ function BookingScreen() {
     return String(guestEmail || '').trim();
   };
 
+  const toggleService = (service) => {
+    setSelectedServices((prev) => {
+      const exists = prev.some((s) => String(s.id) === String(service.id));
+      if (exists) return prev.filter((s) => String(s.id) !== String(service.id));
+      return [...prev, service];
+    });
+  };
+
   const onConfirmPayAndBook = async () => {
-    if (processingPayment || !barber?.name || !date || !time || !selectedService?.id) {
-      if (!selectedService?.id) {
+    if (processingPayment || !barber?.name || !date || !time || !selectedServices.length) {
+      if (!selectedServices.length) {
         Alert.alert(t('booking.selectServiceTitle'), t('booking.selectServiceBody'));
       }
       return;
@@ -334,8 +353,8 @@ function BookingScreen() {
       return;
     }
 
-    const serviceId = selectedService.id;
-    const serviceName = selectedService.name;
+    const serviceIds = selectedServices.map((s) => s.id);
+    const serviceName = selectedServices.map((s) => s.name).join(', ');
 
     let checkoutSucceeded = false;
     setProcessingPayment(true);
@@ -347,6 +366,7 @@ function BookingScreen() {
         barberId: barber.id,
         barberName: barber.name,
         dateLabel: date,
+        durationMinutes: cartTotalDuration,
       });
       const stillOpen = slotCheck.slots?.some((s) => s.available && s.time === time);
       if (!stillOpen) {
@@ -358,12 +378,12 @@ function BookingScreen() {
       }
 
       calculateFinalBookingTotal({
-        haircutPrice: Number.isFinite(servicePrice) && servicePrice > 0 ? servicePrice : FALLBACK_SERVICE_PRICE,
+        haircutPrice: Number.isFinite(cartTotalPrice) && cartTotalPrice > 0 ? cartTotalPrice : FALLBACK_SERVICE_PRICE,
       });
 
       const redirectUri = Linking.createURL('paypal-booking/');
       console.log('[checkout] redirectUri:', redirectUri);
-      console.log('[checkout] serviceId:', serviceId, 'barber:', barber?.name, barber?.id);
+      console.log('[checkout] serviceIds:', serviceIds, 'barber:', barber?.name, barber?.id);
 
       setPhaseLabel(t('booking.phases.creatingCheckout'));
       const barberUuid =
@@ -375,7 +395,8 @@ function BookingScreen() {
         barberUuid: barberUuid || undefined,
         dateLabel: date,
         timeLabel: time,
-        serviceId,
+        serviceIds,
+        serviceId: serviceIds[0],
         serviceName,
         redirectUri,
         customerEmail,
@@ -421,7 +442,7 @@ function BookingScreen() {
       const balanceDue = Number(b.balanceDue ?? b.balance_due ?? b.remainingBalance ?? b.remaining_balance ?? 0);
       const platformFeePaid = Number(b.platformFee ?? b.platform_fee ?? platformFee);
       const servicePricePaid = Number(
-        b.servicePrice ?? b.serviceAmountPaid ?? b.haircutPrice ?? b.service_price ?? servicePrice,
+        b.servicePrice ?? b.serviceAmountPaid ?? b.haircutPrice ?? b.service_price ?? cartTotalPrice,
       );
       const tipPaid = Number(b.tipAmount ?? b.tip_amount ?? 0);
       const paymentStatus = String(b.paymentStatus ?? b.payment_status ?? '');
@@ -444,7 +465,7 @@ function BookingScreen() {
       setSuccessPayload({
         bookingId: b.id,
         barber: b.barberName || barber?.name,
-        service: b.service || selectedService?.name,
+        service: b.service || selectedServices.map((s) => s.name).join(', '),
         date: String(b.date ?? date),
         time: String(b.time ?? time),
         balanceDue,
@@ -520,11 +541,6 @@ function BookingScreen() {
   };
 
   const bottomPad = Platform.OS === 'ios' ? 28 : 20;
-  const openSlotTimes = useMemo(
-    () => availableSlots.filter((s) => s.available).map((s) => s.time),
-    [availableSlots],
-  );
-  const hasOpenSlots = openSlotTimes.length > 0;
 
   if (step === 6 && successPayload) {
     return (
@@ -730,7 +746,7 @@ function BookingScreen() {
                 key={d}
                 onPress={() => {
                   setDate(d);
-                  setSelectedService(null);
+                  setSelectedServices([]);
                   setTime(null);
                   setStep(3);
                 }}
@@ -751,7 +767,9 @@ function BookingScreen() {
               <Text style={styles.summaryValue}>{dateDisplay(date)}</Text>
             </View>
 
-            <Text style={styles.sectionTitle}>{t('booking.chooseService')}</Text>
+            <Text style={styles.sectionTitle}>
+              {t('booking.chooseService')} · {t('booking.multiServiceHint', { defaultValue: 'Select one or more' })}
+            </Text>
 
             {servicesLoading ? (
               <View style={{ alignItems: 'center', marginVertical: 24, gap: 8 }}>
@@ -765,11 +783,28 @@ function BookingScreen() {
                 <ServicePickerCard
                   key={String(service.id)}
                   service={service}
-                  selected={String(selectedService?.id) === String(service.id)}
-                  onPress={() => setSelectedService(service)}
+                  selected={selectedServices.some((s) => String(s.id) === String(service.id))}
+                  onPress={() => toggleService(service)}
                 />
               ))
             )}
+
+            {selectedServices.length > 0 ? (
+              <View style={[styles.summaryCard, { marginTop: 16 }]}>
+                <Text style={styles.summaryLabel}>
+                  {t('booking.cartTitle', { defaultValue: 'Your services' })}
+                </Text>
+                {selectedServices.map((s) => (
+                  <Text key={String(s.id)} style={styles.summaryValue}>
+                    {s.name} · ${Number(s.price || 0).toFixed(2)} · {s.duration_minutes || 30} min
+                  </Text>
+                ))}
+                <Text style={[styles.summaryValue, { color: '#FFD700', marginTop: 8 }]}>
+                  {t('booking.cartTotal', { defaultValue: 'Total' })}: ${cartTotalPrice.toFixed(2)} ·{' '}
+                  {cartTotalDuration} min
+                </Text>
+              </View>
+            ) : null}
 
             {!servicesLoading && servicesUsingFallback ? (
               <TouchableOpacity
@@ -781,16 +816,16 @@ function BookingScreen() {
             ) : null}
 
             <TouchableOpacity
-              disabled={!selectedService || servicesLoading}
+              disabled={!selectedServices.length || servicesLoading}
               onPress={() => {
-                if (selectedService) {
+                if (selectedServices.length) {
                   setTime(null);
                   setStep(4);
                 }
               }}
               style={[
                 styles.continueBtn,
-                (!selectedService || servicesLoading) && styles.continueBtnDisabled,
+                (!selectedServices.length || servicesLoading) && styles.continueBtnDisabled,
               ]}
             >
               <Text style={styles.continueBtnText}>{t('common.continue')}</Text>
@@ -810,7 +845,13 @@ function BookingScreen() {
               <Text style={[styles.summaryLabel, { marginTop: 12 }]}>{t('booking.date')}</Text>
               <Text style={styles.summaryValue}>{dateDisplay(date)}</Text>
               <Text style={[styles.summaryLabel, { marginTop: 12 }]}>{t('booking.service')}</Text>
-              <Text style={styles.summaryValue}>{selectedService?.name || '—'}</Text>
+              <Text style={styles.summaryValue}>
+                {selectedServices.map((s) => s.name).join(', ') || '—'}
+              </Text>
+              <Text style={[styles.summaryLabel, { marginTop: 12 }]}>
+                {t('booking.duration', { defaultValue: 'Duration' })}
+              </Text>
+              <Text style={styles.summaryValue}>{cartTotalDuration} min</Text>
             </View>
 
             {slotsLoading ? (
@@ -826,16 +867,16 @@ function BookingScreen() {
               <Text style={styles.errorText}>{slotsError}</Text>
             ) : null}
 
-            {!slotsLoading && !slotsError && !hasOpenSlots ? (
+            {!slotsLoading && !slotsError && !availableSlots.length ? (
               <Text style={styles.emptyText}>{t('booking.noTimes')}</Text>
             ) : null}
 
-            {!slotsLoading && hasOpenSlots ? (
-              <AppointmentTimeDropdown
+            {!slotsLoading && availableSlots.length ? (
+              <AppointmentTimeSlotList
+                slots={availableSlots}
                 value={time}
-                options={openSlotTimes}
                 disabled={slotsLoading}
-                onSelect={(t) => setTime(t)}
+                onSelect={(slotTime) => setTime(slotTime)}
               />
             ) : null}
 
@@ -866,8 +907,13 @@ function BookingScreen() {
 
             <Text style={{ color: '#fff' }}>{t('booking.barber')}: {barber?.name}</Text>
             <Text style={{ color: '#fff' }}>{t('booking.date')}: {dateDisplay(date)}</Text>
-            <Text style={{ color: '#fff' }}>{t('booking.service')}: {selectedService?.name || '—'}</Text>
+            <Text style={{ color: '#fff' }}>
+              {t('booking.service')}: {selectedServices.map((s) => s.name).join(', ') || '—'}
+            </Text>
             <Text style={{ color: '#fff' }}>{t('booking.time')}: {time}</Text>
+            <Text style={{ color: '#aaa', fontSize: 13 }}>
+              {t('booking.duration', { defaultValue: 'Duration' })}: {cartTotalDuration} min
+            </Text>
 
             <View
               style={{
@@ -877,10 +923,14 @@ function BookingScreen() {
                 borderRadius: 10,
               }}
             >
-              <Text style={{ color: '#fff' }}>
-                {selectedService?.name || t('booking.service')}: ${pricing.haircutPrice.toFixed(2)}
+              {selectedServices.map((s) => (
+                <Text key={String(s.id)} style={{ color: '#fff', marginBottom: 4 }}>
+                  {s.name}: ${Number(s.price || 0).toFixed(2)}
+                </Text>
+              ))}
+              <Text style={{ color: '#FFD700', marginTop: 8 }}>
+                {t('booking.platformFee')}: ${pricing.platformFee.toFixed(2)}
               </Text>
-              <Text style={{ color: '#FFD700' }}>{t('booking.platformFee')}: ${pricing.platformFee.toFixed(2)}</Text>
               <Text style={{ color: '#fff', marginTop: 10, fontSize: 18 }}>
                 {t('booking.totalPayPal')}: ${pricing.total.toFixed(2)}
               </Text>

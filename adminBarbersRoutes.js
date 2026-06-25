@@ -20,6 +20,7 @@ import {
   backfillOrphanBarberRegistrations,
   getBarberSignupAudit,
 } from "./signupProvisioningService.js";
+import { logAdminActivity, ADMIN_ACTIVITY } from "./adminActivityLog.js";
 
 async function resolveBarberManagementScope(req, res) {
   const hdr = String(req.get("authorization") || "");
@@ -181,6 +182,28 @@ export function createAdminBarbersRouter() {
       const result = await updateBarberVerification(req.params.id, status);
       if (!result.ok) return res.status(400).json(result);
       const barber = await getAdminBarberById(scope, req.params.id);
+      const targetEmail = String(barber?.email || barber?.userEmail || "").trim();
+      if (status === "approved") {
+        void logAdminActivity({
+          eventType: ADMIN_ACTIVITY.BARBER_APPROVED,
+          adminUserId: scope.actorId,
+          userEmail: targetEmail || null,
+          userName: barber?.name || null,
+          detail: `Barber approved: ${barber?.name || req.params.id}`,
+          metadata: { barberId: req.params.id, verificationStatus: status },
+          req,
+        });
+      } else if (status === "rejected") {
+        void logAdminActivity({
+          eventType: ADMIN_ACTIVITY.ACCOUNT_DENIED,
+          adminUserId: scope.actorId,
+          userEmail: targetEmail || null,
+          userName: barber?.name || null,
+          detail: `Barber application denied: ${barber?.name || req.params.id}`,
+          metadata: { barberId: req.params.id, verificationStatus: status },
+          req,
+        });
+      }
       return res.json({ ok: true, ...result, barber });
     } catch (e) {
       console.error("[admin/barbers] verification patch failed:", e?.message || e);
@@ -205,6 +228,18 @@ export function createAdminBarbersRouter() {
       });
       if (!result.ok) return res.status(400).json(result);
       const barber = await getAdminBarberById(scope, req.params.id);
+      const targetEmail = String(barber?.email || barber?.userEmail || "").trim();
+      if (status === "disabled" || status === "suspended") {
+        void logAdminActivity({
+          eventType: ADMIN_ACTIVITY.ACCOUNT_SUSPENDED,
+          adminUserId: scope.actorId,
+          userEmail: targetEmail || null,
+          userName: barber?.name || null,
+          detail: `Barber account suspended: ${barber?.name || req.params.id}`,
+          metadata: { barberId: req.params.id, accountStatus: status },
+          req,
+        });
+      }
       return res.json({ ok: true, ...result, barber });
     } catch (e) {
       console.error("[admin/barbers] account-status patch failed:", e?.message || e);
@@ -267,7 +302,21 @@ export function createAdminBarbersRouter() {
       const access = assertBarberInScope(scope, row.rows?.[0]);
       if (!access.ok) return res.status(access.message === "Barber not found" ? 404 : 403).json(access);
 
+      const barberDetail = await getAdminBarberById(scope, req.params.id);
+      const targetEmail = String(barberDetail?.email || barberDetail?.userEmail || "").trim();
+
       const result = await deleteAdminBarber(req.params.id);
+      if (result.ok) {
+        void logAdminActivity({
+          eventType: ADMIN_ACTIVITY.ACCOUNT_DELETED,
+          adminUserId: scope.actorId,
+          userEmail: targetEmail || null,
+          userName: barberDetail?.name || null,
+          detail: `Barber deleted: ${barberDetail?.name || req.params.id}`,
+          metadata: { barberId: req.params.id, softDeleted: result.softDeleted ?? false },
+          req,
+        });
+      }
       return res.json(result);
     } catch (e) {
       console.error("[admin/barbers] delete failed:", e?.message || e);

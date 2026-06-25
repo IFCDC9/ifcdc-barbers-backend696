@@ -840,11 +840,15 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
       }
 
       const slotEngine = await import("./barberSlotEngine.js");
+      const bookingDuration = Math.max(
+        1,
+        Number(booking.service_duration_minutes) || 30,
+      );
       const payload = await slotEngine.getAvailableSlotsForBarberDate(
         booking.barber_id,
         dateStr,
         booking.barber_name || "",
-        { excludeBookingId: id },
+        { excludeBookingId: id, durationMinutes: bookingDuration },
       );
 
       return res.json({
@@ -937,12 +941,16 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
       }
 
       const slotEngine = await import("./barberSlotEngine.js");
+      const bookingDuration = Math.max(
+        1,
+        Number(booking.service_duration_minutes) || 30,
+      );
       const slotCheck = await slotEngine.validateBookingSlot(
         booking.barber_id,
         newDate,
         newTimeLabel,
         booking.barber_name || "",
-        { excludeBookingId: id },
+        { excludeBookingId: id, durationMinutes: bookingDuration },
       );
       if (!slotCheck.ok) {
         return res.status(409).json({

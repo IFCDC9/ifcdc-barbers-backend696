@@ -225,9 +225,11 @@ export function createAuthRouter({ sendEmail }) {
       if (!user?.id) throw new Error("user_insert_failed");
 
       let approvalPending = false;
+      let adminSignupEmailSent = false;
+      let adminSignupEmailMessageId = null;
       try {
         if (role === "barber") {
-          await provisionBarberSignup({
+          const provisioned = await provisionBarberSignup({
             userId: user.id,
             name,
             email,
@@ -239,8 +241,10 @@ export function createAuthRouter({ sendEmail }) {
             state,
           });
           approvalPending = true;
+          adminSignupEmailSent = Boolean(provisioned?.adminEmailSent);
+          adminSignupEmailMessageId = provisioned?.adminEmailMessageId || null;
         } else if (role === "shop_owner") {
-          await provisionShopOwnerSignup({
+          const provisioned = await provisionShopOwnerSignup({
             userId: user.id,
             name,
             email,
@@ -251,6 +255,8 @@ export function createAuthRouter({ sendEmail }) {
             state,
           });
           approvalPending = true;
+          adminSignupEmailSent = Boolean(provisioned?.adminEmailSent);
+          adminSignupEmailMessageId = provisioned?.adminEmailMessageId || null;
         }
       } catch (provisionErr) {
         await dbQuery(`DELETE FROM app_users WHERE id = $1::uuid`, [user.id]).catch(() => {});
@@ -315,6 +321,8 @@ export function createAuthRouter({ sendEmail }) {
         token,
         user: { ...publicUser, ...approval },
         approvalPending,
+        adminSignupEmailSent,
+        adminSignupEmailMessageId,
         redirect: postLoginRedirectFromClaims(claims),
       });
     } catch (e) {

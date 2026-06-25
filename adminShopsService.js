@@ -5,6 +5,11 @@ import { barberBusinessIdSql, parseLocationFields } from "./adminBarberService.j
 import { effectiveShopAccess } from "./shopAccessPolicy.js";
 import { dbQuery } from "./db.js";
 import { createRequire } from "node:module";
+import {
+  emailSuperAdminNewSignupPending,
+  emailUserAccountApproved,
+  emailUserAccountDenied,
+} from "./approvalEmailService.js";
 
 const require = createRequire(import.meta.url);
 const pushNotifier = require("./pushNotifier.cjs");
@@ -451,14 +456,22 @@ export async function resolveSuperAdminUserIds() {
   return (r.rows || []).map((row) => String(row.id)).filter(Boolean);
 }
 
-export async function notifySuperAdminsNewShop({ businessId, shopName, ownerName, city, state, email }) {
+export async function notifySuperAdminsNewShop({
+  businessId,
+  shopName,
+  ownerName,
+  city,
+  state,
+  email,
+  phone,
+  registeredAt,
+  sendSignupEmail = true,
+}) {
   const title = "New shop registration";
   const location = [city, state].filter(Boolean).join(", ");
   const body = `${shopName || "A new shop"} registered${ownerName ? ` by ${ownerName}` : ""}${location ? ` (${location})` : ""} — awaiting approval.`;
 
   const adminIds = await resolveSuperAdminUserIds();
-  if (!adminIds.length) return { ok: true, notified: 0 };
-
   const payload = { businessId: Number(businessId), email: email || null, shopName: shopName || null };
 
   for (const userId of adminIds) {
@@ -469,16 +482,49 @@ export async function notifySuperAdminsNewShop({ businessId, shopName, ownerName
     ).catch(() => {});
   }
 
-  void pushNotifier.sendPushToUsers({
-    dbQuery,
-    userIds: adminIds,
-    kind: "admin_alert",
-    title,
-    body,
-    data: { businessId: String(businessId), type: "shop_registered" },
-  }).catch(() => {});
+  if (adminIds.length) {
+    void pushNotifier.sendPushToUsers({
+      dbQuery,
+      userIds: adminIds,
+      kind: "admin_alert",
+      title,
+      body,
+      data: { businessId: String(businessId), type: "shop_registered" },
+    }).catch(() => {});
+  }
 
-  return { ok: true, notified: adminIds.length };
+  let adminEmailResult = null;
+  if (sendSignupEmail) {
+    adminEmailResult = await emailSuperAdminNewSignupPending({
+      role: "shop_owner",
+      fullName: ownerName,
+      businessName: shopName,
+      email,
+      phone,
+      registeredAt,
+      businessId,
+      city,
+      state,
+    });
+  }
+
+  return {
+    ok: true,
+    notified: adminIds.length,
+    adminEmailSent: Boolean(adminEmailResult?.ok),
+    adminEmailMessageId: adminEmailResult?.messageId || null,
+  };
+}
+
+async function loadShopOwnerContacts(businessId) {
+  const r = await dbQuery(
+    `SELECT u.email, u.name, u.role, b.name AS shop_name
+     FROM app_users u
+     JOIN businesses b ON b.id = u.business_id
+     WHERE u.business_id = $1::bigint AND lower(coalesce(u.role, '')) = 'shop_owner'`,
+    [Number(businessId)],
+  );
+  return r.rows || [];
 }
 
 const PLAN_DEFAULTS = {
@@ -554,10 +600,28 @@ export async function approveShop(businessId, { plan = "free", trialDays = 14, m
     [String(businessId)],
   ).catch(() => {});
 
-  return { ok: true };
+  const owners = await loadShopOwnerContacts(businessId);
+  const userEmailsSent = [];
+  const userEmailMessageIds = [];
+  for (const owner of owners) {
+    if (!owner.email) continue;
+    const result = await emailUserAccountApproved({
+      to: owner.email,
+      name: owner.name,
+      role: "shop_owner",
+      shopName: owner.shop_name,
+    });
+    if (result?.ok) {
+      userEmailsSent.push(owner.email);
+      if (result.messageId) userEmailMessageIds.push(result.messageId);
+    }
+  }
+
+  return { ok: true, userEmailsSent, userEmailMessageIds };
 }
 
 export async function rejectShop(businessId, reason, actorId) {
+  const owners = await loadShopOwnerContacts(businessId);
   await dbQuery(
     `UPDATE businesses SET
        approval_status = 'rejected',
@@ -574,7 +638,25 @@ export async function rejectShop(businessId, reason, actorId) {
      WHERE business_id = $1::bigint AND role IN ('shop_owner', 'barber')`,
     [Number(businessId)],
   ).catch(() => {});
-  return { ok: true };
+
+  const userEmailsSent = [];
+  const userEmailMessageIds = [];
+  for (const owner of owners) {
+    if (!owner.email) continue;
+    const result = await emailUserAccountDenied({
+      to: owner.email,
+      name: owner.name,
+      role: "shop_owner",
+      shopName: owner.shop_name,
+      reason: reason ? String(reason) : null,
+    });
+    if (result?.ok) {
+      userEmailsSent.push(owner.email);
+      if (result.messageId) userEmailMessageIds.push(result.messageId);
+    }
+  }
+
+  return { ok: true, userEmailsSent, userEmailMessageIds };
 }
 
 export async function updateShopAccessControls(businessId, controls = {}) {

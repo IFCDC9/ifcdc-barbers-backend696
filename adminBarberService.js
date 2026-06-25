@@ -3,6 +3,11 @@
  */
 import { createRequire } from "node:module";
 import { dbQuery } from "./db.js";
+import {
+  emailSuperAdminNewSignupPending,
+  emailUserAccountApproved,
+  emailUserAccountDenied,
+} from "./approvalEmailService.js";
 
 const require = createRequire(import.meta.url);
 const pushNotifier = require("./pushNotifier.cjs");
@@ -317,13 +322,28 @@ export function assertBarberInScope(scope, row) {
   return { ok: true };
 }
 
+async function loadBarberUserContact(userId) {
+  if (!userId) return null;
+  const r = await dbQuery(
+    `SELECT u.email, u.name, u.role, b.shop_name
+     FROM app_users u
+     LEFT JOIN barbers b ON b.user_id = u.id
+     WHERE u.id = $1::uuid
+     LIMIT 1`,
+    [userId],
+  );
+  return r.rows?.[0] || null;
+}
+
 export async function updateBarberVerification(barberIdRaw, status) {
   const barberId = normalizeBarberId(barberIdRaw);
   const normalized = String(status || "").trim().toLowerCase();
   if (!barberId || !["pending", "approved", "rejected"].includes(normalized)) {
     return { ok: false, message: "Invalid barber id or verification status." };
   }
-  const r = await dbQuery(`UPDATE barbers SET verification_status = $1 WHERE id::text = $2::text RETURNING id, business_id, user_id`, [
+  const before = await loadBarberScopeRow(barberId);
+  const priorStatus = String(before?.verification_status || "pending").toLowerCase();
+  const r = await dbQuery(`UPDATE barbers SET verification_status = $1 WHERE id::text = $2::text RETURNING id, business_id, user_id, name, shop_name`, [
     normalized,
     barberId,
   ]);
@@ -335,7 +355,31 @@ export async function updateBarberVerification(barberIdRaw, status) {
   if (normalized === "rejected" && row.user_id) {
     await dbQuery(`UPDATE app_users SET account_status = 'disabled' WHERE id = $1::uuid`, [row.user_id]);
   }
-  return { ok: true, barberId, verificationStatus: normalized };
+
+  let userEmailResult = null;
+  if (priorStatus !== normalized && (normalized === "approved" || normalized === "rejected") && row.user_id) {
+    const contact = await loadBarberUserContact(row.user_id);
+    if (contact?.email) {
+      const payload = {
+        to: contact.email,
+        name: contact.name || row.name,
+        role: contact.role || "barber",
+        shopName: contact.shop_name || row.shop_name,
+      };
+      userEmailResult =
+        normalized === "approved"
+          ? await emailUserAccountApproved(payload)
+          : await emailUserAccountDenied(payload);
+    }
+  }
+
+  return {
+    ok: true,
+    barberId,
+    verificationStatus: normalized,
+    userEmailSent: Boolean(userEmailResult?.ok),
+    userEmailMessageId: userEmailResult?.messageId || null,
+  };
 }
 
 async function syncLinkedBusinessForBarberApproval(businessIdRaw, userId) {
@@ -526,14 +570,22 @@ export async function resolveSuperAdminUserIds() {
   return (r.rows || []).map((row) => String(row.id)).filter(Boolean);
 }
 
-export async function notifySuperAdminsNewBarber({ barberId, fullName, shopName, city, state, email }) {
+export async function notifySuperAdminsNewBarber({
+  barberId,
+  fullName,
+  shopName,
+  city,
+  state,
+  email,
+  phone,
+  registeredAt,
+  sendSignupEmail = true,
+}) {
   const title = "New barber registered";
   const location = [city, state].filter(Boolean).join(", ");
-  const body = `${fullName || "A barber"} joined${shopName ? ` at ${shopName}` : ""}${location ? ` (${location})` : ""}.`;
+  const body = `${fullName || "A barber"} joined${shopName ? ` at ${shopName}` : ""}${location ? ` (${location})` : ""} — awaiting approval.`;
 
   const adminIds = await resolveSuperAdminUserIds();
-  if (!adminIds.length) return { ok: true, notified: 0 };
-
   const payload = { barberId: Number(barberId), email: email || null, shopName: shopName || null };
 
   for (const userId of adminIds) {
@@ -544,16 +596,38 @@ export async function notifySuperAdminsNewBarber({ barberId, fullName, shopName,
     ).catch(() => {});
   }
 
-  void pushNotifier.sendPushToUsers({
-    dbQuery,
-    userIds: adminIds,
-    kind: "admin_alert",
-    title,
-    body,
-    data: { barberId: String(barberId), type: "barber_registered" },
-  }).catch(() => {});
+  if (adminIds.length) {
+    void pushNotifier.sendPushToUsers({
+      dbQuery,
+      userIds: adminIds,
+      kind: "admin_alert",
+      title,
+      body,
+      data: { barberId: String(barberId), type: "barber_registered" },
+    }).catch(() => {});
+  }
 
-  return { ok: true, notified: adminIds.length };
+  let adminEmailResult = null;
+  if (sendSignupEmail) {
+    adminEmailResult = await emailSuperAdminNewSignupPending({
+      role: "barber",
+      fullName,
+      businessName: shopName,
+      email,
+      phone,
+      registeredAt,
+      barberId,
+      city,
+      state,
+    });
+  }
+
+  return {
+    ok: true,
+    notified: adminIds.length,
+    adminEmailSent: Boolean(adminEmailResult?.ok),
+    adminEmailMessageId: adminEmailResult?.messageId || null,
+  };
 }
 
 export async function listAdminNotifications(userId, { unreadOnly = false } = {}) {
