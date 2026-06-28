@@ -1065,11 +1065,16 @@ async function startServer() {
     await ensureSecurityTenantColumns();
     await ensureBookingStatusHistoryTable();
     await ensurePushNotificationsSchema();
-    await ensureSocialPortfolioSchema();
     await ensureLegalAcceptanceSchema();
     await ensureAuraMemoryTables();
   } catch (e) {
     console.error("[migrate] bookings failed:", e?.message || e);
+  }
+  try {
+    await ensureSocialPortfolioSchema();
+    console.log("[migrate] social portfolio schema: ok");
+  } catch (e) {
+    console.error("[migrate] social portfolio failed:", e?.message || e);
   }
   try {
     await ensureStylesTables();
