@@ -70,6 +70,23 @@ export async function ensureSocialPortfolioSchema() {
   `);
   await dbQuery(`CREATE INDEX IF NOT EXISTS photo_likes_user_idx ON photo_likes (user_id, created_at DESC);`);
 
+  await dbQuery(`ALTER TABLE barber_style_gallery ADD COLUMN IF NOT EXISTS like_count INT NOT NULL DEFAULT 0;`);
+  await dbQuery(`
+    CREATE TABLE IF NOT EXISTS style_gallery_likes (
+      id BIGSERIAL PRIMARY KEY,
+      gallery_id UUID NOT NULL,
+      user_id UUID NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (gallery_id, user_id)
+    );
+  `);
+  await dbQuery(
+    `CREATE INDEX IF NOT EXISTS style_gallery_likes_gallery_idx ON style_gallery_likes (gallery_id);`,
+  );
+  await dbQuery(
+    `CREATE INDEX IF NOT EXISTS style_gallery_likes_user_idx ON style_gallery_likes (user_id, created_at DESC);`,
+  );
+
   await dbQuery(`
     CREATE TABLE IF NOT EXISTS barber_follows (
       id BIGSERIAL PRIMARY KEY,

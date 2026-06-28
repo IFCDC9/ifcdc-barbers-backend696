@@ -71,10 +71,15 @@ async function probe(pathname, { method = "GET", body, expectStatus } = {}) {
 
 console.log("\nProduction probes:");
 const probes = [
-  ["deploy commit 6a48ed56 / f76e1f2b", async () => {
+  ["deploy commit (Build 44/46 baseline)", async () => {
     const { ok, json } = await probe("/api/deploy-info");
     const s = json.activeCommitShort || "";
-    return { ok: ok && (s.startsWith("6a48ed") || s.startsWith("f76e1f")), detail: s };
+    const accepted =
+      s.startsWith("6a48ed") ||
+      s.startsWith("f76e1f") ||
+      s.startsWith("89c29a") ||
+      s.startsWith("128ac9");
+    return { ok: ok && accepted, detail: s };
   }],
   ["PATCH /api/auth/profile secured", async () => {
     const { status } = await probe("/api/auth/profile", { method: "PATCH", body: {}, expectStatus: 401 });

@@ -98,7 +98,7 @@ export default function BarberPortfolioPage() {
             ? {
                 ...photo,
                 likedByViewer: result.liked,
-                likeCount: Math.max(0, (photo.likeCount || 0) + (result.liked ? 1 : -1)),
+                likeCount: result.likeCount ?? Math.max(0, (photo.likeCount || 0) + (result.liked ? 1 : -1)),
               }
             : photo,
         ),

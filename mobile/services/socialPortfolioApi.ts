@@ -215,9 +215,39 @@ export async function uploadReviewPhoto(
   return data.photos || [];
 }
 
-export async function togglePortfolioPhotoLike(photoId: string): Promise<{ liked: boolean }> {
-  const res = await apiFetch(`/api/photos/${encodeURIComponent(photoId)}/like`, { method: "POST" });
-  return parseJson<{ liked: boolean }>(res);
+export async function togglePortfolioPhotoLike(
+  photoId: string,
+): Promise<{ liked: boolean; likeCount?: number }> {
+  const token = await getAuthToken();
+  if (!token) {
+    throw new Error("Sign in to like photos.");
+  }
+
+  const url = apiFullUrl(`/api/photos/${encodeURIComponent(photoId)}/like`);
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
+  });
+  const text = await res.text();
+  let data: { ok?: boolean; liked?: boolean; likeCount?: number; message?: string; code?: string } = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    /* non-json body */
+  }
+
+  if (!res.ok) {
+    const msg =
+      String(data.message || "").trim() ||
+      (res.status === 401 ? "Session expired. Sign in again." : "Could not update like. Try again.");
+    console.warn("[portfolio-like]", res.status, photoId, data.code || msg);
+    throw new Error(msg);
+  }
+
+  return {
+    liked: Boolean(data.liked),
+    likeCount: data.likeCount != null ? Number(data.likeCount) : undefined,
+  };
 }
 
 export async function followPortfolioBarber(barberId: string): Promise<void> {

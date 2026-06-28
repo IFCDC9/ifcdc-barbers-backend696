@@ -223,12 +223,26 @@ export function createSocialPortfolioRouter() {
   );
 
   router.post("/api/photos/:photoId/like", requireAuth, async (req, res) => {
+    const photoId = String(req.params.photoId || "");
     try {
-      const result = await togglePhotoLike(req.user.id, req.params.photoId);
-      if (!result.ok) return res.status(400).json(result);
+      const result = await togglePhotoLike(req.user.id, photoId);
+      if (!result.ok) {
+        console.warn("[portfolio] like rejected:", {
+          userId: req.user.id,
+          photoId,
+          code: result.code,
+          message: result.message,
+        });
+        return res.status(400).json(result);
+      }
       return res.json(result);
     } catch (e) {
-      return res.status(500).json({ ok: false, message: "Failed to update like." });
+      console.error("[portfolio] like failed:", {
+        userId: req.user?.id,
+        photoId,
+        error: e?.message || e,
+      });
+      return res.status(500).json({ ok: false, message: "Failed to update like.", code: "like_server_error" });
     }
   });
 

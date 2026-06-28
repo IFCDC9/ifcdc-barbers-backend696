@@ -128,11 +128,27 @@ export default function BarberPortfolioScreen() {
             ? {
                 ...item,
                 likedByViewer: result.liked,
-                likeCount: Math.max(0, item.likeCount + (result.liked ? 1 : -1)),
+                likeCount:
+                  result.likeCount ??
+                  Math.max(0, item.likeCount + (result.liked ? 1 : -1)),
               }
             : item,
         );
-        return { ...p, gallery };
+        const reviews = p.reviews.map((review) => ({
+          ...review,
+          photos: review.photos.map((item) =>
+            item.id === photo.id
+              ? {
+                  ...item,
+                  likedByViewer: result.liked,
+                  likeCount:
+                    result.likeCount ??
+                    Math.max(0, item.likeCount + (result.liked ? 1 : -1)),
+                }
+              : item,
+          ),
+        }));
+        return { ...p, gallery, reviews };
       });
     } catch (e) {
       Alert.alert("Like", userFacingApiError(e));

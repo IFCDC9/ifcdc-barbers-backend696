@@ -88,6 +88,37 @@ async function loadPhotosForReviews(reviewIds, viewerUserId = null) {
   return map;
 }
 
+async function loadStyleGalleryLikeMap(galleryIds, viewerUserId) {
+  const ids = [...new Set((galleryIds || []).map((id) => String(id).trim()).filter(Boolean))];
+  if (!ids.length) return new Map();
+
+  const params = [ids];
+  let likedSql = "false AS liked_by_viewer";
+  if (viewerUserId) {
+    params.push(viewerUserId);
+    likedSql = `EXISTS (
+      SELECT 1 FROM style_gallery_likes sgl
+      WHERE sgl.gallery_id = g.id AND sgl.user_id = $2::uuid
+    ) AS liked_by_viewer`;
+  }
+
+  const r = await dbQuery(
+    `SELECT g.id::text AS id, COALESCE(g.like_count, 0)::int AS like_count, ${likedSql}
+     FROM barber_style_gallery g
+     WHERE g.id::text = ANY($1::text[])`,
+    params,
+  );
+
+  const map = new Map();
+  for (const row of r.rows || []) {
+    map.set(String(row.id), {
+      likeCount: Number(row.like_count) || 0,
+      likedByViewer: Boolean(row.liked_by_viewer),
+    });
+  }
+  return map;
+}
+
 export async function resolveBarberForPortfolio(slugOrId) {
   const raw = String(slugOrId || "").trim();
   if (!raw) return null;
@@ -266,7 +297,8 @@ export async function getPublicBarberPortfolio(slugOrId, { viewerUserId = null }
   );
 
   const styleGalleryR = await dbQuery(
-    `SELECT id, barber_id, service_id, image_url, title, price, duration_minutes, created_at
+    `SELECT id, barber_id, service_id, image_url, title, price, duration_minutes, created_at,
+            COALESCE(is_primary, false) AS is_primary
      FROM barber_style_gallery
      WHERE barber_id::text = $1::text AND COALESCE(is_published, true) = true
      ORDER BY sort_order ASC, created_at DESC
@@ -278,10 +310,23 @@ export async function getPublicBarberPortfolio(slugOrId, { viewerUserId = null }
     services.filter((s) => s.imageUrl).map((s) => String(s.id)),
   );
 
+  const serviceToGalleryId = new Map();
+  const galleryIds = [];
+  for (const row of styleGalleryR.rows || []) {
+    galleryIds.push(String(row.id));
+    const sid = row.service_id != null ? String(row.service_id) : "";
+    if (!sid) continue;
+    const prev = serviceToGalleryId.get(sid);
+    if (!prev || row.is_primary) serviceToGalleryId.set(sid, String(row.id));
+  }
+  const likeMap = await loadStyleGalleryLikeMap(galleryIds, viewerUserId);
+
   /** Portfolio gallery: one tile per service (authoritative cover) + extra gallery rows not already on a service. */
   const gallery = [];
   for (const svc of services) {
     if (!svc.imageUrl) continue;
+    const gid = serviceToGalleryId.get(String(svc.id));
+    const likeInfo = gid ? likeMap.get(gid) : null;
     gallery.push({
       id: `svc-${String(svc.id)}`,
       reviewId: null,
@@ -297,8 +342,8 @@ export async function getPublicBarberPortfolio(slugOrId, { viewerUserId = null }
       styleCategory: null,
       is30DayFollowup: false,
       parentPhotoId: null,
-      likeCount: 0,
-      likedByViewer: false,
+      likeCount: likeInfo?.likeCount ?? 0,
+      likedByViewer: likeInfo?.likedByViewer ?? false,
       createdAt: null,
     });
   }
@@ -312,6 +357,7 @@ export async function getPublicBarberPortfolio(slugOrId, { viewerUserId = null }
       styleId: `gal-${row.id}`,
     });
     if (!url) continue;
+    const likeInfo = likeMap.get(String(row.id));
     gallery.push({
       id: `gal-${String(row.id)}`,
       reviewId: null,
@@ -327,8 +373,8 @@ export async function getPublicBarberPortfolio(slugOrId, { viewerUserId = null }
       styleCategory: null,
       is30DayFollowup: false,
       parentPhotoId: null,
-      likeCount: 0,
-      likedByViewer: false,
+      likeCount: likeInfo?.likeCount ?? 0,
+      likedByViewer: likeInfo?.likedByViewer ?? false,
       createdAt: row.created_at ? new Date(row.created_at).toISOString() : null,
     });
   }
@@ -825,30 +871,193 @@ export async function addReviewPhotos({ userId, reviewId, photos = [] }) {
   return { ok: true, photos: saved };
 }
 
-export async function togglePhotoLike(userId, photoId) {
-  const photo = await dbQuery(`SELECT id, like_count FROM review_photos WHERE id = $1::uuid LIMIT 1`, [
-    String(photoId),
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function parsePhotoLikeTarget(photoId) {
+  const raw = String(photoId || "").trim();
+  if (!raw) return { kind: "invalid" };
+  if (raw.startsWith("gal-")) {
+    const galleryId = raw.slice(4);
+    if (UUID_RE.test(galleryId)) return { kind: "gallery", galleryId };
+    return { kind: "invalid" };
+  }
+  if (raw.startsWith("svc-")) {
+    const rest = raw.slice(4);
+    const dashIdx = rest.indexOf("-");
+    if (dashIdx === -1) {
+      return { kind: "service_cover", serviceId: rest, barberId: null };
+    }
+    return {
+      kind: "service_cover",
+      serviceId: rest.slice(0, dashIdx),
+      barberId: rest.slice(dashIdx + 1),
+    };
+  }
+  if (UUID_RE.test(raw)) return { kind: "review_photo", photoId: raw };
+  return { kind: "invalid" };
+}
+
+async function resolveGalleryIdForServiceCover(serviceId, barberId = null) {
+  const sid = String(serviceId || "").trim();
+  if (!sid) return null;
+
+  const params = [sid];
+  let barberClause = "";
+  if (barberId) {
+    params.push(String(barberId));
+    barberClause = ` AND g.barber_id::text = $2::text`;
+  }
+
+  const existing = await dbQuery(
+    `SELECT g.id::text AS id
+     FROM barber_style_gallery g
+     WHERE g.service_id::text = $1::text${barberClause}
+     ORDER BY COALESCE(g.is_primary, false) DESC, g.sort_order ASC, g.created_at DESC
+     LIMIT 1`,
+    params,
+  );
+  if (existing.rows?.[0]?.id) return String(existing.rows[0].id);
+
+  const svc = await dbQuery(
+    `SELECT s.id, s.barber_id, s.name, s.description, s.category, s.price, s.duration_minutes, s.image_url
+     FROM barber_services s
+     WHERE s.id::text = $1::text
+     LIMIT 1`,
+    [sid],
+  );
+  const row = svc.rows?.[0];
+  if (!row?.image_url) return null;
+
+  const bid = barberId ? String(barberId) : String(row.barber_id);
+  const ins = await dbQuery(
+    `INSERT INTO barber_style_gallery
+       (barber_id, service_id, title, description, category, price, duration_minutes, image_url, sort_order, is_published, is_primary)
+     VALUES ($1::text, $2, $3, $4, $5, $6, $7, $8, 0, true, true)
+     RETURNING id::text AS id`,
+    [
+      bid,
+      sid,
+      row.name || "Service",
+      row.description || null,
+      row.category || "other",
+      Number(row.price) || 0,
+      Number(row.duration_minutes) || 30,
+      String(row.image_url).trim(),
+    ],
+  ).catch(() => ({ rows: [] }));
+  return ins.rows?.[0]?.id ? String(ins.rows[0].id) : null;
+}
+
+async function toggleStyleGalleryLike(userId, galleryId) {
+  const gid = String(galleryId);
+  const photo = await dbQuery(
+    `SELECT id, COALESCE(like_count, 0)::int AS like_count
+     FROM barber_style_gallery WHERE id = $1::uuid LIMIT 1`,
+    [gid],
+  );
+  if (!photo.rows?.[0]) {
+    return { ok: false, message: "Photo not found.", code: "gallery_not_found" };
+  }
+
+  const existing = await dbQuery(
+    `SELECT id FROM style_gallery_likes WHERE gallery_id = $1::uuid AND user_id = $2::uuid LIMIT 1`,
+    [gid, userId],
+  );
+  if (existing.rows?.length) {
+    await dbQuery(`DELETE FROM style_gallery_likes WHERE gallery_id = $1::uuid AND user_id = $2::uuid`, [
+      gid,
+      userId,
+    ]);
+    const upd = await dbQuery(
+      `UPDATE barber_style_gallery SET like_count = GREATEST(COALESCE(like_count, 0) - 1, 0)
+       WHERE id = $1::uuid RETURNING COALESCE(like_count, 0)::int AS like_count`,
+      [gid],
+    );
+    return {
+      ok: true,
+      liked: false,
+      likeCount: Number(upd.rows?.[0]?.like_count) || 0,
+    };
+  }
+
+  await dbQuery(`INSERT INTO style_gallery_likes (gallery_id, user_id) VALUES ($1::uuid, $2::uuid)`, [
+    gid,
+    userId,
   ]);
-  if (!photo.rows?.[0]) return { ok: false, message: "Photo not found." };
+  const upd = await dbQuery(
+    `UPDATE barber_style_gallery SET like_count = COALESCE(like_count, 0) + 1
+     WHERE id = $1::uuid RETURNING COALESCE(like_count, 0)::int AS like_count`,
+    [gid],
+  );
+  return {
+    ok: true,
+    liked: true,
+    likeCount: Number(upd.rows?.[0]?.like_count) || 0,
+  };
+}
+
+async function toggleReviewPhotoLike(userId, photoId) {
+  const pid = String(photoId);
+  const photo = await dbQuery(
+    `SELECT id, COALESCE(like_count, 0)::int AS like_count FROM review_photos WHERE id = $1::uuid LIMIT 1`,
+    [pid],
+  );
+  if (!photo.rows?.[0]) {
+    return { ok: false, message: "Photo not found.", code: "review_photo_not_found" };
+  }
 
   const existing = await dbQuery(
     `SELECT id FROM photo_likes WHERE photo_id = $1::uuid AND user_id = $2::uuid LIMIT 1`,
-    [String(photoId), userId],
+    [pid, userId],
   );
   if (existing.rows?.length) {
-    await dbQuery(`DELETE FROM photo_likes WHERE photo_id = $1::uuid AND user_id = $2::uuid`, [
-      String(photoId),
-      userId,
-    ]);
-    await dbQuery(`UPDATE review_photos SET like_count = GREATEST(like_count - 1, 0) WHERE id = $1::uuid`, [
-      String(photoId),
-    ]);
-    return { ok: true, liked: false };
+    await dbQuery(`DELETE FROM photo_likes WHERE photo_id = $1::uuid AND user_id = $2::uuid`, [pid, userId]);
+    const upd = await dbQuery(
+      `UPDATE review_photos SET like_count = GREATEST(COALESCE(like_count, 0) - 1, 0)
+       WHERE id = $1::uuid RETURNING COALESCE(like_count, 0)::int AS like_count`,
+      [pid],
+    );
+    return {
+      ok: true,
+      liked: false,
+      likeCount: Number(upd.rows?.[0]?.like_count) || 0,
+    };
   }
 
-  await dbQuery(`INSERT INTO photo_likes (photo_id, user_id) VALUES ($1::uuid, $2::uuid)`, [String(photoId), userId]);
-  await dbQuery(`UPDATE review_photos SET like_count = like_count + 1 WHERE id = $1::uuid`, [String(photoId)]);
-  return { ok: true, liked: true };
+  await dbQuery(`INSERT INTO photo_likes (photo_id, user_id) VALUES ($1::uuid, $2::uuid)`, [pid, userId]);
+  const upd = await dbQuery(
+    `UPDATE review_photos SET like_count = COALESCE(like_count, 0) + 1
+     WHERE id = $1::uuid RETURNING COALESCE(like_count, 0)::int AS like_count`,
+    [pid],
+  );
+  return {
+    ok: true,
+    liked: true,
+    likeCount: Number(upd.rows?.[0]?.like_count) || 0,
+  };
+}
+
+export async function togglePhotoLike(userId, photoId) {
+  if (!userId) {
+    return { ok: false, message: "Sign in to like photos.", code: "auth_required" };
+  }
+
+  const target = parsePhotoLikeTarget(photoId);
+  if (target.kind === "invalid") {
+    return { ok: false, message: "Photo not found.", code: "invalid_photo_id" };
+  }
+  if (target.kind === "gallery") {
+    return toggleStyleGalleryLike(userId, target.galleryId);
+  }
+  if (target.kind === "service_cover") {
+    const galleryId = await resolveGalleryIdForServiceCover(target.serviceId, target.barberId);
+    if (!galleryId) {
+      return { ok: false, message: "Photo not found.", code: "gallery_resolve_failed" };
+    }
+    return toggleStyleGalleryLike(userId, galleryId);
+  }
+  return toggleReviewPhotoLike(userId, target.photoId);
 }
 
 export async function followBarber(userId, barberId) {

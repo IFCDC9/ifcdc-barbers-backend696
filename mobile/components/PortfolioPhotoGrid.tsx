@@ -49,7 +49,14 @@ export default function PortfolioPhotoGrid({ photos, onPhotoPress, onPhotoLongPr
             </View>
           ) : null}
           {onLike ? (
-            <Pressable style={styles.likeBtn} onPress={() => onLike(photo)} hitSlop={8}>
+            <Pressable
+              style={styles.likeBtn}
+              onPress={(e) => {
+                e?.stopPropagation?.();
+                onLike(photo);
+              }}
+              hitSlop={8}
+            >
               <Text style={[styles.likeText, photo.likedByViewer && styles.likeActive]}>
                 ♥ {photo.likeCount || 0}
               </Text>
