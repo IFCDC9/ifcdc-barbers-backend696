@@ -18,11 +18,13 @@ import StarRating from "../../components/StarRating";
 import { palette, radius, typography } from "../../constants/theme";
 import {
   submitBookingReview,
+  updateCustomerReview,
   uploadReviewPhoto,
   type PortfolioPhoto,
 } from "../../services/socialPortfolioApi";
 import { fetchPortfolioCategories, type PortfolioCategory } from "../../services/socialPortfolioApi";
 import { userFacingApiError } from "../../utils/userFacingApiError";
+import { compressReviewPhoto } from "../../utils/compressReviewPhoto";
 
 export type BookingReviewParams = {
   bookingId: string;
@@ -33,6 +35,10 @@ export type BookingReviewParams = {
   followupReviewId?: string;
   parentPhotoId?: string;
   is30DayFollowup?: boolean;
+  /** Edit an existing review within the edit window */
+  editReviewId?: string;
+  initialRating?: number;
+  initialComment?: string;
 };
 
 type Route = RouteProp<{ BookingReview: BookingReviewParams }, "BookingReview">;
@@ -54,12 +60,16 @@ export default function BookingReviewScreen() {
     followupReviewId,
     parentPhotoId,
     is30DayFollowup,
+    editReviewId,
+    initialRating,
+    initialComment,
   } = route.params;
 
   const followupOnly = Boolean(is30DayFollowup && followupReviewId);
+  const editMode = Boolean(editReviewId);
 
-  const [rating, setRating] = useState(5);
-  const [comment, setComment] = useState("");
+  const [rating, setRating] = useState(initialRating ?? 5);
+  const [comment, setComment] = useState(initialComment ?? "");
   const [photos, setPhotos] = useState<LocalPhoto[]>([]);
   const [categories, setCategories] = useState<PortfolioCategory[]>([]);
   const [styleCategory, setStyleCategory] = useState("");
@@ -84,14 +94,18 @@ export default function BookingReviewScreen() {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       quality: 0.85,
-      allowsMultipleSelection: !followupOnly,
+      allowsMultipleSelection: !followupOnly && !editMode,
       selectionLimit: Math.min(MAX_PHOTOS - photos.length, followupOnly ? 1 : 3),
     });
     if (result.canceled || !result.assets?.length) return;
-    setPhotos((prev) => [
-      ...prev,
-      ...result.assets.slice(0, MAX_PHOTOS - prev.length).map((a) => ({ uri: a.uri, photoType })),
-    ]);
+    const picked = result.assets.slice(0, MAX_PHOTOS - photos.length);
+    const compressed = await Promise.all(
+      picked.map(async (a) => ({
+        uri: await compressReviewPhoto(a.uri),
+        photoType,
+      })),
+    );
+    setPhotos((prev) => [...prev, ...compressed]);
   };
 
   const onSubmit = async () => {
@@ -101,6 +115,14 @@ export default function BookingReviewScreen() {
     }
     setBusy(true);
     try {
+      if (editMode && editReviewId) {
+        await updateCustomerReview(editReviewId, { rating, comment: comment.trim() });
+        Alert.alert("Review updated", "Your changes have been saved.", [
+          { text: "Done", onPress: () => navigation.goBack() },
+        ]);
+        return;
+      }
+
       if (followupOnly && followupReviewId) {
         for (const p of photos) {
           await uploadReviewPhoto(followupReviewId, p.uri, {
@@ -151,8 +173,12 @@ export default function BookingReviewScreen() {
 
   return (
     <ProfileScreenLayout
-      title={followupOnly ? "30-day update" : "Rate your visit"}
-      subtitle={followupOnly ? `Share how your cut from ${barberName} is growing out` : `${barberName}${serviceName ? ` · ${serviceName}` : ""}`}
+      title={followupOnly ? "30-day update" : editMode ? "Edit your review" : "Rate your visit"}
+      subtitle={
+        followupOnly
+          ? `Share how your cut from ${barberName} is growing out`
+          : `${barberName}${serviceName ? ` · ${serviceName}` : ""}`
+      }
       headerTopPad={12}
     >
       <ScrollView contentContainerStyle={[styles.scroll, { maxWidth: contentMax, alignSelf: "center", width: "100%" }]}>
@@ -197,27 +223,29 @@ export default function BookingReviewScreen() {
           </ProfileCard>
         ) : null}
 
-        <ProfileCard style={styles.card}>
-          <Text style={styles.label}>Photos {photos.length ? `(${photos.length}/${MAX_PHOTOS})` : ""}</Text>
-          <Text style={styles.hint}>Add before & after shots to showcase the cut.</Text>
-          <View style={styles.photoActions}>
-            <GlowButton label="Add after photo" variant="outline" onPress={() => void pickPhotos("after")} disabled={busy} />
-            {!followupOnly ? (
-              <GlowButton label="Add before photo" variant="outline" onPress={() => void pickPhotos("before")} disabled={busy} />
-            ) : null}
-          </View>
-          <View style={styles.previewRow}>
-            {photos.map((p, idx) => (
-              <View key={`${p.uri}-${idx}`} style={styles.previewWrap}>
-                <Image source={{ uri: p.uri }} style={styles.preview} />
-                <Text style={styles.previewTag}>{p.photoType}</Text>
-              </View>
-            ))}
-          </View>
-        </ProfileCard>
+        {!editMode ? (
+          <ProfileCard style={styles.card}>
+            <Text style={styles.label}>Photos {photos.length ? `(${photos.length}/${MAX_PHOTOS})` : ""}</Text>
+            <Text style={styles.hint}>Add before & after shots to showcase the cut.</Text>
+            <View style={styles.photoActions}>
+              <GlowButton label="Add after photo" variant="outline" onPress={() => void pickPhotos("after")} disabled={busy} />
+              {!followupOnly ? (
+                <GlowButton label="Add before photo" variant="outline" onPress={() => void pickPhotos("before")} disabled={busy} />
+              ) : null}
+            </View>
+            <View style={styles.previewRow}>
+              {photos.map((p, idx) => (
+                <View key={`${p.uri}-${idx}`} style={styles.previewWrap}>
+                  <Image source={{ uri: p.uri }} style={styles.preview} />
+                  <Text style={styles.previewTag}>{p.photoType}</Text>
+                </View>
+              ))}
+            </View>
+          </ProfileCard>
+        ) : null}
 
         <GlowButton
-          label={followupOnly ? "Share 30-day photo" : "Submit review"}
+          label={followupOnly ? "Share 30-day photo" : editMode ? "Save changes" : "Submit review"}
           onPress={() => void onSubmit()}
           loading={busy}
           disabled={busy}

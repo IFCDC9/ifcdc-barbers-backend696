@@ -154,6 +154,24 @@ export default function BarberPortfolioScreen() {
     ]);
   };
 
+  const onReportReview = (reviewId: string) => {
+    if (!token) {
+      Alert.alert("Sign in", "Log in to report content.");
+      return;
+    }
+    Alert.alert("Report review", "Why are you reporting this review?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Inappropriate",
+        style: "destructive",
+        onPress: () =>
+          void reportPortfolioContent({ targetType: "review", targetId: reviewId, reason: "inappropriate" }).then(() =>
+            Alert.alert("Reported", "Thank you — our team will review this."),
+          ),
+      },
+    ]);
+  };
+
   const onBook = () => {
     if (!portfolio?.bookable) {
       Alert.alert("Booking unavailable", "This barber is not accepting bookings right now.");
@@ -228,7 +246,7 @@ export default function BarberPortfolioScreen() {
 
         <ProfileCard style={styles.section}>
           <Text style={styles.sectionTitle}>Haircut gallery</Text>
-          <PortfolioPhotoGrid photos={portfolio.gallery} onLike={onLike} onPhotoPress={onReportPhoto} />
+          <PortfolioPhotoGrid photos={portfolio.gallery} onLike={onLike} onPhotoLongPress={onReportPhoto} />
         </ProfileCard>
 
         <ProfileCard style={styles.section}>
@@ -263,9 +281,13 @@ export default function BarberPortfolioScreen() {
                   </View>
                   <StarRating value={review.rating} size={14} />
                 </View>
-                {review.comment ? <Text style={styles.reviewComment}>{review.comment}</Text> : null}
+                {review.comment ? (
+                  <Text style={styles.reviewComment} onLongPress={() => onReportReview(review.id)}>
+                    {review.comment}
+                  </Text>
+                ) : null}
                 {review.photos?.length ? (
-                  <PortfolioPhotoGrid photos={review.photos} columns={3} onLike={onLike} />
+                  <PortfolioPhotoGrid photos={review.photos} columns={3} onLike={onLike} onPhotoLongPress={onReportPhoto} />
                 ) : null}
               </View>
             ))

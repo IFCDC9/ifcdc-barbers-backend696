@@ -8,6 +8,7 @@ import {
   FOLLOWUP_REMINDER_DAYS,
   HAIRCUT_CATEGORY_IDS,
   MAX_REVIEW_PHOTOS,
+  REVIEW_EDIT_WINDOW_HOURS,
 } from "./socialPortfolioConstants.js";
 
 const require = createRequire(import.meta.url);
@@ -373,6 +374,69 @@ export async function assertBookingEligibleForReview(userId, bookingId) {
   return { ok: true, booking };
 }
 
+function reviewEditDeadline(createdAt) {
+  if (!createdAt) return null;
+  const d = new Date(createdAt);
+  d.setHours(d.getHours() + REVIEW_EDIT_WINDOW_HOURS);
+  return d;
+}
+
+function isWithinReviewEditWindow(createdAt) {
+  const deadline = reviewEditDeadline(createdAt);
+  return Boolean(deadline && deadline > new Date());
+}
+
+async function assertCustomerOwnsReview(userId, reviewId) {
+  const r = await dbQuery(`SELECT * FROM barber_reviews WHERE id = $1::uuid LIMIT 1`, [String(reviewId)]);
+  const review = r.rows?.[0];
+  if (!review) return { ok: false, message: "Review not found." };
+  if (!review.customer_user_id || String(review.customer_user_id) !== String(userId)) {
+    return { ok: false, message: "Not authorized." };
+  }
+  if (!isWithinReviewEditWindow(review.created_at)) {
+    return {
+      ok: false,
+      message: `Reviews can only be edited or deleted within ${REVIEW_EDIT_WINDOW_HOURS} hours of submission.`,
+    };
+  }
+  return { ok: true, review };
+}
+
+export async function updateCustomerReview({ userId, reviewId, rating, comment }) {
+  const owned = await assertCustomerOwnsReview(userId, reviewId);
+  if (!owned.ok) return owned;
+
+  const normalizedRating = Number(rating);
+  if (!Number.isFinite(normalizedRating) || normalizedRating < 1 || normalizedRating > 5) {
+    return { ok: false, message: "Rating must be between 1 and 5." };
+  }
+
+  const upd = await dbQuery(
+    `UPDATE barber_reviews
+     SET rating = $2, comment = $3, updated_at = NOW()
+     WHERE id = $1::uuid
+     RETURNING *`,
+    [String(reviewId), normalizedRating, String(comment || "").trim() || null],
+  );
+  const review = upd.rows?.[0];
+  if (!review) return { ok: false, message: "Review not found." };
+
+  const photos = await loadPhotosForReviews([review.id], userId);
+  return {
+    ok: true,
+    review: mapReviewRow(review, photos.get(String(review.id)) || []),
+    editWindowEndsAt: reviewEditDeadline(review.created_at)?.toISOString() || null,
+  };
+}
+
+export async function deleteCustomerReview(userId, reviewId) {
+  const owned = await assertCustomerOwnsReview(userId, reviewId);
+  if (!owned.ok) return owned;
+
+  await dbQuery(`DELETE FROM barber_reviews WHERE id = $1::uuid`, [String(reviewId)]);
+  return { ok: true, message: "Review deleted." };
+}
+
 export async function createBarberReview({
   userId,
   bookingId,
@@ -609,11 +673,33 @@ export async function resolveContentReport(reportId, { status, adminNotes, admin
   if (!["reviewed", "action_taken", "dismissed"].includes(normalized)) {
     return { ok: false, message: "Invalid status." };
   }
+  const existing = await dbQuery(`SELECT * FROM content_reports WHERE id = $1::uuid LIMIT 1`, [String(reportId)]);
+  const report = existing.rows?.[0];
+  if (!report) return { ok: false, message: "Report not found." };
+
   await dbQuery(
     `UPDATE content_reports SET status = $2, admin_notes = $3, reviewed_by = $4::uuid, reviewed_at = NOW()
      WHERE id = $1::uuid`,
     [String(reportId), normalized, adminNotes || null, adminUserId || null],
   );
+
+  if (normalized === "dismissed") {
+    const targetType = String(report.target_type || "").toLowerCase();
+    if (targetType === "review") {
+      await dbQuery(
+        `UPDATE barber_reviews SET status = 'published', updated_at = NOW()
+         WHERE id = $1::uuid AND status = 'reported'`,
+        [String(report.target_id)],
+      ).catch(() => {});
+    } else if (targetType === "photo") {
+      await dbQuery(
+        `UPDATE review_photos SET status = 'published'
+         WHERE id = $1::uuid AND status = 'reported'`,
+        [String(report.target_id)],
+      ).catch(() => {});
+    }
+  }
+
   return { ok: true };
 }
 
@@ -680,20 +766,37 @@ export async function markFollowupReminderSent(reminderId) {
 export async function getBookingReviewStatus(userId, bookingId) {
   const eligible = await assertBookingEligibleForReview(userId, bookingId);
   if (eligible.ok) {
-    return { ok: true, canReview: true, hasReview: false, reviewId: null };
+    return { ok: true, canReview: true, hasReview: false, reviewId: null, canEdit: false, canDelete: false };
   }
   if (eligible.message === "This appointment already has a review.") {
-    const existing = await dbQuery(`SELECT id FROM barber_reviews WHERE booking_id = $1::uuid LIMIT 1`, [
-      String(bookingId),
-    ]);
+    const existing = await dbQuery(
+      `SELECT id, rating, comment, created_at FROM barber_reviews WHERE booking_id = $1::uuid LIMIT 1`,
+      [String(bookingId)],
+    );
+    const row = existing.rows?.[0];
+    const reviewId = row?.id ? String(row.id) : null;
+    const editable = row ? isWithinReviewEditWindow(row.created_at) : false;
     return {
       ok: true,
       canReview: false,
       hasReview: true,
-      reviewId: existing.rows?.[0]?.id ? String(existing.rows[0].id) : null,
+      reviewId,
+      canEdit: editable,
+      canDelete: editable,
+      editWindowEndsAt: row ? reviewEditDeadline(row.created_at)?.toISOString() || null : null,
+      rating: row ? Number(row.rating) : null,
+      comment: row?.comment || "",
     };
   }
-  return { ok: true, canReview: false, hasReview: false, reviewId: null, reason: eligible.message };
+  return {
+    ok: true,
+    canReview: false,
+    hasReview: false,
+    reviewId: null,
+    canEdit: false,
+    canDelete: false,
+    reason: eligible.message,
+  };
 }
 
 export async function listCustomerFollowupReminders(userId) {

@@ -74,6 +74,11 @@ export type ReviewStatus = {
   canReview: boolean;
   hasReview: boolean;
   reviewId: string | null;
+  canEdit?: boolean;
+  canDelete?: boolean;
+  editWindowEndsAt?: string | null;
+  rating?: number | null;
+  comment?: string;
   reason?: string;
 };
 
@@ -149,6 +154,22 @@ export async function submitBookingReview(
   });
   const data = await parseJson<{ review: PortfolioReview }>(res);
   return data.review;
+}
+
+export async function updateCustomerReview(
+  reviewId: string,
+  body: { rating: number; comment?: string },
+): Promise<PortfolioReview> {
+  const res = await apiFetch(`/api/reviews/${encodeURIComponent(reviewId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+  const data = await parseJson<{ review: PortfolioReview }>(res);
+  return data.review;
+}
+
+export async function deleteCustomerReview(reviewId: string): Promise<void> {
+  await apiFetch(`/api/reviews/${encodeURIComponent(reviewId)}`, { method: "DELETE" });
 }
 
 export async function uploadReviewPhoto(

@@ -53,3 +53,5 @@ export const CONTENT_REPORT_REASONS = [
 
 export const MAX_REVIEW_PHOTOS = 5;
 export const FOLLOWUP_REMINDER_DAYS = 30;
+/** Hours after submission during which customers may edit or delete their review. */
+export const REVIEW_EDIT_WINDOW_HOURS = 48;

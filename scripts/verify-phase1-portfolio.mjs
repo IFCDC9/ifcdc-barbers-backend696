@@ -37,9 +37,15 @@ console.log(`\nPhase 1 portfolio verification → ${base}\n`);
 
 const deploy = await get("/api/deploy-info");
 if (!deploy.res.ok) fail("deploy-info unavailable");
-else if (!String(deploy.json.activeCommitShort || "").startsWith("775f8695")) {
-  fail(`expected commit 775f8695, got ${deploy.json.activeCommitShort}`);
-} else ok(`deploy commit ${deploy.json.activeCommitShort}`);
+else {
+  const commit = String(deploy.json.activeCommitShort || "");
+  const expected = process.env.EXPECTED_COMMIT || "";
+  if (expected && !commit.startsWith(expected)) {
+    fail(`expected commit ${expected}, got ${commit || "(unknown)"}`);
+  } else if (!commit || commit.length < 7) {
+    fail(`deploy commit missing or invalid: ${commit || "(unknown)"}`);
+  } else ok(`deploy commit ${commit}`);
+}
 
 const health = await get("/api/health");
 if (!health.res.ok && health.res.status !== 200) fail("health check");

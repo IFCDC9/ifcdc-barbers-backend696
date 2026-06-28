@@ -13,11 +13,12 @@ import type { PortfolioPhoto } from "../services/socialPortfolioApi";
 type Props = {
   photos: PortfolioPhoto[];
   onPhotoPress?: (photo: PortfolioPhoto) => void;
+  onPhotoLongPress?: (photo: PortfolioPhoto) => void;
   onLike?: (photo: PortfolioPhoto) => void;
   columns?: number;
 };
 
-export default function PortfolioPhotoGrid({ photos, onPhotoPress, onLike, columns }: Props) {
+export default function PortfolioPhotoGrid({ photos, onPhotoPress, onPhotoLongPress, onLike, columns }: Props) {
   const { width } = useWindowDimensions();
   const colCount = columns || (width >= 768 ? 4 : width >= 480 ? 3 : 2);
   const gap = 10;
@@ -33,9 +34,10 @@ export default function PortfolioPhotoGrid({ photos, onPhotoPress, onLike, colum
         <Pressable
           key={photo.id}
           onPress={() => onPhotoPress?.(photo)}
+          onLongPress={() => onPhotoLongPress?.(photo)}
           style={[styles.tile, { width: tile, height: tile }]}
         >
-          <Image source={{ uri: photo.thumbnailUrl || photo.photoUrl }} style={styles.image} />
+          <Image source={{ uri: photo.thumbnailUrl || photo.photoUrl }} style={styles.image} resizeMode="cover" />
           {photo.is30DayFollowup ? (
             <View style={styles.tag}>
               <Text style={styles.tagText}>30-day</Text>

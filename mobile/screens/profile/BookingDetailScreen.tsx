@@ -55,6 +55,7 @@ import { useAuth } from "../../services/authContext";
 import { theme } from "../../constants/theme";
 import ShareButton from "../../components/ShareButton";
 import {
+  deleteCustomerReview,
   fetchBookingReviewStatus,
   fetchFollowupReminders,
 } from "../../services/socialPortfolioApi";
@@ -218,6 +219,9 @@ type NavParams = {
     serviceName?: string;
     followupReviewId?: string;
     is30DayFollowup?: boolean;
+    editReviewId?: string;
+    initialRating?: number;
+    initialComment?: string;
   };
   BarberPortfolio: { slugOrId: string; barberName?: string };
   HaircutFollowup: undefined;
@@ -247,6 +251,11 @@ export default function BookingDetailScreen() {
   const [history, setHistory] = useState<BookingStatusHistoryRow[]>([]);
   const [canReview, setCanReview] = useState(false);
   const [hasReview, setHasReview] = useState(false);
+  const [canEditReview, setCanEditReview] = useState(false);
+  const [canDeleteReview, setCanDeleteReview] = useState(false);
+  const [reviewId, setReviewId] = useState<string | null>(null);
+  const [reviewRating, setReviewRating] = useState<number | null>(null);
+  const [reviewComment, setReviewComment] = useState("");
   const [followupDue, setFollowupDue] = useState(false);
   const [followupReviewId, setFollowupReviewId] = useState<string | null>(null);
 
@@ -262,6 +271,11 @@ export default function BookingDetailScreen() {
 
       setCanReview(false);
       setHasReview(false);
+      setCanEditReview(false);
+      setCanDeleteReview(false);
+      setReviewId(null);
+      setReviewRating(null);
+      setReviewComment("");
       setFollowupDue(false);
       setFollowupReviewId(null);
 
@@ -276,6 +290,11 @@ export default function BookingDetailScreen() {
         if (reviewStatus) {
           setCanReview(Boolean(reviewStatus.canReview));
           setHasReview(Boolean(reviewStatus.hasReview));
+          setCanEditReview(Boolean(reviewStatus.canEdit));
+          setCanDeleteReview(Boolean(reviewStatus.canDelete));
+          setReviewId(reviewStatus.reviewId);
+          setReviewRating(reviewStatus.rating ?? null);
+          setReviewComment(reviewStatus.comment || "");
         }
         const match = followups.find((f) => f.bookingId === bookingId && (f.due || f.status === "sent"));
         if (match) {
@@ -291,6 +310,40 @@ export default function BookingDetailScreen() {
       setLoading(false);
     }
   }, [bookingId, user?.role]);
+
+  const onEditReview = useCallback(() => {
+    if (!booking || !reviewId) return;
+    navigation.navigate("BookingReview", {
+      bookingId,
+      barberId: String(booking.barber_id || ""),
+      barberName: booking.barber_name || "Barber",
+      serviceName: booking.service || booking.style_title || undefined,
+      editReviewId: reviewId,
+      initialRating: reviewRating ?? undefined,
+      initialComment: reviewComment || undefined,
+    });
+  }, [booking, bookingId, navigation, reviewComment, reviewId, reviewRating]);
+
+  const onDeleteReview = useCallback(() => {
+    if (!reviewId) return;
+    Alert.alert("Delete review", "Remove your review from this appointment? This cannot be undone.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: () => {
+          setBusy(true);
+          void deleteCustomerReview(reviewId)
+            .then(() => {
+              Alert.alert("Review deleted", "You can leave a new review for this appointment.");
+              void load();
+            })
+            .catch((e) => Alert.alert("Could not delete", userFacingApiError(e)))
+            .finally(() => setBusy(false));
+        },
+      },
+    ]);
+  }, [load, reviewId]);
 
   const onOpenReview = useCallback(() => {
     if (!booking) return;
@@ -837,7 +890,19 @@ export default function BookingDetailScreen() {
             </>
           ) : null}
           {hasReview && !canReview ? (
-            <Text style={styles.reviewPrompt}>Thanks — you already reviewed this appointment.</Text>
+            <>
+              <Text style={styles.reviewPrompt}>Thanks — you already reviewed this appointment.</Text>
+              {canEditReview || canDeleteReview ? (
+                <View style={styles.reviewActions}>
+                  {canEditReview ? (
+                    <GlowButton label="Edit review" variant="outline" onPress={onEditReview} disabled={busy} />
+                  ) : null}
+                  {canDeleteReview ? (
+                    <GlowButton label="Delete review" variant="outline" onPress={onDeleteReview} disabled={busy} />
+                  ) : null}
+                </View>
+              ) : null}
+            </>
           ) : null}
           {followupDue ? (
             <>
@@ -1044,6 +1109,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     marginBottom: 10,
+  },
+  reviewActions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 4,
   },
 });
 

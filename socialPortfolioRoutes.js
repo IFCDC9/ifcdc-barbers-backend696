@@ -2,7 +2,7 @@ import express from "express";
 import multer from "multer";
 import { resolveAuthPayload, requireAuth } from "./authRoutes.js";
 import { isJwtGlobalSuperScope } from "./authPlatformJwt.js";
-import { uploadBarberStyleImage } from "./src/services/storageUpload.js";
+import { uploadPortfolioPhoto } from "./src/services/storageUpload.js";
 import {
   HAIRCUT_STYLE_CATEGORIES,
   CONTENT_REPORT_REASONS,
@@ -10,6 +10,7 @@ import {
 import {
   addReviewPhotos,
   createBarberReview,
+  deleteCustomerReview,
   followBarber,
   getBookingReviewStatus,
   getPublicBarberPortfolio,
@@ -23,6 +24,7 @@ import {
   setReviewVisibility,
   togglePhotoLike,
   unfollowBarber,
+  updateCustomerReview,
 } from "./socialPortfolioService.js";
 import { logAdminActivity, ADMIN_ACTIVITY } from "./adminActivityLog.js";
 
@@ -135,6 +137,33 @@ export function createSocialPortfolioRouter() {
     }
   });
 
+  router.patch("/api/reviews/:reviewId", requireAuth, async (req, res) => {
+    try {
+      const result = await updateCustomerReview({
+        userId: req.user.id,
+        reviewId: req.params.reviewId,
+        rating: req.body?.rating,
+        comment: req.body?.comment,
+      });
+      if (!result.ok) return res.status(400).json(result);
+      return res.json(result);
+    } catch (e) {
+      console.error("[portfolio] update review failed:", e?.message || e);
+      return res.status(500).json({ ok: false, message: "Failed to update review." });
+    }
+  });
+
+  router.delete("/api/reviews/:reviewId", requireAuth, async (req, res) => {
+    try {
+      const result = await deleteCustomerReview(req.user.id, req.params.reviewId);
+      if (!result.ok) return res.status(400).json(result);
+      return res.json(result);
+    } catch (e) {
+      console.error("[portfolio] delete review failed:", e?.message || e);
+      return res.status(500).json({ ok: false, message: "Failed to delete review." });
+    }
+  });
+
   router.post(
     "/api/reviews/:reviewId/photos",
     requireAuth,
@@ -150,15 +179,15 @@ export function createSocialPortfolioRouter() {
 
         const uploaded = [];
         for (const file of req.files || []) {
-          const { url } = await uploadBarberStyleImage({
+          const optimized = await uploadPortfolioPhoto({
             buffer: file.buffer,
             mimetype: file.mimetype,
             originalName: file.originalname,
             barberName: `${barberName}-reviews`,
           });
           uploaded.push({
-            photoUrl: url,
-            thumbnailUrl: url,
+            photoUrl: optimized.photoUrl,
+            thumbnailUrl: optimized.thumbnailUrl,
             caption,
             photoType,
             styleCategory,
