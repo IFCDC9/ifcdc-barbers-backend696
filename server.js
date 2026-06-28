@@ -376,6 +376,14 @@ app.get("/api/auth/me", (req, res, next) => {
     next(err);
   });
 });
+app.patch("/api/auth/profile", (req, res, next) => {
+  const saved = req.url;
+  req.url = "/profile";
+  authRouter.handle(req, res, (err) => {
+    req.url = saved;
+    next(err);
+  });
+});
 app.use("/api/auth", authRouter);
 console.log("[boot] mounted /api/auth", summarizeAuthRouterPaths(authRouter).join(" | ") || "(no routes on stack)");
 

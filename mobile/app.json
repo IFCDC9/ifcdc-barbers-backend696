@@ -19,7 +19,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.ifcdc.barbers",
-      "buildNumber": "44",
+      "buildNumber": "45",
       "usesAppleSignIn": true,
       "entitlements": {
         "com.apple.developer.applesignin": ["Default"]
