@@ -30,6 +30,7 @@ import StyleDiscoverPage from "./pages/StyleDiscoverPage.jsx";
 import BarberPortfolioPage from "./pages/BarberPortfolioPage.jsx";
 import BookingReviewPage from "./pages/BookingReviewPage.jsx";
 import SignupBusiness from "./pages/SignupBusiness.jsx";
+import BarberOnboarding from "./pages/BarberOnboarding.jsx";
 import Messages from "./pages/Messages.jsx";
 import NotFound from "./pages/NotFound.jsx";
 

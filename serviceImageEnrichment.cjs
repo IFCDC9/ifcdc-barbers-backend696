@@ -17,6 +17,7 @@ function serviceNameKey(name) {
  */
 async function loadServiceImageSourcesForBarber(dbQuery, { barberKey, barberName }) {
   const stylesByName = new Map();
+  const stylesByServiceId = new Map();
   const photosByName = new Map();
   const cmsByName = new Map();
   const keyText = String(barberKey ?? "").trim();
@@ -25,16 +26,21 @@ async function loadServiceImageSourcesForBarber(dbQuery, { barberKey, barberName
   if (keyText) {
     try {
       const gallery = await dbQuery(
-        `SELECT title, image_url
+        `SELECT service_id, title, image_url
          FROM barber_style_gallery
          WHERE barber_id = $1 AND is_published = true
-         ORDER BY sort_order ASC, created_at ASC`,
+         ORDER BY COALESCE(is_primary, false) DESC, sort_order ASC, created_at ASC`,
         [keyText],
       );
       for (const row of gallery.rows || []) {
         const url = resolvePublishedImageUrl(row.image_url, { barberId: keyText });
+        if (!url) continue;
+        const sid = Number(row.service_id);
+        if (Number.isFinite(sid) && sid > 0 && !stylesByServiceId.has(sid)) {
+          stylesByServiceId.set(sid, url);
+        }
         const key = serviceNameKey(row.title);
-        if (key && url && !stylesByName.has(key)) stylesByName.set(key, url);
+        if (key && !stylesByName.has(key)) stylesByName.set(key, url);
       }
     } catch (e) {
       console.warn("[service-images] gallery lookup:", e?.message || e);
@@ -100,14 +106,19 @@ async function loadServiceImageSourcesForBarber(dbQuery, { barberKey, barberName
     }
   }
 
-  return { stylesByName, photosByName, cmsByName };
+  return { stylesByName, stylesByServiceId, photosByName, cmsByName };
 }
 
-/** Primary service image: barber_services.image_url, then matched style/CMS photos. */
+/** Primary service image: barber_services.image_url, then gallery linked by service_id. */
 function pickServiceImageUrl(row, sources) {
   const direct = resolvePublishedImageUrl(row?.image_url);
   if (direct) return direct;
   if (!sources) return "";
+
+  const sid = Number(row?.id);
+  if (Number.isFinite(sid) && sid > 0 && sources.stylesByServiceId?.has(sid)) {
+    return sources.stylesByServiceId.get(sid);
+  }
 
   const key = serviceNameKey(row?.name);
   if (!key) return "";

@@ -72,17 +72,17 @@ function resolveServiceCardImageUrl(serviceRow, galleryIndex) {
     barberId: row.barber_id,
   });
 
-  let galleryUrl = "";
+  // barber_services.image_url is authoritative when set.
+  if (direct && isRenderableImageUrl(direct)) return direct;
+
+  // Only use gallery rows explicitly linked to this service id.
   if (galleryIndex && Number.isFinite(serviceId) && serviceId > 0) {
     const linked = galleryIndex.byServiceId.get(serviceId);
-    galleryUrl = pickPrimaryFromGalleryList(linked);
-  }
-  if (!galleryUrl && galleryIndex) {
-    const byName = galleryIndex.byName.get(serviceNameKey(row.name));
-    galleryUrl = pickPrimaryFromGalleryList(byName);
+    const galleryUrl = pickPrimaryFromGalleryList(linked);
+    if (galleryUrl && isRenderableImageUrl(galleryUrl)) return galleryUrl;
   }
 
-  return galleryUrl || direct || "";
+  return "";
 }
 
 /**

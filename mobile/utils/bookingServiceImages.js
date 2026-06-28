@@ -104,25 +104,11 @@ export function mergeServicePhotosFromStyles(services, styles, { barberId, barbe
 /** Fetch GET /api/styles and merge photos onto services missing image_url. */
 export async function enrichBookingServicesWithPublishedStyles(
   services,
-  { barberId, barberName },
-  fetchFn,
-  timeoutMs = 8000,
+  _ctx,
+  _fetchFn,
+  _timeoutMs,
 ) {
-  const list = (Array.isArray(services) ? services : []).map(normalizeBookingService);
-  if (!fetchFn) return list;
-
-  try {
-    const res = await fetchFn(apiFullUrl('/api/styles'), {
-      headers: { Accept: 'application/json', 'Cache-Control': 'no-cache' },
-      timeoutMs,
-    });
-    if (!res?.ok) return list;
-    const text = await res.text();
-    const json = text ? JSON.parse(text) : {};
-    const styles = Array.isArray(json.styles) ? json.styles : [];
-    const withPhotos = mergeServicePhotosFromStyles(list, styles, { barberId, barberName });
-    return appendGalleryStylesAsServices(withPhotos, styles, { barberId, barberName });
-  } catch {
-    return list;
-  }
+  // Backend resolves image_url per service record (barber_services + service_id-linked gallery).
+  // Do not re-merge by name or append gallery rows as duplicate services — that misaligns photos.
+  return (Array.isArray(services) ? services : []).map(normalizeBookingService);
 }
