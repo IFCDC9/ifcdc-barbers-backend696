@@ -19,7 +19,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.ifcdc.barbers",
-      "buildNumber": "46",
+      "buildNumber": "47",
       "usesAppleSignIn": true,
       "entitlements": {
         "com.apple.developer.applesignin": ["Default"]
@@ -46,7 +46,7 @@
     },
     "android": {
       "package": "com.ifcdc.barbers",
-      "versionCode": 46,
+      "versionCode": 47,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#050505"

@@ -130,8 +130,14 @@ export async function fetchBarberPortfolio(slugOrId: string): Promise<BarberPort
   return data.portfolio;
 }
 
-export async function fetchDiscoverPhotos(styleCategory?: string): Promise<PortfolioPhoto[]> {
-  const q = styleCategory ? `?styleCategory=${encodeURIComponent(styleCategory)}&limit=48` : "?limit=48";
+export async function fetchDiscoverPhotos(
+  styleCategory?: string,
+  limit = 100,
+): Promise<PortfolioPhoto[]> {
+  const cap = Math.min(Math.max(limit, 1), 100);
+  const q = styleCategory
+    ? `?styleCategory=${encodeURIComponent(styleCategory)}&limit=${cap}`
+    : `?limit=${cap}`;
   const res = await apiFetch(`/api/portfolio/discover${q}`, { auth: false });
   const data = await parseJson<{ photos: PortfolioPhoto[] }>(res);
   return data.photos || [];

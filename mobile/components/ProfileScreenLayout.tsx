@@ -1,5 +1,5 @@
 import React from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View, type RefreshControlProps } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import ProfileAmbientBackground from "./ProfileAmbientBackground";
@@ -14,6 +14,7 @@ type Props = {
   standalone?: boolean;
   /** Extra space below the status bar / header block. */
   headerTopPad?: number;
+  refreshControl?: React.ReactElement<RefreshControlProps>;
 };
 
 export default function ProfileScreenLayout({
@@ -22,6 +23,7 @@ export default function ProfileScreenLayout({
   children,
   standalone = false,
   headerTopPad = 0,
+  refreshControl,
 }: Props) {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
@@ -65,6 +67,7 @@ export default function ProfileScreenLayout({
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
+        refreshControl={refreshControl}
       >
         {children}
       </ScrollView>

@@ -386,11 +386,91 @@ export async function getPublicBarberPortfolio(slugOrId, { viewerUserId = null }
   };
 }
 
+function discoverCategoryPatterns(styleCategory) {
+  const map = {
+    skin_fade: ["skin fade", "skin_fade", "drop fade", "low fade"],
+    taper_fade: ["taper fade", "taper_fade", "taper", "low taper"],
+    burst_fade: ["burst", "burst fade"],
+    beard: ["beard"],
+    kids_cuts: ["kids", "kid cut", "children"],
+    braids: ["braid"],
+    designs: ["design", "line up", "shape up"],
+    womens_styles: ["women", "ladies", "female", "lady"],
+    hair_color: ["color", "dye", "highlight"],
+  };
+  if (!styleCategory) return null;
+  return map[styleCategory] || [String(styleCategory).replace(/_/g, " ")];
+}
+
+function rowMatchesDiscoverCategory(styleCategory, fields) {
+  if (!styleCategory) return true;
+  if (fields.styleCategory && fields.styleCategory === styleCategory) return true;
+  const patterns = discoverCategoryPatterns(styleCategory) || [];
+  const hay = [fields.category, fields.name, fields.title, fields.serviceName]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return patterns.some((p) => hay.includes(String(p).toLowerCase()));
+}
+
+function buildDiscoverPhotoEntry({
+  id,
+  barberId,
+  barberName,
+  barberSlug,
+  imageUrl,
+  serviceId = null,
+  serviceName = "",
+  price = null,
+  durationMinutes = null,
+  photoType = "standard",
+  styleCategory = null,
+  caption = "",
+  createdAt = null,
+  likedByViewer = false,
+  likeCount = 0,
+}) {
+  const url =
+    resolvePublishedImageUrl(imageUrl, {
+      barberId,
+      serviceId: serviceId || undefined,
+      styleId: id,
+    }) || String(imageUrl || "");
+  if (!url) return null;
+  return {
+    id: String(id),
+    reviewId: null,
+    barberId: String(barberId),
+    photoUrl: url,
+    thumbnailUrl: url,
+    caption: caption || serviceName || "",
+    photoType,
+    styleCategory,
+    is30DayFollowup: false,
+    parentPhotoId: null,
+    likeCount,
+    likedByViewer,
+    createdAt: createdAt ? new Date(createdAt).toISOString() : null,
+    barberName,
+    barberSlug,
+    serviceId: serviceId != null ? String(serviceId) : null,
+    serviceName: serviceName || caption || "",
+    price: price != null && Number.isFinite(Number(price)) ? Number(price) : null,
+    durationMinutes:
+      durationMinutes != null && Number.isFinite(Number(durationMinutes))
+        ? Number(durationMinutes)
+        : null,
+    createdAtMs: createdAt ? new Date(createdAt).getTime() : 0,
+  };
+}
+
 export async function listDiscoverPhotos({ styleCategory = null, limit = 24, viewerUserId = null } = {}) {
   const cap = Math.min(Math.max(Number(limit) || 24, 1), 100);
   if (styleCategory && !HAIRCUT_CATEGORY_IDS.has(styleCategory)) {
     return { ok: false, message: "Invalid style category." };
   }
+
+  const fetchLimit = cap;
 
   const reviewParams = [];
   const reviewWhere = [`rp.status = 'published'`, `lower(coalesce(b.verification_status, 'approved')) = 'approved'`];
@@ -398,14 +478,13 @@ export async function listDiscoverPhotos({ styleCategory = null, limit = 24, vie
     reviewParams.push(styleCategory);
     reviewWhere.push(`rp.style_category = $${reviewParams.length}`);
   }
-  reviewParams.push(cap);
+  reviewParams.push(fetchLimit);
   const reviewR = await dbQuery(
     `SELECT rp.*, b.name AS barber_name, b.public_slug AS barber_slug,
             EXISTS (
               SELECT 1 FROM photo_likes pl
               WHERE pl.photo_id = rp.id AND pl.user_id = $${reviewParams.length + 1}::uuid
-            ) AS liked_by_viewer,
-            'review' AS discover_source
+            ) AS liked_by_viewer
      FROM review_photos rp
      JOIN barbers b ON b.id::text = rp.barber_id
      WHERE ${reviewWhere.join(" AND ")}
@@ -414,60 +493,129 @@ export async function listDiscoverPhotos({ styleCategory = null, limit = 24, vie
     [...reviewParams, viewerUserId || null],
   );
 
-  let styleRows = [];
-  if (!styleCategory) {
-    const styleR = await dbQuery(
-      `SELECT g.id, g.barber_id, g.service_id, g.image_url, g.title, g.price, g.duration_minutes, g.created_at,
-              b.name AS barber_name, b.public_slug AS barber_slug
-       FROM barber_style_gallery g
-       JOIN barbers b ON b.id::text = g.barber_id::text
-       WHERE COALESCE(g.is_published, true) = true
-         AND g.image_url IS NOT NULL AND trim(g.image_url) <> ''
-         AND lower(coalesce(b.verification_status, 'approved')) = 'approved'
-       ORDER BY g.created_at DESC
-       LIMIT $1`,
-      [cap],
-    ).catch(() => ({ rows: [] }));
-    styleRows = styleR.rows || [];
+  const serviceR = await dbQuery(
+    `SELECT s.id AS service_id, s.barber_id, s.name AS service_name, s.price, s.duration_minutes,
+            s.image_url, s.category, s.created_at,
+            b.name AS barber_name, b.public_slug AS barber_slug
+     FROM barber_services s
+     JOIN barbers b ON b.id::text = s.barber_id::text
+     WHERE COALESCE(s.is_active, true) = true
+       AND s.image_url IS NOT NULL AND trim(s.image_url) <> ''
+       AND lower(coalesce(b.verification_status, 'approved')) = 'approved'
+     ORDER BY s.created_at DESC NULLS LAST
+     LIMIT $1`,
+    [fetchLimit],
+  ).catch(() => ({ rows: [] }));
+
+  const styleR = await dbQuery(
+    `SELECT g.id, g.barber_id, g.service_id, g.image_url, g.title, g.price, g.duration_minutes,
+            g.category, g.created_at,
+            b.name AS barber_name, b.public_slug AS barber_slug,
+            s.name AS linked_service_name, s.price AS linked_service_price,
+            s.duration_minutes AS linked_service_duration
+     FROM barber_style_gallery g
+     JOIN barbers b ON b.id::text = g.barber_id::text
+     LEFT JOIN barber_services s ON s.id = g.service_id
+     WHERE COALESCE(g.is_published, true) = true
+       AND g.image_url IS NOT NULL AND trim(g.image_url) <> ''
+       AND lower(coalesce(b.verification_status, 'approved')) = 'approved'
+     ORDER BY g.created_at DESC
+     LIMIT $1`,
+    [fetchLimit],
+  ).catch(() => ({ rows: [] }));
+
+  const serviceKeys = new Set();
+  const items = [];
+
+  for (const row of serviceR.rows || []) {
+    if (
+      !rowMatchesDiscoverCategory(styleCategory, {
+        category: row.category,
+        name: row.service_name,
+        serviceName: row.service_name,
+      })
+    ) {
+      continue;
+    }
+    const barberId = String(row.barber_id);
+    const serviceId = row.service_id;
+    const key = `${barberId}:svc:${serviceId}`;
+    if (serviceKeys.has(key)) continue;
+    serviceKeys.add(key);
+    const entry = buildDiscoverPhotoEntry({
+      id: `svc-${serviceId}-${barberId}`,
+      barberId,
+      barberName: row.barber_name,
+      barberSlug: row.barber_slug,
+      imageUrl: row.image_url,
+      serviceId,
+      serviceName: row.service_name,
+      price: row.price,
+      durationMinutes: row.duration_minutes,
+      photoType: "service",
+      category: row.category,
+      createdAt: row.created_at,
+    });
+    if (entry) items.push(entry);
   }
 
-  const reviewPhotos = (reviewR.rows || []).map((row) => ({
-    ...mapPhotoRow(row, { likedByViewer: Boolean(row.liked_by_viewer) }),
-    barberName: row.barber_name,
-    barberSlug: row.barber_slug,
-    createdAtMs: row.created_at ? new Date(row.created_at).getTime() : 0,
-  }));
-
-  const stylePhotos = styleRows.map((row) => {
+  for (const row of styleR.rows || []) {
     const barberId = String(row.barber_id);
-    const imageUrl =
-      resolvePublishedImageUrl(row.image_url, { barberId, styleId: `gal-${row.id}` }) ||
-      String(row.image_url || "");
-    return {
-    id: `gal-${String(row.id)}`,
-    reviewId: null,
-    barberId,
-    photoUrl: imageUrl,
-    thumbnailUrl: imageUrl,
-    caption: row.title || "",
-    photoType: "standard",
-    styleCategory: null,
-    is30DayFollowup: false,
-    parentPhotoId: null,
-    likeCount: 0,
-    likedByViewer: false,
-    createdAt: row.created_at ? new Date(row.created_at).toISOString() : null,
-    barberName: row.barber_name,
-    barberSlug: row.barber_slug,
-    serviceId: row.service_id != null ? String(row.service_id) : null,
-    serviceName: row.title || "",
-    price: row.price != null ? Number(row.price) : null,
-    durationMinutes: row.duration_minutes != null ? Number(row.duration_minutes) : null,
-    createdAtMs: row.created_at ? new Date(row.created_at).getTime() : 0,
-  };
-  });
+    const sid = row.service_id != null ? String(row.service_id) : "";
+    if (sid && serviceKeys.has(`${barberId}:svc:${sid}`)) continue;
 
-  const photos = [...reviewPhotos, ...stylePhotos]
+    const serviceName = row.linked_service_name || row.title || "";
+    const price = row.linked_service_price != null ? row.linked_service_price : row.price;
+    if (
+      !rowMatchesDiscoverCategory(styleCategory, {
+        category: row.category,
+        title: row.title,
+        name: serviceName,
+        serviceName,
+      })
+    ) {
+      continue;
+    }
+
+    const entry = buildDiscoverPhotoEntry({
+      id: `gal-${String(row.id)}`,
+      barberId,
+      barberName: row.barber_name,
+      barberSlug: row.barber_slug,
+      imageUrl: row.image_url,
+      serviceId: row.service_id,
+      serviceName,
+      price,
+      durationMinutes: row.linked_service_duration ?? row.duration_minutes,
+      photoType: sid ? "service" : "standard",
+      caption: row.title || serviceName,
+      createdAt: row.created_at,
+    });
+    if (entry) items.push(entry);
+  }
+
+  for (const row of reviewR.rows || []) {
+    const mapped = mapPhotoRow(row, { likedByViewer: Boolean(row.liked_by_viewer) });
+    if (
+      !rowMatchesDiscoverCategory(styleCategory, {
+        styleCategory: mapped.styleCategory,
+        title: mapped.caption,
+        name: row.barber_name,
+      })
+    ) {
+      continue;
+    }
+    items.push({
+      ...mapped,
+      barberName: row.barber_name,
+      barberSlug: row.barber_slug,
+      serviceName: mapped.caption || "",
+      price: null,
+      createdAtMs: row.created_at ? new Date(row.created_at).getTime() : 0,
+    });
+  }
+
+  const photos = items
     .sort((a, b) => (b.createdAtMs || 0) - (a.createdAtMs || 0))
     .slice(0, cap)
     .map(({ createdAtMs, ...rest }) => rest);
