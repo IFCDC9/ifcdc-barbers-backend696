@@ -1147,7 +1147,21 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
           : note,
       });
 
-      // Best-effort push fanout. Cancellations and reschedules use their own
+      if (target === "completed") {
+        void import("./socialPortfolioService.js")
+          .then((m) =>
+            m.scheduleHaircutFollowupReminder({
+              id,
+              barber_id: booking.barber_id,
+              user_id: booking.user_id,
+              customer_email: booking.customer_email,
+              booking_status: "completed",
+            }),
+          )
+          .catch(() => {});
+      }
+
+      // Best-effort push fanout.
       // dedicated kinds; everything else surfaces as a status update.
       const pushKind =
         target === "cancelled"
@@ -1297,6 +1311,17 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
             actor: adminActor,
             note: req.body?.note || null,
           });
+          void import("./socialPortfolioService.js")
+            .then((m) =>
+              m.scheduleHaircutFollowupReminder({
+                id,
+                barber_id: booking.barber_id,
+                user_id: booking.user_id,
+                customer_email: booking.customer_email,
+                booking_status: "completed",
+              }),
+            )
+            .catch(() => {});
           void dispatchBookingPush({
             booking,
             kind: "booking_status_update",

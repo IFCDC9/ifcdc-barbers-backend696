@@ -25,6 +25,8 @@ import Invite from "./pages/Invite.jsx";
 import PublicLegalPage from "./pages/PublicLegalPage.jsx";
 import IFCDCGlobalFooter from "./components/IFCDCGlobalFooter.jsx";
 import StylesBrowse from "./pages/StylesBrowse.jsx";
+import StyleDiscoverPage from "./pages/StyleDiscoverPage.jsx";
+import BarberPortfolioPage from "./pages/BarberPortfolioPage.jsx";
 import BarberOnboarding from "./pages/BarberOnboarding.jsx";
 import SignupBusiness from "./pages/SignupBusiness.jsx";
 import Messages from "./pages/Messages.jsx";
@@ -59,6 +61,9 @@ function AppShell() {
             <Route path="/" element={<Home />} />
             <Route path="/barbers" element={<Navigate to="/booking" replace />} />
             <Route path="/styles" element={<StylesBrowse />} />
+            <Route path="/discover" element={<StyleDiscoverPage />} />
+            <Route path="/p/:slug" element={<BarberPortfolioPage />} />
+            <Route path="/barbers/:slug" element={<BarberPortfolioPage />} />
             <Route path="/book" element={<Navigate to="/booking" replace />} />
             <Route path="/booking" element={<BookingWizard />} />
             <Route path="/booking-legacy" element={<Booking />} />

@@ -14,6 +14,7 @@ export const ADMIN_ACTIVITY = {
   ACCOUNT_DELETED: "account_deleted",
   BARBER_BOOKING_HIDDEN: "barber_booking_hidden",
   BARBER_BOOKING_VISIBLE: "barber_booking_visible",
+  CONTENT_MODERATED: "content_moderated",
   ROLE_CHANGED: "role_changed",
 };
 
@@ -26,6 +27,7 @@ const ACTION_LABELS = {
   [ADMIN_ACTIVITY.ACCOUNT_DELETED]: "Account deleted",
   [ADMIN_ACTIVITY.BARBER_BOOKING_HIDDEN]: "Barber hidden from bookings",
   [ADMIN_ACTIVITY.BARBER_BOOKING_VISIBLE]: "Barber shown on bookings",
+  [ADMIN_ACTIVITY.CONTENT_MODERATED]: "Content moderated",
   [ADMIN_ACTIVITY.ROLE_CHANGED]: "Role changed",
 };
 

@@ -1,0 +1,106 @@
+import { getApiOrigin } from "./api.js";
+import { getStoredToken } from "../lib/authHeaders.js";
+
+function authHeaders() {
+  const token = getStoredToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+export async function fetchPortfolioCategories() {
+  const origin = getApiOrigin();
+  const res = await fetch(`${origin}/api/portfolio/meta/categories`, { headers: { Accept: "application/json" } });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.message || `HTTP ${res.status}`);
+  return data;
+}
+
+export async function fetchPublicPortfolio(slugOrId) {
+  const origin = getApiOrigin();
+  const res = await fetch(`${origin}/api/portfolio/${encodeURIComponent(String(slugOrId))}`, {
+    headers: { Accept: "application/json", ...authHeaders() },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.message || `HTTP ${res.status}`);
+  return data;
+}
+
+export async function fetchDiscoverPhotos(filters = {}) {
+  const origin = getApiOrigin();
+  const q = new URLSearchParams();
+  if (filters.styleCategory) q.set("styleCategory", filters.styleCategory);
+  if (filters.limit) q.set("limit", String(filters.limit));
+  const suffix = q.toString() ? `?${q.toString()}` : "";
+  const res = await fetch(`${origin}/api/portfolio/discover${suffix}`, {
+    headers: { Accept: "application/json", ...authHeaders() },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.message || `HTTP ${res.status}`);
+  return data;
+}
+
+export async function fetchReviewableBookings() {
+  const origin = getApiOrigin();
+  const res = await fetch(`${origin}/api/me/reviewable-bookings`, {
+    headers: { Accept: "application/json", ...authHeaders() },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.message || `HTTP ${res.status}`);
+  return data;
+}
+
+export async function submitBookingReview(bookingId, body) {
+  const origin = getApiOrigin();
+  const res = await fetch(`${origin}/api/bookings/${encodeURIComponent(String(bookingId))}/review`, {
+    method: "POST",
+    headers: { Accept: "application/json", "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.message || `HTTP ${res.status}`);
+  return data;
+}
+
+export async function togglePhotoLike(photoId) {
+  const origin = getApiOrigin();
+  const res = await fetch(`${origin}/api/photos/${encodeURIComponent(String(photoId))}/like`, {
+    method: "POST",
+    headers: { Accept: "application/json", ...authHeaders() },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.message || `HTTP ${res.status}`);
+  return data;
+}
+
+export async function followBarber(barberId) {
+  const origin = getApiOrigin();
+  const res = await fetch(`${origin}/api/barbers/${encodeURIComponent(String(barberId))}/follow`, {
+    method: "POST",
+    headers: { Accept: "application/json", ...authHeaders() },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.message || `HTTP ${res.status}`);
+  return data;
+}
+
+export async function unfollowBarber(barberId) {
+  const origin = getApiOrigin();
+  const res = await fetch(`${origin}/api/barbers/${encodeURIComponent(String(barberId))}/follow`, {
+    method: "DELETE",
+    headers: { Accept: "application/json", ...authHeaders() },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.message || `HTTP ${res.status}`);
+  return data;
+}
+
+export async function reportContent(body) {
+  const origin = getApiOrigin();
+  const res = await fetch(`${origin}/api/content/report`, {
+    method: "POST",
+    headers: { Accept: "application/json", "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.message || `HTTP ${res.status}`);
+  return data;
+}

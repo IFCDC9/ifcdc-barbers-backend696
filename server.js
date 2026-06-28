@@ -38,6 +38,8 @@ import { createBookingsRouter, insertAuraVoiceBookingRow } from "./bookingsRoute
 import { createBookingsAdminGuard } from "./bookingsAdminGuard.js";
 import { createAdminUsersRouter } from "./adminUsersRoutes.js";
 import { createAdminBarbersRouter } from "./adminBarbersRoutes.js";
+import { createSocialPortfolioRouter } from "./socialPortfolioRoutes.js";
+import { ensureSocialPortfolioSchema } from "./socialPortfolioMigrations.js";
 import { createAdminShopsRouter } from "./adminShopsRoutes.js";
 import { ensureAdminBarberManagementSchema } from "./adminBarberMigrations.js";
 import { ensureAppUsersBarberIdTypeAligned } from "./authDbMigrations.js";
@@ -627,6 +629,7 @@ app.use(bookingsRouter);
 const adminUsersRouter = createAdminUsersRouter({ sendEmail });
 app.use(adminUsersRouter);
 app.use(createAdminBarbersRouter());
+app.use(createSocialPortfolioRouter());
 app.use(createAdminShopsRouter());
 console.log(
   "[admin] routes mounted: invite, audit, password-reset, barbers, shops, notifications",
@@ -1062,6 +1065,7 @@ async function startServer() {
     await ensureSecurityTenantColumns();
     await ensureBookingStatusHistoryTable();
     await ensurePushNotificationsSchema();
+    await ensureSocialPortfolioSchema();
     await ensureLegalAcceptanceSchema();
     await ensureAuraMemoryTables();
   } catch (e) {
