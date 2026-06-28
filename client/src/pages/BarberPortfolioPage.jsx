@@ -11,6 +11,8 @@ import {
   togglePhotoLike,
   unfollowBarber,
 } from "../services/socialPortfolioApi.js";
+import StyleCoverImage from "../components/StyleCoverImage.jsx";
+import { isRenderableStyleImageUrl } from "../lib/styleImageUrl.js";
 
 function Stars({ value }) {
   const n = Math.round(Number(value) || 0);
@@ -196,7 +198,7 @@ export default function BarberPortfolioPage() {
       </Card>
 
       <Card style={{ marginTop: 16 }}>
-        <CardTitle>Services & pricing</CardTitle>
+        <CardTitle>Services & portfolio</CardTitle>
         <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
           {(portfolio.services || []).length ? (
             portfolio.services.map((service) => (
@@ -204,23 +206,35 @@ export default function BarberPortfolioPage() {
                 key={service.id}
                 style={{
                   display: "flex",
-                  justifyContent: "space-between",
-                  gap: 12,
+                  alignItems: "center",
+                  gap: 14,
                   padding: "10px 0",
                   borderBottom: `1px solid ${theme.colors.border}`,
                 }}
               >
-                <div>
+                <div style={{ width: 80, height: 80, flexShrink: 0, borderRadius: theme.radius.sm, overflow: "hidden" }}>
+                  <StyleCoverImage
+                    bare
+                    styleId={service.id}
+                    barberId={portfolio.id}
+                    imageUrl={isRenderableStyleImageUrl(service.imageUrl) ? service.imageUrl : ""}
+                    alt={service.name || ""}
+                    className="ifcdc-cover-media__img ifcdc-cover-fill"
+                    frameClassName="ifcdc-cover-media"
+                    logContext="portfolio-service"
+                  />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
                   <strong>{service.name}</strong>
                   {service.description ? (
                     <p style={{ margin: "4px 0 0", color: theme.colors.muted, fontSize: 13 }}>{service.description}</p>
                   ) : null}
+                  {service.durationMinutes ? (
+                    <p style={{ margin: "4px 0 0", color: theme.colors.muted, fontSize: 12 }}>{service.durationMinutes} min</p>
+                  ) : null}
                 </div>
                 <div style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                   {service.price != null ? <strong>${Number(service.price).toFixed(0)}</strong> : null}
-                  {service.durationMinutes ? (
-                    <div style={{ color: theme.colors.muted, fontSize: 12 }}>{service.durationMinutes} min</div>
-                  ) : null}
                 </div>
               </div>
             ))
@@ -230,8 +244,9 @@ export default function BarberPortfolioPage() {
         </div>
       </Card>
 
+      {(portfolio.gallery || []).length ? (
       <Card style={{ marginTop: 16 }}>
-        <CardTitle>Haircut gallery</CardTitle>
+        <CardTitle>Style gallery</CardTitle>
         <div
           style={{
             display: "grid",
@@ -247,21 +262,27 @@ export default function BarberPortfolioPage() {
                 alt={photo.caption || "Haircut photo"}
                 style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: theme.radius.sm }}
               />
-              <figcaption style={{ display: "flex", justifyContent: "space-between", marginTop: 6, fontSize: 12 }}>
-                <button
-                  type="button"
-                  onClick={() => void onLike(photo.id)}
-                  style={{ background: "none", border: "none", color: photo.likedByViewer ? theme.colors.accent : theme.colors.muted, cursor: "pointer" }}
-                >
-                  ♥ {photo.likeCount || 0}
-                </button>
-                {photo.is30DayFollowup ? <span style={{ color: theme.colors.muted }}>30-day</span> : null}
+              <figcaption style={{ marginTop: 6, fontSize: 12 }}>
+                <div style={{ fontWeight: 700 }}>{photo.serviceName || photo.caption || "Style"}</div>
+                {photo.price != null ? (
+                  <div style={{ color: theme.colors.muted }}>${Number(photo.price).toFixed(0)}</div>
+                ) : null}
+                <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
+                  <button
+                    type="button"
+                    onClick={() => void onLike(photo.id)}
+                    style={{ background: "none", border: "none", color: photo.likedByViewer ? theme.colors.accent : theme.colors.muted, cursor: "pointer" }}
+                  >
+                    ♥ {photo.likeCount || 0}
+                  </button>
+                  {photo.is30DayFollowup ? <span style={{ color: theme.colors.muted }}>30-day</span> : null}
+                </div>
               </figcaption>
             </figure>
           ))}
-          {!portfolio.gallery?.length ? <p style={{ color: theme.colors.muted }}>No photos yet.</p> : null}
         </div>
       </Card>
+      ) : null}
 
       <Card style={{ marginTop: 16 }}>
         <CardTitle>Customer reviews</CardTitle>

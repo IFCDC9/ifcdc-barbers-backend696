@@ -31,6 +31,9 @@ import {
 } from "../../services/socialPortfolioApi";
 import { userFacingApiError } from "../../utils/userFacingApiError";
 import { useAuth } from "../../services/authContext";
+import { getServiceCardImageUrl } from "../../utils/styleImageUrl";
+import type { StackNavigationProp } from "@react-navigation/stack";
+import type { ProfileStackParamList } from "../../navigation/ProfileStack";
 
 export type BarberPortfolioParams = { slugOrId: string; barberName?: string };
 
@@ -43,8 +46,8 @@ function formatMoney(price: number | null): string {
 
 export default function BarberPortfolioScreen() {
   const route = useRoute<Route>();
-  const navigation = useNavigation();
-  const { token } = useAuth();
+  const navigation = useNavigation<StackNavigationProp<ProfileStackParamList>>();
+  const { token, user } = useAuth();
   const { width } = useWindowDimensions();
   const contentMax = Math.min(width, 820);
   const isWide = width >= 768;
@@ -177,7 +180,20 @@ export default function BarberPortfolioScreen() {
       Alert.alert("Booking unavailable", "This barber is not accepting bookings right now.");
       return;
     }
-    (navigation as { navigate: (name: string) => void }).navigate("BookMain");
+    navigation.getParent()?.navigate("Book" as never, { screen: "BookMain" } as never);
+  };
+
+  const isOwnPortfolio =
+    Boolean(user?.barberId) && portfolio && String(user.barberId) === String(portfolio.id);
+
+  const openEdit = (screen: string, params: object) => {
+    if (!portfolio) return;
+    const stackRoutes = navigation.getState()?.routeNames || [];
+    if (stackRoutes.includes(screen)) {
+      navigation.navigate(screen as never, params as never);
+      return;
+    }
+    navigation.getParent()?.navigate("Profile" as never, { screen, params } as never);
   };
 
   if (loading) {
@@ -242,25 +258,56 @@ export default function BarberPortfolioScreen() {
             />
             <GlowButton label="Share" variant="outline" onPress={() => void onShare()} disabled={busy} />
           </View>
+          {isOwnPortfolio ? (
+            <View style={styles.actions}>
+              <GlowButton
+                label="Edit profile"
+                variant="outline"
+                onPress={() =>
+                  openEdit("BarberEdit", { barberId: portfolio.id, barberName: portfolio.name })
+                }
+              />
+              <GlowButton
+                label="Edit services"
+                variant="outline"
+                onPress={() =>
+                  openEdit("BarberServices", { barberId: portfolio.id, barberName: portfolio.name })
+                }
+              />
+              <GlowButton
+                label="Manage gallery"
+                variant="outline"
+                onPress={() =>
+                  openEdit("BarberGallery", { barberId: portfolio.id, barberName: portfolio.name })
+                }
+              />
+            </View>
+          ) : null}
         </ProfileCard>
 
         <ProfileCard style={styles.section}>
-          <Text style={styles.sectionTitle}>Haircut gallery</Text>
-          <PortfolioPhotoGrid photos={portfolio.gallery} onLike={onLike} onPhotoLongPress={onReportPhoto} />
-        </ProfileCard>
-
-        <ProfileCard style={styles.section}>
-          <Text style={styles.sectionTitle}>Services & pricing</Text>
+          <Text style={styles.sectionTitle}>Services & portfolio</Text>
           {portfolio.services.length ? (
             portfolio.services.map((s) => (
               <View key={String(s.id)} style={styles.serviceRow}>
+                {s.imageUrl ? (
+                  <Image
+                    source={{ uri: getServiceCardImageUrl(s.imageUrl) }}
+                    style={styles.serviceThumb}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <View style={[styles.serviceThumb, styles.serviceThumbPlaceholder]}>
+                    <Text style={styles.serviceThumbIcon}>{s.icon || "✂️"}</Text>
+                  </View>
+                )}
                 <View style={styles.serviceCopy}>
                   <Text style={styles.serviceName}>{s.icon ? `${s.icon} ` : ""}{s.name}</Text>
                   {s.description ? <Text style={styles.serviceDesc}>{s.description}</Text> : null}
+                  {s.durationMinutes ? <Text style={styles.duration}>{s.durationMinutes} min</Text> : null}
                 </View>
                 <View style={styles.servicePrice}>
                   <Text style={styles.price}>{formatMoney(s.price)}</Text>
-                  {s.durationMinutes ? <Text style={styles.duration}>{s.durationMinutes} min</Text> : null}
                 </View>
               </View>
             ))
@@ -268,6 +315,13 @@ export default function BarberPortfolioScreen() {
             <Text style={styles.muted}>Services coming soon.</Text>
           )}
         </ProfileCard>
+
+        {portfolio.gallery.length ? (
+          <ProfileCard style={styles.section}>
+            <Text style={styles.sectionTitle}>Style gallery</Text>
+            <PortfolioPhotoGrid photos={portfolio.gallery} onLike={onLike} onPhotoLongPress={onReportPhoto} />
+          </ProfileCard>
+        ) : null}
 
         <ProfileCard style={styles.section}>
           <Text style={styles.sectionTitle}>Client reviews</Text>
@@ -342,12 +396,25 @@ const styles = StyleSheet.create({
   sectionTitle: { ...typography.heading, color: palette.gold, fontSize: 15 },
   serviceRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    alignItems: "center",
     gap: 12,
     paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: palette.border,
   },
+  serviceThumb: {
+    width: 72,
+    height: 72,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: palette.borderGold,
+  },
+  serviceThumbPlaceholder: {
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: palette.bg2,
+  },
+  serviceThumbIcon: { fontSize: 28 },
   serviceCopy: { flex: 1 },
   serviceName: { ...typography.heading, fontSize: 15 },
   serviceDesc: { ...typography.caption, marginTop: 4 },

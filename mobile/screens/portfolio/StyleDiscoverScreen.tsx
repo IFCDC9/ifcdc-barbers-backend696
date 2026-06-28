@@ -20,6 +20,7 @@ import {
   type PortfolioCategory,
   type PortfolioPhoto,
 } from "../../services/socialPortfolioApi";
+import { getServiceCardImageUrl } from "../../utils/styleImageUrl";
 
 export default function StyleDiscoverScreen() {
   const navigation = useNavigation<{ navigate: (name: string, params?: object) => void }>();
@@ -89,12 +90,26 @@ export default function StyleDiscoverScreen() {
                 key={photo.id}
                 style={[styles.tile, { width: tile, height: tile }]}
                 onPress={() => {
-                  const slug = photo.barberSlug;
-                  if (slug) navigation.navigate("BarberPortfolio", { slugOrId: String(slug), barberName: photo.barberName });
+                  const slug = photo.barberSlug || photo.barberId;
+                  if (slug) {
+                    navigation.navigate("BarberPortfolio", {
+                      slugOrId: String(slug),
+                      barberName: photo.barberName,
+                    });
+                  }
                 }}
               >
-                <Image source={{ uri: photo.thumbnailUrl || photo.photoUrl }} style={styles.image} resizeMode="cover" />
-                {photo.barberName ? <Text style={styles.caption} numberOfLines={1}>{photo.barberName}</Text> : null}
+                <Image
+                  source={{ uri: getServiceCardImageUrl(photo.thumbnailUrl || photo.photoUrl) }}
+                  style={styles.image}
+                  resizeMode="cover"
+                />
+                {photo.serviceName || photo.barberName ? (
+                  <Text style={styles.caption} numberOfLines={2}>
+                    {photo.serviceName || photo.caption || photo.barberName}
+                    {photo.price != null ? ` · $${Number(photo.price).toFixed(0)}` : ""}
+                  </Text>
+                ) : null}
               </Pressable>
             ))}
           </View>

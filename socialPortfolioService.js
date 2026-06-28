@@ -13,6 +13,11 @@ import {
 
 const require = createRequire(import.meta.url);
 const { bookableBarberWhereSql } = require("./barberBookingPolicy.cjs");
+const {
+  loadGalleryPhotoIndexForBarber,
+  enrichServicesWithGalleryPhotos,
+} = require("./servicePhotoResolver.cjs");
+const { resolvePublishedImageUrl } = require("./styleImageUrl.cjs");
 
 function slugify(value) {
   return String(value || "")
@@ -131,21 +136,31 @@ export async function ensureBarberPublicSlug(barberId) {
 
 async function loadBarberServices(barberId) {
   const r = await dbQuery(
-    `SELECT id, name, description, price::float8 AS price, duration_minutes, icon, image_url
+    `SELECT id, barber_id, name, description, price::float8 AS price, duration_minutes, icon, image_url
      FROM barber_services
      WHERE barber_id::text = $1::text AND COALESCE(is_active, true) = true
      ORDER BY name ASC`,
     [String(barberId)],
   );
-  return (r.rows || []).map((row) => ({
-    id: row.id,
-    name: row.name,
-    description: row.description || "",
-    price: row.price != null ? Number(row.price) : null,
-    durationMinutes: row.duration_minutes != null ? Number(row.duration_minutes) : null,
-    icon: row.icon || "",
-    imageUrl: row.image_url || "",
-  }));
+  const rows = r.rows || [];
+  const galleryIndex = await loadGalleryPhotoIndexForBarber(dbQuery, String(barberId));
+  const enriched = enrichServicesWithGalleryPhotos(rows, galleryIndex);
+  return enriched.map((row) => {
+    const imageUrl =
+      resolvePublishedImageUrl(row.cover_image_url || row.image_url, {
+        serviceId: row.id,
+        barberId: row.barber_id || barberId,
+      }) || "";
+    return {
+      id: row.id,
+      name: row.name,
+      description: row.description || "",
+      price: row.price != null ? Number(row.price) : null,
+      durationMinutes: row.duration_minutes != null ? Number(row.duration_minutes) : null,
+      icon: row.icon || "",
+      imageUrl,
+    };
+  });
 }
 
 async function loadReviewStats(barberId) {
@@ -245,38 +260,63 @@ export async function getPublicBarberPortfolio(slugOrId, { viewerUserId = null }
     mapReviewRow(row, photoMap.get(String(row.id)) || []),
   );
 
-  const galleryR = await dbQuery(
-    `SELECT rp.*,
-            EXISTS (
-              SELECT 1 FROM photo_likes pl
-              WHERE pl.photo_id = rp.id AND pl.user_id = $2::uuid
-            ) AS liked_by_viewer
-     FROM review_photos rp
-     WHERE rp.barber_id = $1::text AND rp.status = 'published'
-     ORDER BY rp.created_at DESC
-     LIMIT 60`,
-    [barberId, viewerUserId || null],
-  );
-  const gallery = (galleryR.rows || []).map((row) =>
-    mapPhotoRow(row, { likedByViewer: Boolean(row.liked_by_viewer) }),
-  );
-
   const styleGalleryR = await dbQuery(
-    `SELECT id, barber_id, image_url, title, created_at
+    `SELECT id, barber_id, service_id, image_url, title, price, duration_minutes, created_at
      FROM barber_style_gallery
      WHERE barber_id::text = $1::text AND COALESCE(is_published, true) = true
      ORDER BY sort_order ASC, created_at DESC
      LIMIT 60`,
     [barberId],
   ).catch(() => ({ rows: [] }));
+
+  const serviceIdsWithCover = new Set(
+    services.filter((s) => s.imageUrl).map((s) => String(s.id)),
+  );
+
+  /** Portfolio gallery: one tile per service (authoritative cover) + extra gallery rows not already on a service. */
+  const gallery = [];
+  for (const svc of services) {
+    if (!svc.imageUrl) continue;
+    gallery.push({
+      id: `svc-${String(svc.id)}`,
+      reviewId: null,
+      barberId,
+      serviceId: String(svc.id),
+      serviceName: svc.name,
+      price: svc.price,
+      durationMinutes: svc.durationMinutes,
+      photoUrl: svc.imageUrl,
+      thumbnailUrl: svc.imageUrl,
+      caption: svc.name,
+      photoType: "service",
+      styleCategory: null,
+      is30DayFollowup: false,
+      parentPhotoId: null,
+      likeCount: 0,
+      likedByViewer: false,
+      createdAt: null,
+    });
+  }
+
   for (const row of styleGalleryR.rows || []) {
     if (!row.image_url) continue;
+    const sid = row.service_id != null ? String(row.service_id) : "";
+    if (sid && serviceIdsWithCover.has(sid)) continue;
+    const url = resolvePublishedImageUrl(row.image_url, {
+      barberId,
+      styleId: `gal-${row.id}`,
+    });
+    if (!url) continue;
     gallery.push({
       id: `gal-${String(row.id)}`,
       reviewId: null,
       barberId,
-      photoUrl: row.image_url,
-      thumbnailUrl: row.image_url,
+      serviceId: sid || null,
+      serviceName: row.title || "",
+      price: row.price != null ? Number(row.price) : null,
+      durationMinutes: row.duration_minutes != null ? Number(row.duration_minutes) : null,
+      photoUrl: url,
+      thumbnailUrl: url,
       caption: row.title || "",
       photoType: "standard",
       styleCategory: null,
@@ -372,7 +412,7 @@ export async function listDiscoverPhotos({ styleCategory = null, limit = 24, vie
   let styleRows = [];
   if (!styleCategory) {
     const styleR = await dbQuery(
-      `SELECT g.id, g.barber_id, g.image_url, g.title, g.created_at,
+      `SELECT g.id, g.barber_id, g.service_id, g.image_url, g.title, g.price, g.duration_minutes, g.created_at,
               b.name AS barber_name, b.public_slug AS barber_slug
        FROM barber_style_gallery g
        JOIN barbers b ON b.id::text = g.barber_id::text
@@ -409,6 +449,10 @@ export async function listDiscoverPhotos({ styleCategory = null, limit = 24, vie
     createdAt: row.created_at ? new Date(row.created_at).toISOString() : null,
     barberName: row.barber_name,
     barberSlug: row.barber_slug,
+    serviceId: row.service_id != null ? String(row.service_id) : null,
+    serviceName: row.title || "",
+    price: row.price != null ? Number(row.price) : null,
+    durationMinutes: row.duration_minutes != null ? Number(row.duration_minutes) : null,
     createdAtMs: row.created_at ? new Date(row.created_at).getTime() : 0,
   }));
 

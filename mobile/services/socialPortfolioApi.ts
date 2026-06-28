@@ -17,6 +17,10 @@ export type PortfolioPhoto = {
   likedByViewer: boolean;
   barberName?: string;
   barberSlug?: string;
+  serviceId?: string | null;
+  serviceName?: string;
+  price?: number | null;
+  durationMinutes?: number | null;
 };
 
 export type PortfolioReview = {
@@ -120,7 +124,7 @@ export async function fetchPortfolioCategories(): Promise<PortfolioCategory[]> {
 }
 
 export async function fetchBarberPortfolio(slugOrId: string): Promise<BarberPortfolio> {
-  const res = await apiFetch(`/api/portfolio/${encodeURIComponent(slugOrId)}`);
+  const res = await apiFetch(`/api/portfolio/${encodeURIComponent(slugOrId)}`, { auth: false });
   const data = await parseJson<{ portfolio: BarberPortfolio }>(res);
   if (!data.portfolio) throw new Error("Portfolio not found.");
   return data.portfolio;
@@ -128,7 +132,7 @@ export async function fetchBarberPortfolio(slugOrId: string): Promise<BarberPort
 
 export async function fetchDiscoverPhotos(styleCategory?: string): Promise<PortfolioPhoto[]> {
   const q = styleCategory ? `?styleCategory=${encodeURIComponent(styleCategory)}&limit=48` : "?limit=48";
-  const res = await apiFetch(`/api/portfolio/discover${q}`);
+  const res = await apiFetch(`/api/portfolio/discover${q}`, { auth: false });
   const data = await parseJson<{ photos: PortfolioPhoto[] }>(res);
   return data.photos || [];
 }

@@ -1,6 +1,7 @@
 import React from "react"
 import { ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native"
 import { useNavigation } from "@react-navigation/native"
+import type { NavigationProp, ParamListBase } from "@react-navigation/native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { useTranslation } from "react-i18next"
 import CardContainer from "../../components/CardContainer"
@@ -12,7 +13,7 @@ import { IFCDC_FOOTER_CLEARANCE } from "../../constants/profileLayout"
 const HORIZONTAL_PAD = 24
 
 const ExploreScreen = () => {
-  const navigation = useNavigation<{ navigate: (name: "Book") => void }>()
+  const navigation = useNavigation<NavigationProp<ParamListBase>>()
   const insets = useSafeAreaInsets()
   const { width: screenWidth } = useWindowDimensions()
   const { t } = useTranslation()
@@ -54,7 +55,7 @@ const ExploreScreen = () => {
           <GlowButton
             label="Discover haircuts"
             variant="outline"
-            onPress={() => (navigation as { navigate: (name: string) => void }).navigate("Profile", { screen: "StyleDiscover" })}
+            onPress={() => navigation.navigate("Book", { screen: "StyleDiscover" })}
           />
         </CardContainer>
       </ScrollView>
