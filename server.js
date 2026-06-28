@@ -1076,6 +1076,18 @@ async function startServer() {
   } catch (e) {
     console.error("[migrate] social portfolio failed:", e?.message || e);
   }
+
+  void import("./socialPortfolioService.js")
+    .then((m) => m.sendDueFollowupReminders())
+    .then((r) => {
+      if (r?.sent) console.log(`[followup] sent ${r.sent} reminder(s) on boot`);
+    })
+    .catch(() => {});
+  setInterval(() => {
+    void import("./socialPortfolioService.js")
+      .then((m) => m.sendDueFollowupReminders())
+      .catch(() => {});
+  }, 6 * 60 * 60 * 1000);
   try {
     await ensureStylesTables();
     const seeded = await seedSampleStylesIfEmpty();

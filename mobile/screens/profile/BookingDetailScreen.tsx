@@ -55,6 +55,10 @@ import { useAuth } from "../../services/authContext";
 import { theme } from "../../constants/theme";
 import ShareButton from "../../components/ShareButton";
 import {
+  fetchBookingReviewStatus,
+  fetchFollowupReminders,
+} from "../../services/socialPortfolioApi";
+import {
   APP_BRAND_NAME,
   buildBookingShareMessage,
   buildReceiptShareMessage,
@@ -207,6 +211,16 @@ function StatusTimeline({
 type NavParams = {
   CancelBooking: { bookingId: string };
   RescheduleBooking: { bookingId: string };
+  BookingReview: {
+    bookingId: string;
+    barberId: string;
+    barberName: string;
+    serviceName?: string;
+    followupReviewId?: string;
+    is30DayFollowup?: boolean;
+  };
+  BarberPortfolio: { slugOrId: string; barberName?: string };
+  HaircutFollowup: undefined;
 };
 
 export default function BookingDetailScreen() {
@@ -231,6 +245,10 @@ export default function BookingDetailScreen() {
   const [busy, setBusy] = useState(false);
   const [booking, setBooking] = useState<BookingDetail | null>(null);
   const [history, setHistory] = useState<BookingStatusHistoryRow[]>([]);
+  const [canReview, setCanReview] = useState(false);
+  const [hasReview, setHasReview] = useState(false);
+  const [followupDue, setFollowupDue] = useState(false);
+  const [followupReviewId, setFollowupReviewId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -241,6 +259,30 @@ export default function BookingDetailScreen() {
       ]);
       setBooking(detail);
       setHistory(timeline);
+
+      setCanReview(false);
+      setHasReview(false);
+      setFollowupDue(false);
+      setFollowupReviewId(null);
+
+      if (
+        resolveActorRole(user?.role) === "customer" &&
+        String(detail?.booking_status || "").toLowerCase() === "completed"
+      ) {
+        const [reviewStatus, followups] = await Promise.all([
+          fetchBookingReviewStatus(bookingId).catch(() => null),
+          fetchFollowupReminders().catch(() => []),
+        ]);
+        if (reviewStatus) {
+          setCanReview(Boolean(reviewStatus.canReview));
+          setHasReview(Boolean(reviewStatus.hasReview));
+        }
+        const match = followups.find((f) => f.bookingId === bookingId && (f.due || f.status === "sent"));
+        if (match) {
+          setFollowupDue(true);
+          setFollowupReviewId(match.reviewId);
+        }
+      }
     } catch (e) {
       Alert.alert("Booking", userFacingApiError(e));
       setBooking(null);
@@ -248,7 +290,37 @@ export default function BookingDetailScreen() {
     } finally {
       setLoading(false);
     }
-  }, [bookingId]);
+  }, [bookingId, user?.role]);
+
+  const onOpenReview = useCallback(() => {
+    if (!booking) return;
+    navigation.navigate("BookingReview", {
+      bookingId,
+      barberId: String(booking.barber_id || ""),
+      barberName: booking.barber_name || "Barber",
+      serviceName: booking.service || booking.style_title || undefined,
+    });
+  }, [booking, bookingId, navigation]);
+
+  const onOpenFollowup = useCallback(() => {
+    if (!booking) return;
+    navigation.navigate("BookingReview", {
+      bookingId,
+      barberId: String(booking.barber_id || ""),
+      barberName: booking.barber_name || "Barber",
+      serviceName: booking.service || booking.style_title || undefined,
+      followupReviewId: followupReviewId || undefined,
+      is30DayFollowup: true,
+    });
+  }, [booking, bookingId, followupReviewId, navigation]);
+
+  const onViewBarberPortfolio = useCallback(() => {
+    if (!booking?.barber_id) return;
+    navigation.navigate("BarberPortfolio", {
+      slugOrId: String(booking.barber_id),
+      barberName: booking.barber_name || undefined,
+    });
+  }, [booking, navigation]);
 
   useFocusEffect(
     useCallback(() => {
@@ -753,6 +825,39 @@ export default function BookingDetailScreen() {
         ) : null}
       </ProfileCard>
 
+      {role === "customer" && currentStatus === "completed" && (canReview || hasReview || followupDue) ? (
+        <ProfileCard style={styles.section} glow={canReview}>
+          <Text style={styles.sectionTitle}>Share your experience</Text>
+          {canReview ? (
+            <>
+              <Text style={styles.reviewPrompt}>
+                How was your cut with {booking.barber_name || "your barber"}? Leave a verified review and optional photos.
+              </Text>
+              <GlowButton label="Leave a review" onPress={onOpenReview} disabled={busy} />
+            </>
+          ) : null}
+          {hasReview && !canReview ? (
+            <Text style={styles.reviewPrompt}>Thanks — you already reviewed this appointment.</Text>
+          ) : null}
+          {followupDue ? (
+            <>
+              <Text style={[styles.reviewPrompt, { marginTop: canReview || hasReview ? 10 : 0 }]}>
+                It's been about 30 days — share an updated photo showing how your cut grew out.
+              </Text>
+              <GlowButton label="Upload 30-day photo" variant="outline" onPress={onOpenFollowup} disabled={busy} />
+            </>
+          ) : null}
+        </ProfileCard>
+      ) : null}
+
+      {booking.barber_id ? (
+        <ProfileCard style={styles.section}>
+          <Text style={styles.sectionTitle}>Barber portfolio</Text>
+          <Text style={styles.reviewPrompt}>See photos, reviews, and services before your next visit.</Text>
+          <GlowButton label="View portfolio" variant="outline" onPress={onViewBarberPortfolio} disabled={busy} />
+        </ProfileCard>
+      ) : null}
+
       <View style={styles.actions}>
         {canViewReceipt ? (
           <GlowButton
@@ -933,6 +1038,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
     paddingVertical: 4,
+  },
+  reviewPrompt: {
+    color: theme.colors.textMuted,
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 10,
   },
 });
 

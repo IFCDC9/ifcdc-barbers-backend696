@@ -724,16 +724,29 @@ function BookingScreen() {
               </View>
             ) : null}
             {barbers.map((b) => (
-              <TouchableOpacity
-                key={String(b.id || b.name)}
-                onPress={() => {
-                  setBarber(b);
-                  setStep(2);
-                }}
-                style={styles.rowBtn}
-              >
-                <Text style={{ color: '#fff' }}>{b.name}</Text>
-              </TouchableOpacity>
+              <View key={String(b.id || b.name)} style={styles.barberRow}>
+                <TouchableOpacity
+                  onPress={() => {
+                    setBarber(b);
+                    setStep(2);
+                  }}
+                  style={[styles.rowBtn, { flex: 1, marginBottom: 0 }]}
+                >
+                  <Text style={{ color: '#fff' }}>{b.name}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() =>
+                    navigation.navigate('BarberPortfolio', {
+                      slugOrId: String(b.id || b.name),
+                      barberName: b.name,
+                    })
+                  }
+                  style={styles.portfolioLink}
+                  accessibilityLabel={`View ${b.name} portfolio`}
+                >
+                  <Text style={styles.portfolioLinkText}>Portfolio</Text>
+                </TouchableOpacity>
+              </View>
             ))}
           </>
         )}
@@ -1019,6 +1032,25 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
     borderWidth: 1,
     borderColor: UI.border,
+  },
+  barberRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: 8,
+    marginBottom: 10,
+  },
+  portfolioLink: {
+    paddingHorizontal: 14,
+    justifyContent: 'center',
+    backgroundColor: UI.surface,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: UI.border,
+  },
+  portfolioLinkText: {
+    color: UI.gold,
+    fontSize: 13,
+    fontWeight: '700',
   },
   barbersErrorBox: {
     marginBottom: 14,

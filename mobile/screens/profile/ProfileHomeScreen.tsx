@@ -49,6 +49,7 @@ export default function ProfileHomeScreen() {
   const menu: { key: keyof ProfileStackParamList; label: string }[] = [
     { key: "EditProfile", label: t("profile.menuPersonalInfo") },
     { key: "BookingHistory", label: t("profile.menuBookings") },
+    { key: "HaircutFollowup", label: "30-day haircut updates" },
     { key: "Notifications", label: t("profile.menuNotifications") },
     { key: "LanguageSettings", label: t("profile.menuLanguage") },
     { key: "SupportHelp", label: t("profile.menuSupport") },

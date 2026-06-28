@@ -71,6 +71,13 @@ export const ADMIN_MENU: AdminMenuItem[] = [
     route: "AdminSchedule",
   },
   {
+    key: "moderation",
+    title: "Content moderation",
+    subtitle: "Review reported photos and reviews",
+    icon: "🛡️",
+    route: "AdminContentModeration",
+  },
+  {
     key: "users",
     title: "User management",
     subtitle: "Accounts and platform users",

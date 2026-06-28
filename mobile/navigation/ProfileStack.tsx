@@ -34,6 +34,9 @@ import ShopEditScreen from "../screens/shop/ShopEditScreen";
 import ViewAllUsersScreen from "../screens/admin/ViewAllUsersScreen";
 import UserDetailScreen from "../screens/admin/UserDetailScreen";
 import EditUserScreen from "../screens/admin/EditUserScreen";
+import BarberPortfolioScreen from "../screens/portfolio/BarberPortfolioScreen";
+import BookingReviewScreen from "../screens/portfolio/BookingReviewScreen";
+import HaircutFollowupScreen from "../screens/portfolio/HaircutFollowupScreen";
 import { PAYMENT_STACK_SCREENS } from "./paymentScreens";
 import type { PaymentStackParamList } from "./paymentStackTypes";
 
@@ -71,6 +74,17 @@ export type ProfileStackParamList = {
   ViewAllUsers: undefined;
   UserDetail: { userId: string };
   EditUser: { userId: string };
+  BarberPortfolio: { slugOrId: string; barberName?: string };
+  BookingReview: {
+    bookingId: string;
+    barberId: string;
+    barberName: string;
+    serviceName?: string;
+    followupReviewId?: string;
+    parentPhotoId?: string;
+    is30DayFollowup?: boolean;
+  };
+  HaircutFollowup: undefined;
 } & PaymentStackParamList;
 
 const Stack = createStackNavigator<ProfileStackParamList>();
@@ -82,6 +96,9 @@ export default function ProfileStack() {
       <Stack.Screen name="EditProfile" component={EditProfileScreen} />
       <Stack.Screen name="BookingHistory" component={BookingHistoryScreen} />
       <Stack.Screen name="BookingDetail" component={BookingDetailScreen} />
+      <Stack.Screen name="BookingReview" component={BookingReviewScreen} />
+      <Stack.Screen name="BarberPortfolio" component={BarberPortfolioScreen} />
+      <Stack.Screen name="HaircutFollowup" component={HaircutFollowupScreen} />
       <Stack.Screen name="CancelBooking" component={CancelBookingScreen} />
       <Stack.Screen name="RescheduleBooking" component={RescheduleBookingScreen} />
       <Stack.Screen name="Notifications" component={NotificationsScreen} />

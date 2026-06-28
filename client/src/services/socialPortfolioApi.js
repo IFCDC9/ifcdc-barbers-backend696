@@ -1,5 +1,5 @@
 import { getApiOrigin } from "./api.js";
-import { getStoredToken } from "../lib/authHeaders.js";
+import { getAdminAuthHeaders, getStoredToken } from "../lib/authHeaders.js";
 
 function authHeaders() {
   const token = getStoredToken();
@@ -97,8 +97,54 @@ export async function reportContent(body) {
   const origin = getApiOrigin();
   const res = await fetch(`${origin}/api/content/report`, {
     method: "POST",
-    headers: { Accept: "application/json", "Content-Type": "application/json", ...authHeaders() },
+    headers: { Accept: "application/json", "Content-Type": "application/json", ...getStoredToken() ? { Authorization: `Bearer ${getStoredToken()}` } : {} },
     body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.message || `HTTP ${res.status}`);
+  return data;
+}
+
+export async function fetchContentReports() {
+  const origin = getApiOrigin();
+  const res = await fetch(`${origin}/api/admin/content/reports`, {
+    headers: { Accept: "application/json", ...getAdminAuthHeaders() },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.message || `HTTP ${res.status}`);
+  return data;
+}
+
+export async function resolveContentReport(reportId, body) {
+  const origin = getApiOrigin();
+  const res = await fetch(`${origin}/api/admin/content/reports/${encodeURIComponent(reportId)}`, {
+    method: "PATCH",
+    headers: { Accept: "application/json", "Content-Type": "application/json", ...getAdminAuthHeaders() },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.message || `HTTP ${res.status}`);
+  return data;
+}
+
+export async function hideReview(reviewId) {
+  const origin = getApiOrigin();
+  const res = await fetch(`${origin}/api/admin/reviews/${encodeURIComponent(reviewId)}/visibility`, {
+    method: "PATCH",
+    headers: { Accept: "application/json", "Content-Type": "application/json", ...getAdminAuthHeaders() },
+    body: JSON.stringify({ status: "hidden" }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.message || `HTTP ${res.status}`);
+  return data;
+}
+
+export async function hidePhoto(photoId) {
+  const origin = getApiOrigin();
+  const res = await fetch(`${origin}/api/admin/photos/${encodeURIComponent(photoId)}/visibility`, {
+    method: "PATCH",
+    headers: { Accept: "application/json", "Content-Type": "application/json", ...getAdminAuthHeaders() },
+    body: JSON.stringify({ status: "hidden" }),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data?.message || `HTTP ${res.status}`);

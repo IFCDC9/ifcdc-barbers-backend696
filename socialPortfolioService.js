@@ -30,6 +30,7 @@ function mapReviewRow(row, photos = []) {
     rating: Number(row.rating),
     comment: row.comment || "",
     customerName: row.customer_name || "Verified customer",
+    verifiedClient: true,
     createdAt: row.created_at ? new Date(row.created_at).toISOString() : null,
     photos,
   };
@@ -674,4 +675,87 @@ export async function markFollowupReminderSent(reminderId) {
     `UPDATE haircut_followup_reminders SET status = 'sent', reminded_at = NOW() WHERE id = $1::uuid`,
     [String(reminderId)],
   );
+}
+
+export async function getBookingReviewStatus(userId, bookingId) {
+  const eligible = await assertBookingEligibleForReview(userId, bookingId);
+  if (eligible.ok) {
+    return { ok: true, canReview: true, hasReview: false, reviewId: null };
+  }
+  if (eligible.message === "This appointment already has a review.") {
+    const existing = await dbQuery(`SELECT id FROM barber_reviews WHERE booking_id = $1::uuid LIMIT 1`, [
+      String(bookingId),
+    ]);
+    return {
+      ok: true,
+      canReview: false,
+      hasReview: true,
+      reviewId: existing.rows?.[0]?.id ? String(existing.rows[0].id) : null,
+    };
+  }
+  return { ok: true, canReview: false, hasReview: false, reviewId: null, reason: eligible.message };
+}
+
+export async function listCustomerFollowupReminders(userId) {
+  const r = await dbQuery(
+    `SELECT h.*, b.barber_name, b.service, b.date,
+            r.id AS review_id
+     FROM haircut_followup_reminders h
+     LEFT JOIN bookings b ON b.id = h.booking_id
+     LEFT JOIN barber_reviews r ON r.booking_id = h.booking_id
+     WHERE h.status IN ('scheduled', 'sent')
+       AND h.completed_at IS NULL
+       AND (
+         h.customer_user_id = $1::uuid
+         OR lower(h.customer_email) = (SELECT lower(email) FROM app_users WHERE id = $1::uuid LIMIT 1)
+       )
+     ORDER BY h.remind_at ASC
+     LIMIT 20`,
+    [String(userId)],
+  );
+  return (r.rows || []).map((row) => ({
+    id: String(row.id),
+    bookingId: String(row.booking_id),
+    barberId: String(row.barber_id),
+    barberName: row.barber_name || "",
+    service: row.service || "",
+    appointmentDate: row.date ? String(row.date).slice(0, 10) : null,
+    reviewId: row.review_id ? String(row.review_id) : null,
+    remindAt: row.remind_at ? new Date(row.remind_at).toISOString() : null,
+    status: row.status,
+    due: row.remind_at ? new Date(row.remind_at) <= new Date() : false,
+  }));
+}
+
+export async function sendDueFollowupReminders() {
+  const pushNotifier = require("./pushNotifier.cjs");
+  const due = await dbQuery(
+    `SELECT h.*, b.barber_name
+     FROM haircut_followup_reminders h
+     LEFT JOIN bookings b ON b.id = h.booking_id
+     WHERE h.status = 'scheduled' AND h.remind_at <= NOW()
+     ORDER BY h.remind_at ASC
+     LIMIT 100`,
+  );
+  let sent = 0;
+  for (const row of due.rows || []) {
+    const userId = row.customer_user_id ? String(row.customer_user_id) : null;
+    if (userId) {
+      await pushNotifier.sendPushToUsers({
+        dbQuery,
+        userIds: [userId],
+        kind: "booking_reminder",
+        title: "How's your haircut looking?",
+        body: `Share a 30-day update photo for your visit with ${row.barber_name || "your barber"}.`,
+        data: {
+          type: "haircut_followup",
+          bookingId: String(row.booking_id),
+          barberId: String(row.barber_id),
+        },
+      }).catch(() => {});
+    }
+    await markFollowupReminderSent(row.id);
+    sent += 1;
+  }
+  return { ok: true, sent };
 }

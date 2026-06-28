@@ -11,7 +11,9 @@ import {
   addReviewPhotos,
   createBarberReview,
   followBarber,
+  getBookingReviewStatus,
   getPublicBarberPortfolio,
+  listCustomerFollowupReminders,
   listDiscoverPhotos,
   listPendingContentReports,
   listReviewableBookings,
@@ -94,6 +96,24 @@ export function createSocialPortfolioRouter() {
       return res.json({ ok: true, bookings });
     } catch (e) {
       return res.status(500).json({ ok: false, message: "Failed to load reviewable bookings." });
+    }
+  });
+
+  router.get("/api/me/followup-reminders", requireAuth, async (req, res) => {
+    try {
+      const reminders = await listCustomerFollowupReminders(req.user.id);
+      return res.json({ ok: true, reminders });
+    } catch (e) {
+      return res.status(500).json({ ok: false, message: "Failed to load follow-up reminders." });
+    }
+  });
+
+  router.get("/api/bookings/:bookingId/review-status", requireAuth, async (req, res) => {
+    try {
+      const result = await getBookingReviewStatus(req.user.id, req.params.bookingId);
+      return res.json(result);
+    } catch (e) {
+      return res.status(500).json({ ok: false, message: "Failed to load review status." });
     }
   });
 

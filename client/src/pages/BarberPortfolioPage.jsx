@@ -270,6 +270,9 @@ export default function BarberPortfolioPage() {
             <div key={review.id} style={{ paddingBottom: 12, borderBottom: `1px solid ${theme.colors.border}` }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
                 <strong>{review.customerName}</strong>
+                {review.verifiedClient !== false ? (
+                  <span style={{ ...pillStyle("gold"), marginLeft: 8, fontSize: 10 }}>✓ Verified Client</span>
+                ) : null}
                 <Stars value={review.rating} />
               </div>
               {review.comment ? <p style={{ margin: "8px 0 0", color: theme.colors.muted }}>{review.comment}</p> : null}

@@ -56,7 +56,7 @@ type Loader = () => unknown;
 // Stable loader references — declared at module scope so LazyScreen's
 // useEffect dependency array sees a constant function identity.
 const HOME_LOADER: Loader = () => require("../app/(tabs)/explore");
-const BOOK_LOADER: Loader = () => require("../screens/BookingScreen");
+const BOOK_LOADER: Loader = () => require("./BookStack");
 const AURA_LOADER: Loader = () => require("../screens/AuraScreen");
 const PROFILE_LOADER: Loader = () => require("../app/(tabs)/profile");
 const ADMIN_LOADER: Loader = () => require("./AdminStack");

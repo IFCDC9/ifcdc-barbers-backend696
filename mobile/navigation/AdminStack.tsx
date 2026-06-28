@@ -39,6 +39,7 @@ import BarberServicesScreen from "../screens/barber/BarberServicesScreen";
 import EditServiceScreen from "../screens/barber/EditServiceScreen";
 import ShopDetailScreen from "../screens/shop/ShopDetailScreen";
 import ShopEditScreen from "../screens/shop/ShopEditScreen";
+import AdminContentModerationScreen from "../screens/admin/AdminContentModerationScreen";
 import { PAYMENT_STACK_SCREENS } from "./paymentScreens";
 import type { PaymentStackParamList } from "./paymentStackTypes";
 
@@ -79,6 +80,7 @@ export type AdminStackParamList = {
   EditService: { barberId: string; barberName: string; serviceId?: string };
   ShopDetail: { businessId: string; shopName: string; isPlaceholder?: boolean };
   ShopEdit: { businessId: string; shopName: string; isPlaceholder?: boolean };
+  AdminContentModeration: undefined;
 } & PaymentStackParamList;
 
 const Stack = createStackNavigator<AdminStackParamList>();
@@ -94,6 +96,7 @@ function AdminStackInner() {
       <Stack.Screen name="RescheduleBooking" component={RescheduleBookingScreen} />
       <Stack.Screen name="AdminBarbers" component={AdminBarbersScreen} />
       <Stack.Screen name="AdminGlobalBarbers" component={AdminGlobalBarbersScreen} />
+      <Stack.Screen name="AdminContentModeration" component={AdminContentModerationScreen} />
       <Stack.Screen name="AdminShop" component={AdminShopScreen} />
       <Stack.Screen name="AdminShopDetail" component={AdminShopDetailScreen} />
       <Stack.Screen name="AdminPayout" component={AdminPayoutScreen} />
