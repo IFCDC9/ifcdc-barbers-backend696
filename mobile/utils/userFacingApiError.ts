@@ -55,18 +55,6 @@ export function userFacingApiError(e: unknown, fallback = DEFAULT): string {
     }
   }
 
-  if (msg.includes("404")) {
-    const detail = msg.split(" — ").slice(1).join(" — ").trim();
-    if (detail) {
-      try {
-        const parsed = JSON.parse(detail) as { message?: string; error?: string };
-        if (parsed.message) return sanitize(parsed.message);
-        if (parsed.error === "user_not_found") return "Account not found. Sign out and sign in again.";
-      } catch {
-        if (!detail.startsWith("<") && detail.length <= 140) return sanitize(detail);
-      }
-    }
-    return fallback;
-  }
+  if (msg.includes("404")) return fallback;
   return fallback;
 }

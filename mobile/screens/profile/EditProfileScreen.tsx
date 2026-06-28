@@ -6,7 +6,7 @@ import ProfileScreenLayout from "../../components/ProfileScreenLayout";
 import ProfileCard from "../../components/ProfileCard";
 import GlowButton from "../../components/GlowButton";
 import { useAuth } from "../../services/authContext";
-import { patchProfile, uploadProfileAvatar } from "../../services/profileApi";
+import { patchProfile } from "../../services/profileApi";
 import { userFacingApiError } from "../../utils/userFacingApiError";
 import { theme } from "../../constants/theme";
 
@@ -56,20 +56,13 @@ export default function EditProfileScreen() {
     }
     setSaving(true);
     try {
-      let profileImageUrl: string | null =
-        avatarUri && !avatarUri.startsWith("file:") ? avatarUri : user?.profileImageUrl || null;
-
-      if (avatarUri?.startsWith("file:")) {
-        profileImageUrl = await uploadProfileAvatar(avatarUri, name.trim());
-        if (user?.id) {
-          await AsyncStorage.setItem(localAvatarKey(user.id), profileImageUrl);
-        }
+      if (user?.id && avatarUri && avatarUri.startsWith("file:")) {
+        await AsyncStorage.setItem(localAvatarKey(user.id), avatarUri);
       }
-
       await patchProfile({
         name: name.trim(),
         phone: phone.replace(/\D/g, ""),
-        profileImageUrl,
+        profileImageUrl: avatarUri && !avatarUri.startsWith("file:") ? avatarUri : null,
       });
       await refresh();
       Alert.alert("Saved", "Your profile has been updated.");
