@@ -1,9 +1,8 @@
 import React from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
-import { useAuth } from "../../services/authContext";
-import { hasStaffDashboardAccess } from "../../utils/staffDashboardAccess";
-import { theme } from "../../constants/theme";
+import { useAuth } from "../services/authContext";
+import { theme } from "../constants/theme";
 
 type Props = {
   children: React.ReactNode;
