@@ -51,6 +51,8 @@ type NavParams = {
   BarberEdit: BarberDetailParams;
   EditBarberSchedule: BarberDetailParams;
   BarberServices: BarberDetailParams;
+  BarberGallery: BarberDetailParams;
+  BarberPortfolio: { slugOrId: string; barberName?: string };
   AdminBookings: { barberId?: string; barberName?: string } | undefined;
   BookingDetail: { bookingId: string };
 };
@@ -243,14 +245,26 @@ function BarberDetailInner() {
 
           <View style={styles.actions}>
             <GlowButton
-              label="Manage Services"
-              onPress={() => navigation.navigate("BarberServices", { barberId, barberName: displayName })}
+              label="Edit profile"
+              onPress={() => navigation.navigate("BarberEdit", { barberId, barberName: displayName })}
             />
             <View style={{ height: 10 }} />
             <GlowButton
-              label="Edit Barber"
+              label="Haircut gallery"
               variant="outline"
-              onPress={() => navigation.navigate("BarberEdit", { barberId, barberName: displayName })}
+              onPress={() => navigation.navigate("BarberGallery", { barberId, barberName: displayName })}
+            />
+            <View style={{ height: 10 }} />
+            <GlowButton
+              label="View public portfolio"
+              variant="outline"
+              onPress={() => navigation.navigate("BarberPortfolio", { slugOrId: barberId, barberName: displayName })}
+            />
+            <View style={{ height: 10 }} />
+            <GlowButton
+              label="Manage Services"
+              variant="outline"
+              onPress={() => navigation.navigate("BarberServices", { barberId, barberName: displayName })}
             />
             <View style={{ height: 10 }} />
             <GlowButton

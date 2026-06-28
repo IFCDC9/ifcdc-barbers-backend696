@@ -35,6 +35,7 @@ import EditBarberScheduleScreen from "../screens/schedule/EditBarberScheduleScre
 import ScheduleRouteGuard from "../components/ScheduleRouteGuard";
 import BarberDetailScreen from "../screens/barber/BarberDetailScreen";
 import BarberEditScreen from "../screens/barber/BarberEditScreen";
+import BarberGalleryScreen from "../screens/barber/BarberGalleryScreen";
 import BarberServicesScreen from "../screens/barber/BarberServicesScreen";
 import EditServiceScreen from "../screens/barber/EditServiceScreen";
 import ShopDetailScreen from "../screens/shop/ShopDetailScreen";
@@ -76,6 +77,7 @@ export type AdminStackParamList = {
   EditBarberSchedule: { barberId: string; barberName: string };
   BarberDetail: { barberId: string; barberName: string };
   BarberEdit: { barberId: string; barberName: string };
+  BarberGallery: { barberId: string; barberName: string };
   BarberServices: { barberId: string; barberName: string };
   EditService: { barberId: string; barberName: string; serviceId?: string };
   ShopDetail: { businessId: string; shopName: string; isPlaceholder?: boolean };
@@ -157,6 +159,7 @@ function AdminStackInner() {
       </Stack.Screen>
       <Stack.Screen name="BarberDetail" component={BarberDetailScreen} />
       <Stack.Screen name="BarberEdit" component={BarberEditScreen} />
+      <Stack.Screen name="BarberGallery" component={BarberGalleryScreen} />
       <Stack.Screen name="BarberServices" component={BarberServicesScreen} />
       <Stack.Screen name="EditService" component={EditServiceScreen} />
       <Stack.Screen name="ShopDetail" component={ShopDetailScreen} />

@@ -60,6 +60,57 @@ export async function submitBookingReview(bookingId, body) {
   return data;
 }
 
+export async function fetchBookingReviewStatus(bookingId) {
+  const origin = getApiOrigin();
+  const res = await fetch(`${origin}/api/bookings/${encodeURIComponent(String(bookingId))}/review-status`, {
+    headers: { Accept: "application/json", ...authHeaders() },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.message || `HTTP ${res.status}`);
+  return data;
+}
+
+export async function uploadReviewPhotos(reviewId, files, meta = {}) {
+  const origin = getApiOrigin();
+  const form = new FormData();
+  for (const file of files) form.append("files", file);
+  if (meta.barberName) form.append("barberName", meta.barberName);
+  if (meta.photoType) form.append("photoType", meta.photoType);
+  if (meta.styleCategory) form.append("styleCategory", meta.styleCategory);
+  if (meta.caption) form.append("caption", meta.caption);
+  const res = await fetch(`${origin}/api/reviews/${encodeURIComponent(String(reviewId))}/photos`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: form,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.message || `HTTP ${res.status}`);
+  return data;
+}
+
+export async function updateCustomerReview(reviewId, body) {
+  const origin = getApiOrigin();
+  const res = await fetch(`${origin}/api/reviews/${encodeURIComponent(String(reviewId))}`, {
+    method: "PATCH",
+    headers: { Accept: "application/json", "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.message || `HTTP ${res.status}`);
+  return data;
+}
+
+export async function deleteCustomerReview(reviewId) {
+  const origin = getApiOrigin();
+  const res = await fetch(`${origin}/api/reviews/${encodeURIComponent(String(reviewId))}`, {
+    method: "DELETE",
+    headers: { Accept: "application/json", ...authHeaders() },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.message || `HTTP ${res.status}`);
+  return data;
+}
+
 export async function togglePhotoLike(photoId) {
   const origin = getApiOrigin();
   const res = await fetch(`${origin}/api/photos/${encodeURIComponent(String(photoId))}/like`, {

@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import ProfileCard from "../../components/ProfileCard";
 import { useAuth } from "../../services/authContext";
 import { canAccessUserManagement } from "../../utils/userManagementAccess";
+import { canAccessAdminMenuKey } from "../../utils/staffDashboardAccess";
 import { palette, typography } from "../../constants/theme";
 
 export type AdminMenuItem = {
@@ -90,9 +91,10 @@ type Nav = { navigate: (name: string) => void };
 
 export function AdminMenuList({ navigation }: { navigation: Nav }) {
   const { user, token } = useAuth();
-  const items = ADMIN_MENU.filter(
-    (item) => item.key !== "users" || canAccessUserManagement(user, token),
-  );
+  const items = ADMIN_MENU.filter((item) => {
+    if (item.key === "users" && !canAccessUserManagement(user, token)) return false;
+    return canAccessAdminMenuKey(item.key, user, token);
+  });
 
   return (
     <View style={styles.list}>

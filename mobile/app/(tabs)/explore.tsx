@@ -50,6 +50,12 @@ const ExploreScreen = () => {
           <Text style={styles.heroTitle}>{t("home.heroTitle")}</Text>
           <Text style={styles.heroCopy}>{t("home.heroCopy")}</Text>
           <GlowButton label={t("home.heroCta")} onPress={() => navigation.navigate("Book")} />
+          <View style={{ height: 10 }} />
+          <GlowButton
+            label="Discover haircuts"
+            variant="outline"
+            onPress={() => (navigation as { navigate: (name: string) => void }).navigate("Profile", { screen: "StyleDiscover" })}
+          />
         </CardContainer>
       </ScrollView>
     </View>

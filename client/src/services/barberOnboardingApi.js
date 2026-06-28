@@ -101,7 +101,7 @@ export async function postOnboardComplete() {
 }
 
 /**
- * POST /api/barber/media — multipart `file` + form field `slot` = logo | profile
+ * POST /api/barber/onboard/branding — multipart `file` + form field `slot` = logo | profile
  * @param {"logo"|"profile"} slot
  * @param {File} file
  */
@@ -110,7 +110,7 @@ export async function postBarberMedia(slot, file) {
   const fd = new FormData();
   fd.append("file", file);
   fd.append("slot", slot === "logo" ? "logo" : "profile");
-  const res = await apiFetch(`${origin}/api/barber/media`, {
+  const res = await apiFetch(`${origin}/api/barber/onboard/branding`, {
     method: "POST",
     headers: { ...authHeaders(), Accept: "application/json" },
     body: fd,

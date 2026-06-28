@@ -12,10 +12,10 @@ import { appendNotificationFeed } from "../../services/notificationFeedStore";
 type Nav = { navigate: (name: string) => void };
 
 export default function AdminHomeScreen({ navigation }: { navigation: Nav }) {
-  const { user, isPlatformAdmin } = useAuth();
+  const { user, isPlatformAdmin, staffRole } = useAuth();
 
   useEffect(() => {
-    if (!isPlatformAdmin) return;
+    if (!isPlatformAdmin && staffRole !== "shop_owner") return;
     void (async () => {
       try {
         const notes = await fetchAdminNotifications(true);
@@ -26,16 +26,19 @@ export default function AdminHomeScreen({ navigation }: { navigation: Nav }) {
         /* ignore */
       }
     })();
-  }, [isPlatformAdmin]);
+  }, [isPlatformAdmin, staffRole]);
+
+  const title = isPlatformAdmin ? "Platform Admin" : staffRole === "shop_owner" ? "Shop Dashboard" : "Manage";
+  const subtitle = isPlatformAdmin
+    ? "Manage bookings, barbers, payouts, and platform settings from one place."
+    : "Manage your shop barbers, bookings, services, and schedules.";
 
   return (
-    <ProfileScreenLayout title="Admin" subtitle={UX.adminTools} standalone>
+    <ProfileScreenLayout title={isPlatformAdmin ? "Admin" : "Manage"} subtitle={UX.adminTools} standalone>
       <ProfileCard glow style={styles.hero}>
-        <Text style={styles.heroTitle}>Platform Admin</Text>
+        <Text style={styles.heroTitle}>{title}</Text>
         {user?.email ? <Text style={styles.heroEmail}>{user.email}</Text> : null}
-        <Text style={styles.heroCopy}>
-          Manage bookings, barbers, payouts, and platform settings from one place.
-        </Text>
+        <Text style={styles.heroCopy}>{subtitle}</Text>
       </ProfileCard>
       <AdminMenuList navigation={navigation} />
     </ProfileScreenLayout>

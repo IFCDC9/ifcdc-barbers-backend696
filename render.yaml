@@ -48,6 +48,24 @@ services:
       - key: DATABASE_URL
         sync: false
 
+  - type: cron
+    name: ifcdc-followup-reminders
+    runtime: node
+    schedule: "0 */6 * * *"
+    buildCommand: npm install
+    startCommand: node scripts/process-haircut-followup-reminders.mjs
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+
   # Frontend (Render Static Site) — SPA rewrite required for deep links like /invite
   - type: web
     name: ifcdc-barbers-frontend

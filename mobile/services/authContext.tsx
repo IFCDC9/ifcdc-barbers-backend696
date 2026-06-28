@@ -4,6 +4,7 @@ import { decodeJwtPayload, isOwnerAdminDashboardPayload } from "../auth/jwtSessi
 import { getAuthMe, type JsonAuth } from "../auth/authSessionApi";
 import { getAuthToken, setAuthToken } from "./authService";
 import { isSuperAdminUser } from "../utils/adminAccess";
+import { hasStaffDashboardAccess, resolveStaffRole } from "../utils/staffDashboardAccess";
 
 export type SessionKind = "owner" | "default";
 
@@ -15,6 +16,8 @@ type AuthContextValue = {
   user: AppUser | null;
   sessionKind: SessionKind;
   isPlatformAdmin: boolean;
+  hasStaffDashboard: boolean;
+  staffRole: ReturnType<typeof resolveStaffRole>;
   approvalPending: boolean;
   signInWithToken: (token: string) => Promise<void>;
   signOut: () => Promise<void>;
@@ -110,6 +113,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [applySession]);
 
   const isPlatformAdmin = isSuperAdminUser(user, token);
+  const staffRole = resolveStaffRole(user, token);
+  const hasStaffDashboard = hasStaffDashboardAccess(user, token);
   const approvalPending = user?.limitedAccess === true;
 
   const value: AuthContextValue = {
@@ -118,6 +123,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     user,
     sessionKind,
     isPlatformAdmin,
+    hasStaffDashboard,
+    staffRole,
     approvalPending,
     signInWithToken,
     signOut,

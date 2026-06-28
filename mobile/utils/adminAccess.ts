@@ -1,5 +1,5 @@
 import { decodeJwtPayload } from "../auth/jwtSession";
-import type { AppUser } from "../services/profileApi";
+import type { AppUser } from "../services/authContext";
 
 /** Platform super-admin — never shown to regular customers. */
 export function isSuperAdminUser(user: AppUser | null | undefined, token?: string | null): boolean {
@@ -15,3 +15,5 @@ export function isSuperAdminUser(user: AppUser | null | undefined, token?: strin
 
   return false;
 }
+
+export type { AppUser };

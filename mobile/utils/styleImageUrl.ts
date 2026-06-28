@@ -15,7 +15,12 @@ export function isEphemeralStyleImageUrl(url: string | null | undefined): boolea
   if (u.includes("supabase.co/storage/")) return false;
   const lower = u.toLowerCase();
   if (/\.heic(?:\?|$)/.test(lower) || /\.heif(?:\?|$)/.test(lower)) return true;
-  if (u.includes("/uploads/")) return true;
+  if (u.includes("/uploads/")) {
+    const apiHost = apiFullUrl("/").replace(/\/+$/, "");
+    if (u.startsWith("http") && u.includes("onrender.com")) return false;
+    if (u.startsWith("/uploads/") || u.startsWith(`${apiHost}/uploads/`)) return false;
+    if (u.startsWith("http://localhost") || u.startsWith("http://127.0.0.1")) return true;
+  }
   return false;
 }
 

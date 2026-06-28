@@ -60,6 +60,35 @@ function money(v) {
   return Math.round(n * 100) / 100;
 }
 
+/** Keep service cover image_url synced with barber_style_gallery for booking display. */
+async function syncServiceCoverToGallery(barberId, serviceRow) {
+  if (!serviceRow?.id || !serviceRow?.image_url) return;
+  const url = String(serviceRow.image_url).trim();
+  if (!url) return;
+  try {
+    const existing = await listGalleryPhotosForService(dbQuery, barberId, serviceRow.id);
+    const match = existing.find((p) => String(p.image_url || p.imageUrl || "") === url);
+    if (match) {
+      await setGalleryPhotoPrimary(dbQuery, match.id, barberId);
+      return;
+    }
+    await insertGalleryImage(dbQuery, {
+      barberId,
+      title: serviceRow.name || "Service",
+      description: serviceRow.description || "",
+      category: serviceRow.category || "other",
+      price: Number(serviceRow.price) || 25,
+      durationMinutes: Number(serviceRow.duration_minutes) || 30,
+      imageUrl: url,
+      serviceId: serviceRow.id,
+      isPublished: serviceRow.is_active !== false,
+      isPrimary: true,
+    });
+  } catch (e) {
+    console.warn("[barber-business] syncServiceCoverToGallery:", e?.message || e);
+  }
+}
+
 /** Accept businessId or business_id from query string or JSON body. */
 function extractBusinessIdFromRequest(req) {
   const q = req?.query && typeof req.query === "object" ? req.query : {};
@@ -321,13 +350,24 @@ export function createBarberBusinessRouter({ uploadDir } = {}) {
     try {
       const bid = req.barberId;
       const r = await dbQuery(
-        `SELECT b.id, b.user_id, b.name, b.bio, b.profile_image, b.logo, b.location, b.phone, b.created_at
-         FROM barbers b WHERE b.id = $1 LIMIT 1`,
+        `SELECT b.id, b.user_id, b.name, b.bio, b.profile_image, b.logo, b.location, b.phone,
+                b.shop_name, b.years_experience, b.portfolio_headline, b.public_slug,
+                biz.name AS business_name, biz.phone AS business_phone,
+                biz.address AS business_address, biz.city AS business_city, biz.state AS business_state
+         FROM barbers b
+         LEFT JOIN businesses biz ON biz.id = b.business_id
+         WHERE b.id = $1 LIMIT 1`,
         [bid],
       );
       const row = r.rows?.[0];
       if (!row) return res.status(404).json({ error: "not_found", message: "Barber profile missing" });
-      return res.json({ profile: row });
+      return res.json({
+        profile: {
+          ...row,
+          shop_name: row.shop_name || row.business_name || "",
+          years_experience: row.years_experience != null ? Number(row.years_experience) : null,
+        },
+      });
     } catch (e) {
       console.error("[barber-business] GET profile:", e);
       return res.status(500).json({ error: "server_error", message: "Failed to load profile" });
@@ -340,12 +380,27 @@ export function createBarberBusinessRouter({ uploadDir } = {}) {
       const name = String(req.body?.name ?? "").trim();
       const bio = String(req.body?.bio ?? "").trim();
       const profile_image = String(req.body?.profile_image ?? req.body?.profileImage ?? "").trim() || null;
-      const logo = String(req.body?.logo ?? "").trim() || null;
+      const logo = String(req.body?.logo ?? req.body?.coverImage ?? req.body?.cover_image ?? "").trim() || null;
       const location = String(req.body?.location ?? "").trim() || null;
       const phone = String(req.body?.phone ?? "").trim() || null;
+      const shop_name = String(req.body?.shop_name ?? req.body?.shopName ?? "").trim() || null;
+      const portfolio_headline = String(req.body?.portfolio_headline ?? req.body?.portfolioHeadline ?? "").trim() || null;
+      const yearsRaw = req.body?.years_experience ?? req.body?.yearsExperience;
+      const years_experience =
+        yearsRaw === null || yearsRaw === ""
+          ? null
+          : Number.isFinite(Number(yearsRaw))
+            ? Math.max(0, Math.min(80, Math.floor(Number(yearsRaw))))
+            : null;
+      const business_address = String(req.body?.business_address ?? req.body?.address ?? "").trim() || null;
+      const business_city = String(req.body?.business_city ?? req.body?.city ?? "").trim() || null;
+      const business_state = String(req.body?.business_state ?? req.body?.state ?? "").trim() || null;
 
       if (name.length > 200) return res.status(400).json({ error: "validation", message: "Name too long" });
       if (bio.length > 4000) return res.status(400).json({ error: "validation", message: "Bio too long" });
+      if (portfolio_headline && portfolio_headline.length > 200) {
+        return res.status(400).json({ error: "validation", message: "Headline too long" });
+      }
 
       const r = await dbQuery(
         `UPDATE barbers SET
@@ -354,12 +409,57 @@ export function createBarberBusinessRouter({ uploadDir } = {}) {
            profile_image = $4,
            logo = $5,
            location = $6,
-           phone = $7
+           phone = $7,
+           shop_name = COALESCE($8, shop_name),
+           portfolio_headline = $9,
+           years_experience = $10
          WHERE id = $1
-         RETURNING id, user_id, name, bio, profile_image, logo, location, phone, created_at`,
-        [bid, name || null, bio || null, profile_image, logo, location, phone],
+         RETURNING id, user_id, name, bio, profile_image, logo, location, phone, shop_name,
+                   years_experience, portfolio_headline, public_slug, business_id, created_at`,
+        [bid, name || null, bio || null, profile_image, logo, location, phone, shop_name, portfolio_headline, years_experience],
       );
-      return res.json({ profile: r.rows?.[0] });
+      const profile = r.rows?.[0];
+      if (!profile) return res.status(404).json({ error: "not_found", message: "Barber profile missing" });
+
+      if (profile.business_id && (business_address || business_city || business_state || shop_name || phone)) {
+        await dbQuery(
+          `UPDATE businesses SET
+             name = COALESCE(NULLIF($2::text, ''), name),
+             phone = COALESCE(NULLIF($3::text, ''), phone),
+             address = COALESCE(NULLIF($4::text, ''), address),
+             city = COALESCE(NULLIF($5::text, ''), city),
+             state = COALESCE(NULLIF($6::text, ''), state),
+             updated_at = NOW()
+           WHERE id = $7`,
+          [
+            shop_name,
+            phone,
+            business_address,
+            business_city,
+            business_state,
+            profile.business_id,
+          ],
+        ).catch(() => {});
+      }
+
+      const enriched = await dbQuery(
+        `SELECT b.id, b.user_id, b.name, b.bio, b.profile_image, b.logo, b.location, b.phone,
+                b.shop_name, b.years_experience, b.portfolio_headline, b.public_slug,
+                biz.name AS business_name, biz.phone AS business_phone,
+                biz.address AS business_address, biz.city AS business_city, biz.state AS business_state
+         FROM barbers b
+         LEFT JOIN businesses biz ON biz.id = b.business_id
+         WHERE b.id = $1 LIMIT 1`,
+        [bid],
+      );
+      const row = enriched.rows?.[0] || profile;
+      return res.json({
+        profile: {
+          ...row,
+          shop_name: row.shop_name || row.business_name || "",
+          years_experience: row.years_experience != null ? Number(row.years_experience) : null,
+        },
+      });
     } catch (e) {
       console.error("[barber-business] PUT profile:", e);
       return res.status(500).json({ error: "server_error", message: "Failed to save profile" });
@@ -462,6 +562,7 @@ export function createBarberBusinessRouter({ uploadDir } = {}) {
       );
       const created = ins.rows?.[0];
       if (created) {
+        await syncServiceCoverToGallery(req.barberId, created);
         await logServiceAudit({
           serviceId: created.id,
           barberId: created.barber_id,
@@ -546,6 +647,9 @@ export function createBarberBusinessRouter({ uploadDir } = {}) {
       );
       const newRow = r.rows?.[0];
       if (newRow) {
+        if (image_url !== undefined && newRow.image_url) {
+          await syncServiceCoverToGallery(req.barberId, newRow);
+        }
         await logServiceUpdateDiff({
           oldRow,
           newRow,

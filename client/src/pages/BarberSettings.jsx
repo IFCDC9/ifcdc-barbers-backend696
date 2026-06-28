@@ -85,6 +85,12 @@ export default function BarberSettings() {
     logo: "",
     location: "",
     phone: "",
+    shop_name: "",
+    portfolio_headline: "",
+    years_experience: "",
+    business_address: "",
+    business_city: "",
+    business_state: "",
   });
   const [services, setServices] = React.useState([]);
   const [svcDraft, setSvcDraft] = React.useState({ name: "", price: "25", duration_minutes: "30" });
@@ -169,6 +175,12 @@ export default function BarberSettings() {
         logo: pr.logo || "",
         location: pr.location || "",
         phone: pr.phone || "",
+        shop_name: pr.shop_name || pr.business_name || "",
+        portfolio_headline: pr.portfolio_headline || "",
+        years_experience: pr.years_experience != null && pr.years_experience > 0 ? String(pr.years_experience) : "",
+        business_address: pr.business_address || "",
+        business_city: pr.business_city || "",
+        business_state: pr.business_state || "",
       });
       setServices(Array.isArray(s?.services) ? s.services : []);
       const av = Array.isArray(a?.availability) ? a.availability : [];
@@ -239,7 +251,11 @@ export default function BarberSettings() {
   const saveProfile = async () => {
     setStatus("");
     try {
-      await apiPut(`/api/barber/profile${scopeQuery}`, profile, authHeaders());
+      const payload = {
+        ...profile,
+        years_experience: profile.years_experience === "" ? null : Number(profile.years_experience),
+      };
+      await apiPut(`/api/barber/profile${scopeQuery}`, payload, authHeaders());
       setStatus("Profile saved.");
     } catch (e) {
       setStatus(e instanceof Error ? e.message : "Save failed");
@@ -583,6 +599,30 @@ export default function BarberSettings() {
               <input style={inputStyle} value={profile.name} onChange={(e) => setProfile({ ...profile, name: e.target.value })} />
             </label>
             <label style={{ display: "grid", gap: 6, fontSize: 12, color: theme.colors.muted, fontWeight: 800 }}>
+              Portfolio headline
+              <input
+                style={inputStyle}
+                value={profile.portfolio_headline}
+                onChange={(e) => setProfile({ ...profile, portfolio_headline: e.target.value })}
+                placeholder="e.g. Master barber · fades & beard work"
+              />
+            </label>
+            <label style={{ display: "grid", gap: 6, fontSize: 12, color: theme.colors.muted, fontWeight: 800 }}>
+              Years of experience
+              <input
+                style={inputStyle}
+                type="number"
+                min={0}
+                max={80}
+                value={profile.years_experience}
+                onChange={(e) => setProfile({ ...profile, years_experience: e.target.value })}
+              />
+            </label>
+            <label style={{ display: "grid", gap: 6, fontSize: 12, color: theme.colors.muted, fontWeight: 800 }}>
+              Shop name
+              <input style={inputStyle} value={profile.shop_name} onChange={(e) => setProfile({ ...profile, shop_name: e.target.value })} />
+            </label>
+            <label style={{ display: "grid", gap: 6, fontSize: 12, color: theme.colors.muted, fontWeight: 800 }}>
               Bio
               <textarea
                 style={{ ...inputStyle, minHeight: 100 }}
@@ -595,7 +635,21 @@ export default function BarberSettings() {
               <input style={inputStyle} value={profile.phone} onChange={(e) => setProfile({ ...profile, phone: e.target.value })} />
             </label>
             <label style={{ display: "grid", gap: 6, fontSize: 12, color: theme.colors.muted, fontWeight: 800 }}>
-              Location
+              Street address
+              <input style={inputStyle} value={profile.business_address} onChange={(e) => setProfile({ ...profile, business_address: e.target.value })} />
+            </label>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <label style={{ display: "grid", gap: 6, fontSize: 12, color: theme.colors.muted, fontWeight: 800 }}>
+                City
+                <input style={inputStyle} value={profile.business_city} onChange={(e) => setProfile({ ...profile, business_city: e.target.value })} />
+              </label>
+              <label style={{ display: "grid", gap: 6, fontSize: 12, color: theme.colors.muted, fontWeight: 800 }}>
+                State
+                <input style={inputStyle} value={profile.business_state} onChange={(e) => setProfile({ ...profile, business_state: e.target.value })} />
+              </label>
+            </div>
+            <label style={{ display: "grid", gap: 6, fontSize: 12, color: theme.colors.muted, fontWeight: 800 }}>
+              Location label
               <input style={inputStyle} value={profile.location} onChange={(e) => setProfile({ ...profile, location: e.target.value })} />
             </label>
             <div style={{ display: "grid", gap: 8 }}>

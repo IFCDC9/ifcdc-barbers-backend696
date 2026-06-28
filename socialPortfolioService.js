@@ -261,6 +261,33 @@ export async function getPublicBarberPortfolio(slugOrId, { viewerUserId = null }
     mapPhotoRow(row, { likedByViewer: Boolean(row.liked_by_viewer) }),
   );
 
+  const styleGalleryR = await dbQuery(
+    `SELECT id, barber_id, image_url, title, created_at
+     FROM barber_style_gallery
+     WHERE barber_id::text = $1::text AND COALESCE(is_published, true) = true
+     ORDER BY sort_order ASC, created_at DESC
+     LIMIT 60`,
+    [barberId],
+  ).catch(() => ({ rows: [] }));
+  for (const row of styleGalleryR.rows || []) {
+    if (!row.image_url) continue;
+    gallery.push({
+      id: `gal-${String(row.id)}`,
+      reviewId: null,
+      barberId,
+      photoUrl: row.image_url,
+      thumbnailUrl: row.image_url,
+      caption: row.title || "",
+      photoType: "standard",
+      styleCategory: null,
+      is30DayFollowup: false,
+      parentPhotoId: null,
+      likeCount: 0,
+      likedByViewer: false,
+      createdAt: row.created_at ? new Date(row.created_at).toISOString() : null,
+    });
+  }
+
   let followerCount = 0;
   let isFollowing = false;
   const followStats = await dbQuery(
@@ -284,10 +311,14 @@ export async function getPublicBarberPortfolio(slugOrId, { viewerUserId = null }
       id: barberId,
       slug: publicSlug,
       name: barber.name || "Barber",
-      headline: barber.portfolio_headline || barber.bio || "",
+      headline: barber.portfolio_headline || "",
       bio: barber.bio || "",
       profileImage: barber.profile_image || "",
-      yearsExperience: barber.years_experience != null ? Number(barber.years_experience) : null,
+      coverImage: barber.logo || "",
+      yearsExperience:
+        barber.years_experience != null && Number(barber.years_experience) > 0
+          ? Number(barber.years_experience)
+          : null,
       averageRating: stats.averageRating,
       reviewCount: stats.reviewCount,
       followerCount,
@@ -311,37 +342,82 @@ export async function getPublicBarberPortfolio(slugOrId, { viewerUserId = null }
 }
 
 export async function listDiscoverPhotos({ styleCategory = null, limit = 24, viewerUserId = null } = {}) {
-  const params = [];
-  const where = [`rp.status = 'published'`, `lower(coalesce(b.verification_status, 'approved')) = 'approved'`];
-  if (styleCategory) {
-    if (!HAIRCUT_CATEGORY_IDS.has(styleCategory)) {
-      return { ok: false, message: "Invalid style category." };
-    }
-    params.push(styleCategory);
-    where.push(`rp.style_category = $${params.length}`);
+  const cap = Math.min(Math.max(Number(limit) || 24, 1), 100);
+  if (styleCategory && !HAIRCUT_CATEGORY_IDS.has(styleCategory)) {
+    return { ok: false, message: "Invalid style category." };
   }
-  params.push(Math.min(Math.max(Number(limit) || 24, 1), 100));
-  const r = await dbQuery(
+
+  const reviewParams = [];
+  const reviewWhere = [`rp.status = 'published'`, `lower(coalesce(b.verification_status, 'approved')) = 'approved'`];
+  if (styleCategory) {
+    reviewParams.push(styleCategory);
+    reviewWhere.push(`rp.style_category = $${reviewParams.length}`);
+  }
+  reviewParams.push(cap);
+  const reviewR = await dbQuery(
     `SELECT rp.*, b.name AS barber_name, b.public_slug AS barber_slug,
             EXISTS (
               SELECT 1 FROM photo_likes pl
-              WHERE pl.photo_id = rp.id AND pl.user_id = $${params.length + 1}::uuid
-            ) AS liked_by_viewer
+              WHERE pl.photo_id = rp.id AND pl.user_id = $${reviewParams.length + 1}::uuid
+            ) AS liked_by_viewer,
+            'review' AS discover_source
      FROM review_photos rp
      JOIN barbers b ON b.id::text = rp.barber_id
-     WHERE ${where.join(" AND ")}
+     WHERE ${reviewWhere.join(" AND ")}
      ORDER BY rp.created_at DESC
-     LIMIT $${params.length}`,
-    [...params, viewerUserId || null],
+     LIMIT $${reviewParams.length}`,
+    [...reviewParams, viewerUserId || null],
   );
-  return {
-    ok: true,
-    photos: (r.rows || []).map((row) => ({
-      ...mapPhotoRow(row, { likedByViewer: Boolean(row.liked_by_viewer) }),
-      barberName: row.barber_name,
-      barberSlug: row.barber_slug,
-    })),
-  };
+
+  let styleRows = [];
+  if (!styleCategory) {
+    const styleR = await dbQuery(
+      `SELECT g.id, g.barber_id, g.image_url, g.title, g.created_at,
+              b.name AS barber_name, b.public_slug AS barber_slug
+       FROM barber_style_gallery g
+       JOIN barbers b ON b.id::text = g.barber_id::text
+       WHERE COALESCE(g.is_published, true) = true
+         AND g.image_url IS NOT NULL AND trim(g.image_url) <> ''
+         AND lower(coalesce(b.verification_status, 'approved')) = 'approved'
+       ORDER BY g.created_at DESC
+       LIMIT $1`,
+      [cap],
+    ).catch(() => ({ rows: [] }));
+    styleRows = styleR.rows || [];
+  }
+
+  const reviewPhotos = (reviewR.rows || []).map((row) => ({
+    ...mapPhotoRow(row, { likedByViewer: Boolean(row.liked_by_viewer) }),
+    barberName: row.barber_name,
+    barberSlug: row.barber_slug,
+    createdAtMs: row.created_at ? new Date(row.created_at).getTime() : 0,
+  }));
+
+  const stylePhotos = styleRows.map((row) => ({
+    id: `gal-${String(row.id)}`,
+    reviewId: null,
+    barberId: String(row.barber_id),
+    photoUrl: row.image_url,
+    thumbnailUrl: row.image_url,
+    caption: row.title || "",
+    photoType: "standard",
+    styleCategory: null,
+    is30DayFollowup: false,
+    parentPhotoId: null,
+    likeCount: 0,
+    likedByViewer: false,
+    createdAt: row.created_at ? new Date(row.created_at).toISOString() : null,
+    barberName: row.barber_name,
+    barberSlug: row.barber_slug,
+    createdAtMs: row.created_at ? new Date(row.created_at).getTime() : 0,
+  }));
+
+  const photos = [...reviewPhotos, ...stylePhotos]
+    .sort((a, b) => (b.createdAtMs || 0) - (a.createdAtMs || 0))
+    .slice(0, cap)
+    .map(({ createdAtMs, ...rest }) => rest);
+
+  return { ok: true, photos };
 }
 
 export async function assertBookingEligibleForReview(userId, bookingId) {

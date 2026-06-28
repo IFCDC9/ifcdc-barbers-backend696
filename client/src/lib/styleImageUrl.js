@@ -16,7 +16,11 @@ export function isEphemeralStyleImageUrl(url) {
   const lower = u.toLowerCase();
   if (u.includes("supabase.co/storage/")) return false;
   if (/\.heic(?:\?|$)/.test(lower) || /\.heif(?:\?|$)/.test(lower)) return true;
-  if (u.includes("/uploads/")) return true;
+  if (u.includes("/uploads/")) {
+    if (u.startsWith("http") && u.includes("onrender.com")) return false;
+    if (u.startsWith("/uploads/") || u.startsWith(`${PRODUCTION_API_ORIGIN}/uploads/`)) return false;
+    if (u.startsWith("http://localhost") || u.startsWith("http://127.0.0.1")) return true;
+  }
   return false;
 }
 

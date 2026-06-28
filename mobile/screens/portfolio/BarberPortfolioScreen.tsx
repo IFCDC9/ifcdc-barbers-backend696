@@ -213,7 +213,7 @@ export default function BarberPortfolioScreen() {
             )}
             <View style={styles.heroCopy}>
               <RatingSummary average={portfolio.averageRating} count={portfolio.reviewCount} />
-              {portfolio.yearsExperience != null ? (
+              {portfolio.yearsExperience != null && portfolio.yearsExperience > 0 ? (
                 <Text style={styles.meta}>{portfolio.yearsExperience}+ years experience</Text>
               ) : null}
               {portfolio.shop.locationLabel ? (

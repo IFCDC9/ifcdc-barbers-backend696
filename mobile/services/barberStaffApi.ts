@@ -23,6 +23,15 @@ export type BarberProfile = {
   logo?: string | null;
   location?: string | null;
   phone?: string | null;
+  shop_name?: string | null;
+  portfolio_headline?: string | null;
+  years_experience?: number | null;
+  public_slug?: string | null;
+  business_name?: string | null;
+  business_phone?: string | null;
+  business_address?: string | null;
+  business_city?: string | null;
+  business_state?: string | null;
   created_at?: string | null;
 };
 
@@ -70,7 +79,20 @@ export async function fetchBarberProfile(barberId: string | number): Promise<Bar
 
 export async function saveBarberProfile(
   barberId: string | number,
-  body: { name?: string; phone?: string; bio?: string; location?: string },
+  body: {
+    name?: string;
+    phone?: string;
+    bio?: string;
+    location?: string;
+    shop_name?: string;
+    portfolio_headline?: string;
+    years_experience?: number | null;
+    business_address?: string;
+    business_city?: string;
+    business_state?: string;
+    profile_image?: string;
+    logo?: string;
+  },
 ): Promise<BarberProfile | null> {
   const res = await apiFetch(withBarberId("/api/barber/profile", barberId), {
     method: "PUT",

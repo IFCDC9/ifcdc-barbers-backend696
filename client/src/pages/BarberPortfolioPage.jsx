@@ -151,7 +151,7 @@ export default function BarberPortfolioPage() {
                 {portfolio.averageRating.toFixed(1)} · {portfolio.reviewCount} review{portfolio.reviewCount === 1 ? "" : "s"}
               </span>
             </div>
-            {portfolio.yearsExperience != null ? (
+            {portfolio.yearsExperience != null && portfolio.yearsExperience > 0 ? (
               <p style={{ margin: "8px 0 0", color: theme.colors.muted }}>{portfolio.yearsExperience}+ years experience</p>
             ) : null}
             {portfolio.shop?.locationLabel ? (

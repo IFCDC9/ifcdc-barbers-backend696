@@ -28,7 +28,7 @@ import IFCDCGlobalFooter from "./components/IFCDCGlobalFooter.jsx";
 import StylesBrowse from "./pages/StylesBrowse.jsx";
 import StyleDiscoverPage from "./pages/StyleDiscoverPage.jsx";
 import BarberPortfolioPage from "./pages/BarberPortfolioPage.jsx";
-import BarberOnboarding from "./pages/BarberOnboarding.jsx";
+import BookingReviewPage from "./pages/BookingReviewPage.jsx";
 import SignupBusiness from "./pages/SignupBusiness.jsx";
 import Messages from "./pages/Messages.jsx";
 import NotFound from "./pages/NotFound.jsx";
@@ -70,6 +70,7 @@ function AppShell() {
             <Route path="/booking-legacy" element={<Booking />} />
             <Route path="/aura" element={<AuraPage />} />
             <Route path="/profile" element={<Profile />} />
+            <Route path="/profile/bookings/:bookingId/review" element={<BookingReviewPage />} />
             <Route path="/profile/delete-account" element={<DeleteAccount />} />
             <Route path="/checkout" element={<Navigate to="/booking" replace />} />
             <Route path="/payment" element={<Navigate to="/booking" replace />} />

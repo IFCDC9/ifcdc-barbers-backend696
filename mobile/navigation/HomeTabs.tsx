@@ -117,11 +117,13 @@ export default function HomeTabs() {
   // useAuth is wrapped in try/catch so even a transient AuthProvider hiccup
   // (token refresh during a re-render, etc.) cannot crash the tab navigator.
   let isPlatformAdmin = false;
+  let hasStaffDashboard = false;
   let approvalPending = false;
   let approvalMessage = "";
   try {
     const auth = useAuth();
     isPlatformAdmin = Boolean(auth.isPlatformAdmin);
+    hasStaffDashboard = Boolean(auth.hasStaffDashboard);
     approvalPending = Boolean(auth.approvalPending);
     approvalMessage = String(auth.user?.message || "Your account is pending Super Admin approval.");
   } catch (e) {
@@ -129,8 +131,8 @@ export default function HomeTabs() {
   }
 
   React.useEffect(() => {
-    console.log("[nav] HomeTabs mounted", { isPlatformAdmin, platform: Platform.OS });
-  }, [isPlatformAdmin]);
+    console.log("[nav] HomeTabs mounted", { isPlatformAdmin, hasStaffDashboard, platform: Platform.OS });
+  }, [isPlatformAdmin, hasStaffDashboard]);
 
   return (
     <View style={{ flex: 1 }}>
@@ -190,11 +192,11 @@ export default function HomeTabs() {
         options={{ tabBarLabel: "Profile", tabBarIcon: tabIcon("person") }}
         listeners={{ focus: () => logTabFocus("Profile") }}
       />
-      {isPlatformAdmin ? (
+      {hasStaffDashboard ? (
         <Tab.Screen
           name="Admin"
           component={AdminTabScreen}
-          options={{ tabBarLabel: "Admin", tabBarIcon: tabIcon("shield-checkmark") }}
+          options={{ tabBarLabel: isPlatformAdmin ? "Admin" : "Manage", tabBarIcon: tabIcon("shield-checkmark") }}
           listeners={{ focus: () => logTabFocus("Admin") }}
         />
       ) : null}

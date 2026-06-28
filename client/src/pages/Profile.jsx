@@ -122,15 +122,26 @@ export default function Profile() {
         <p className="ifcdc-page-hint">No bookings yet. <Link to="/booking">Book now</Link></p>
       ) : null}
       <ul className="ifcdc-book-wizard__list">
-        {bookings.map((b) => (
-          <li key={b.id} className="ifcdc-book-wizard__summary">
-            <strong>{b.service || b.service_name || "Appointment"}</strong>
-            <br />
-            {b.barber_name || b.barberName || "Barber"} · {b.date || b.appointment_date} {b.time || b.appointment_time}
-            <br />
-            Status: {b.booking_status || b.status || "—"}
-          </li>
-        ))}
+        {bookings.map((b) => {
+          const completed = String(b.booking_status || b.status || "").toLowerCase() === "completed";
+          return (
+            <li key={b.id} className="ifcdc-book-wizard__summary">
+              <strong>{b.service || b.service_name || "Appointment"}</strong>
+              <br />
+              {b.barber_name || b.barberName || "Barber"} · {b.date || b.appointment_date} {b.time || b.appointment_time}
+              <br />
+              Status: {b.booking_status || b.status || "—"}
+              {completed ? (
+                <>
+                  <br />
+                  <Link to={`/profile/bookings/${b.id}/review`} className="ifcdc-book-wizard__cta ifcdc-book-wizard__cta--ghost" style={{ display: "inline-block", marginTop: 8 }}>
+                    Leave a review
+                  </Link>
+                </>
+              ) : null}
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

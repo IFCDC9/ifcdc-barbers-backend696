@@ -3,7 +3,7 @@
  * - POST /api/barber/onboard — register barber account + barber row + settings (public)
  * - POST /api/barber/onboard/services — bulk create services (auth, barber role)
  * - POST /api/barber/onboard/complete — create default bookable style if none (auth)
- * - POST /api/barber/media — multipart branding upload (auth); field `file` + `slot` = logo | profile
+ * - POST /api/barber/onboard/branding — multipart branding upload (auth); field `file` + `slot` = logo | profile
  *
  * Single-service POST /api/barber/services remains on the barber business router (unchanged).
  */
@@ -370,7 +370,7 @@ export function mountBarberOnboardingRoutes(app, { uploadDir } = {}) {
     }
   });
 
-  app.post("/api/barber/media", requireAuth, barberScopeMiddleware, handleBrandingUpload, async (req, res) => {
+  app.post("/api/barber/onboard/branding", requireAuth, barberScopeMiddleware, handleBrandingUpload, async (req, res) => {
     try {
       if (!req.file?.filename) {
         return res.status(400).json({ error: "file_required", message: "Multipart field `file` (image) is required" });

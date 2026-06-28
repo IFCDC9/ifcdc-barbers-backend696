@@ -1,32 +1,31 @@
 import React from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
-import { useAuth } from "../services/authContext";
-import { theme } from "../constants/theme";
+import { useAuth } from "../../services/authContext";
+import { hasStaffDashboardAccess } from "../../utils/staffDashboardAccess";
+import { theme } from "../../constants/theme";
 
 type Props = {
   children: React.ReactNode;
 };
 
-/** Blocks admin UI for non–super-admin sessions (client-side guard; APIs remain JWT-protected). */
+/** Blocks staff dashboard for customers; allows super_admin, admin, shop_owner. */
 export default function AdminRouteGuard({ children }: Props) {
-  const { isPlatformAdmin, loading } = useAuth();
+  const { hasStaffDashboard, loading } = useAuth();
   const navigation = useNavigation();
 
   React.useEffect(() => {
-    if (!loading && !isPlatformAdmin) {
+    if (!loading && !hasStaffDashboard) {
       const parent = navigation.getParent();
       if (parent && "navigate" in parent) {
         (parent as { navigate: (name: string) => void }).navigate("Home");
       }
     }
-  }, [isPlatformAdmin, loading, navigation]);
+  }, [hasStaffDashboard, loading, navigation]);
 
-  if (loading) {
-    return <View style={styles.blocked} />;
-  }
+  if (loading) return <View style={styles.blocked} />;
 
-  if (!isPlatformAdmin) {
+  if (!hasStaffDashboard) {
     return (
       <View style={styles.blocked}>
         <Text style={styles.denied}>Access denied</Text>

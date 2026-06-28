@@ -45,17 +45,36 @@ export default function ProfileHomeScreen() {
   const avatarLetters = initialsFrom(user?.name || "", user?.email || "");
   const avatarUri = localAvatar || user?.profileImageUrl || null;
 
-  // Customer Profile only — shop/barber/admin tools live under the Admin tab.
+  // Customer Profile — barbers/shop owners also get a business tools section below.
+  const role = String(user?.role || "").toLowerCase();
+  const isBarber = role === "barber" && user?.barberId;
+  const isShopOwner = role === "shop_owner";
+
   const menu: { key: keyof ProfileStackParamList; label: string }[] = [
     { key: "EditProfile", label: t("profile.menuPersonalInfo") },
     { key: "BookingHistory", label: t("profile.menuBookings") },
     { key: "HaircutFollowup", label: "30-day haircut updates" },
+    { key: "StyleDiscover", label: "Discover haircuts" },
     { key: "Notifications", label: t("profile.menuNotifications") },
     { key: "LanguageSettings", label: t("profile.menuLanguage") },
     { key: "SupportHelp", label: t("profile.menuSupport") },
     { key: "LegalPolicies", label: t("profile.menuLegal") },
     { key: "DeleteAccount", label: t("profile.menuDeleteAccount") },
   ];
+
+  const staffMenu: { key: keyof ProfileStackParamList; label: string; params?: object }[] = [];
+  if (isBarber && user?.barberId) {
+    staffMenu.push(
+      { key: "BarberDetail", label: "My barber profile", params: { barberId: String(user.barberId), barberName: user.name || "My profile" } },
+      { key: "BarberEdit", label: "Edit profile", params: { barberId: String(user.barberId), barberName: user.name || "My profile" } },
+      { key: "BarberGallery", label: "Haircut gallery", params: { barberId: String(user.barberId), barberName: user.name || "My profile" } },
+      { key: "BarberServices", label: "Services & pricing", params: { barberId: String(user.barberId), barberName: user.name || "My profile" } },
+      { key: "EditBarberSchedule", label: "Business hours", params: { barberId: String(user.barberId), barberName: user.name || "My profile" } },
+    );
+  }
+  if (isShopOwner) {
+    staffMenu.push({ key: "ShopRoster", label: "Shop dashboard" });
+  }
 
   return (
     <View style={styles.root}>
@@ -81,6 +100,31 @@ export default function ProfileHomeScreen() {
           <Text style={styles.userName}>{displayName}</Text>
           <Text style={styles.userEmail}>{displayEmail}</Text>
         </ProfileCard>
+
+        {staffMenu.length ? (
+          <ProfileCard style={styles.menuCard}>
+            <Text style={styles.staffSectionTitle}>Business tools</Text>
+            {staffMenu.map((item, index) => (
+              <Pressable
+                key={item.key}
+                onPress={() =>
+                  item.params
+                    ? navigation.navigate(item.key as never, item.params as never)
+                    : navigation.navigate(item.key as never)
+                }
+                hitSlop={8}
+                style={({ pressed }) => [
+                  styles.menuRow,
+                  index < staffMenu.length - 1 && styles.menuRowBorder,
+                  pressed && styles.menuRowPressed,
+                ]}
+              >
+                <Text style={styles.menuLabel}>{item.label}</Text>
+                <Text style={styles.menuChevron}>›</Text>
+              </Pressable>
+            ))}
+          </ProfileCard>
+        ) : null}
 
         <ProfileCard style={styles.menuCard}>
           {menu.map((item, index) => (
@@ -162,6 +206,16 @@ const styles = StyleSheet.create({
   userName: { ...typography.title, marginBottom: 6 },
   userEmail: { ...typography.bodyMuted },
   menuCard: { paddingVertical: 4, paddingHorizontal: 0 },
+  staffSectionTitle: {
+    ...typography.caption,
+    color: palette.gold,
+    fontWeight: "800",
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 4,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+  },
   menuRow: {
     flexDirection: "row",
     alignItems: "center",
