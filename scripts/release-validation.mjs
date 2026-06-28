@@ -3,6 +3,9 @@
  * Pre-release validation — signup, admin, booking logic, security.
  * Usage: node scripts/release-validation.mjs [--base URL] [--local-port PORT]
  *
+ * Admin login (prefer dedicated QA account):
+ *   QA_ADMIN_EMAIL=qa-admin@example.com QA_ADMIN_PASSWORD='…' node scripts/release-validation.mjs
+ *
  * Does NOT complete PayPal checkout (avoids charges). Creates labeled test
  * accounts on production when run against live API — delete after QA.
  */
@@ -90,13 +93,23 @@ async function authMe(token, base = apiBase) {
 }
 
 async function adminLogin() {
-  const email = env.SUPER_ADMIN_EMAIL || "service@ifcdc.org";
+  const email =
+    env.QA_ADMIN_EMAIL ||
+    env.SUPER_ADMIN_EMAIL ||
+    "service@ifcdc.org";
   const password =
+    env.QA_ADMIN_PASSWORD ||
     env.SUPER_ADMIN_PASSWORD ||
     env.PLATFORM_OWNER_PASSWORD ||
     env.IFCDC_OWNER_PASSWORD ||
     "";
-  if (!password) return { token: null, reason: "SUPER_ADMIN_PASSWORD not in env" };
+  if (!password) {
+    return {
+      token: null,
+      reason:
+        "QA_ADMIN_PASSWORD or SUPER_ADMIN_PASSWORD not in env (set QA_ADMIN_EMAIL for a dedicated QA admin)",
+    };
+  }
   const { res, data } = await loginUser(email, password);
   if (!res.ok || !data.token) return { token: null, reason: data.message || data.error || res.status };
   return { token: data.token, email };

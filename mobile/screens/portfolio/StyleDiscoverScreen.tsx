@@ -91,12 +91,11 @@ export default function StyleDiscoverScreen() {
                 style={[styles.tile, { width: tile, height: tile }]}
                 onPress={() => {
                   const slug = photo.barberSlug || photo.barberId;
-                  if (slug) {
-                    navigation.navigate("BarberPortfolio", {
-                      slugOrId: String(slug),
-                      barberName: photo.barberName,
-                    });
-                  }
+                  if (!slug) return;
+                  navigation.navigate("BarberPortfolio", {
+                    slugOrId: String(slug),
+                    barberName: photo.barberName,
+                  });
                 }}
               >
                 <Image

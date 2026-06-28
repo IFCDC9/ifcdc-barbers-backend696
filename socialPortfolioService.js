@@ -43,12 +43,17 @@ function mapReviewRow(row, photos = []) {
 }
 
 function mapPhotoRow(row, { likedByViewer = false } = {}) {
+  const barberId = String(row.barber_id || "");
+  const photoUrl =
+    resolvePublishedImageUrl(row.photo_url, { barberId, styleId: row.id }) || String(row.photo_url || "");
+  const thumbnailUrl =
+    resolvePublishedImageUrl(row.thumbnail_url || row.photo_url, { barberId, styleId: row.id }) || photoUrl;
   return {
     id: String(row.id),
     reviewId: row.review_id ? String(row.review_id) : null,
-    barberId: String(row.barber_id),
-    photoUrl: row.photo_url,
-    thumbnailUrl: row.thumbnail_url || row.photo_url,
+    barberId,
+    photoUrl,
+    thumbnailUrl,
     caption: row.caption || "",
     photoType: row.photo_type || "after",
     styleCategory: row.style_category || null,
@@ -433,12 +438,17 @@ export async function listDiscoverPhotos({ styleCategory = null, limit = 24, vie
     createdAtMs: row.created_at ? new Date(row.created_at).getTime() : 0,
   }));
 
-  const stylePhotos = styleRows.map((row) => ({
+  const stylePhotos = styleRows.map((row) => {
+    const barberId = String(row.barber_id);
+    const imageUrl =
+      resolvePublishedImageUrl(row.image_url, { barberId, styleId: `gal-${row.id}` }) ||
+      String(row.image_url || "");
+    return {
     id: `gal-${String(row.id)}`,
     reviewId: null,
-    barberId: String(row.barber_id),
-    photoUrl: row.image_url,
-    thumbnailUrl: row.image_url,
+    barberId,
+    photoUrl: imageUrl,
+    thumbnailUrl: imageUrl,
     caption: row.title || "",
     photoType: "standard",
     styleCategory: null,
@@ -454,7 +464,8 @@ export async function listDiscoverPhotos({ styleCategory = null, limit = 24, vie
     price: row.price != null ? Number(row.price) : null,
     durationMinutes: row.duration_minutes != null ? Number(row.duration_minutes) : null,
     createdAtMs: row.created_at ? new Date(row.created_at).getTime() : 0,
-  }));
+  };
+  });
 
   const photos = [...reviewPhotos, ...stylePhotos]
     .sort((a, b) => (b.createdAtMs || 0) - (a.createdAtMs || 0))

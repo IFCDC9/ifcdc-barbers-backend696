@@ -55,6 +55,21 @@ export function userFacingApiError(e: unknown, fallback = DEFAULT): string {
     }
   }
 
-  if (msg.includes("404")) return fallback;
+  if (msg.includes("404")) {
+    const detail404 = e.message.split(" — ").slice(1).join(" — ").trim();
+    if (detail404) {
+      try {
+        const parsed = JSON.parse(detail404) as { message?: string; error?: string };
+        if (parsed.message) return sanitize(parsed.message);
+        if (parsed.error === "user_not_found") return "Account not found. Sign out and sign in again.";
+      } catch {
+        if (!detail404.startsWith("<") && detail404.length <= 140) return sanitize(detail404);
+      }
+    }
+    return fallback;
+  }
+  if (candidate && candidate.length <= 140 && !candidate.startsWith("http")) {
+    return candidate;
+  }
   return fallback;
 }

@@ -6,7 +6,7 @@ import ProfileScreenLayout from "../../components/ProfileScreenLayout";
 import ProfileCard from "../../components/ProfileCard";
 import GlowButton from "../../components/GlowButton";
 import { useAuth } from "../../services/authContext";
-import { patchProfile } from "../../services/profileApi";
+import { patchProfile, uploadProfileAvatar } from "../../services/profileApi";
 import { userFacingApiError } from "../../utils/userFacingApiError";
 import { theme } from "../../constants/theme";
 
@@ -56,14 +56,27 @@ export default function EditProfileScreen() {
     }
     setSaving(true);
     try {
-      if (user?.id && avatarUri && avatarUri.startsWith("file:")) {
-        await AsyncStorage.setItem(localAvatarKey(user.id), avatarUri);
-      }
-      await patchProfile({
+      const patchBody: {
+        name: string;
+        phone: string;
+        profileImageUrl?: string | null;
+      } = {
         name: name.trim(),
         phone: phone.replace(/\D/g, ""),
-        profileImageUrl: avatarUri && !avatarUri.startsWith("file:") ? avatarUri : null,
-      });
+      };
+
+      if (avatarUri?.startsWith("file:")) {
+        const uploaded = await uploadProfileAvatar(avatarUri, name.trim());
+        patchBody.profileImageUrl = uploaded;
+        if (user?.id) {
+          await AsyncStorage.setItem(localAvatarKey(user.id), uploaded);
+        }
+        setAvatarUri(uploaded);
+      } else if (avatarUri && avatarUri !== user?.profileImageUrl) {
+        patchBody.profileImageUrl = avatarUri;
+      }
+
+      await patchProfile(patchBody);
       await refresh();
       Alert.alert("Saved", "Your profile has been updated.");
     } catch (e) {

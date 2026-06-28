@@ -26,6 +26,7 @@ import {
 } from "../../services/barberGalleryApi";
 import { userFacingApiError } from "../../utils/userFacingApiError";
 import { compressReviewPhoto } from "../../utils/compressReviewPhoto";
+import { getServiceCardImageUrl } from "../../utils/styleImageUrl";
 import type { BarberDetailParams } from "./BarberDetailScreen";
 
 type Route = RouteProp<{ BarberGallery: BarberDetailParams }, "BarberGallery">;
@@ -149,7 +150,7 @@ function BarberGalleryInner() {
           {photos.length ? (
             <View style={[styles.grid, { gap }]}>
               {photos.map((photo) => {
-                const url = photo.image_url || photo.imageUrl || "";
+                const url = getServiceCardImageUrl(photo.image_url || photo.imageUrl || "");
                 return (
                   <Pressable
                     key={String(photo.id)}
