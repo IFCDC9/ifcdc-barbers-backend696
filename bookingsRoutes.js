@@ -1802,14 +1802,57 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
         tenantParams
       );
       const rows = r.rows || [];
-      let platformAgg = { platformFeesCollected: 0, paidBookingsCount: 0, confirmedBookingsCount: 0 };
+      let platformAgg = {
+        platformFeesCollected: 0,
+        paidBookingsCount: 0,
+        confirmedBookingsCount: 0,
+        allBookingsCount: 0,
+        totalGross: 0,
+        totalCollected: 0,
+        totalBarberEarnings: 0,
+        todayRevenue: 0,
+        avgBooking: 0,
+        highestPayment: 0,
+        pendingPaymentsAmount: 0,
+        pendingPaymentsCount: 0,
+        outstandingBalanceAmount: 0,
+        outstandingBalanceCount: 0,
+      };
+      let topServices = {};
       try {
         const ar = await dbQuery(
           `SELECT
            COALESCE(SUM(platform_fee) FILTER (WHERE is_paid_booking = true), 0)::float8 AS platform_fees_collected,
            COUNT(*) FILTER (WHERE is_paid_booking = true)::int AS paid_bookings,
            COUNT(*) FILTER (WHERE booking_status = 'confirmed')::int AS confirmed_bookings,
-           COUNT(*)::int AS all_bookings
+           COUNT(*)::int AS all_bookings,
+           COALESCE(SUM(total_price) FILTER (WHERE is_paid_booking = true), 0)::float8 AS total_gross,
+           COALESCE(SUM(COALESCE(total_paid, amount_paid, 0)) FILTER (WHERE is_paid_booking = true), 0)::float8 AS total_collected,
+           COALESCE(SUM(
+             GREATEST(COALESCE(total_paid, amount_paid, total_price, 0) - COALESCE(platform_fee, 0), 0)
+           ) FILTER (WHERE is_paid_booking = true), 0)::float8 AS barber_earnings,
+           COALESCE(SUM(COALESCE(total_paid, amount_paid, 0)) FILTER (
+             WHERE is_paid_booking = true
+               AND created_at >= date_trunc('day', NOW() AT TIME ZONE 'America/New_York')
+           ), 0)::float8 AS today_revenue,
+           COALESCE(AVG(total_price) FILTER (WHERE is_paid_booking = true), 0)::float8 AS avg_booking,
+           COALESCE(MAX(total_price) FILTER (WHERE is_paid_booking = true), 0)::float8 AS highest_payment,
+           COALESCE(SUM(total_price) FILTER (
+             WHERE payment_status IS NULL
+                OR payment_status NOT IN ('paid', 'paid_full', 'deposit_paid', 'balance_due', 'unpaid', 'failed')
+           ), 0)::float8 AS pending_in_person_amount,
+           COUNT(*) FILTER (
+             WHERE payment_status IS NULL
+                OR payment_status NOT IN ('paid', 'paid_full', 'deposit_paid', 'balance_due', 'unpaid', 'failed')
+           )::int AS pending_in_person_count,
+           COALESCE(SUM(remaining_balance) FILTER (
+             WHERE COALESCE(remaining_balance, 0) > 0.01
+                OR lower(coalesce(payment_status, '')) = 'balance_due'
+           ), 0)::float8 AS outstanding_amount,
+           COUNT(*) FILTER (
+             WHERE COALESCE(remaining_balance, 0) > 0.01
+                OR lower(coalesce(payment_status, '')) = 'balance_due'
+           )::int AS outstanding_count
          FROM bookings
          ${tenantWhere}`,
           tenantParams,
@@ -1820,41 +1863,58 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
           paidBookingsCount: Number(a.paid_bookings) || 0,
           confirmedBookingsCount: Number(a.confirmed_bookings) || 0,
           allBookingsCount: Number(a.all_bookings) || 0,
+          totalGross: Number(a.total_gross) || 0,
+          totalCollected: Number(a.total_collected) || 0,
+          totalBarberEarnings: Number(a.barber_earnings) || 0,
+          todayRevenue: Number(a.today_revenue) || 0,
+          avgBooking: Number(a.avg_booking) || 0,
+          highestPayment: Number(a.highest_payment) || 0,
+          pendingPaymentsAmount: Number(a.pending_in_person_amount) || 0,
+          pendingPaymentsCount: Number(a.pending_in_person_count) || 0,
+          outstandingBalanceAmount: Number(a.outstanding_amount) || 0,
+          outstandingBalanceCount: Number(a.outstanding_count) || 0,
         };
       } catch (e) {
         console.warn("[booking] platform aggregate:", e?.message || e);
       }
-      const totalGross = rows.reduce((s, b) => s + Number(b.totalPrice ?? b.price ?? 0), 0);
-      const totalCollected = rows.reduce((s, b) => s + Number(b.totalPaid ?? b.amountPaid ?? b.price ?? 0), 0);
-      const outstandingBalanceAmount = rows.reduce((s, b) => s + Number(b.remainingBalance || 0), 0);
-      const pendingPaymentsAmount = rows
-        .filter((b) => b.paymentStatus === "pay_in_person")
-        .reduce((s, b) => s + Number(b.totalPrice ?? b.price ?? 0), 0);
+      try {
+        const topR = await dbQuery(
+          `SELECT COALESCE(NULLIF(trim(service), ''), 'General') AS service_name, COUNT(*)::int AS booking_count
+           FROM bookings
+           ${tenantWhere}
+           GROUP BY 1
+           ORDER BY booking_count DESC
+           LIMIT 10`,
+          tenantParams,
+        );
+        topServices = Object.fromEntries(
+          (topR.rows || []).map((row) => [String(row.service_name), Number(row.booking_count) || 0]),
+        );
+      } catch (e) {
+        console.warn("[booking] top services aggregate:", e?.message || e);
+      }
+      const todayYmd = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
 
       return res.json({
-        totalRevenue: totalGross,
-        todayRevenue: 0,
-        totalRevenuePlatform: totalCollected,
-        totalBarberEarnings: 0,
-        pendingPaymentsAmount,
-        pendingPaymentsCount: rows.filter((b) => b.paymentStatus === "pay_in_person").length,
-        outstandingBalanceAmount,
-        outstandingBalanceCount: rows.filter(
-          (b) =>
-            Number(b.remainingBalance || 0) > 0.01 ||
-            String(b.rawPaymentStatus || "").toLowerCase() === "balance_due",
-        ).length,
-        totalPlatformEarnings: totalCollected,
+        totalRevenue: platformAgg.totalGross,
+        todayRevenue: platformAgg.todayRevenue,
+        totalRevenuePlatform: platformAgg.totalCollected,
+        totalBarberEarnings: platformAgg.totalBarberEarnings,
+        pendingPaymentsAmount: platformAgg.pendingPaymentsAmount,
+        pendingPaymentsCount: platformAgg.pendingPaymentsCount,
+        outstandingBalanceAmount: platformAgg.outstandingBalanceAmount,
+        outstandingBalanceCount: platformAgg.outstandingBalanceCount,
+        totalPlatformEarnings: platformAgg.totalCollected,
         platformFeesCollected: platformAgg.platformFeesCollected,
         paidBookingsCount: platformAgg.paidBookingsCount,
         confirmedBookingsCount: platformAgg.confirmedBookingsCount,
         allBookingsCount: platformAgg.allBookingsCount,
-        totalBookings: rows.length,
+        totalBookings: platformAgg.allBookingsCount,
         bookings: rows,
-        todayYmd: null,
-        topServices: {},
-        avgBooking: rows.length ? totalGross / rows.length : 0,
-        highestPayment: rows.length ? Math.max(...rows.map((b) => Number(b.totalPrice ?? b.price ?? 0))) : 0,
+        todayYmd,
+        topServices,
+        avgBooking: platformAgg.avgBooking,
+        highestPayment: platformAgg.highestPayment,
         lastPaymentAt: rows[0]?.created_at || null,
       });
     } catch (e) {
