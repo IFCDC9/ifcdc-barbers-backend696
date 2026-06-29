@@ -102,10 +102,34 @@ export async function login(email, password) {
   return data;
 }
 
-export async function register({ name, email, password, role, accountType }) {
+export async function register({
+  name,
+  email,
+  password,
+  role,
+  accountType,
+  phone,
+  shopName,
+  businessName,
+  address,
+  city,
+  state,
+}) {
   const origin = getApiOrigin();
   const resolvedRole = accountType || role;
-  const payload = { name, email, password, role: resolvedRole, accountType: resolvedRole };
+  const payload = {
+    name,
+    email,
+    password,
+    role: resolvedRole,
+    accountType: resolvedRole,
+    phone,
+    shopName,
+    businessName,
+    address,
+    city,
+    state,
+  };
   let res = await fetch(`${origin}/api/auth/register`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
@@ -127,7 +151,7 @@ export async function register({ name, email, password, role, accountType }) {
     throw new Error(`Register: server returned non-JSON (HTTP ${res.status}). Is the API running?`);
   }
   if (!res.ok) {
-    throw new Error(data?.error || data?.message || `Register failed (HTTP ${res.status})`);
+    throw new Error(data?.message || data?.error || `Register failed (HTTP ${res.status})`);
   }
   return data;
 }

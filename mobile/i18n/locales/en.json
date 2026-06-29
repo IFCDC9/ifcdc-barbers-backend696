@@ -45,6 +45,7 @@
     "password": "Password",
     "fullName": "Full name",
     "phoneOptional": "Phone (optional)",
+    "phoneRequired": "Phone number",
     "signInBtn": "Sign in",
     "signUpBtn": "Create account",
     "backToSignIn": "Back to sign in",

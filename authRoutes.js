@@ -19,6 +19,7 @@ import {
   provisionShopOwnerSignup,
   resolveUserApprovalState,
 } from "./signupProvisioningService.js";
+import { validateSignupPhone } from "./phoneValidation.js";
 
 const require = createRequire(import.meta.url);
 const jwt = require("jsonwebtoken");
@@ -186,7 +187,12 @@ export function createAuthRouter({ sendEmail }) {
         return res.status(400).json({ error: "weak_password", message: pwCheck.message });
       }
 
-      const phone = String(req.body?.phone || "").trim();
+      const phoneRaw = String(req.body?.phone || "").trim();
+      const phoneCheck = validateSignupPhone(phoneRaw);
+      if (!phoneCheck.ok) {
+        return res.status(400).json({ error: phoneCheck.error, message: phoneCheck.message });
+      }
+      const phone = phoneCheck.display;
       const shopName = String(req.body?.shopName || req.body?.shop_name || "").trim();
       const businessName = String(req.body?.businessName || req.body?.business_name || shopName).trim();
       const address = String(req.body?.address || req.body?.location || "").trim();
@@ -194,7 +200,6 @@ export function createAuthRouter({ sendEmail }) {
       const state = String(req.body?.state || "").trim();
 
       if (role === "barber") {
-        if (!phone) return res.status(400).json({ error: "phone_required", message: "Phone number is required." });
         if (!shopName) return res.status(400).json({ error: "shop_name_required", message: "Shop name is required." });
         if (!address && !(city && state)) {
           return res.status(400).json({
@@ -204,7 +209,6 @@ export function createAuthRouter({ sendEmail }) {
         }
       }
       if (role === "shop_owner") {
-        if (!phone) return res.status(400).json({ error: "phone_required", message: "Phone number is required." });
         if (!businessName) {
           return res.status(400).json({ error: "business_name_required", message: "Shop name is required." });
         }
@@ -219,7 +223,7 @@ export function createAuthRouter({ sendEmail }) {
         `INSERT INTO app_users (name, email, password_hash, role, phone, account_status)
          VALUES ($1, $2, $3, $4, $5, $6)
          RETURNING id, name, email, role, phone, barber_id, business_id, account_status, created_at`,
-        [name || null, email, passwordHash, role, phone || null, initialAccountStatus],
+        [name || null, email, passwordHash, role, phone, initialAccountStatus],
       );
       const user = created.rows?.[0];
       if (!user?.id) throw new Error("user_insert_failed");

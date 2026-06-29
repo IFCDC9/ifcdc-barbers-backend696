@@ -106,6 +106,7 @@ export function mapAuthErrorToMessage(json: JsonAuth | null, status: number): st
   if (code === "weak_password") return msg || "Password is too weak.";
   if (code === "name_required") return msg || "Name is required.";
   if (code === "phone_required") return msg || "Phone number is required.";
+  if (code === "phone_invalid") return msg || "Enter a valid 10-digit phone number.";
   if (code === "shop_name_required" || code === "business_name_required") return msg || "Shop name is required.";
   if (code === "address_required") return msg || "Shop address is required.";
   if (code === "city_required") return msg || "City is required.";

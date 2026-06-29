@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { validatePasswordStrength } from "../lib/passwordPolicy.js";
+import { validateSignupPhone } from "../lib/phoneValidation.js";
 import { register } from "../services/api.js";
 
 export default function Register() {
@@ -8,7 +9,12 @@ export default function Register() {
     name: "",
     email: "",
     password: "",
+    phone: "",
     role: "user",
+    shopName: "",
+    address: "",
+    city: "",
+    state: "",
   });
   const [status, setStatus] = useState(null);
   const [tone, setTone] = useState(null);
@@ -30,6 +36,12 @@ export default function Register() {
       setTone("error");
       return;
     }
+    const phoneCheck = validateSignupPhone(form.phone);
+    if (!phoneCheck.ok) {
+      setStatus(phoneCheck.message);
+      setTone("error");
+      return;
+    }
     if (!acceptedTerms || !acceptedPrivacy) {
       setStatus("Please accept the Terms and Privacy Policy.");
       setTone("error");
@@ -37,7 +49,20 @@ export default function Register() {
     }
     setSubmitting(true);
     try {
-      await register({ ...form, accountType: form.role });
+      const role = form.role;
+      await register({
+        name: form.name.trim(),
+        email: form.email.trim(),
+        password: form.password,
+        accountType: role,
+        role,
+        phone: phoneCheck.display,
+        shopName: form.shopName.trim(),
+        businessName: form.shopName.trim(),
+        address: form.address.trim(),
+        city: form.city.trim(),
+        state: form.state.trim(),
+      });
       setStatus("Account created! You can sign in.");
       setTone("success");
     } catch (err) {
@@ -48,6 +73,8 @@ export default function Register() {
       setSubmitting(false);
     }
   };
+
+  const showShopFields = form.role === "barber" || form.role === "shop_owner";
 
   return (
     <div className="auth-shell">
@@ -70,8 +97,100 @@ export default function Register() {
               value={form.name}
               onChange={handleChange}
               className="auth-input"
+              required
             />
           </div>
+
+          <div className="auth-field">
+            <span className="auth-icon" aria-hidden>
+              ⌄
+            </span>
+            <select name="role" value={form.role} onChange={handleChange} className="auth-input" aria-label="Account type">
+              <option value="user">Customer</option>
+              <option value="barber">Barber</option>
+              <option value="shop_owner">Shop owner</option>
+            </select>
+            <p className="auth-subtext" style={{ margin: "4px 0 0", fontSize: "0.8rem", opacity: 0.75 }}>
+              Admin manages your own shop only.
+            </p>
+          </div>
+
+          <div className="auth-field">
+            <span className="auth-icon" aria-hidden>
+              📞
+            </span>
+            <input
+              name="phone"
+              type="tel"
+              autoComplete="tel"
+              placeholder="Phone number"
+              value={form.phone}
+              onChange={handleChange}
+              className="auth-input"
+              required
+            />
+          </div>
+
+          {showShopFields ? (
+            <>
+              <div className="auth-field">
+                <span className="auth-icon" aria-hidden>
+                  🏪
+                </span>
+                <input
+                  name="shopName"
+                  type="text"
+                  placeholder="Shop name"
+                  value={form.shopName}
+                  onChange={handleChange}
+                  className="auth-input"
+                  required
+                />
+              </div>
+              <div className="auth-field">
+                <span className="auth-icon" aria-hidden>
+                  📍
+                </span>
+                <input
+                  name="address"
+                  type="text"
+                  placeholder={form.role === "shop_owner" ? "Shop address" : "Location / address"}
+                  value={form.address}
+                  onChange={handleChange}
+                  className="auth-input"
+                  required={form.role === "shop_owner"}
+                />
+              </div>
+              <div className="auth-field">
+                <span className="auth-icon" aria-hidden>
+                  🌆
+                </span>
+                <input
+                  name="city"
+                  type="text"
+                  placeholder="City"
+                  value={form.city}
+                  onChange={handleChange}
+                  className="auth-input"
+                  required={form.role === "shop_owner"}
+                />
+              </div>
+              <div className="auth-field">
+                <span className="auth-icon" aria-hidden>
+                  🗺
+                </span>
+                <input
+                  name="state"
+                  type="text"
+                  placeholder="State"
+                  value={form.state}
+                  onChange={handleChange}
+                  className="auth-input"
+                  required={form.role === "shop_owner"}
+                />
+              </div>
+            </>
+          ) : null}
 
           <div className="auth-field">
             <span className="auth-icon" aria-hidden>
@@ -85,6 +204,7 @@ export default function Register() {
               value={form.email}
               onChange={handleChange}
               className="auth-input"
+              required
             />
           </div>
 
@@ -100,25 +220,12 @@ export default function Register() {
               value={form.password}
               onChange={handleChange}
               className="auth-input"
+              required
             />
           </div>
           <p className="auth-subtext" style={{ margin: "-4px 0 8px", fontSize: "0.85rem", opacity: 0.85 }}>
             Min 12 characters: uppercase, lowercase, number, and symbol. Common passwords are rejected.
           </p>
-
-          <div className="auth-field">
-            <span className="auth-icon" aria-hidden>
-              ⌄
-            </span>
-            <select name="role" value={form.role} onChange={handleChange} className="auth-input" aria-label="Account type">
-              <option value="user">Customer</option>
-              <option value="barber">Barber</option>
-              <option value="shop_owner">Shop owner</option>
-            </select>
-            <p className="auth-subtext" style={{ margin: "4px 0 0", fontSize: "0.8rem", opacity: 0.75 }}>
-              Admin manages your own shop only.
-            </p>
-          </div>
 
           <label className="auth-subtext" style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 8 }}>
             <input type="checkbox" checked={acceptedTerms} onChange={(e) => setAcceptedTerms(e.target.checked)} />

@@ -25,6 +25,7 @@ import { exchangeGoogleIdToken } from "../auth/googleBackendLogin";
 import { registerWithEmailPassword } from "../auth/authSessionApi";
 import { UX } from "../utils/uxCopy";
 import { userFacingApiError } from "../utils/userFacingApiError";
+import { validateSignupPhone } from "../utils/phoneValidation";
 import { POLICY_VERSION } from "../constants/legalContent";
 import { buildSignupAcceptances, recordAcceptance } from "../services/legalApi";
 import {
@@ -224,6 +225,11 @@ export default function RegisterScreen({ navigation }: { navigation: any }) {
       );
       return;
     }
+    const phoneCheck = validateSignupPhone(phone);
+    if (!phoneCheck.ok) {
+      Alert.alert("Create account", phoneCheck.message);
+      return;
+    }
     submittingRef.current = true;
     try {
       setBusy(true);
@@ -234,16 +240,22 @@ export default function RegisterScreen({ navigation }: { navigation: any }) {
       });
       const profileExtras =
         accountType === "barber"
-          ? { phone: phone.trim(), shopName: shopName.trim(), address: address.trim(), city: city.trim(), state: stateProv.trim() }
+          ? {
+              phone: phoneCheck.display,
+              shopName: shopName.trim(),
+              address: address.trim(),
+              city: city.trim(),
+              state: stateProv.trim(),
+            }
           : accountType === "shop_owner"
             ? {
-                phone: phone.trim(),
+                phone: phoneCheck.display,
                 businessName: shopName.trim(),
                 address: address.trim(),
                 city: city.trim(),
                 state: stateProv.trim(),
               }
-            : {};
+            : { phone: phoneCheck.display };
       const { token, json } = await registerWithEmailPassword(
         fullName.trim(),
         email.trim(),
@@ -386,18 +398,20 @@ export default function RegisterScreen({ navigation }: { navigation: any }) {
           variant={accountType === "shop_owner" ? "primary" : "outline"}
           disabled={busy}
         />
+        <View style={{ height: 10 }} />
+        <TextInput
+          value={phone}
+          onChangeText={setPhone}
+          placeholder={t("auth.phoneRequired")}
+          placeholderTextColor="rgba(255,255,255,0.45)"
+          keyboardType="phone-pad"
+          textContentType="telephoneNumber"
+          autoComplete="tel"
+          style={styles.input}
+          editable={!busy}
+        />
         {accountType !== "customer" ? (
           <>
-            <View style={{ height: 10 }} />
-            <TextInput
-              value={phone}
-              onChangeText={setPhone}
-              placeholder="Phone number"
-              placeholderTextColor="rgba(255,255,255,0.45)"
-              keyboardType="phone-pad"
-              style={styles.input}
-              editable={!busy}
-            />
             <View style={{ height: 10 }} />
             <TextInput
               value={shopName}

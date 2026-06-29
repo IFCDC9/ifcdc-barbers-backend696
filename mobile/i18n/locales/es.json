@@ -45,6 +45,7 @@
     "password": "Contraseña",
     "fullName": "Nombre completo",
     "phoneOptional": "Teléfono (opcional)",
+    "phoneRequired": "Número de teléfono",
     "signInBtn": "Iniciar sesión",
     "signUpBtn": "Crear cuenta",
     "backToSignIn": "Volver a iniciar sesión",
