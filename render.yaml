@@ -48,6 +48,50 @@ services:
       - key: DATABASE_URL
         sync: false
 
+  # AURA / Twilio voice + chat API — same Node backend as backend696 (repo root), NOT client/
+  # Twilio webhooks: set PUBLIC_BASE_URL to this service URL (e.g. https://aura-backend.onrender.com)
+  - type: web
+    name: aura-backend
+    runtime: node
+    branch: main
+    autoDeploy: true
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/aura/status
+    buildFilter:
+      paths:
+        - "**/*.js"
+        - "**/*.mjs"
+        - "**/*.cjs"
+        - "**/*.ts"
+        - package.json
+        - package-lock.json
+      ignoredPaths:
+        - client/**
+        - mobile/**
+        - frontend/**
+        - docs/**
+        - scripts/capture-asc-screenshots.mjs
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SKIP_VITE_ENV_VALIDATION
+        value: "true"
+      - key: DATABASE_URL
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_PHONE_NUMBER
+        sync: false
+      - key: TWILIO_MESSAGING_SERVICE_SID
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+
   # 30-day follow-up push reminders run inside the web service (setInterval every 6h on boot).
   # Do NOT add a separate cron service unless you copy DATABASE_URL + push env vars to it in Render.
   # In-app: Profile → "30-day haircut updates" (HaircutFollowupScreen).
