@@ -24,7 +24,7 @@
         "title": "IFCDC Barbers",
         "subtitle": "Book cuts with style photos",
         "privacyPolicyUrl": "https://ifcdcbarbersapp.com/privacy",
-        "releaseNotes": "Version 1.1 — Super Admin platform management: global Shops & Locations, barber and shop signup with pending approval, approve/reject/suspend/reactivate from iPhone and iPad, monetization and access controls, and full sync with the live production backend. Includes signup pipeline fixes and performance improvements from Builds 37–40.",
+        "releaseNotes": "Version 1.1 (Build 49) — Production release candidate.\n\n• Required phone number on signup for customers, barbers, and shop owners\n• Style gallery Like/Unlike with instant count updates\n• Discover feed shows all service photos with names and prices\n• Profile save and avatar upload improvements\n• Admin revenue dashboard accuracy for live PayPal bookings\n• Stability and performance improvements across booking, approvals, and portfolio",
         "screenshots": {
           "APP_IPAD_PRO_3GEN_129": [
             "store/apple/screenshot/en-US/APP_IPAD_PRO_3GEN_129/iPad Pro 13-inch (M4)-06_AURA.png",
@@ -86,7 +86,7 @@
       "demoUsername": "apple.review@ifcdcbarbersapp.com",
       "demoPassword": "IFCDC-Review2026!",
       "demoRequired": true,
-      "notes": "APP REVIEW NOTES — Build 39 (Version 1.1)\n\nReview Account:\nEmail: apple.review@ifcdcbarbersapp.com\nPassword: IFCDC-Review2026!\n\nWhat's new in 1.1:\nSuper Admin users (platform owner) can open Admin → Shop management for global Shops & Locations, pending shop approvals, and per-shop monetization/access toggles. Admin → Barber management supports approve, suspend, edit, assign shop, and subscription tier updates. All admin features use the live production API with Bearer authentication.\n\nHow to test admin (optional):\nSign in with the review account above if configured as platform admin, or use apple.review@ifcdcbarbersapp.com after we enable admin role for review.\n\nCustomer booking flow (required):\nHome → Book → select barber → service → time → PayPal checkout.\n\nAccount Deletion:\nProfile → Delete Account → Type DELETE → Confirm\n\nDemo video:\nhttps://vtkxuagevtiwtoheomjt.supabase.co/storage/v1/object/public/barber-styles/app-review/account-deletion-demo-build36.mp4\n\nBuild: Version 1.1 (Build 39)"
+      "notes": "APP REVIEW NOTES — Build 49 (Version 1.1)\n\nReview Account:\nEmail: apple.review@ifcdcbarbersapp.com\nPassword: IFCDC-Review2026!\n\nWhat's new in Build 49:\n• Required phone number on registration for all account types (customer, barber, shop owner)\n• Style gallery likes, Discover feed, profile save fixes\n• Live PayPal checkout on production backend\n\nCustomer booking flow (required):\nHome → Book → select barber → service → time → PayPal checkout (live payments).\n\nRegistration test:\nCreate Account → choose account type → enter phone (required, 10-digit US format) → complete signup.\n\nAdmin (optional):\nSign in with review account if configured as platform admin → Admin tab → Shops / Barbers for approvals.\n\nAccount Deletion:\nProfile → Delete Account → Type DELETE → Confirm\n\nDemo video:\nhttps://vtkxuagevtiwtoheomjt.supabase.co/storage/v1/object/public/barber-styles/app-review/account-deletion-demo-build36.mp4\n\nBackend: https://ifcdc-barbers-backend696.onrender.com (live PayPal)\nBuild: Version 1.1 (Build 49)"
     }
   }
 }

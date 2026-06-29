@@ -81,7 +81,8 @@ const probes = [
       s.startsWith("128ac9") ||
       s.startsWith("17dfdb") ||
       s.startsWith("453c7e") ||
-      s.startsWith("c097dd");
+      s.startsWith("c097dd") ||
+      s.startsWith("f58694");
     return { ok: ok && accepted, detail: s };
   }],
   ["PATCH /api/auth/profile secured", async () => {
