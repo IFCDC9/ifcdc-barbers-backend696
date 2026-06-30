@@ -2,7 +2,40 @@ import { dbQuery } from "./db.js";
 
 const DEFAULT_INTERVAL = 30;
 const DEFAULT_TIMEZONE = process.env.SHOP_TIMEZONE || "America/New_York";
-const PENDING_HOLD_MINUTES = Number(process.env.BOOKING_PENDING_HOLD_MINUTES || 30);
+export const PENDING_HOLD_MINUTES = Number(process.env.BOOKING_PENDING_HOLD_MINUTES || 30);
+
+/**
+ * SQL fragment — rows that actively occupy barber schedule slots.
+ * Completed / cancelled / no-show / soft-deleted bookings never block.
+ * Past paid appointments auto-release when service duration has elapsed.
+ *
+ * @param {string} [holdMinutesParam] e.g. "$4" — caller's interval bind for pending PayPal holds
+ */
+export function slotBlockingWhereSql(holdMinutesParam = `'${PENDING_HOLD_MINUTES}'`) {
+  return `(
+    deleted_at IS NULL
+    AND lower(coalesce(booking_status, '')) NOT IN ('cancelled', 'completed', 'no_show')
+    AND (
+      (
+        lower(booking_status) IN ('confirmed', 'checked_in', 'in_progress')
+        AND is_paid_booking = true
+        AND lower(coalesce(payment_status, '')) IN ('paid', 'paid_full', 'deposit_paid')
+        AND (
+          (date::timestamp + time)
+          + (COALESCE(NULLIF(service_duration_minutes, 0), 30) * interval '1 minute')
+        ) > NOW()
+      )
+      OR (
+        lower(booking_status) IN ('pending', 'pending_payment')
+        AND paypal_order_id IS NOT NULL
+        AND coalesce(is_paid_booking, false) = false
+        AND lower(coalesce(payment_status, '')) NOT IN ('paid', 'paid_full', 'deposit_paid')
+        AND created_at > NOW() - (${holdMinutesParam}::text || ' minutes')::interval
+        AND (date::timestamp + time) >= NOW() - interval '5 minutes'
+      )
+    )
+  )`;
+}
 
 const WEEKDAY_MAP = {
   sunday: 0,
@@ -223,20 +256,8 @@ export async function loadBookingsForDate(barberId, dateStr, barberName = "", op
   const name = String(barberName || "").trim();
   const bookingBid = await coerceBarberIdForTable(dbQuery, "bookings", barberId, barberName);
   const exclude = excludeBookingId ? String(excludeBookingId) : null;
-  const holdSql = `($4::text || ' minutes')::interval`;
-
-  const statusSql = `(
-    (
-      booking_status IN ('confirmed', 'completed')
-      AND is_paid_booking = true
-      AND payment_status IN ('paid', 'paid_full', 'deposit_paid')
-    )
-    OR (
-      booking_status IN ('pending', 'pending_payment')
-      AND paypal_order_id IS NOT NULL
-      AND created_at > NOW() - ${holdSql}
-    )
-  )`;
+  const holdParam = "$4";
+  const blockingSql = slotBlockingWhereSql(holdParam);
 
   const r =
     bookingBid != null
@@ -251,8 +272,7 @@ export async function loadBookingsForDate(barberId, dateStr, barberName = "", op
                barber_id = $1
                OR ($3 <> '' AND lower(trim(barber_name)) = lower(trim($3)))
              )
-             AND deleted_at IS NULL
-             AND ${statusSql}
+             AND ${blockingSql}
            ORDER BY time`,
           [bookingBid, dateStr, name, String(PENDING_HOLD_MINUTES), exclude],
         )
@@ -265,19 +285,7 @@ export async function loadBookingsForDate(barberId, dateStr, barberName = "", op
              AND ($4::text IS NULL OR id::text <> $4::text)
              AND $2 <> ''
              AND lower(trim(barber_name)) = lower(trim($2))
-             AND deleted_at IS NULL
-             AND (
-               (
-                 booking_status IN ('confirmed', 'completed')
-                 AND is_paid_booking = true
-                 AND payment_status IN ('paid', 'paid_full', 'deposit_paid')
-               )
-               OR (
-                 booking_status IN ('pending', 'pending_payment')
-                 AND paypal_order_id IS NOT NULL
-                 AND created_at > NOW() - ($3::text || ' minutes')::interval
-               )
-             )
+             AND ${slotBlockingWhereSql("$3")}
            ORDER BY time`,
           [dateStr, name, String(PENDING_HOLD_MINUTES), exclude],
         );
@@ -373,7 +381,8 @@ export async function getAvailableSlotsForBarberDate(
 }
 
 /**
- * Paid + recent pending PayPal holds block slots (duration-aware).
+ * Paid active appointments + short-lived unpaid PayPal holds block slots (duration-aware).
+ * Completed, cancelled, no-show, deleted, and past appointments do not block.
  */
 export async function loadOccupiedSlotLabels(barberId, dateStr, barberName = "", options = {}) {
   const { excludeBookingId = null } = options || {};

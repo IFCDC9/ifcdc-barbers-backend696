@@ -26,6 +26,7 @@ import {
 import { reportConnectionFailure } from '../services/connectionAlerts';
 import { resolveMobilePayPalReturnUrl } from '../utils/paypalReturnUrl';
 import { subscribeScheduleUpdated } from '../services/scheduleEvents';
+import { useLiveSlotRefresh } from '../hooks/useLiveSlotRefresh';
 import AppointmentTimeSlotList from '../components/AppointmentTimeSlotList';
 import ServicePickerCard from '../components/ServicePickerCard';
 import ShareButton from '../components/ShareButton';
@@ -151,6 +152,11 @@ function BookingScreen() {
   useEffect(() => {
     return subscribeScheduleUpdated(() => setScheduleRefreshKey((k) => k + 1));
   }, []);
+
+  useLiveSlotRefresh(
+    useCallback(() => setScheduleRefreshKey((k) => k + 1), []),
+    step === 4 && Boolean(barber && date),
+  );
 
   const loadBarbers = useCallback(async () => {
     setBarbersLoading(true);

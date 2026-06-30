@@ -14,6 +14,8 @@ import { mediaUrl } from "../services/api.js";
 import { isRenderableStyleImageUrl } from "../lib/styleImageUrl.js";
 import StyleCoverImage from "../components/StyleCoverImage.jsx";
 import { looksLikePasswordResetToken } from "../lib/queryTokenRoutes.js";
+import { subscribeScheduleUpdated, emitScheduleUpdated } from "../lib/scheduleEvents.js";
+import { useLiveSlotRefresh } from "../lib/useLiveSlotRefresh.js";
 
 const FALLBACK_SERVICE_PRICE = 25;
 const CHECKOUT_STORAGE = "ifcdc_app_checkout_pending";
@@ -65,6 +67,13 @@ export default function BookingWizard() {
   const [barbersLoading, setBarbersLoading] = useState(true);
   const [barbersError, setBarbersError] = useState(null);
   const [error, setError] = useState(null);
+  const [slotsRefreshKey, setSlotsRefreshKey] = useState(0);
+
+  useEffect(() => subscribeScheduleUpdated(() => setSlotsRefreshKey((k) => k + 1)), []);
+  useLiveSlotRefresh(
+    useCallback(() => setSlotsRefreshKey((k) => k + 1), []),
+    step === 4 && Boolean(barber && date),
+  );
 
   const dates = useMemo(() => buildDateOptions(7), []);
   const user = useMemo(() => readUser(), []);
@@ -168,7 +177,7 @@ export default function BookingWizard() {
     return () => {
       cancelled = true;
     };
-  }, [step, barber, date, cartTotalDuration]);
+  }, [step, barber, date, cartTotalDuration, slotsRefreshKey]);
 
   useEffect(() => {
     if (step !== 5) return;

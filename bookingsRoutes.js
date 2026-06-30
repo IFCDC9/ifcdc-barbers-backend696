@@ -757,6 +757,7 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
       const upd = await dbQuery(
         `UPDATE bookings
          SET booking_status = 'cancelled',
+             is_paid_booking = false,
              cancelled_at = NOW(),
              cancelled_by = $2,
              cancellation_reason = COALESCE($3, cancellation_reason)

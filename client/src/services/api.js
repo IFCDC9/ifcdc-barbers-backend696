@@ -6,6 +6,7 @@
 
 import { API_BASE_URL, PRODUCTION_API_ORIGIN } from "../config/api.js";
 import { resolveStyleImageUrl } from "../lib/styleImageUrl.js";
+import { emitScheduleUpdated } from "../lib/scheduleEvents.js";
 import { getAdminAuthHeaders, getAdminKeyHeadersOnly, getStoredToken } from "../lib/authHeaders.js";
 
 /**
@@ -865,6 +866,7 @@ export async function deleteBooking(id, reason = "Admin delete") {
   if (!res.ok) {
     throw new Error(data?.message || data?.error || text?.slice(0, 200) || `HTTP ${res.status}`);
   }
+  emitScheduleUpdated();
   return data;
 }
 

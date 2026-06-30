@@ -83,6 +83,8 @@ export async function handleBarberAvailableSlotsGet(req, res) {
     }
 
     const payload = await getAvailableSlotsForBarberDate(barberId, dateStr, name);
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+    res.set("Pragma", "no-cache");
     return res.json({ ok: true, date: dateStr, barberId, ...payload });
   } catch (e) {
     console.error("[barber] available-slots:", e?.stack || e);

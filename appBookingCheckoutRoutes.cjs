@@ -334,6 +334,8 @@ router.get("/available-slots", async (req, res) => {
     const payload = await slotEngine.getAvailableSlotsForBarberDate(barberId, dateStr, resolved.barberName, {
       durationMinutes,
     });
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+    res.set("Pragma", "no-cache");
     return res.json({ ok: true, date: dateStr, barberId, durationMinutes, ...payload });
   } catch (e) {
     console.error("[app-bookings] available-slots:", e?.stack || e);

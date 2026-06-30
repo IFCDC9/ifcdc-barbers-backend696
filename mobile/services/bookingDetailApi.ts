@@ -1,6 +1,7 @@
 import { apiFetch } from "./api";
 import { fetchAdminBookings, type BookingRow } from "./profileApi";
 import { userFacingApiError } from "../utils/userFacingApiError";
+import { emitScheduleUpdated } from "./scheduleEvents";
 
 export type BookingDetail = BookingRow & {
   user_id?: string | null;
@@ -54,6 +55,7 @@ export async function removeBookingFromHistory(
     body: JSON.stringify({ reason: reason || "Removed from history" }),
   });
   const json = (await res.json()) as { message?: string };
+  emitScheduleUpdated();
   return { message: json.message || "Booking removed from your history." };
 }
 
@@ -93,6 +95,7 @@ export async function cancelBookingById(
       message?: string;
       refundReviewRequired?: boolean;
     };
+    emitScheduleUpdated();
     return {
       message: json.message || "Booking cancelled.",
       refundReviewRequired: json.refundReviewRequired,
