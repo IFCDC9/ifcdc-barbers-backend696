@@ -28,6 +28,7 @@ import IFCDCGlobalFooter from "./components/IFCDCGlobalFooter.jsx";
 import StylesBrowse from "./pages/StylesBrowse.jsx";
 import StyleDiscoverPage from "./pages/StyleDiscoverPage.jsx";
 import BarberPortfolioPage from "./pages/BarberPortfolioPage.jsx";
+import MobilePayPalReturnPage from "./pages/MobilePayPalReturnPage.jsx";
 import BookingReviewPage from "./pages/BookingReviewPage.jsx";
 import SignupBusiness from "./pages/SignupBusiness.jsx";
 import BarberOnboarding from "./pages/BarberOnboarding.jsx";
@@ -68,6 +69,7 @@ function AppShell() {
             <Route path="/barbers/:slug" element={<BarberPortfolioPage />} />
             <Route path="/book" element={<Navigate to="/booking" replace />} />
             <Route path="/booking" element={<BookingWizard />} />
+            <Route path="/paypal-booking" element={<MobilePayPalReturnPage />} />
             <Route path="/booking-legacy" element={<Booking />} />
             <Route path="/aura" element={<AuraPage />} />
             <Route path="/profile" element={<Profile />} />

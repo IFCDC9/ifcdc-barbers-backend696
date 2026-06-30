@@ -8,6 +8,7 @@ const NON_PAYPAL_TOKEN_PATHS = new Set([
   "/invite",
   "/login",
   "/register",
+  "/paypal-booking",
 ]);
 
 export function isNonPayPalTokenPath(pathname) {
