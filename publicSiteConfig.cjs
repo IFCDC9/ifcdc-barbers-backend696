@@ -47,10 +47,45 @@ function buildPasswordResetUrl(rawToken) {
   return `${base}/reset-password?token=${encodeURIComponent(String(rawToken || "").trim())}`;
 }
 
+/** PayPal LIVE requires https return/cancel URLs — mobile app uses this after in-app checkout. */
+function buildMobilePayPalReturnUrl() {
+  return `${resolvePublicWebOrigin()}/paypal-booking`;
+}
+
+/**
+ * PayPal LIVE rejects custom URL schemes (ifcdc-barbers://…). Coerce to HTTPS SPA bridge.
+ * @param {string | undefined | null} redirectUri
+ * @param {string | undefined | null} [cancelUri]
+ */
+function resolvePayPalCheckoutReturnUrls(redirectUri, cancelUri) {
+  const rawReturn = String(redirectUri || "").trim();
+  const rawCancel = String(cancelUri || "").trim();
+  const httpsReturn = buildMobilePayPalReturnUrl();
+
+  if (!rawReturn) {
+    return { returnUrl: httpsReturn, cancelUrl: rawCancel || httpsReturn, coerced: true };
+  }
+
+  if (rawReturn.startsWith("https://")) {
+    const cancel =
+      rawCancel && rawCancel.startsWith("https://") ? rawCancel : rawReturn;
+    return { returnUrl: rawReturn, cancelUrl: cancel, coerced: false };
+  }
+
+  return {
+    returnUrl: httpsReturn,
+    cancelUrl: rawCancel && rawCancel.startsWith("https://") ? rawCancel : httpsReturn,
+    coerced: true,
+    originalReturnUri: rawReturn,
+  };
+}
+
 module.exports = {
   CANONICAL_PUBLIC_ORIGIN,
   RENDER_FRONTEND_ORIGIN,
   resolvePublicWebOrigin,
   buildInviteAcceptUrl,
   buildPasswordResetUrl,
+  buildMobilePayPalReturnUrl,
+  resolvePayPalCheckoutReturnUrls,
 };

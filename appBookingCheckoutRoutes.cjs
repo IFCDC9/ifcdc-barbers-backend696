@@ -48,6 +48,7 @@ const {
 } = require("./paypalEnv.cjs");
 const { captureOrGetCompletedPayPalOrder } = require("./paypalOrderCaptureHelpers.cjs");
 const { sendOrphanedPaymentAdminAlert } = require("./orphanedPaymentAlert.cjs");
+const { resolvePayPalCheckoutReturnUrls } = require("./publicSiteConfig.cjs");
 
 const router = express.Router();
 
@@ -702,6 +703,29 @@ router.post("/start", async (req, res) => {
     assertValidPayPalAmount("haircutPrice", haircutPrice);
     assertValidPayPalAmount("platformFee", platformFee);
 
+    let paypalReturnUrl = redirectUri;
+    let paypalCancelUrl = cancelUri || redirectUri;
+    if (isPayPalLive()) {
+      const resolvedUrls = resolvePayPalCheckoutReturnUrls(redirectUri, cancelUri);
+      paypalReturnUrl = resolvedUrls.returnUrl;
+      paypalCancelUrl = resolvedUrls.cancelUrl;
+      if (resolvedUrls.coerced) {
+        console.warn("[paypal] LIVE mode: coerced non-https return_url for PayPal order", {
+          originalReturnUri: resolvedUrls.originalReturnUri || redirectUri,
+          paypalReturnUrl,
+          paypalCancelUrl,
+        });
+      }
+      if (!String(paypalReturnUrl).startsWith("https://")) {
+        return res.status(400).json({
+          success: false,
+          error: "paypal_return_url_invalid",
+          message:
+            "PayPal live checkout requires an https return URL. Update the app or set FRONTEND_URL on the server.",
+        });
+      }
+    }
+
   console.log("[paypal] checkout context", {
       route: req.path,
       payload: body,
@@ -726,6 +750,8 @@ router.post("/start", async (req, res) => {
       },
       redirectUri,
       cancelUri: cancelUri || redirectUri,
+      paypalReturnUrl,
+      paypalCancelUrl,
       bookingId,
       environment: getPayPalEnvironmentMeta(),
     });
@@ -750,13 +776,6 @@ router.post("/start", async (req, res) => {
       environment: getPayPalEnvironmentMeta().environment,
       apiBase: getPayPalEnvironmentMeta().apiBase,
     });
-
-    if (isPayPalLive() && redirectUri && !String(redirectUri).startsWith("https://")) {
-      console.warn(
-        "[paypal] LIVE mode: return_url is not https — PayPal may reject order creation:",
-        redirectUri,
-      );
-    }
 
     const paypalHealth = await getPayPalHealthDiagnostics();
     if (!paypalHealth.alignment?.ok) {
@@ -792,8 +811,8 @@ router.post("/start", async (req, res) => {
         shipping_preference: "NO_SHIPPING",
         user_action: "PAY_NOW",
         brand_name: "IFCDC Barbers",
-        return_url: redirectUri,
-        cancel_url: cancelUri || redirectUri,
+        return_url: paypalReturnUrl,
+        cancel_url: paypalCancelUrl,
       },
     });
 
