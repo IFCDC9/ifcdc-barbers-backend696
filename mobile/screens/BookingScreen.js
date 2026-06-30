@@ -14,7 +14,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { useTranslation } from 'react-i18next';
 import * as WebBrowser from 'expo-web-browser';
-import * as Linking from 'expo-linking';
 import { calculateFinalBookingTotal } from '../lib/bookingPaymentTotals.js';
 import {
   startAppBookingCheckout,
@@ -25,6 +24,7 @@ import {
   fetchBarbersList,
 } from '../services/bookingPayPalApi.js';
 import { reportConnectionFailure } from '../services/connectionAlerts';
+import { resolveMobilePayPalReturnUrl } from '../utils/paypalReturnUrl';
 import { subscribeScheduleUpdated } from '../services/scheduleEvents';
 import AppointmentTimeSlotList from '../components/AppointmentTimeSlotList';
 import ServicePickerCard from '../components/ServicePickerCard';
@@ -381,7 +381,7 @@ function BookingScreen() {
         haircutPrice: Number.isFinite(cartTotalPrice) && cartTotalPrice > 0 ? cartTotalPrice : FALLBACK_SERVICE_PRICE,
       });
 
-      const redirectUri = Linking.createURL('paypal-booking/');
+      const redirectUri = resolveMobilePayPalReturnUrl();
       console.log('[checkout] redirectUri:', redirectUri);
       console.log('[checkout] serviceIds:', serviceIds, 'barber:', barber?.name, barber?.id);
 
