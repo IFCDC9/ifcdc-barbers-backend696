@@ -409,14 +409,15 @@ function BookingScreen() {
         customerName,
       });
 
-      const { orderId, approveUrl, total, platformFee, haircutPrice, depositAmount: dep } = started;
+      const { orderId, approveUrl, paypalReturnUrl, total, platformFee, haircutPrice, depositAmount: dep } = started;
       if (!orderId || !approveUrl) {
         throw new Error('Server did not return PayPal checkout');
       }
 
+      const authReturnUrl = paypalReturnUrl || redirectUri;
       setPhaseLabel(t('booking.phases.completePayment'));
       console.log('[checkout] opening PayPal approveUrl:', String(approveUrl).slice(0, 120));
-      const browser = await WebBrowser.openAuthSessionAsync(approveUrl, redirectUri);
+      const browser = await WebBrowser.openAuthSessionAsync(approveUrl, authReturnUrl);
       console.log('[checkout] PayPal browser result:', browser?.type, browser?.url?.slice?.(0, 80));
 
       if (browser.type === 'cancel' || browser.type === 'dismiss') {

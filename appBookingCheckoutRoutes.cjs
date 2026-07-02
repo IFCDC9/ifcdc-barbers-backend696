@@ -49,6 +49,7 @@ const {
 const { captureOrGetCompletedPayPalOrder } = require("./paypalOrderCaptureHelpers.cjs");
 const { sendOrphanedPaymentAdminAlert } = require("./orphanedPaymentAlert.cjs");
 const { resolvePayPalCheckoutReturnUrls } = require("./publicSiteConfig.cjs");
+const { expireStalePendingPaymentBookings } = require("./bookingCleanup.cjs");
 
 const router = express.Router();
 
@@ -314,6 +315,8 @@ async function resolveAvailableSlotsQuery(req) {
 
 router.get("/available-slots", async (req, res) => {
   try {
+    const { dbQuery } = await loadDb();
+    await expireStalePendingPaymentBookings(dbQuery);
     const { dateStr, barberId, barberName, resolved } = await resolveAvailableSlotsQuery(req);
     if (!dateStr) {
       return res.status(400).json({ ok: false, error: "bad_date", message: "Pass date=YYYY-MM-DD or dateLabel=Today" });
@@ -398,6 +401,7 @@ router.post("/start", async (req, res) => {
     const barberLookupId = barberUuidRaw || barberIdRaw;
 
     const { dbQuery } = await loadDb();
+    await expireStalePendingPaymentBookings(dbQuery);
 
     // Resolve barber identity FIRST — before slots, services, PayPal, or booking insert.
     const resolved = await resolveBarberIdentity(dbQuery, barberLookupId || barberName || null, barberName);
@@ -871,6 +875,8 @@ router.post("/start", async (req, res) => {
       orderId,
       id: orderId,
       approveUrl,
+      paypalReturnUrl,
+      paypalCancelUrl,
       total,
       platformFee,
       haircutPrice,
