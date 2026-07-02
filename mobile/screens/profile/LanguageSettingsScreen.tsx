@@ -1,9 +1,10 @@
 import React, { useMemo, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { useTranslation } from "react-i18next";
 import ProfileScreenLayout from "../../components/ProfileScreenLayout";
 import ProfileCard from "../../components/ProfileCard";
 import GlowButton from "../../components/GlowButton";
+import LanguageDropdown from "../../components/LanguageDropdown";
 import { theme } from "../../constants/theme";
 import {
   SUPPORTED_LANGUAGES,
@@ -14,57 +15,11 @@ import {
   type SupportedLanguageCode,
 } from "../../i18n";
 
-function LanguageRow({
-  code,
-  nativeName,
-  englishName,
-  selected,
-  onPress,
-  busy,
-}: {
-  code: SupportedLanguageCode;
-  nativeName: string;
-  englishName: string;
-  selected: boolean;
-  onPress: () => void;
-  busy: boolean;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={busy}
-      hitSlop={6}
-      accessibilityRole="radio"
-      accessibilityState={{ selected }}
-      accessibilityLabel={`Set language to ${englishName}`}
-      style={({ pressed }) => [
-        styles.row,
-        selected && styles.rowSelected,
-        pressed && !selected && styles.rowPressed,
-      ]}
-    >
-      <View style={{ flex: 1 }}>
-        <Text style={[styles.rowTitle, selected && styles.rowTitleSelected]}>{nativeName}</Text>
-        <Text style={styles.rowSub}>{englishName} · {code.toUpperCase()}</Text>
-      </View>
-      <View
-        style={[
-          styles.radioOuter,
-          selected && { borderColor: theme.colors.gold, backgroundColor: "rgba(245,200,66,0.10)" },
-        ]}
-      >
-        {selected ? <View style={styles.radioInner} /> : null}
-      </View>
-    </Pressable>
-  );
-}
-
 export default function LanguageSettingsScreen() {
   const { t, i18n } = useTranslation();
   const [active, setActive] = useState<SupportedLanguageCode>(currentLanguage());
   const [busy, setBusy] = useState(false);
 
-  // Reflect external language changes (e.g. from another screen) immediately.
   React.useEffect(() => {
     const onChanged = (lng: string) => {
       const next = lng as SupportedLanguageCode;
@@ -121,19 +76,12 @@ export default function LanguageSettingsScreen() {
       </ProfileCard>
 
       <ProfileCard style={styles.listCard}>
-        {SUPPORTED_LANGUAGES.map((lang, idx) => (
-          <View key={lang.code}>
-            <LanguageRow
-              code={lang.code}
-              nativeName={lang.nativeName}
-              englishName={lang.englishName}
-              selected={active === lang.code}
-              busy={busy}
-              onPress={() => choose(lang.code)}
-            />
-            {idx < SUPPORTED_LANGUAGES.length - 1 ? <View style={styles.divider} /> : null}
-          </View>
-        ))}
+        <LanguageDropdown
+          label={t("language.select", { defaultValue: "Select language" })}
+          value={active}
+          disabled={busy}
+          onChange={choose}
+        />
       </ProfileCard>
 
       <ProfileCard style={styles.deviceCard}>
@@ -159,33 +107,6 @@ const styles = StyleSheet.create({
   },
   summaryText: { color: theme.colors.text, fontSize: 16, fontWeight: "700" },
   summaryHint: { color: theme.colors.textMuted, fontSize: 13, marginTop: 4 },
-  listCard: { paddingVertical: 4 },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 14,
-    paddingHorizontal: 4,
-  },
-  rowPressed: { backgroundColor: "rgba(245,200,66,0.06)" },
-  rowSelected: {},
-  rowTitle: { color: theme.colors.text, fontSize: 16, fontWeight: "700" },
-  rowTitleSelected: { color: theme.colors.gold },
-  rowSub: { color: theme.colors.textMuted, fontSize: 12, marginTop: 2 },
-  divider: { height: StyleSheet.hairlineWidth, backgroundColor: "rgba(255,255,255,0.08)" },
-  radioOuter: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    borderWidth: 2,
-    borderColor: "rgba(255,255,255,0.25)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  radioInner: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: theme.colors.gold,
-  },
+  listCard: { paddingVertical: 18 },
   deviceCard: { marginBottom: 24 },
 });

@@ -13,6 +13,8 @@ import {
   deleteServicePhoto,
 } from "../services/api.js";
 import { getServiceCardImageUrl } from "../lib/styleImageUrl.js";
+import LanguageDropdown from "../components/LanguageDropdown.jsx";
+import { DEFAULT_LANGUAGE } from "../lib/languages.js";
 
 function authHeaders() {
   try {
@@ -104,7 +106,7 @@ export default function BarberSettings() {
     payment_method: "paypal",
     aura_enabled: true,
     aura_voice_type: "Polly.Joanna",
-    language: "en",
+    language: DEFAULT_LANGUAGE,
     subscription_tier: "pro",
     subscription_monthly_price: "",
     billing_provider: "none",
@@ -1183,17 +1185,11 @@ export default function BarberSettings() {
                 onChange={(e) => setSettings({ ...settings, theme_color: e.target.value })}
               />
             </label>
-            <label style={{ display: "grid", gap: 6, fontSize: 12, color: theme.colors.muted, fontWeight: 800 }}>
-              Language (AURA + booking emails)
-              <select
-                style={{ ...inputStyle, cursor: "pointer" }}
-                value={settings.language === "es" ? "es" : "en"}
-                onChange={(e) => setSettings({ ...settings, language: e.target.value })}
-              >
-                <option value="en">English</option>
-                <option value="es">Spanish</option>
-              </select>
-            </label>
+            <LanguageDropdown
+              label="Language (AURA + booking emails)"
+              value={settings.language === "es" ? "es" : "en"}
+              onChange={(code) => setSettings({ ...settings, language: code })}
+            />
             <Button variant="indigo" type="button" onClick={saveSettings}>
               Save AURA settings
             </Button>
