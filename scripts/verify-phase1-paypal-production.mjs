@@ -33,7 +33,15 @@ const WEB_BASE = (
 ).replace(/\/+$/, "");
 
 /** Minimum deploy commits that include PayPal HTTPS return-url fix. */
-const PAYPAL_HTTPS_FIX_SHORTS = ["c5d5407a", "00a6c8c8", "2164edca", "184dd20c"];
+const PAYPAL_HTTPS_FIX_SHORTS = [
+  "c5d5407a",
+  "00a6c8c8",
+  "2164edca",
+  "184dd20c",
+  "e777cf95",
+  "5e8d47cd",
+  "17390a73",
+];
 
 let failed = 0;
 let warned = 0;
