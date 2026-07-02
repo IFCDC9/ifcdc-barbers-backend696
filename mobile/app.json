@@ -3,7 +3,7 @@
     "name": "IFCDC Barbers",
     "owner": "ifcdc696",
     "slug": "ifcdc-barbers-backend",
-    "version": "1.1.0",
+    "version": "1.1.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",

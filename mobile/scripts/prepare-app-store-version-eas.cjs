@@ -19,8 +19,8 @@ process.chdir(mobileDir);
 
 const req = createRequire(path.join(mobileDir, "node_modules/eas-cli/package.json"));
 
-const VERSION_STRING = process.env.VERSION_STRING || "1.1";
-const BUILD_NUMBER = process.env.BUILD_NUMBER || "39";
+const VERSION_STRING = process.env.VERSION_STRING || "1.1.1";
+const BUILD_NUMBER = process.env.BUILD_NUMBER || "51";
 const MAX_WAIT_MS = Number(process.env.MAX_WAIT_MS || 20 * 60 * 1000);
 const POLL_MS = Number(process.env.POLL_MS || 30 * 1000);
 

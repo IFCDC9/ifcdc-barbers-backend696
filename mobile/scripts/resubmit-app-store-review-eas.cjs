@@ -17,7 +17,7 @@ process.chdir(mobileDir);
 
 const req = createRequire(path.join(mobileDir, "node_modules/eas-cli/package.json"));
 
-const VERSION_STRING = "1.1";
+const VERSION_STRING = process.env.VERSION_STRING || "1.1.1";
 const BUILD_NUMBER = process.env.BUILD_NUMBER || "51";
 
 async function main() {
