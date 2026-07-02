@@ -15,11 +15,16 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /** Payment/fix baseline + deploy verification (any of these shorts = acceptable on Render). */
 export const PAYMENT_FIX_COMMIT_SHORT = "8a3a601d";
+export const PAYPAL_HTTPS_RETURN_FIX_SHORT = "c5d5407a";
 export const DEPLOY_INFO_COMMIT_SHORT = "24354b7b";
 export const PROD_CLEANUP_COMMIT_SHORT = "f58bdaf3";
 export const PROD_BOOT_FIX_COMMIT_SHORT = "bc00bb7c";
 const ACCEPTABLE_COMMIT_SHORTS = [
   PAYMENT_FIX_COMMIT_SHORT,
+  PAYPAL_HTTPS_RETURN_FIX_SHORT,
+  "00a6c8c8",
+  "2164edca",
+  "184dd20c",
   DEPLOY_INFO_COMMIT_SHORT,
   PROD_CLEANUP_COMMIT_SHORT,
   PROD_BOOT_FIX_COMMIT_SHORT,
@@ -170,6 +175,22 @@ export async function getDeployInfoPayload() {
       customerEmailRequiredOnAppStart: paymentFixModulesLoaded,
       orphanedPaymentAdminAlert: paymentFixModulesLoaded,
       bookingEmailResend: Boolean(isDeliverableCustomerEmail),
+      paypalHttpsReturnUrlFix: Boolean(
+        commitMatchesExpected(active.full, active.short) ||
+          String(active.short || "").toLowerCase().startsWith(PAYPAL_HTTPS_RETURN_FIX_SHORT) ||
+          ["00a6c8c8", "2164edca", "184dd20c"].includes(String(active.short || "").toLowerCase()),
+      ),
+    },
+    phase1: {
+      automatedProbe: "node scripts/verify-phase1-paypal-production.mjs",
+      paypalHttpsReturnUrlFixRequired: true,
+      iosBuildRecommendedMin: 50,
+      manualDeviceTestsRequired: [
+        "iPhone Safari — ifcdcbarbersapp.com/booking — live PayPal capture + email",
+        "iOS TestFlight Build 50+ — in-app booking — live PayPal capture + email",
+        "Android production build — booking — live PayPal capture + email",
+        "Desktop Chrome — ifcdcbarbersapp.com/booking — live PayPal capture + email",
+      ],
     },
     mobile: {
       requiredIosBuildNumberMin: 35,

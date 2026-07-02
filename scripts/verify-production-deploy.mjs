@@ -8,7 +8,14 @@ const base =
   process.env.API_BASE ||
   "https://ifcdc-barbers-backend696.onrender.com";
 
-const ACCEPTABLE_SHORTS = ["8a3a601d", "24354b7b"];
+const ACCEPTABLE_SHORTS = [
+  "8a3a601d",
+  "24354b7b",
+  "c5d5407a",
+  "00a6c8c8",
+  "2164edca",
+  "184dd20c",
+];
 
 async function get(path, init) {
   const url = `${base.replace(/\/+$/, "")}${path}`;
