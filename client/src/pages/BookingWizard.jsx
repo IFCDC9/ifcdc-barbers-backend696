@@ -15,6 +15,7 @@ import { isRenderableStyleImageUrl } from "../lib/styleImageUrl.js";
 import StyleCoverImage from "../components/StyleCoverImage.jsx";
 import { looksLikePasswordResetToken } from "../lib/queryTokenRoutes.js";
 import { subscribeScheduleUpdated, emitScheduleUpdated } from "../lib/scheduleEvents.js";
+import { useLiveSlotRefresh } from "../lib/useLiveSlotRefresh.js";
 import ProviderTypeDropdown from "../components/ProviderTypeDropdown.jsx";
 import { providerTypeLabel } from "../lib/providerTypes.js";
 
