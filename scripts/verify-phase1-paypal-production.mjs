@@ -42,6 +42,7 @@ const PAYPAL_HTTPS_FIX_SHORTS = [
   "5e8d47cd",
   "17390a73",
   "86ee356d",
+  "6e8ab728",
 ];
 
 let failed = 0;

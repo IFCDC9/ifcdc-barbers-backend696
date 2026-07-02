@@ -16,6 +16,10 @@ import StyleCoverImage from "../components/StyleCoverImage.jsx";
 import { looksLikePasswordResetToken } from "../lib/queryTokenRoutes.js";
 import { subscribeScheduleUpdated, emitScheduleUpdated } from "../lib/scheduleEvents.js";
 import { useLiveSlotRefresh } from "../lib/useLiveSlotRefresh.js";
+import {
+  bookingPayPalCancelUrl,
+  bookingPayPalReturnUrl,
+} from "../lib/bookingPayPalReturnUrl.js";
 import ProviderTypeDropdown from "../components/ProviderTypeDropdown.jsx";
 import { providerTypeLabel } from "../lib/providerTypes.js";
 
@@ -281,7 +285,8 @@ export default function BookingWizard() {
         return;
       }
 
-      const redirectUri = `${window.location.origin}/booking`;
+      const redirectUri = bookingPayPalReturnUrl();
+      const cancelUri = bookingPayPalCancelUrl();
       const barberUuid =
         typeof barber?.id === "string" && barber.id.includes("-") ? barber.id : undefined;
 
@@ -296,6 +301,7 @@ export default function BookingWizard() {
         serviceId: selectedServices[0]?.id,
         serviceName: selectedServices.map((s) => s.name).join(", "),
         redirectUri,
+        cancelUri,
         customerEmail,
         customerName: String(user?.name || "").trim() || "Web customer",
       });
