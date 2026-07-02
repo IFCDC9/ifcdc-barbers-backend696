@@ -29,6 +29,7 @@ const ACCEPTABLE_COMMIT_SHORTS = [
   "5e8d47cd",
   "3cdd1066",
   "17390a73",
+  "86ee356d",
   DEPLOY_INFO_COMMIT_SHORT,
   PROD_CLEANUP_COMMIT_SHORT,
   PROD_BOOT_FIX_COMMIT_SHORT,
@@ -182,7 +183,7 @@ export async function getDeployInfoPayload() {
       paypalHttpsReturnUrlFix: Boolean(
         commitMatchesExpected(active.full, active.short) ||
           String(active.short || "").toLowerCase().startsWith(PAYPAL_HTTPS_RETURN_FIX_SHORT) ||
-          ["00a6c8c8", "2164edca", "184dd20c", "e777cf95", "5e8d47cd", "17390a73"].includes(
+          ["00a6c8c8", "2164edca", "184dd20c", "e777cf95", "5e8d47cd", "17390a73", "86ee356d"].includes(
             String(active.short || "").toLowerCase(),
           ),
       ),
