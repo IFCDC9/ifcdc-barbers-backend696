@@ -15,7 +15,8 @@ import { isRenderableStyleImageUrl } from "../lib/styleImageUrl.js";
 import StyleCoverImage from "../components/StyleCoverImage.jsx";
 import { looksLikePasswordResetToken } from "../lib/queryTokenRoutes.js";
 import { subscribeScheduleUpdated, emitScheduleUpdated } from "../lib/scheduleEvents.js";
-import { useLiveSlotRefresh } from "../lib/useLiveSlotRefresh.js";
+import ProviderTypeDropdown from "../components/ProviderTypeDropdown.jsx";
+import { providerTypeLabel } from "../lib/providerTypes.js";
 
 const FALLBACK_SERVICE_PRICE = 25;
 const CHECKOUT_STORAGE = "ifcdc_app_checkout_pending";
@@ -66,6 +67,7 @@ export default function BookingWizard() {
   const [barbers, setBarbers] = useState([]);
   const [barbersLoading, setBarbersLoading] = useState(true);
   const [barbersError, setBarbersError] = useState(null);
+  const [providerFilter, setProviderFilter] = useState("");
   const [error, setError] = useState(null);
   const [slotsRefreshKey, setSlotsRefreshKey] = useState(0);
 
@@ -102,20 +104,24 @@ export default function BookingWizard() {
     setBarbersLoading(true);
     setBarbersError(null);
     try {
-      const list = await fetchBarbersList();
+      const list = await fetchBarbersList(providerFilter || undefined);
       const items = list
         .filter((b) => b && b.active !== false)
-        .map((b) => ({ id: b.id, name: String(b.name || "").trim() }))
+        .map((b) => ({
+          id: b.id,
+          name: String(b.name || "").trim(),
+          providerType: b.providerType || b.provider_type || "barber",
+        }))
         .filter((b) => b.name);
       setBarbers(items);
-      if (!items.length) setBarbersError("No barbers available right now.");
+      if (!items.length) setBarbersError("No providers available right now.");
     } catch (e) {
       setBarbers([]);
-      setBarbersError(e?.message || "Could not load barbers.");
+      setBarbersError(e?.message || "Could not load providers.");
     } finally {
       setBarbersLoading(false);
     }
-  }, []);
+  }, [providerFilter]);
 
   useEffect(() => {
     void loadBarbers();
@@ -387,8 +393,19 @@ export default function BookingWizard() {
 
       {step === 1 ? (
         <section className="ifcdc-book-wizard__panel">
-          <h2 className="ifcdc-book-wizard__heading">Choose your barber</h2>
-          {barbersLoading ? <p className="ifcdc-page-hint">Loading barbers…</p> : null}
+          <h2 className="ifcdc-book-wizard__heading">Choose your provider</h2>
+          <ProviderTypeDropdown
+            label="Filter by provider type"
+            includeAll
+            value={providerFilter}
+            disabled={barbersLoading}
+            onChange={(value) => {
+              setProviderFilter(value);
+              setBarber(null);
+            }}
+          />
+          <div style={{ height: 12 }} />
+          {barbersLoading ? <p className="ifcdc-page-hint">Loading providers…</p> : null}
           {barbersError ? <p className="ifcdc-error-msg">{barbersError}</p> : null}
           <ul className="ifcdc-book-wizard__list">
             {barbers.map((b) => (
@@ -403,6 +420,9 @@ export default function BookingWizard() {
                   }}
                 >
                   {b.name}
+                  <span style={{ display: "block", fontSize: 12, opacity: 0.7 }}>
+                    {providerTypeLabel(b.providerType)}
+                  </span>
                 </button>
               </li>
             ))}

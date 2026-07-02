@@ -3,6 +3,9 @@ import { Link } from "react-router-dom";
 import { validatePasswordStrength } from "../lib/passwordPolicy.js";
 import { validateSignupPhone } from "../lib/phoneValidation.js";
 import { register } from "../services/api.js";
+import LanguageDropdown from "../components/LanguageDropdown.jsx";
+import ProviderTypeDropdown from "../components/ProviderTypeDropdown.jsx";
+import { DEFAULT_LANGUAGE } from "../lib/languages.js";
 
 export default function Register() {
   const [form, setForm] = useState({
@@ -10,12 +13,13 @@ export default function Register() {
     email: "",
     password: "",
     phone: "",
-    role: "user",
+    accountSelection: "customer",
     shopName: "",
     address: "",
     city: "",
     state: "",
   });
+  const [language, setLanguage] = useState(DEFAULT_LANGUAGE);
   const [status, setStatus] = useState(null);
   const [tone, setTone] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -25,6 +29,10 @@ export default function Register() {
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
   };
+
+  const isCustomer = form.accountSelection === "customer";
+  const isShopOwner = form.accountSelection === "shop_owner";
+  const showShopFields = !isCustomer;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -49,13 +57,16 @@ export default function Register() {
     }
     setSubmitting(true);
     try {
-      const role = form.role;
+      const accountType = isCustomer ? "customer" : isShopOwner ? "shop_owner" : "barber";
+      const role = isCustomer ? "user" : isShopOwner ? "shop_owner" : "barber";
       await register({
         name: form.name.trim(),
         email: form.email.trim(),
         password: form.password,
-        accountType: role,
+        accountType,
         role,
+        providerType: !isCustomer ? form.accountSelection : undefined,
+        language,
         phone: phoneCheck.display,
         shopName: form.shopName.trim(),
         businessName: form.shopName.trim(),
@@ -74,8 +85,6 @@ export default function Register() {
     }
   };
 
-  const showShopFields = form.role === "barber" || form.role === "shop_owner";
-
   return (
     <div className="auth-shell">
       <div className="auth-card">
@@ -85,6 +94,14 @@ export default function Register() {
         </div>
 
         <form onSubmit={handleSubmit} className="auth-form">
+          <LanguageDropdown
+            label="Language"
+            hint="Used for app text and notifications."
+            value={language}
+            disabled={submitting}
+            onChange={setLanguage}
+          />
+
           <div className="auth-field">
             <span className="auth-icon" aria-hidden>
               👤
@@ -101,17 +118,16 @@ export default function Register() {
             />
           </div>
 
-          <div className="auth-field">
-            <span className="auth-icon" aria-hidden>
-              ⌄
-            </span>
-            <select name="role" value={form.role} onChange={handleChange} className="auth-input" aria-label="Account type">
-              <option value="user">Customer</option>
-              <option value="barber">Barber</option>
-              <option value="shop_owner">Shop owner</option>
-            </select>
-            <p className="auth-subtext" style={{ margin: "4px 0 0", fontSize: "0.8rem", opacity: 0.75 }}>
-              Admin manages your own shop only.
+          <div className="auth-field" style={{ display: "grid", gap: 8 }}>
+            <ProviderTypeDropdown
+              label="Account type"
+              includeCustomer
+              value={form.accountSelection}
+              disabled={submitting}
+              onChange={(value) => setForm({ ...form, accountSelection: value })}
+            />
+            <p className="auth-subtext" style={{ margin: 0, fontSize: "0.8rem", opacity: 0.75 }}>
+              Service providers can book clients once approved. Shop owners manage their own shop.
             </p>
           </div>
 
@@ -154,11 +170,11 @@ export default function Register() {
                 <input
                   name="address"
                   type="text"
-                  placeholder={form.role === "shop_owner" ? "Shop address" : "Location / address"}
+                  placeholder={isShopOwner ? "Shop address" : "Location / address"}
                   value={form.address}
                   onChange={handleChange}
                   className="auth-input"
-                  required={form.role === "shop_owner"}
+                  required={isShopOwner}
                 />
               </div>
               <div className="auth-field">
@@ -172,7 +188,7 @@ export default function Register() {
                   value={form.city}
                   onChange={handleChange}
                   className="auth-input"
-                  required={form.role === "shop_owner"}
+                  required={isShopOwner}
                 />
               </div>
               <div className="auth-field">
@@ -186,7 +202,7 @@ export default function Register() {
                   value={form.state}
                   onChange={handleChange}
                   className="auth-input"
-                  required={form.role === "shop_owner"}
+                  required={isShopOwner}
                 />
               </div>
             </>

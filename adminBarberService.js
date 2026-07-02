@@ -163,6 +163,7 @@ function rowToAdminBarber(row) {
         : null,
     hasUserAccount: Boolean(row.user_id),
     bookingHidden: Boolean(row.booking_hidden),
+    providerType: String(row.provider_type || "barber"),
   };
 }
 
@@ -174,6 +175,7 @@ const ADMIN_BARBER_SELECT = `
     b.phone AS barber_phone,
     b.location,
     b.verification_status,
+    COALESCE(b.provider_type, 'barber') AS provider_type,
     COALESCE(b.booking_hidden, false) AS booking_hidden,
     b.business_id,
     b.created_at AS barber_created_at,
@@ -245,6 +247,12 @@ export async function listAdminBarbers(scope, filters = {}) {
 
   if (String(filters.pendingApproval || "").toLowerCase() === "true") {
     where.push(`lower(coalesce(b.verification_status, 'pending')) = 'pending'`);
+  }
+
+  const providerType = String(filters.providerType || filters.provider_type || "").trim().toLowerCase();
+  if (providerType) {
+    params.push(providerType);
+    where.push(`lower(coalesce(b.provider_type, 'barber')) = lower($${params.length})`);
   }
 
   const activeFilter = String(filters.active || filters.activeInactive || "").toLowerCase();

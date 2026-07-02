@@ -15,6 +15,8 @@ import {
   type AdminBarberFilters,
   type AdminBarberRow,
 } from "../../services/adminBarbersApi";
+import ProviderTypeDropdown from "../../components/ProviderTypeDropdown";
+import { providerTypeMeta } from "../../constants/providerTypes";
 import type { AdminStackParamList } from "../../navigation/AdminStack";
 
 type Nav = StackNavigationProp<AdminStackParamList, "AdminGlobalBarbers">;
@@ -56,6 +58,7 @@ export default function AdminGlobalBarbersScreen() {
   const [state, setState] = useState("");
   const [activeFilter, setActiveFilter] = useState<"" | "active" | "inactive">("");
   const [pendingOnly, setPendingOnly] = useState(false);
+  const [providerType, setProviderType] = useState("");
   const [sort, setSort] = useState<AdminBarberFilters["sort"]>("newest");
 
   const filters = useMemo<AdminBarberFilters>(
@@ -66,8 +69,9 @@ export default function AdminGlobalBarbersScreen() {
       active: activeFilter || undefined,
       pendingApproval: pendingOnly,
       sort,
+      providerType: providerType || undefined,
     }),
-    [shop, city, state, activeFilter, pendingOnly, sort],
+    [shop, city, state, activeFilter, pendingOnly, sort, providerType],
   );
 
   const load = useCallback(async () => {
@@ -143,6 +147,14 @@ export default function AdminGlobalBarbersScreen() {
           <TextInput style={[styles.input, styles.half]} placeholder="City" value={city} onChangeText={setCity} placeholderTextColor={theme.colors.textMuted} />
           <TextInput style={[styles.input, styles.half]} placeholder="State" value={state} onChangeText={setState} placeholderTextColor={theme.colors.textMuted} />
         </View>
+        <ProviderTypeDropdown
+          label="Provider type"
+          includeAll
+          registrationMode={false}
+          value={providerType}
+          onChange={setProviderType}
+        />
+        <View style={{ height: 10 }} />
         <View style={styles.chips}>
           {(["", "active", "inactive"] as const).map((v) => (
             <Pressable key={v || "all"} style={[styles.chip, activeFilter === v && styles.chipActive]} onPress={() => setActiveFilter(v)}>
@@ -185,6 +197,9 @@ export default function AdminGlobalBarbersScreen() {
           <ProfileCard style={styles.card}>
             <Text style={styles.name}>{row.fullName}</Text>
             <Text style={styles.meta}>{row.shopName}</Text>
+            <Text style={styles.meta}>
+              {providerTypeMeta((row as AdminBarberRow & { providerType?: string }).providerType || "barber")?.label || "Barber"}
+            </Text>
             <Text style={styles.meta}>{row.locationLabel}</Text>
             <Text style={styles.meta}>{row.email}{row.phone ? ` · ${row.phone}` : ""}</Text>
             <Text style={styles.meta}>

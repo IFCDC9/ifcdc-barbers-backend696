@@ -465,9 +465,12 @@ export async function fetchOccupiedSlots({ barberName, dateLabel }) {
 /**
  * GET /api/app-bookings/barbers — Postgres bookable barbers (checkout source of truth).
  */
-export async function fetchBarbersList() {
+export async function fetchBarbersList(providerType) {
   logApiEnvOnce();
-  const url = apiFullUrl("/api/app-bookings/barbers");
+  const q = new URLSearchParams();
+  if (providerType) q.set("providerType", String(providerType));
+  const suffix = q.toString() ? `?${q.toString()}` : "";
+  const url = apiFullUrl(`/api/app-bookings/barbers${suffix}`);
   console.log("BOOKING API:", url);
   console.log("[IFCDC] BARBERS GET:", url);
   let res;

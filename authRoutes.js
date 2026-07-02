@@ -20,6 +20,12 @@ import {
   resolveUserApprovalState,
 } from "./signupProvisioningService.js";
 import { validateSignupPhone } from "./phoneValidation.js";
+import { ensureProviderTypeSchema } from "./providerTypeMigrations.js";
+import {
+  authRoleForProviderType,
+  normalizeProviderType,
+  resolveRegistrationProviderType,
+} from "./providerTypesRegistry.cjs";
 
 const require = createRequire(import.meta.url);
 const jwt = require("jsonwebtoken");
@@ -148,7 +154,7 @@ export function createAuthRouter({ sendEmail }) {
       const email = normalizeEmail(req.body?.email);
       const password = String(req.body?.password || "");
       const body = req.body && typeof req.body === "object" ? req.body : {};
-      const roleCandidates = [body.role, body.accountType, body.account_type].filter(
+      const roleCandidates = [body.role, body.accountType, body.account_type, body.providerType, body.provider_type].filter(
         (v) => v != null && String(v).trim() !== "",
       );
       for (const raw of roleCandidates) {
@@ -166,7 +172,13 @@ export function createAuthRouter({ sendEmail }) {
         });
       }
 
-      const role = resolveRoleFromTrustedSource(req);
+      await ensureProviderTypeSchema();
+
+      const providerTypeRaw = resolveRegistrationProviderType(body);
+      const providerType =
+        providerTypeRaw && providerTypeRaw !== "customer" ? normalizeProviderType(providerTypeRaw) : null;
+      const roleFromProvider = providerType ? authRoleForProviderType(providerType) : null;
+      const role = roleFromProvider || resolveRoleFromTrustedSource(req);
       if (!role) {
         return res.status(403).json({
           error: "forbidden_role",
@@ -176,9 +188,14 @@ export function createAuthRouter({ sendEmail }) {
       if (role !== "user" && role !== "barber" && role !== "shop_owner") {
         return res.status(400).json({
           error: "invalid_role",
-          message: "Account type must be client, barber, or shop admin.",
+          message: "Account type must be client, service provider, or shop admin.",
         });
       }
+
+      const preferredLanguage = String(body.language || body.preferredLanguage || body.preferred_language || "en")
+        .trim()
+        .toLowerCase()
+        .slice(0, 8) || "en";
 
       if (!name) return res.status(400).json({ error: "name_required", message: "Name is required" });
       if (!email) return res.status(400).json({ error: "email_required", message: "Email is required" });
@@ -220,10 +237,19 @@ export function createAuthRouter({ sendEmail }) {
       const passwordHash = await hashPassword(password);
       const initialAccountStatus = role === "user" ? "active" : "pending";
       const created = await dbQuery(
-        `INSERT INTO app_users (name, email, password_hash, role, phone, account_status)
-         VALUES ($1, $2, $3, $4, $5, $6)
-         RETURNING id, name, email, role, phone, barber_id, business_id, account_status, created_at`,
-        [name || null, email, passwordHash, role, phone, initialAccountStatus],
+        `INSERT INTO app_users (name, email, password_hash, role, phone, account_status, provider_type, preferred_language)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         RETURNING id, name, email, role, phone, barber_id, business_id, account_status, provider_type, preferred_language, created_at`,
+        [
+          name || null,
+          email,
+          passwordHash,
+          role,
+          phone,
+          initialAccountStatus,
+          providerType || (role === "shop_owner" ? "shop_owner" : null),
+          preferredLanguage,
+        ],
       );
       const user = created.rows?.[0];
       if (!user?.id) throw new Error("user_insert_failed");
@@ -243,6 +269,7 @@ export function createAuthRouter({ sendEmail }) {
             address,
             city,
             state,
+            providerType: providerType || "barber",
           });
           approvalPending = true;
           adminSignupEmailSent = Boolean(provisioned?.adminEmailSent);

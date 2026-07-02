@@ -45,6 +45,8 @@ import { formatCheckoutError } from '../utils/checkoutError';
 import DarkGradientBackground from '../components/DarkGradientBackground';
 import { palette, radius } from '../constants/theme';
 import { IFCDC_FOOTER_CLEARANCE } from '../constants/profileLayout';
+import ProviderTypeDropdown from '../components/ProviderTypeDropdown';
+import { providerTypeMeta } from '../constants/providerTypes';
 import { useAuth } from '../services/authContext';
 
 /** Visual tokens only — booking/payment logic unchanged */
@@ -146,6 +148,7 @@ function BookingScreen() {
   const [barbers, setBarbers] = useState([]);
   const [barbersLoading, setBarbersLoading] = useState(true);
   const [barbersError, setBarbersError] = useState(null);
+  const [providerFilter, setProviderFilter] = useState('');
   const [scheduleRefreshKey, setScheduleRefreshKey] = useState(0);
   const dates = useMemo(() => buildDateOptions(7), []);
 
@@ -162,10 +165,14 @@ function BookingScreen() {
     setBarbersLoading(true);
     setBarbersError(null);
     try {
-      const list = await fetchBarbersList();
+      const list = await fetchBarbersList(providerFilter || undefined);
       const items = list
         .filter((b) => b && b.active !== false)
-        .map((b) => ({ id: b.id, name: String(b.name || '').trim() }))
+        .map((b) => ({
+          id: b.id,
+          name: String(b.name || '').trim(),
+          providerType: b.providerType || b.provider_type || 'barber',
+        }))
         .filter((b) => b.name);
       setBarbers(items);
       setBarbersError(items.length ? null : t('booking.noBarbers'));

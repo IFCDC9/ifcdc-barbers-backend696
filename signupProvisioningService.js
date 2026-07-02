@@ -118,23 +118,25 @@ async function createBarberRowForUser({
   phoneVal,
   locationJson,
   verificationStatus = "pending",
+  providerType = "barber",
 }) {
   const barbersIdType = await getBarbersIdColumnType();
+  const provider = String(providerType || "barber").trim() || "barber";
   let barberIns;
   try {
     barberIns =
       barbersIdType === "uuid"
         ? await dbQuery(
-            `INSERT INTO barbers (id, name, shop_name, business_id, user_id, phone, location, verification_status)
-             VALUES (gen_random_uuid(), $1, $2, $3, $4::uuid, $5, $6, $7)
+            `INSERT INTO barbers (id, name, shop_name, business_id, user_id, phone, location, verification_status, provider_type)
+             VALUES (gen_random_uuid(), $1, $2, $3, $4::uuid, $5, $6, $7, $8)
              RETURNING id`,
-            [displayName, shop, businessId, userId, phoneVal, locationJson, verificationStatus],
+            [displayName, shop, businessId, userId, phoneVal, locationJson, verificationStatus, provider],
           )
         : await dbQuery(
-            `INSERT INTO barbers (name, shop_name, business_id, user_id, phone, location, verification_status)
-             VALUES ($1, $2, $3, $4::uuid, $5, $6, $7)
+            `INSERT INTO barbers (name, shop_name, business_id, user_id, phone, location, verification_status, provider_type)
+             VALUES ($1, $2, $3, $4::uuid, $5, $6, $7, $8)
              RETURNING id`,
-            [displayName, shop, businessId, userId, phoneVal, locationJson, verificationStatus],
+            [displayName, shop, businessId, userId, phoneVal, locationJson, verificationStatus, provider],
           );
   } catch (e) {
     const err = new Error(`barber_insert_failed: ${e?.message || e}`);
@@ -159,6 +161,7 @@ export async function provisionBarberSignup({
   address,
   city,
   state,
+  providerType = "barber",
 }) {
   await ensureAdminBarberManagementSchema();
   await ensureAdminShopManagementSchema();
@@ -186,6 +189,7 @@ export async function provisionBarberSignup({
     phoneVal,
     locationJson,
     verificationStatus: "pending",
+    providerType,
   });
 
   await linkAppUserToBarberRecords({

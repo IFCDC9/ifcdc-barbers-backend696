@@ -68,7 +68,9 @@ async function handlePublicBarberServicesGet(req, res, dbQuery) {
 /**
  * GET /api/app-bookings/barbers — bookable barber list for mobile picker (Postgres only).
  */
-async function handlePublicBarbersListGet(_req, res, dbQuery) {
+async function handlePublicBarbersListGet(req, res, dbQuery) {
+  const providerTypeRaw = stripQuotes(req.query?.providerType ?? req.query?.provider_type ?? "");
+  const providerType = providerTypeRaw ? String(providerTypeRaw).trim().toLowerCase() : "";
   let rows = [];
   try {
     const r = await dbQuery(
@@ -76,16 +78,19 @@ async function handlePublicBarbersListGet(_req, res, dbQuery) {
       SELECT
         b.id,
         COALESCE(NULLIF(trim(p.name), ''), NULLIF(trim(b.name), '')) AS name,
-        COALESCE(NULLIF(trim(p.profile_image_url), ''), NULLIF(trim(b.profile_image), '')) AS photo
+        COALESCE(NULLIF(trim(p.profile_image_url), ''), NULLIF(trim(b.profile_image), '')) AS photo,
+        COALESCE(b.provider_type, 'barber') AS provider_type
       FROM barbers b
       LEFT JOIN barber_profiles p
         ON p.id::text = b.id::text
         OR lower(trim(p.name)) = lower(trim(b.name))
       WHERE COALESCE(NULLIF(trim(p.name), ''), NULLIF(trim(b.name), '')) IS NOT NULL
         AND ${bookableBarberWhereSql({ channel: "mobile" })}
+        ${providerType ? "AND lower(coalesce(b.provider_type, 'barber')) = lower($1)" : ""}
       ORDER BY lower(COALESCE(NULLIF(trim(p.name), ''), NULLIF(trim(b.name), ''))) ASC
       LIMIT 500
       `,
+      providerType ? [providerType] : [],
     );
     rows = r.rows || [];
   } catch {
@@ -105,6 +110,7 @@ async function handlePublicBarbersListGet(_req, res, dbQuery) {
     name: row.name,
     photo: row.photo || "",
     image: row.photo || "",
+    providerType: row.provider_type || "barber",
     active: true,
   }));
 

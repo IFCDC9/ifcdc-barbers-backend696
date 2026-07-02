@@ -18,6 +18,7 @@ export type AdminBarberRow = {
   isActive: boolean;
   pendingApproval: boolean;
   businessId: number | null;
+  providerType?: string;
 };
 
 export type AdminBarberFilters = {
@@ -27,6 +28,7 @@ export type AdminBarberFilters = {
   active?: "active" | "inactive" | "";
   pendingApproval?: boolean;
   sort?: "newest" | "oldest" | "name" | "shop";
+  providerType?: string;
 };
 
 function queryString(filters: AdminBarberFilters): string {
@@ -36,6 +38,7 @@ function queryString(filters: AdminBarberFilters): string {
   if (filters.state) q.set("state", filters.state);
   if (filters.active) q.set("active", filters.active);
   if (filters.pendingApproval) q.set("pendingApproval", "true");
+  if (filters.providerType) q.set("providerType", filters.providerType);
   if (filters.sort === "oldest") q.set("sort", "asc");
   else if (filters.sort === "name") q.set("sort", "name");
   else if (filters.sort === "shop") q.set("sort", "shop");

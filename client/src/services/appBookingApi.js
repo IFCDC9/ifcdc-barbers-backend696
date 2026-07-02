@@ -127,8 +127,11 @@ export async function pingBookingApi() {
   return { ok: res.ok, status: res.status, url: res.url, body: json };
 }
 
-export async function fetchBarbersList() {
-  const url = apiUrl("/api/app-bookings/barbers");
+export async function fetchBarbersList(providerType) {
+  const q = new URLSearchParams();
+  if (providerType) q.set("providerType", String(providerType));
+  const suffix = q.toString() ? `?${q.toString()}` : "";
+  const url = apiUrl(`/api/app-bookings/barbers${suffix}`);
   let res;
   try {
     res = await bookingFetch(url, { headers: { Accept: "application/json" } });

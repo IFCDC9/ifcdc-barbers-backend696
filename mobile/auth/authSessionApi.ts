@@ -205,6 +205,7 @@ export type RegisterExtras = {
   appVersion?: string;
   platform?: string;
   language?: string;
+  providerType?: string;
   phone?: string;
   shopName?: string;
   businessName?: string;
@@ -228,6 +229,7 @@ export async function registerWithEmailPassword(
   if (extras.appVersion) body.appVersion = extras.appVersion;
   if (extras.platform) body.platform = extras.platform;
   if (extras.language) body.language = extras.language;
+  if (extras.providerType) body.providerType = extras.providerType;
   if (extras.phone) body.phone = extras.phone;
   if (extras.shopName) body.shopName = extras.shopName;
   if (extras.businessName) body.businessName = extras.businessName;

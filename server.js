@@ -42,6 +42,7 @@ import { createSocialPortfolioRouter } from "./socialPortfolioRoutes.js";
 import { ensureSocialPortfolioSchema } from "./socialPortfolioMigrations.js";
 import { createAdminShopsRouter } from "./adminShopsRoutes.js";
 import { ensureAdminBarberManagementSchema } from "./adminBarberMigrations.js";
+import { ensureProviderTypeSchema } from "./providerTypeMigrations.js";
 import { ensureAppUsersBarberIdTypeAligned } from "./authDbMigrations.js";
 import { backfillOrphanBarberRegistrations } from "./signupProvisioningService.js";
 import { ensureAdminShopManagementSchema } from "./adminShopMigrations.js";
@@ -1048,6 +1049,7 @@ async function startServer() {
   try {
     await ensureBarberBusinessTables();
     await ensureAdminBarberManagementSchema();
+    await ensureProviderTypeSchema();
     await ensureAdminShopManagementSchema();
     try {
       const aligned = await ensureAppUsersBarberIdTypeAligned();

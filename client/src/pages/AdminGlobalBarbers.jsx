@@ -17,6 +17,8 @@ import {
   patchAdminBarberSubscription,
   patchAdminBarberVerification,
 } from "../services/api.js";
+import ProviderTypeDropdown from "../components/ProviderTypeDropdown.jsx";
+import { providerTypeLabel } from "../lib/providerTypes.js";
 
 const inputStyle = {
   width: "100%",
@@ -73,6 +75,7 @@ export default function AdminGlobalBarbers() {
   const [state, setState] = React.useState("");
   const [active, setActive] = React.useState("");
   const [pendingOnly, setPendingOnly] = React.useState(false);
+  const [providerType, setProviderType] = React.useState("");
   const [sort, setSort] = React.useState("newest");
   const [rows, setRows] = React.useState([]);
   const [shops, setShops] = React.useState([]);
@@ -96,6 +99,7 @@ export default function AdminGlobalBarbers() {
         active: active || undefined,
         pendingApproval: pendingOnly ? "true" : undefined,
         sort: sort === "oldest" ? "asc" : sort === "name" || sort === "shop" ? sort : undefined,
+        providerType: providerType || undefined,
       });
       setRows(Array.isArray(j?.barbers) ? j.barbers : []);
     } catch (e) {
@@ -104,7 +108,7 @@ export default function AdminGlobalBarbers() {
     } finally {
       setLoading(false);
     }
-  }, [shop, city, state, active, pendingOnly, sort]);
+  }, [shop, city, state, active, pendingOnly, sort, providerType]);
 
   React.useEffect(() => {
     void load();
@@ -194,6 +198,12 @@ export default function AdminGlobalBarbers() {
             <option value="name">Name A–Z</option>
             <option value="shop">Shop A–Z</option>
           </select>
+          <ProviderTypeDropdown
+            label="Provider type"
+            includeAll
+            value={providerType}
+            onChange={setProviderType}
+          />
         </div>
         <label style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 12, color: theme.colors.muted, fontSize: 13 }}>
           <input type="checkbox" checked={pendingOnly} onChange={(e) => setPendingOnly(e.target.checked)} />
@@ -224,6 +234,8 @@ export default function AdminGlobalBarbers() {
               <CardTitle>{row.fullName}</CardTitle>
               <p style={{ margin: "8px 0 0", color: theme.colors.muted, fontSize: 14, lineHeight: 1.6 }}>
                 <strong>Shop:</strong> {row.shopName}
+                <br />
+                <strong>Type:</strong> {providerTypeLabel(row.providerType)}
                 <br />
                 <strong>Location:</strong> {row.locationLabel}
                 <br />

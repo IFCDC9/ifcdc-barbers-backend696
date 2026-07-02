@@ -961,6 +961,7 @@ export async function fetchAdminBarbers(filters = {}) {
   if (filters.pendingApproval) q.set("pendingApproval", "true");
   if (filters.sort) q.set("sort", filters.sort);
   if (filters.registrationDate) q.set("registrationDate", filters.registrationDate);
+  if (filters.providerType) q.set("providerType", filters.providerType);
   const suffix = q.toString() ? `?${q.toString()}` : "";
   const res = await fetch(`${origin}/api/admin/barbers${suffix}`, {
     headers: { Accept: "application/json", ...getAdminAuthHeaders() },

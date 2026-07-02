@@ -16,20 +16,21 @@ import CardContainer from "../components/CardContainer";
 import IFCDCFooter from "../components/IFCDCFooter";
 import GlowButton from "../components/GlowButton";
 import GoogleButton from "../components/GoogleButton";
+import LanguageDropdown from "../components/LanguageDropdown";
+import ProviderTypeDropdown, { type AccountSelection } from "../components/ProviderTypeDropdown";
 import { theme } from "../constants/theme";
 import { BACKEND_URL, apiFullUrl } from "../constants/config";
 import { useAuth } from "../services/authContext";
 import { EXPO_GO_GOOGLE_PROMPT_OPTIONS } from "../auth/expoGooglePromptOptions";
 import { getGoogleIdTokenAuthConfig } from "../auth/googleAuthRequestConfig";
 import { exchangeGoogleIdToken } from "../auth/googleBackendLogin";
-import { registerWithEmailPassword } from "../auth/authSessionApi";
+import { registerWithEmailPassword, type RegisterAccountType } from "../auth/authSessionApi";
 import { UX } from "../utils/uxCopy";
 import { userFacingApiError } from "../utils/userFacingApiError";
 import { validateSignupPhone } from "../utils/phoneValidation";
 import { POLICY_VERSION } from "../constants/legalContent";
 import { buildSignupAcceptances, recordAcceptance } from "../services/legalApi";
 import {
-  SUPPORTED_LANGUAGES,
   currentLanguage,
   setLanguage,
   type SupportedLanguageCode,
@@ -55,7 +56,15 @@ export default function RegisterScreen({ navigation }: { navigation: any }) {
   const [fullName, setFullName] = React.useState("");
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
-  const [accountType, setAccountType] = React.useState<"customer" | "barber" | "shop_owner">("customer");
+  const [accountSelection, setAccountSelection] = React.useState<AccountSelection>("customer");
+  const isShopOwner = accountSelection === "shop_owner";
+  const needsShopFields = accountSelection !== "customer";
+  const accountTypeForApi: RegisterAccountType =
+    accountSelection === "customer"
+      ? "customer"
+      : accountSelection === "shop_owner"
+        ? "shop_owner"
+        : "barber";
   const [phone, setPhone] = React.useState("");
   const [shopName, setShopName] = React.useState("");
   const [address, setAddress] = React.useState("");
@@ -77,18 +86,6 @@ export default function RegisterScreen({ navigation }: { navigation: any }) {
       i18n.off("languageChanged", onChanged);
     };
   }, [i18n]);
-  const chooseLang = React.useCallback(
-    async (code: SupportedLanguageCode) => {
-      if (busy || code === activeLang) return;
-      try {
-        await setLanguage(code);
-        setActiveLang(code);
-      } catch {
-        /* non-fatal */
-      }
-    },
-    [busy, activeLang],
-  );
 
   const googleAuthConfig = React.useMemo(() => getGoogleIdTokenAuthConfig(), []);
   const googleConfigured = Boolean(
@@ -239,15 +236,8 @@ export default function RegisterScreen({ navigation }: { navigation: any }) {
         acceptedNotifications,
       });
       const profileExtras =
-        accountType === "barber"
-          ? {
-              phone: phoneCheck.display,
-              shopName: shopName.trim(),
-              address: address.trim(),
-              city: city.trim(),
-              state: stateProv.trim(),
-            }
-          : accountType === "shop_owner"
+        accountSelection !== "customer"
+          ? isShopOwner
             ? {
                 phone: phoneCheck.display,
                 businessName: shopName.trim(),
@@ -255,17 +245,25 @@ export default function RegisterScreen({ navigation }: { navigation: any }) {
                 city: city.trim(),
                 state: stateProv.trim(),
               }
-            : { phone: phoneCheck.display };
+            : {
+                phone: phoneCheck.display,
+                shopName: shopName.trim(),
+                address: address.trim(),
+                city: city.trim(),
+                state: stateProv.trim(),
+              }
+          : { phone: phoneCheck.display };
       const { token, json } = await registerWithEmailPassword(
         fullName.trim(),
         email.trim(),
         password,
-        accountType,
+        accountTypeForApi,
         {
           acceptances,
           appVersion: appVersionString(),
           platform: Platform.OS,
           language: activeLang,
+          providerType: accountSelection !== "customer" ? accountSelection : undefined,
           ...profileExtras,
         },
       );
@@ -311,34 +309,16 @@ export default function RegisterScreen({ navigation }: { navigation: any }) {
       <Text style={styles.tagline}>{t("auth.signUpTagline")}</Text>
 
       <CardContainer glow style={{ width: "100%", marginBottom: 12 }}>
-        <Text style={styles.helper}>{t("auth.chooseLanguage")}</Text>
-        <View style={{ height: 8 }} />
-        <View style={styles.langRow}>
-          {SUPPORTED_LANGUAGES.map((lang) => {
-            const selected = activeLang === lang.code;
-            return (
-              <Pressable
-                key={lang.code}
-                onPress={() => chooseLang(lang.code)}
-                disabled={busy}
-                accessibilityRole="radio"
-                accessibilityState={{ selected, disabled: busy }}
-                accessibilityLabel={`Set language to ${lang.englishName}`}
-                style={({ pressed }) => [
-                  styles.langPill,
-                  selected && styles.langPillSelected,
-                  pressed && !selected && !busy && styles.langPillPressed,
-                ]}
-              >
-                <Text style={[styles.langPillText, selected && styles.langPillTextSelected]}>
-                  {lang.nativeName}
-                </Text>
-                <Text style={styles.langPillCode}>{lang.code.toUpperCase()}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
-        <Text style={[styles.helper, styles.langHint]}>{t("auth.chooseLanguageHint")}</Text>
+        <LanguageDropdown
+          label={t("auth.chooseLanguage")}
+          hint={t("auth.chooseLanguageHint")}
+          value={activeLang}
+          disabled={busy}
+          onChange={async (code) => {
+            await setLanguage(code);
+            setActiveLang(code);
+          }}
+        />
       </CardContainer>
 
       <CardContainer glow style={{ width: "100%" }}>
@@ -372,30 +352,9 @@ export default function RegisterScreen({ navigation }: { navigation: any }) {
         <View style={{ height: 10 }} />
         <Text style={styles.helper}>{t("auth.accountType")}</Text>
         <View style={{ height: 8 }} />
-        <View style={styles.roleRow}>
-          <View style={{ flex: 1 }}>
-            <GlowButton
-              label={t("auth.roleCustomer")}
-              onPress={() => setAccountType("customer")}
-              variant={accountType === "customer" ? "primary" : "outline"}
-              disabled={busy}
-            />
-          </View>
-          <View style={{ width: 10 }} />
-          <View style={{ flex: 1 }}>
-            <GlowButton
-              label={t("auth.roleBarber")}
-              onPress={() => setAccountType("barber")}
-              variant={accountType === "barber" ? "primary" : "outline"}
-              disabled={busy}
-            />
-          </View>
-        </View>
-        <View style={{ height: 10 }} />
-        <GlowButton
-          label={t("auth.roleShopOwner")}
-          onPress={() => setAccountType("shop_owner")}
-          variant={accountType === "shop_owner" ? "primary" : "outline"}
+        <ProviderTypeDropdown
+          value={accountSelection}
+          onChange={setAccountSelection}
           disabled={busy}
         />
         <View style={{ height: 10 }} />
@@ -410,13 +369,13 @@ export default function RegisterScreen({ navigation }: { navigation: any }) {
           style={styles.input}
           editable={!busy}
         />
-        {accountType !== "customer" ? (
+        {needsShopFields ? (
           <>
             <View style={{ height: 10 }} />
             <TextInput
               value={shopName}
               onChangeText={setShopName}
-              placeholder={accountType === "shop_owner" ? "Shop name" : "Shop name or assigned shop"}
+              placeholder={isShopOwner ? "Shop name" : "Shop name or assigned shop"}
               placeholderTextColor="rgba(255,255,255,0.45)"
               style={styles.input}
               editable={!busy}
@@ -425,7 +384,7 @@ export default function RegisterScreen({ navigation }: { navigation: any }) {
             <TextInput
               value={address}
               onChangeText={setAddress}
-              placeholder={accountType === "shop_owner" ? "Shop address" : "Location / address"}
+              placeholder={isShopOwner ? "Shop address" : "Location / address"}
               placeholderTextColor="rgba(255,255,255,0.45)"
               style={styles.input}
               editable={!busy}
