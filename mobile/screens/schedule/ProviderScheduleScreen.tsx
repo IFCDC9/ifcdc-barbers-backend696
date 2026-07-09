@@ -89,7 +89,7 @@ export default function ProviderScheduleScreen() {
   const [date, setDate] = useState(todayYmd);
   const [rows, setRows] = useState<ProviderAppointment[]>([]);
 
-  const { loading, error, needsSignIn, reload } = useAuthenticatedLoad(async () => {
+  const { loading, error, needsSignIn, loadedOnce, reload } = useAuthenticatedLoad(async () => {
     if (!barberId) throw new Error("Barber profile not linked to this account.");
     const data = await fetchProviderAppointments(barberId, date);
     setRows(data.appointments);
@@ -112,7 +112,7 @@ export default function ProviderScheduleScreen() {
         ) : null}
       </ProfileCard>
 
-      {loading ? <ScreenLoading label="Loading appointments…" /> : null}
+      {loading && !loadedOnce ? <ScreenLoading label="Loading appointments…" /> : null}
       {needsSignIn ? <ScreenError message="Session expired. Sign out and sign in again." /> : null}
       {error && !needsSignIn ? <ScreenError message={error} onRetry={() => void reload()} /> : null}
       {!loading && !error && !needsSignIn && !rows.length ? (

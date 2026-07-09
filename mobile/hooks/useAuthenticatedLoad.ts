@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useFocusEffect } from "@react-navigation/native";
 import { useAuth } from "../services/authContext";
 import { getAuthToken } from "../services/authService";
 import { isSessionExpiredError } from "../services/sessionApi";
@@ -8,66 +9,95 @@ type LoadState = {
   loading: boolean;
   error: string | null;
   needsSignIn: boolean;
+  loadedOnce: boolean;
 };
 
-const AUTH_BOOTSTRAP_TIMEOUT_MS = 20_000;
-
 /**
- * Run a protected API load only after auth bootstrap finishes and a JWT is present.
- * Falls back to SecureStore when context token lags behind persisted session.
+ * Load protected data using the persisted JWT immediately (no auth-bootstrap gate).
+ * Ignores stale responses, retries on focus, and keeps prior content visible while refreshing.
  */
 export function useAuthenticatedLoad(
   loadFn: () => Promise<void>,
   deps: React.DependencyList = [],
 ) {
-  const { loading: authLoading, token: contextToken, signOut } = useAuth();
-  const [state, setState] = useState<LoadState>({ loading: true, error: null, needsSignIn: false });
-  const [authTimedOut, setAuthTimedOut] = useState(false);
+  const { token: contextToken, signOut } = useAuth();
+  const [state, setState] = useState<LoadState>({
+    loading: true,
+    error: null,
+    needsSignIn: false,
+    loadedOnce: false,
+  });
   const loadRef = useRef(loadFn);
+  const requestIdRef = useRef(0);
+  const mountedRef = useRef(true);
   loadRef.current = loadFn;
 
   useEffect(() => {
-    if (!authLoading) {
-      setAuthTimedOut(false);
-      return;
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      requestIdRef.current += 1;
+    };
+  }, []);
+
+  const run = useCallback(async (opts: { silent?: boolean } = {}) => {
+    const requestId = ++requestIdRef.current;
+    const silent = opts.silent === true;
+
+    if (!silent) {
+      setState((prev) => ({
+        ...prev,
+        loading: !prev.loadedOnce,
+        error: null,
+      }));
     }
-    const timer = setTimeout(() => setAuthTimedOut(true), AUTH_BOOTSTRAP_TIMEOUT_MS);
-    return () => clearTimeout(timer);
-  }, [authLoading]);
-
-  const waitingOnAuth = authLoading && !authTimedOut;
-
-  const run = useCallback(async () => {
-    if (waitingOnAuth) return;
 
     const bearer = contextToken || (await getAuthToken());
     if (!bearer) {
-      setState({ loading: false, error: null, needsSignIn: true });
+      if (requestId !== requestIdRef.current || !mountedRef.current) return;
+      setState({ loading: false, error: null, needsSignIn: true, loadedOnce: false });
       return;
     }
 
-    setState({ loading: true, error: null, needsSignIn: false });
     try {
       await loadRef.current();
-      setState({ loading: false, error: null, needsSignIn: false });
+      if (requestId !== requestIdRef.current || !mountedRef.current) return;
+      setState({ loading: false, error: null, needsSignIn: false, loadedOnce: true });
     } catch (e) {
+      if (requestId !== requestIdRef.current || !mountedRef.current) return;
       if (isSessionExpiredError(e)) {
         await signOut();
-        setState({ loading: false, error: "Session expired. Sign in again.", needsSignIn: true });
+        setState({
+          loading: false,
+          error: "Session expired. Sign in again.",
+          needsSignIn: true,
+          loadedOnce: false,
+        });
         return;
       }
-      setState({
+      setState((prev) => ({
         loading: false,
         error: userFacingApiError(e),
         needsSignIn: false,
-      });
+        loadedOnce: prev.loadedOnce,
+      }));
     }
-  }, [waitingOnAuth, contextToken, signOut]);
+  }, [contextToken, signOut]);
 
   useEffect(() => {
     void run();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [run, waitingOnAuth, contextToken, ...deps]);
+  }, [run, contextToken, ...deps]);
 
-  return { ...state, reload: run };
+  useFocusEffect(
+    useCallback(() => {
+      void run({ silent: true });
+    }, [run]),
+  );
+
+  const reload = useCallback(async () => {
+    await run({ silent: false });
+  }, [run]);
+
+  return { ...state, reload };
 }

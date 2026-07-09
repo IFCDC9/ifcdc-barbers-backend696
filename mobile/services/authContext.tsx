@@ -52,17 +52,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const refresh = React.useCallback(async () => {
-    setLoading(true);
+    let cachedToken: string | null = null;
     try {
-      const t = await getAuthToken();
-      if (!t) {
-        applySession(null, null);
-        return;
-      }
-      const me = await getAuthMe(t, 15_000);
+      cachedToken = await getAuthToken();
+    } catch {
+      cachedToken = null;
+    }
+
+    if (!cachedToken) {
+      applySession(null, null);
+      setLoading(false);
+      return;
+    }
+
+    // Restore JWT immediately so protected screens can load without waiting on /me.
+    setToken(cachedToken);
+    setSessionKind(tokenToSessionKind(cachedToken));
+    setLoading(false);
+
+    try {
+      const me = await getAuthMe(cachedToken, 15_000);
       if (!me.ok) {
         if (me.status === 401 || me.status === 403) {
-          const refreshed = await refreshAuthSession(t);
+          const refreshed = await refreshAuthSession(cachedToken);
           if (refreshed?.token) {
             await setAuthToken(refreshed.token);
             applySession(refreshed.token, refreshed.user ?? null);
@@ -75,26 +87,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         if (me.status === 404) {
           console.warn("[auth] GET /api/auth/me missing on server — using JWT until API is deployed", { url: me.url });
-          applySession(t, null);
           return;
         }
         if (me.status === 0) {
           console.warn("[auth] /me unreachable (network/timeout); keeping cached JWT", { url: me.url });
-          applySession(t, null);
           return;
         }
         console.warn("[auth] /me unexpected status; keeping cached JWT", { status: me.status, url: me.url });
-        applySession(t, null);
         return;
       }
-      applySession(t, me.json.user ?? null);
-      if (me.json.token) {
-        const fresh = String(me.json.token).trim();
-        await setAuthToken(fresh);
-        setToken(fresh);
-      }
-    } finally {
-      setLoading(false);
+
+      const freshToken = me.json.token ? String(me.json.token).trim() : cachedToken;
+      if (me.json.token) await setAuthToken(freshToken);
+      applySession(freshToken, me.json.user ?? null);
+    } catch (e) {
+      console.warn("[auth] background session validation failed:", e instanceof Error ? e.message : String(e));
     }
   }, [applySession]);
 

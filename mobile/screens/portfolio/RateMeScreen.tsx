@@ -24,7 +24,7 @@ export default function RateMeScreen() {
   const navigation = useNavigation<StackNavigationProp<ProfileStackParamList>>();
   const [rows, setRows] = useState<ReviewableBooking[]>([]);
 
-  const { loading, error, needsSignIn, reload } = useAuthenticatedLoad(async () => {
+  const { loading, error, needsSignIn, loadedOnce, reload } = useAuthenticatedLoad(async () => {
     const list = await fetchReviewableBookings();
     setRows(
       list.map((row: Record<string, unknown>) => ({
@@ -40,10 +40,10 @@ export default function RateMeScreen() {
 
   return (
     <ProfileScreenLayout title="Rate Me" subtitle="Share feedback after completed visits" onBack={() => navigation.goBack()}>
-      {loading ? <ScreenLoading label="Loading…" /> : null}
+      {loading && !loadedOnce ? <ScreenLoading label="Loading…" /> : null}
       {needsSignIn ? <ScreenError message="Session expired. Sign out and sign in again." /> : null}
       {error && !needsSignIn ? <ScreenError message={error} onRetry={() => void reload()} /> : null}
-      {!loading && !error && !needsSignIn && !rows.length ? (
+      {(loadedOnce || (!loading && !error && !needsSignIn)) && !rows.length ? (
         <ScreenEmpty message="No completed visits waiting for a review. Book a cut, then come back after your appointment is marked complete." />
       ) : null}
 

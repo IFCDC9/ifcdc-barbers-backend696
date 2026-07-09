@@ -17,7 +17,7 @@ export default function RewardsScreen() {
   const [rewards, setRewards] = useState<LoyaltyReward[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  const { loading, error, needsSignIn, reload } = useAuthenticatedLoad(async () => {
+  const { loading, error, needsSignIn, loadedOnce, reload } = useAuthenticatedLoad(async () => {
     const data = await fetchMyLoyalty();
     setPoints(data.points);
     setLifetime(data.lifetimeEarned);
@@ -40,13 +40,13 @@ export default function RewardsScreen() {
 
   return (
     <ProfileScreenLayout title="Rewards" subtitle="Earn points after every completed booking" onBack={() => navigation.goBack()}>
-      {loading ? <ScreenLoading label="Loading rewards…" /> : null}
+      {loading && !loadedOnce ? <ScreenLoading label="Loading rewards…" /> : null}
       {needsSignIn ? <ScreenError message="Session expired. Sign out and sign in again." /> : null}
       {error && !needsSignIn ? (
         <ScreenError message={error} onRetry={() => void reload()} />
       ) : null}
 
-      {!loading && !error && !needsSignIn ? (
+      {(loadedOnce || (!loading && !error && !needsSignIn)) ? (
         <>
           <ProfileCard glow style={styles.balanceCard}>
             <Text style={styles.balanceLabel}>Your points</Text>

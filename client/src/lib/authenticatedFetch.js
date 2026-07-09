@@ -4,13 +4,25 @@
 import { getApiOrigin } from "../services/api.js";
 import { getStoredToken, persistAuthSession } from "./authHeaders.js";
 
-const DEFAULT_TIMEOUT_MS = 25_000;
+const DEFAULT_TIMEOUT_MS = 45_000;
+const DEFAULT_RETRIES = 2;
+const RETRY_BASE_DELAY_MS = 1200;
 let refreshInFlight = null;
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function normalizeToken(raw) {
   const t = String(raw || "").trim();
   if (!t) return "";
   return t.replace(/^Bearer\s+/i, "");
+}
+
+function isRetryableError(e, status) {
+  if (status != null && [408, 425, 429, 500, 502, 503, 504].includes(status)) return true;
+  const msg = String(e?.message || "").toLowerCase();
+  return msg.includes("network") || msg.includes("abort") || msg.includes("timeout") || msg.includes("502") || msg.includes("503");
 }
 
 async function refreshSession(token) {
@@ -50,11 +62,7 @@ function fetchWithTimeout(url, options, timeoutMs) {
   return fetch(url, { ...options, signal: ctrl.signal }).finally(() => clearTimeout(timer));
 }
 
-/**
- * @param {string} path - Absolute URL or `/api/...` path
- * @param {RequestInit & { timeoutMs?: number, auth?: boolean }} [options]
- */
-export async function authenticatedFetch(path, options = {}) {
+async function authenticatedFetchOnce(path, options = {}) {
   const origin = getApiOrigin();
   const url = path.startsWith("http") ? path : `${origin}${path.startsWith("/") ? path : `/${path}`}`;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -80,7 +88,9 @@ export async function authenticatedFetch(path, options = {}) {
     res = await doFetch(token);
   } catch (e) {
     const message = e?.name === "AbortError" ? "Request timed out" : e?.message || "Network error";
-    throw new Error(message);
+    const err = new Error(message);
+    err.retryable = true;
+    throw err;
   }
 
   if (res.status === 401 && auth && token) {
@@ -103,7 +113,37 @@ export async function authenticatedFetch(path, options = {}) {
     throw err;
   }
 
+  if (!res.ok) {
+    const err = new Error(`HTTP ${res.status}`);
+    err.status = res.status;
+    err.retryable = res.status >= 500 || res.status === 408 || res.status === 429;
+    throw err;
+  }
+
   return res;
+}
+
+/**
+ * @param {string} path - Absolute URL or `/api/...` path
+ * @param {RequestInit & { timeoutMs?: number, auth?: boolean, retries?: number }} [options]
+ */
+export async function authenticatedFetch(path, options = {}) {
+  const maxRetries = options.retries ?? DEFAULT_RETRIES;
+  let lastError;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+    try {
+      return await authenticatedFetchOnce(path, options);
+    } catch (e) {
+      lastError = e;
+      if (e?.code === "session_expired") throw e;
+      const retryable = e?.retryable === true || isRetryableError(e, e?.status);
+      if (!retryable || attempt >= maxRetries) throw e;
+      await sleep(RETRY_BASE_DELAY_MS * (attempt + 1));
+    }
+  }
+
+  throw lastError || new Error("Request failed");
 }
 
 export async function authenticatedJson(path, options = {}) {

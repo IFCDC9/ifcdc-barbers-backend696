@@ -67,7 +67,7 @@ export default function BookingHistoryScreen({ standalone = false }: { standalon
   const navigation = useNavigation<{ navigate: (route: string, params?: unknown) => void }>();
   const [rows, setRows] = useState<BookingRow[]>([]);
 
-  const { loading, error, needsSignIn, reload } = useAuthenticatedLoad(async () => {
+  const { loading, error, needsSignIn, loadedOnce, reload } = useAuthenticatedLoad(async () => {
     setRows(await fetchMyBookings());
   }, []);
 
@@ -98,7 +98,7 @@ export default function BookingHistoryScreen({ standalone = false }: { standalon
       subtitle="Your appointments · long-press to remove unpaid items"
       standalone={standalone}
     >
-      {loading ? <ScreenLoading /> : null}
+      {loading && !loadedOnce ? <ScreenLoading /> : null}
       {needsSignIn ? (
         <ScreenError message="Session expired. Sign out and sign in again from the app home screen." />
       ) : null}
