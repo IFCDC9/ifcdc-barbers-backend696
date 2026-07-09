@@ -189,7 +189,7 @@ function BookingScreen() {
     } finally {
       setBarbersLoading(false);
     }
-  }, [t]);
+  }, [t, providerFilter]);
 
   useEffect(() => {
     let alive = true;
@@ -706,6 +706,18 @@ function BookingScreen() {
         {step === 1 && (
           <>
             <Text style={{ color: '#fff', marginBottom: 10 }}>{t('booking.selectBarber')}</Text>
+            <ProviderTypeDropdown
+              label="Filter by provider type"
+              includeAll
+              registrationMode={false}
+              value={providerFilter}
+              disabled={barbersLoading}
+              onChange={(value) => {
+                setProviderFilter(value);
+                setBarber(null);
+              }}
+            />
+            <View style={{ height: 10 }} />
             {barbersLoading ? (
               <View style={{ alignItems: "center", marginVertical: 16, gap: 8 }}>
                 <ActivityIndicator color="#FFD700" />
@@ -747,6 +759,11 @@ function BookingScreen() {
                   style={[styles.rowBtn, { flex: 1, marginBottom: 0 }]}
                 >
                   <Text style={{ color: '#fff' }}>{b.name}</Text>
+                  {b.providerType ? (
+                    <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 12, marginTop: 2 }}>
+                      {providerTypeMeta(b.providerType)?.label || 'Barber'}
+                    </Text>
+                  ) : null}
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={() =>

@@ -32,45 +32,12 @@ function parseTimeToMinutes(t) {
  * @param {string} timeStr HH:MM or HH:MM:SS
  * @returns {Promise<{ ok: boolean, message?: string }>}
  */
-export async function assertSlotWithinAvailability(barberId, dateStr, timeStr, barberName = "") {
-  const { coerceBarberIdForTable } = await import("./barberIdentity.cjs");
-  const bid = await coerceBarberIdForTable(dbQuery, "barber_availability", barberId, barberName);
-  if (bid == null) return { ok: false, message: "Invalid barber" };
-
-  const r = await dbQuery(
-    `SELECT day_of_week, start_time, end_time, is_off
-     FROM barber_availability
-     WHERE barber_id = $1`,
-    [bid],
-  );
-  const rows = r.rows || [];
-  if (!rows.length) return { ok: true };
-
-  let d;
-  try {
-    d = new Date(`${dateStr}T12:00:00`);
-  } catch {
-    return { ok: false, message: "Invalid date" };
-  }
-  if (Number.isNaN(d.getTime())) return { ok: false, message: "Invalid date" };
-
-  const dow = d.getDay();
-  const bookingMin = parseTimeToMinutes(timeStr);
-  if (bookingMin == null) return { ok: false, message: "Invalid time" };
-
-  const intervals = rows.filter((row) => Number(row.day_of_week) === dow && !row.is_off);
-  if (!intervals.length) {
-    return { ok: false, message: "Shop is closed that day — pick another date." };
-  }
-
-  for (const row of intervals) {
-    const start = parseTimeToMinutes(row.start_time);
-    const end = parseTimeToMinutes(row.end_time);
-    if (start == null || end == null) continue;
-    if (bookingMin >= start && bookingMin < end) return { ok: true };
-  }
-
-  return { ok: false, message: "That time is outside posted hours for this day." };
+export async function assertSlotWithinAvailability(barberId, dateStr, timeStr, barberName = "", options = {}) {
+  const { validateBookingSlot } = await import("./barberSlotEngine.js");
+  const { durationMinutes = 30 } = options || {};
+  const result = await validateBookingSlot(barberId, dateStr, timeStr, barberName, { durationMinutes });
+  if (result.ok) return { ok: true };
+  return { ok: false, message: result.message || "Time not available" };
 }
 
 /**

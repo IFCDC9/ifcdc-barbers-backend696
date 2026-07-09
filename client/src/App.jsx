@@ -30,6 +30,9 @@ import StyleDiscoverPage from "./pages/StyleDiscoverPage.jsx";
 import BarberPortfolioPage from "./pages/BarberPortfolioPage.jsx";
 import MobilePayPalReturnPage from "./pages/MobilePayPalReturnPage.jsx";
 import BookingReviewPage from "./pages/BookingReviewPage.jsx";
+import RateMePage from "./pages/RateMePage.jsx";
+import RewardsPage from "./pages/RewardsPage.jsx";
+import ProviderSchedulePage from "./pages/ProviderSchedulePage.jsx";
 import SignupBusiness from "./pages/SignupBusiness.jsx";
 import BarberOnboarding from "./pages/BarberOnboarding.jsx";
 import Messages from "./pages/Messages.jsx";
@@ -73,6 +76,9 @@ function AppShell() {
             <Route path="/booking-legacy" element={<Booking />} />
             <Route path="/aura" element={<AuraPage />} />
             <Route path="/profile" element={<Profile />} />
+            <Route path="/profile/rate-me" element={<RateMePage />} />
+            <Route path="/profile/rewards" element={<RewardsPage />} />
+            <Route path="/profile/schedule" element={<ProviderSchedulePage />} />
             <Route path="/profile/bookings/:bookingId/review" element={<BookingReviewPage />} />
             <Route path="/profile/delete-account" element={<DeleteAccount />} />
             <Route path="/checkout" element={<Navigate to="/booking" replace />} />

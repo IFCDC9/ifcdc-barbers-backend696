@@ -1137,6 +1137,45 @@ router.post("/finalize", async (req, res) => {
       });
     }
 
+    const slotEngine = await loadSlotEngine();
+    const finalizeDateStr = String(row.date || "").slice(0, 10);
+    const finalizeTimeLabel = slotEngine.minutesToSlotLabel(
+      slotEngine.parseTimeToMinutes(String(row.time || "").slice(0, 8)) ?? 0,
+    );
+    const finalizeSlotCheck = await slotEngine.validateBookingSlot(
+      row.barber_id,
+      finalizeDateStr,
+      finalizeTimeLabel,
+      row.barber_name || "",
+      {
+        excludeBookingId: row.id,
+        durationMinutes: Number(row.service_duration_minutes) || 30,
+      },
+    );
+    if (!finalizeSlotCheck.ok) {
+      await markPaymentFailed(row.id, PAYMENT_STATUS.PAYMENT_FAILED);
+      await sendOrphanedPaymentAdminAlert({
+        paypalOrderId: orderID,
+        captureId,
+        bookingId: row.id,
+        customerEmail: row.customer_email,
+        reason: finalizeSlotCheck.code || "slot_unavailable",
+        capturedUsd: extractPayPalCapturedUsd(capture),
+        extra: { message: finalizeSlotCheck.message },
+      });
+      return res.status(409).json({
+        verified: false,
+        paymentCaptured: true,
+        error: finalizeSlotCheck.code || "slot_unavailable",
+        message:
+          finalizeSlotCheck.message ||
+          "That time is no longer available. Contact support if payment was captured.",
+        paypalOrderId: orderID,
+        captureId,
+        bookingId: row.id,
+      });
+    }
+
     const haircutPrice = round2(Number(row.service_price ?? row.total_price ?? row.amount ?? 0));
     const platformFee = round2(resolvePlatformFeeUsd(row.platform_fee));
     const tipAmount = round2(Number(row.tip_amount ?? 0));

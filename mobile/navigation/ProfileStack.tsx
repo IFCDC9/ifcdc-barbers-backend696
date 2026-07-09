@@ -38,7 +38,10 @@ import UserDetailScreen from "../screens/admin/UserDetailScreen";
 import EditUserScreen from "../screens/admin/EditUserScreen";
 import BarberPortfolioScreen from "../screens/portfolio/BarberPortfolioScreen";
 import BookingReviewScreen from "../screens/portfolio/BookingReviewScreen";
+import RateMeScreen from "../screens/portfolio/RateMeScreen";
 import HaircutFollowupScreen from "../screens/portfolio/HaircutFollowupScreen";
+import RewardsScreen from "../screens/profile/RewardsScreen";
+import ProviderScheduleScreen from "../screens/schedule/ProviderScheduleScreen";
 import { PAYMENT_STACK_SCREENS } from "./paymentScreens";
 import type { PaymentStackParamList } from "./paymentStackTypes";
 
@@ -89,6 +92,9 @@ export type ProfileStackParamList = {
   };
   HaircutFollowup: undefined;
   StyleDiscover: undefined;
+  RateMe: undefined;
+  Rewards: undefined;
+  ProviderSchedule: { barberId: string; barberName: string };
 } & PaymentStackParamList;
 
 const Stack = createStackNavigator<ProfileStackParamList>();
@@ -101,6 +107,8 @@ export default function ProfileStack() {
       <Stack.Screen name="BookingHistory" component={BookingHistoryScreen} />
       <Stack.Screen name="BookingDetail" component={BookingDetailScreen} />
       <Stack.Screen name="BookingReview" component={BookingReviewScreen} />
+      <Stack.Screen name="RateMe" component={RateMeScreen} />
+      <Stack.Screen name="Rewards" component={RewardsScreen} />
       <Stack.Screen name="BarberPortfolio" component={BarberPortfolioScreen} />
       <Stack.Screen name="HaircutFollowup" component={HaircutFollowupScreen} />
       <Stack.Screen name="StyleDiscover" component={StyleDiscoverScreen} />
@@ -133,6 +141,7 @@ export default function ProfileStack() {
           </ScheduleRouteGuard>
         )}
       </Stack.Screen>
+      <Stack.Screen name="ProviderSchedule" component={ProviderScheduleScreen} />
       <Stack.Screen name="BarberRoster" component={BarberRosterScreen} />
       <Stack.Screen name="BarberDetail" component={BarberDetailScreen} />
       <Stack.Screen name="BarberEdit" component={BarberEditScreen} />

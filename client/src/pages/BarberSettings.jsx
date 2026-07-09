@@ -15,6 +15,7 @@ import {
 import { getServiceCardImageUrl } from "../lib/styleImageUrl.js";
 import LanguageDropdown from "../components/LanguageDropdown.jsx";
 import { DEFAULT_LANGUAGE } from "../lib/languages.js";
+import { fetchBarberManagedRewards, saveBarberReward } from "../services/loyaltyApi.js";
 
 function authHeaders() {
   try {
@@ -99,6 +100,11 @@ export default function BarberSettings() {
   const [svcImageFile, setSvcImageFile] = React.useState(null);
   const [svcImageBusy, setSvcImageBusy] = React.useState(false);
   const [availability, setAvailability] = React.useState(() => defaultWeekAvailability());
+  const [blockedDates, setBlockedDates] = React.useState([]);
+  const [scheduleTimezone, setScheduleTimezone] = React.useState("America/New_York");
+  const [appointmentInterval, setAppointmentInterval] = React.useState(30);
+  const [loyaltyRewards, setLoyaltyRewards] = React.useState([]);
+  const [rewardDraft, setRewardDraft] = React.useState({ title: "", description: "", points_cost: "50" });
   const [settings, setSettings] = React.useState({
     theme_color: "#FFD700",
     booking_deposit_enabled: false,
@@ -161,13 +167,14 @@ export default function BarberSettings() {
     const h = authHeaders();
     const q = scopeQuery;
     try {
-      const [p, s, a, st, c, m] = await Promise.all([
+      const [p, s, a, st, c, m, sched] = await Promise.all([
         apiGet(`/api/barber/profile${q}`, { headers: h }),
         apiGet(`/api/barber/services${q}`, { headers: h }),
         apiGet(`/api/barber/availability${q}`, { headers: h }),
         apiGet(`/api/barber/settings${q}`, { headers: h }),
         apiGet(`/api/barber/clients${q}`, { headers: h }),
         apiGet(`/api/barber/media${q}`, { headers: h }),
+        apiGet(`/api/barber/schedule${q}`, { headers: h }).catch(() => null),
       ]);
       const pr = p?.profile || {};
       setProfile({
@@ -187,6 +194,14 @@ export default function BarberSettings() {
       setServices(Array.isArray(s?.services) ? s.services : []);
       const av = Array.isArray(a?.availability) ? a.availability : [];
       setAvailability(av.length ? av : defaultWeekAvailability());
+      if (sched && sched.success !== false) {
+        setBlockedDates(Array.isArray(sched.blockedDates) ? sched.blockedDates : []);
+        setScheduleTimezone(String(sched.timezone || "America/New_York"));
+        setAppointmentInterval(Number(sched.appointmentInterval ?? sched.appointment_interval_minutes) || 30);
+        if (Array.isArray(sched.availability) && sched.availability.length) {
+          setAvailability(sched.availability);
+        }
+      }
       const se = st?.settings || {};
       const tier = String(se.subscription_tier || "pro").toLowerCase();
       const smp = se.subscription_monthly_price;
@@ -206,6 +221,14 @@ export default function BarberSettings() {
       });
       setClients(Array.isArray(c?.clients) ? c.clients : []);
       setMedia(Array.isArray(m?.media) ? m.media : []);
+      const effectiveBarberId = String(adminBarberId || user?.barberId || user?.barber_id || "").trim();
+      if (effectiveBarberId) {
+        try {
+          setLoyaltyRewards(await fetchBarberManagedRewards(effectiveBarberId));
+        } catch {
+          setLoyaltyRewards([]);
+        }
+      }
     } catch (e) {
       setStatus(e instanceof Error ? e.message : "Load failed");
     } finally {
@@ -303,10 +326,60 @@ export default function BarberSettings() {
   const saveAvailability = async () => {
     setStatus("");
     try {
-      await apiPut(`/api/barber/availability${scopeQuery}`, { availability }, authHeaders());
-      setStatus("Schedule saved.");
+      await apiPut(
+        `/api/barber/schedule${scopeQuery}`,
+        {
+          availability,
+          breaks: [],
+          blockedDates: blockedDates.map((row) => ({
+            blocked_date: row.blocked_date || row.blockedDate || "",
+            note: row.note || "",
+          })),
+          appointment_interval_minutes: appointmentInterval,
+          timezone: scheduleTimezone,
+        },
+        authHeaders(),
+      );
+      setStatus("Schedule saved — blocked days now block booking slots.");
     } catch (e) {
       setStatus(e instanceof Error ? e.message : "Save failed");
+    }
+  };
+
+  const addBlockedDate = () => {
+    setBlockedDates((prev) => [...prev, { blocked_date: "", note: "" }]);
+  };
+
+  const updateBlockedDate = (index, patch) => {
+    setBlockedDates((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)));
+  };
+
+  const removeBlockedDate = (index) => {
+    setBlockedDates((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const effectiveBarberId = String(adminBarberId || user?.barberId || user?.barber_id || "").trim();
+
+  const addShopReward = async () => {
+    setStatus("");
+    const title = rewardDraft.title.trim();
+    const points = Math.max(1, Math.floor(Number(rewardDraft.points_cost) || 0));
+    if (!title || !effectiveBarberId) {
+      setStatus("Reward title and barber required.");
+      return;
+    }
+    try {
+      await saveBarberReward(effectiveBarberId, {
+        title,
+        description: rewardDraft.description.trim(),
+        points_cost: points,
+        is_active: true,
+      });
+      setRewardDraft({ title: "", description: "", points_cost: "50" });
+      setLoyaltyRewards(await fetchBarberManagedRewards(effectiveBarberId));
+      setStatus("Reward saved.");
+    } catch (e) {
+      setStatus(e instanceof Error ? e.message : "Reward save failed");
     }
   };
 
@@ -530,6 +603,7 @@ export default function BarberSettings() {
     { id: "profile", label: "Profile" },
     { id: "services", label: "Services" },
     { id: "schedule", label: "Schedule" },
+    { id: "rewards", label: "Rewards" },
     { id: "payments", label: "Payments" },
     { id: "media", label: "Media" },
     { id: "aura", label: "AI (AURA)" },
@@ -981,11 +1055,89 @@ export default function BarberSettings() {
             Times use 24h <code>HH:MM</code>. Bookings outside these windows are blocked once you save.
           </p>
           <div style={{ marginTop: 12 }}>{[0, 1, 2, 3, 4, 5, 6].map(renderDayRow)}</div>
+
+          <div style={{ marginTop: 20, paddingTop: 16, borderTop: `1px solid ${theme.colors.border}` }}>
+            <CardTitle>Time off / blocked dates</CardTitle>
+            <p style={{ fontSize: 13, color: theme.colors.muted, marginTop: 8 }}>
+              Clients cannot book on these days across the app, website, and checkout.
+            </p>
+            {blockedDates.length === 0 ? (
+              <p style={{ fontSize: 13, color: theme.colors.muted, marginTop: 8 }}>No blocked dates.</p>
+            ) : null}
+            {blockedDates.map((row, index) => (
+              <div key={`blocked-${index}`} style={{ display: "grid", gap: 8, marginTop: 10 }}>
+                <input
+                  type="date"
+                  style={inputStyle}
+                  value={row.blocked_date || ""}
+                  onChange={(e) => updateBlockedDate(index, { blocked_date: e.target.value })}
+                />
+                <input
+                  type="text"
+                  placeholder="Note (optional)"
+                  style={inputStyle}
+                  value={row.note || ""}
+                  onChange={(e) => updateBlockedDate(index, { note: e.target.value })}
+                />
+                <Button variant="ghost" type="button" onClick={() => removeBlockedDate(index)}>
+                  Remove
+                </Button>
+              </div>
+            ))}
+            <div style={{ marginTop: 10 }}>
+              <Button variant="ghost" type="button" onClick={addBlockedDate}>
+                + Add blocked date
+              </Button>
+            </div>
+          </div>
+
           <div style={{ marginTop: 14 }}>
             <Button variant="indigo" type="button" onClick={saveAvailability}>
               Save schedule
             </Button>
           </div>
+        </Card>
+      ) : null}
+
+      {tab === "rewards" ? (
+        <Card style={{ marginTop: 16 }}>
+          <CardTitle>Shop rewards</CardTitle>
+          <p style={{ fontSize: 13, color: theme.colors.muted, marginTop: 8 }}>
+            Customers earn points after completed bookings and can redeem these offers.
+          </p>
+          <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
+            <input
+              style={inputStyle}
+              placeholder="Reward title"
+              value={rewardDraft.title}
+              onChange={(e) => setRewardDraft((d) => ({ ...d, title: e.target.value }))}
+            />
+            <input
+              style={inputStyle}
+              placeholder="Description (optional)"
+              value={rewardDraft.description}
+              onChange={(e) => setRewardDraft((d) => ({ ...d, description: e.target.value }))}
+            />
+            <input
+              style={inputStyle}
+              type="number"
+              min={1}
+              placeholder="Points cost"
+              value={rewardDraft.points_cost}
+              onChange={(e) => setRewardDraft((d) => ({ ...d, points_cost: e.target.value }))}
+            />
+            <Button variant="indigo" type="button" onClick={addShopReward}>
+              Add reward
+            </Button>
+          </div>
+          <ul style={{ marginTop: 16, paddingLeft: 18 }}>
+            {loyaltyRewards.map((r) => (
+              <li key={r.id} style={{ marginBottom: 8, color: theme.colors.text }}>
+                <strong>{r.title}</strong> — {r.points_cost} pts
+                {r.description ? ` · ${r.description}` : ""}
+              </li>
+            ))}
+          </ul>
         </Card>
       ) : null}
 

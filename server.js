@@ -40,6 +40,9 @@ import { createAdminUsersRouter } from "./adminUsersRoutes.js";
 import { createAdminBarbersRouter } from "./adminBarbersRoutes.js";
 import { createSocialPortfolioRouter } from "./socialPortfolioRoutes.js";
 import { ensureSocialPortfolioSchema } from "./socialPortfolioMigrations.js";
+import { createLoyaltyRouter } from "./loyaltyRoutes.js";
+import { ensureLoyaltySchema } from "./loyaltyMigrations.js";
+import { seedDefaultRewardsIfEmpty } from "./loyaltyService.js";
 import { createAdminShopsRouter } from "./adminShopsRoutes.js";
 import { ensureAdminBarberManagementSchema } from "./adminBarberMigrations.js";
 import { ensureProviderTypeSchema } from "./providerTypeMigrations.js";
@@ -639,6 +642,7 @@ const adminUsersRouter = createAdminUsersRouter({ sendEmail });
 app.use(adminUsersRouter);
 app.use(createAdminBarbersRouter());
 app.use(createSocialPortfolioRouter());
+app.use(createLoyaltyRouter());
 app.use(createAdminShopsRouter());
 console.log(
   "[admin] routes mounted: invite, audit, password-reset, barbers, shops, notifications",
@@ -1085,6 +1089,13 @@ async function startServer() {
     console.log("[migrate] social portfolio schema: ok");
   } catch (e) {
     console.error("[migrate] social portfolio failed:", e?.message || e);
+  }
+  try {
+    await ensureLoyaltySchema();
+    await seedDefaultRewardsIfEmpty();
+    console.log("[migrate] loyalty schema: ok");
+  } catch (e) {
+    console.error("[migrate] loyalty failed:", e?.message || e);
   }
 
   void import("./socialPortfolioService.js")

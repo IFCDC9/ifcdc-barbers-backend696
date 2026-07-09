@@ -166,6 +166,20 @@ export async function insertAuraVoiceBookingRow(body, sendBookingEmail) {
     }
   }
 
+  const { validateBookingSlot } = await import("./barberSlotEngine.js");
+  const durationForSlot = styleRow ? Number(styleRow.duration_minutes) || 30 : 30;
+  const slotCheck = await validateBookingSlot(barberId, dateStr, timeStr, barberName, {
+    durationMinutes: durationForSlot,
+  });
+  if (!slotCheck.ok) {
+    return {
+      ok: false,
+      status: 409,
+      error: slotCheck.code || "slot_unavailable",
+      message: slotCheck.message || "That time is not available.",
+    };
+  }
+
   const serviceTitle = styleRow
     ? String(styleRow.title || "").trim() || "Style"
     : serviceHint || "Phone booking";
@@ -1160,6 +1174,9 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
             }),
           )
           .catch(() => {});
+        void import("./loyaltyService.js")
+          .then((m) => m.earnLoyaltyForCompletedBooking({ ...booking, id }))
+          .catch(() => {});
       }
 
       // Best-effort push fanout.
@@ -1322,6 +1339,9 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
                 booking_status: "completed",
               }),
             )
+            .catch(() => {});
+          void import("./loyaltyService.js")
+            .then((m) => m.earnLoyaltyForCompletedBooking({ ...booking, id }))
             .catch(() => {});
           void dispatchBookingPush({
             booking,
@@ -2020,7 +2040,13 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
         return res.status(400).json({ error: "style_not_found", message: "Style not found" });
       }
 
-      const slotOk = await assertSlotWithinAvailability(barberId, dateStr, timeStr, confirmedBarberName);
+      const slotOk = await assertSlotWithinAvailability(
+        barberId,
+        dateStr,
+        timeStr,
+        confirmedBarberName,
+        { durationMinutes: Number(styleRow.duration_minutes) || 30 },
+      );
       if (!slotOk.ok) {
         return res.status(400).json({ error: "slot_not_available", message: slotOk.message || "Time not available" });
       }

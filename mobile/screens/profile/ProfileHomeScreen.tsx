@@ -53,6 +53,8 @@ export default function ProfileHomeScreen() {
   const menu: { key: keyof ProfileStackParamList; label: string }[] = [
     { key: "EditProfile", label: t("profile.menuPersonalInfo") },
     { key: "BookingHistory", label: t("profile.menuBookings") },
+    { key: "RateMe", label: "Rate Me" },
+    { key: "Rewards", label: "Rewards" },
     { key: "HaircutFollowup", label: "30-day haircut updates" },
     { key: "StyleDiscover", label: "Discover haircuts" },
     { key: "Notifications", label: t("profile.menuNotifications") },
@@ -65,6 +67,7 @@ export default function ProfileHomeScreen() {
   const staffMenu: { key: keyof ProfileStackParamList; label: string; params?: object }[] = [];
   if (isBarber && user?.barberId) {
     staffMenu.push(
+      { key: "ProviderSchedule", label: "Today's bookings", params: { barberId: String(user.barberId), barberName: user.name || "My schedule" } },
       { key: "BarberDetail", label: "My barber profile", params: { barberId: String(user.barberId), barberName: user.name || "My profile" } },
       { key: "BarberEdit", label: "Edit profile", params: { barberId: String(user.barberId), barberName: user.name || "My profile" } },
       { key: "BarberGallery", label: "Haircut gallery", params: { barberId: String(user.barberId), barberName: user.name || "My profile" } },

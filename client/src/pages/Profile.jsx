@@ -92,10 +92,27 @@ export default function Profile() {
       </div>
 
       {canShop ? (
-        <Link to="/barber-settings" className="ifcdc-book-wizard__cta">
-          Shop settings
-        </Link>
+        <>
+          <Link to="/barber-settings" className="ifcdc-book-wizard__cta">
+            Shop settings
+          </Link>
+          {role === "barber" && user.barberId ? (
+            <Link to="/profile/schedule" className="ifcdc-book-wizard__cta ifcdc-book-wizard__cta--ghost">
+              Today&apos;s bookings
+            </Link>
+          ) : null}
+        </>
       ) : null}
+
+      <section className="ifcdc-profile-account" aria-label="Rewards and reviews">
+        <h2 className="ifcdc-book-wizard__heading">Rewards &amp; reviews</h2>
+        <Link to="/profile/rate-me" className="ifcdc-book-wizard__cta ifcdc-book-wizard__cta--ghost">
+          Rate Me
+        </Link>
+        <Link to="/profile/rewards" className="ifcdc-book-wizard__cta ifcdc-book-wizard__cta--ghost">
+          Rewards
+        </Link>
+      </section>
       {canPlatformAdmin ? (
         <Link to="/admin" className="ifcdc-book-wizard__cta ifcdc-book-wizard__cta--ghost">
           Platform admin

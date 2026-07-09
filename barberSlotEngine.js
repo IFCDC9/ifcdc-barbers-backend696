@@ -325,12 +325,14 @@ export async function getAvailableSlotsForBarberDate(
   const hasConfiguredHours = (schedule.availability || []).some((row) => !row.is_off);
 
   if (!minuteStarts.length) {
-    if (!hasConfiguredHours) {
-      reasonIfEmpty = "no_schedule";
-      minuteStarts = buildScheduleSlotMinutes(demoFallbackSchedule(), dateStr);
-      usedFallback = true;
-    } else if (schedule.blockedDates.includes(dateStr)) {
+    if (schedule.blockedDates.includes(dateStr)) {
       reasonIfEmpty = "blocked_date";
+    } else if (!hasConfiguredHours) {
+      reasonIfEmpty = "no_schedule";
+      const fallbackSchedule = { ...demoFallbackSchedule(), blockedDates: schedule.blockedDates };
+      minuteStarts = buildScheduleSlotMinutes(fallbackSchedule, dateStr);
+      usedFallback = minuteStarts.length > 0;
+      if (!minuteStarts.length) reasonIfEmpty = "blocked_date";
     } else {
       reasonIfEmpty = "closed_day";
     }
@@ -430,7 +432,8 @@ export async function validateBookingSlot(
 
   let allowedMinutes = buildScheduleSlotMinutes(schedule, dateStr);
   if (!allowedMinutes.length && !(schedule.availability || []).some((row) => !row.is_off)) {
-    allowedMinutes = buildScheduleSlotMinutes(demoFallbackSchedule(), dateStr);
+    const fallbackSchedule = { ...demoFallbackSchedule(), blockedDates: schedule.blockedDates };
+    allowedMinutes = buildScheduleSlotMinutes(fallbackSchedule, dateStr);
   }
   const bookingMin = parseTimeToMinutes(timeSql);
   if (bookingMin == null) return { ok: false, code: "bad_time", message: "Invalid time" };

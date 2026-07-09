@@ -1045,6 +1045,62 @@ export function createBarberBusinessRouter({ uploadDir } = {}) {
   router.put("/api/barber/availability", ...chain, putAvailabilityHandler);
   router.put("/api/availability", ...chain, putAvailabilityHandler);
 
+  /** Provider agenda — bookings for a calendar day (defaults to today in barber timezone). */
+  router.get("/api/barber/appointments", ...chain, async (req, res) => {
+    try {
+      const bid = req.barberId;
+      const settings = await dbQuery(
+        `SELECT COALESCE(NULLIF(trim(timezone), ''), 'America/New_York') AS timezone
+         FROM barber_settings WHERE barber_id = $1 LIMIT 1`,
+        [bid],
+      );
+      const timezone = String(settings.rows?.[0]?.timezone || "America/New_York");
+      const dateParam = String(req.query?.date || "").trim();
+      const dateStr =
+        /^\d{4}-\d{2}-\d{2}$/.test(dateParam)
+          ? dateParam
+          : new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" })
+              .format(new Date());
+
+      const r = await dbQuery(
+        `SELECT b.id, b.customer_name, b.customer_email, b.service, b.style_title, b.style_image_url,
+                b.date::text AS date, to_char(b.time, 'HH12:MI AM') AS time,
+                b.payment_status, b.booking_status, b.total_amount, b.service_duration_minutes,
+                b.phone, b.created_at
+         FROM bookings b
+         WHERE b.deleted_at IS NULL
+           AND b.barber_id::text = $1::text
+           AND b.date = $2::date
+           AND lower(coalesce(b.booking_status, '')) NOT IN ('cancelled')
+         ORDER BY b.time ASC`,
+        [String(bid), dateStr],
+      );
+
+      return res.json({
+        ok: true,
+        date: dateStr,
+        timezone,
+        appointments: (r.rows || []).map((row) => ({
+          id: String(row.id),
+          customerName: row.customer_name || "",
+          customerEmail: row.customer_email || "",
+          service: row.style_title || row.service || "Appointment",
+          styleImageUrl: row.style_image_url || null,
+          date: row.date,
+          time: row.time,
+          paymentStatus: row.payment_status || "",
+          bookingStatus: row.booking_status || "",
+          totalAmount: Number(row.total_amount) || 0,
+          durationMinutes: Number(row.service_duration_minutes) || 30,
+          phone: row.phone || "",
+        })),
+      });
+    } catch (e) {
+      console.error("[barber-business] GET appointments:", e);
+      return res.status(500).json({ ok: false, message: "Failed to load appointments." });
+    }
+  });
+
   // —— Settings ——
   const getSettingsHandler = async (req, res) => {
     try {
