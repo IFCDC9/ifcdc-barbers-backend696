@@ -1209,28 +1209,39 @@ export async function setPhotoVisibility(photoId, status) {
 }
 
 export async function listReviewableBookings(userId) {
-  const r = await dbQuery(
-    `SELECT b.id, b.barber_id, b.barber_name, b.service, b.date, b.time, b.booking_status
-     FROM bookings b
-     LEFT JOIN barber_reviews r ON r.booking_id = b.id
-     WHERE lower(b.booking_status) = 'completed'
-       AND r.id IS NULL
-       AND (
-         b.user_id = $1::uuid
-         OR lower(b.customer_email) = (SELECT lower(email) FROM app_users WHERE id = $1::uuid LIMIT 1)
-       )
-     ORDER BY b.date DESC, b.time DESC
-     LIMIT 50`,
-    [String(userId)],
-  );
-  return (r.rows || []).map((row) => ({
-    id: String(row.id),
-    barberId: String(row.barber_id),
-    barberName: row.barber_name || "",
-    service: row.service || "",
-    date: row.date,
-    time: row.time,
-  }));
+  const uid = String(userId || "").trim();
+  if (!uid) return [];
+  try {
+    const r = await dbQuery(
+      `SELECT b.id, b.barber_id, b.barber_name, b.service, b.date, b.time, b.booking_status
+       FROM bookings b
+       LEFT JOIN barber_reviews r ON r.booking_id = b.id
+       WHERE lower(b.booking_status) = 'completed'
+         AND r.id IS NULL
+         AND (
+           b.user_id = $1::uuid
+           OR lower(b.customer_email) = (SELECT lower(email) FROM app_users WHERE id = $1::uuid LIMIT 1)
+         )
+       ORDER BY b.date DESC, b.time DESC
+       LIMIT 50`,
+      [uid],
+    );
+    return (r.rows || []).map((row) => ({
+      id: String(row.id),
+      barberId: String(row.barber_id),
+      barberName: row.barber_name || "",
+      service: row.service || "",
+      date: row.date,
+      time: row.time,
+    }));
+  } catch (e) {
+    const msg = String(e?.message || e);
+    if (/barber_reviews|does not exist|invalid input syntax for type uuid/i.test(msg)) {
+      console.warn("[portfolio] reviewable bookings fallback:", msg);
+      return [];
+    }
+    throw e;
+  }
 }
 
 export async function listPendingFollowupReminders(limit = 50) {

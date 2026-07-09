@@ -2,7 +2,7 @@ import React from "react";
 import { signOutSupabase } from "../lib/supabase";
 import { decodeJwtPayload, isOwnerAdminDashboardPayload } from "../auth/jwtSession";
 import { getAuthMe, type JsonAuth } from "../auth/authSessionApi";
-import { getAuthToken, setAuthToken } from "./authService";
+import { getAuthToken, setAuthToken, subscribeAuthToken } from "./authService";
 import { refreshAuthSession } from "./sessionApi";
 import { isSuperAdminUser } from "../utils/adminAccess";
 import { hasStaffDashboardAccess, resolveStaffRole } from "../utils/staffDashboardAccess";
@@ -101,6 +101,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     refresh();
   }, [refresh]);
+
+  React.useEffect(() => {
+    return subscribeAuthToken((t) => {
+      setToken((prev) => (prev === t ? prev : t));
+    });
+  }, []);
 
   const signInWithToken = React.useCallback(async (t: string) => {
     try {

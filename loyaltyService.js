@@ -219,18 +219,24 @@ export async function deleteBarberReward(barberId, rewardId) {
 }
 
 export async function seedDefaultRewardsIfEmpty() {
-  const n = await dbQuery(`SELECT COUNT(*)::int AS c FROM loyalty_rewards`);
-  if ((Number(n.rows?.[0]?.c) || 0) > 0) return;
-  const defaults = [
-    { title: "$5 off next cut", description: "Redeem on your next appointment.", points: 50 },
-    { title: "$10 off next cut", description: "Save on premium services.", points: 100 },
-    { title: "Free lineup add-on", description: "Complimentary edge-up with any service.", points: 75 },
-  ];
-  for (const row of defaults) {
-    await dbQuery(
-      `INSERT INTO loyalty_rewards (barber_id, title, description, points_cost, is_active)
-       VALUES (NULL, $1, $2, $3, true)`,
-      [row.title, row.description, row.points],
-    );
+  try {
+    const n = await dbQuery(`SELECT COUNT(*)::int AS c FROM loyalty_rewards`);
+    if ((Number(n.rows?.[0]?.c) || 0) > 0) return;
+    const defaults = [
+      { title: "$5 off next cut", description: "Redeem on your next appointment.", points: 50 },
+      { title: "$10 off next cut", description: "Save on premium services.", points: 100 },
+      { title: "Free lineup add-on", description: "Complimentary edge-up with any service.", points: 75 },
+    ];
+    for (const row of defaults) {
+      await dbQuery(
+        `INSERT INTO loyalty_rewards (barber_id, title, description, points_cost, is_active)
+         VALUES (NULL, $1, $2, $3, true)`,
+        [row.title, row.description, row.points],
+      );
+    }
+  } catch (e) {
+    const msg = String(e?.message || e);
+    if (/loyalty_rewards/i.test(msg) && /does not exist/i.test(msg)) return;
+    throw e;
   }
 }

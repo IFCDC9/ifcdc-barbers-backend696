@@ -34,7 +34,10 @@ export default function RewardsPage() {
   }, []);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      setLoading(false);
+      return;
+    }
     void load();
   }, [user, load]);
 

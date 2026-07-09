@@ -95,6 +95,14 @@ export async function authenticatedFetch(path, options = {}) {
     }
   }
 
+  if (!res.ok && auth && res.status === 401) {
+    const data = await res.clone().json().catch(() => ({}));
+    const err = new Error(data?.message || "Session expired. Sign in again.");
+    err.status = 401;
+    err.code = "session_expired";
+    throw err;
+  }
+
   return res;
 }
 

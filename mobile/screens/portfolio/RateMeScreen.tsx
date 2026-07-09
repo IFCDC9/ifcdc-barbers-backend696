@@ -1,4 +1,5 @@
-import React, { useCallback, useState } from "react";
+import React, { useState } from "react";
+import { StyleSheet, Text } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import type { StackNavigationProp } from "@react-navigation/stack";
 import ProfileScreenLayout from "../../components/ProfileScreenLayout";
@@ -69,8 +70,8 @@ export default function RateMeScreen() {
   );
 }
 
-const styles = {
+const styles = StyleSheet.create({
   card: { marginBottom: 12, gap: 8 },
-  service: { color: theme.colors.text, fontWeight: "800" as const, fontSize: 16 },
+  service: { color: theme.colors.text, fontWeight: "800", fontSize: 16 },
   meta: { color: theme.colors.textMuted, fontSize: 13, marginBottom: 4 },
-};
+});

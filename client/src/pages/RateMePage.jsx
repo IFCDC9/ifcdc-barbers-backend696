@@ -18,7 +18,10 @@ export default function RateMePage() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     fetchReviewableBookings()
       .then((data) => setRows(Array.isArray(data?.bookings) ? data.bookings : []))

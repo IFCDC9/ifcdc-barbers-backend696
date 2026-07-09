@@ -42,7 +42,9 @@ export default function RewardsScreen() {
     <ProfileScreenLayout title="Rewards" subtitle="Earn points after every completed booking" onBack={() => navigation.goBack()}>
       {loading ? <ScreenLoading label="Loading rewards…" /> : null}
       {needsSignIn ? <ScreenError message="Session expired. Sign out and sign in again." /> : null}
-      {error && !needsSignIn ? <ScreenError message={error} onRetry={() => void reload()} /> : null}
+      {error && !needsSignIn ? (
+        <ScreenError message={error} onRetry={() => void reload()} />
+      ) : null}
 
       {!loading && !error && !needsSignIn ? (
         <>

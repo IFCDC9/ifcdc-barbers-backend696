@@ -47,7 +47,10 @@ export async function fetchReviewableBookings() {
   const res = await authenticatedFetch("/api/me/reviewable-bookings", { headers: authHeaders() });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data?.message || `HTTP ${res.status}`);
-  return data;
+  return {
+    ok: true,
+    bookings: Array.isArray(data?.bookings) ? data.bookings : [],
+  };
 }
 
 export async function submitBookingReview(bookingId, body) {

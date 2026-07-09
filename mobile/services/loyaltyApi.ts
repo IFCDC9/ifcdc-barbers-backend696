@@ -24,8 +24,8 @@ export async function fetchMyLoyalty(): Promise<{
   rewards: LoyaltyReward[];
 }> {
   const res = await apiFetch("/api/loyalty/me");
-  const data = await res.json();
-  if (!res.ok || !data?.ok) throw new Error(data?.message || "Could not load rewards");
+  const data = await res.json().catch(() => ({}));
+  if (data?.ok === false) throw new Error(String(data?.message || "Could not load rewards"));
   return {
     points: Number(data.points) || 0,
     lifetimeEarned: Number(data.lifetimeEarned) || 0,
