@@ -1,6 +1,6 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
-import { getApiOrigin } from "../services/api.js";
+import { authenticatedJson } from "../lib/authenticatedFetch.js";
 
 function readUser() {
   try {
@@ -31,17 +31,11 @@ export default function Profile() {
     if (!token) return;
 
     setLoading(true);
-    const origin = getApiOrigin();
-    fetch(`${origin}/api/auth/my-bookings`, {
-      headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
-    })
-      .then(async (res) => {
-        const text = await res.text();
-        const data = text ? JSON.parse(text) : {};
-        if (!res.ok) throw new Error(data?.message || data?.error || `HTTP ${res.status}`);
-        return Array.isArray(data?.bookings) ? data.bookings : Array.isArray(data) ? data : [];
+    authenticatedJson("/api/auth/my-bookings")
+      .then((data) => {
+        const list = Array.isArray(data?.bookings) ? data.bookings : Array.isArray(data) ? data : [];
+        setBookings(list);
       })
-      .then((list) => setBookings(list))
       .catch((e) => setError(e?.message || "Could not load bookings"))
       .finally(() => setLoading(false));
   }, []);
@@ -96,9 +90,9 @@ export default function Profile() {
           <Link to="/barber-settings" className="ifcdc-book-wizard__cta">
             Shop settings
           </Link>
-          {role === "barber" && user.barberId ? (
+          {role === "barber" ? (
             <Link to="/profile/schedule" className="ifcdc-book-wizard__cta ifcdc-book-wizard__cta--ghost">
-              Today&apos;s bookings
+              My schedule
             </Link>
           ) : null}
         </>

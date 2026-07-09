@@ -1,11 +1,12 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useState } from "react";
 import { Alert, StyleSheet, Text, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import ProfileScreenLayout from "../../components/ProfileScreenLayout";
 import ProfileCard from "../../components/ProfileCard";
 import GlowButton from "../../components/GlowButton";
-import { ScreenError, ScreenLoading } from "../../components/LoadingState";
+import { ScreenEmpty, ScreenError, ScreenLoading } from "../../components/LoadingState";
 import { fetchMyLoyalty, redeemReward, type LoyaltyReward } from "../../services/loyaltyApi";
+import { useAuthenticatedLoad } from "../../hooks/useAuthenticatedLoad";
 import { userFacingApiError } from "../../utils/userFacingApiError";
 import { theme } from "../../constants/theme";
 
@@ -14,28 +15,14 @@ export default function RewardsScreen() {
   const [points, setPoints] = useState(0);
   const [lifetime, setLifetime] = useState(0);
   const [rewards, setRewards] = useState<LoyaltyReward[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await fetchMyLoyalty();
-      setPoints(data.points);
-      setLifetime(data.lifetimeEarned);
-      setRewards(data.rewards);
-    } catch (e) {
-      setError(userFacingApiError(e));
-    } finally {
-      setLoading(false);
-    }
+  const { loading, error, needsSignIn, reload } = useAuthenticatedLoad(async () => {
+    const data = await fetchMyLoyalty();
+    setPoints(data.points);
+    setLifetime(data.lifetimeEarned);
+    setRewards(data.rewards);
   }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
 
   const onRedeem = async (reward: LoyaltyReward) => {
     setBusyId(reward.id);
@@ -43,7 +30,7 @@ export default function RewardsScreen() {
       const result = await redeemReward(reward.id);
       setPoints(result.points);
       Alert.alert("Redeemed", result.message);
-      await load();
+      await reload();
     } catch (e) {
       Alert.alert("Could not redeem", userFacingApiError(e));
     } finally {
@@ -54,9 +41,10 @@ export default function RewardsScreen() {
   return (
     <ProfileScreenLayout title="Rewards" subtitle="Earn points after every completed booking" onBack={() => navigation.goBack()}>
       {loading ? <ScreenLoading label="Loading rewards…" /> : null}
-      {error ? <ScreenError message={error} onRetry={() => void load()} /> : null}
+      {needsSignIn ? <ScreenError message="Session expired. Sign out and sign in again." /> : null}
+      {error && !needsSignIn ? <ScreenError message={error} onRetry={() => void reload()} /> : null}
 
-      {!loading && !error ? (
+      {!loading && !error && !needsSignIn ? (
         <>
           <ProfileCard glow style={styles.balanceCard}>
             <Text style={styles.balanceLabel}>Your points</Text>
@@ -65,6 +53,9 @@ export default function RewardsScreen() {
           </ProfileCard>
 
           <Text style={styles.sectionTitle}>Redeem</Text>
+          {!rewards.length ? (
+            <ScreenEmpty message="No rewards available yet. Check back soon — your barber may add offers here." />
+          ) : null}
           {rewards.map((reward) => {
             const cost = Number(reward.points_cost) || 0;
             const canRedeem = points >= cost;

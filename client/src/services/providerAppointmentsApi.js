@@ -1,16 +1,11 @@
-import { getApiOrigin } from "./api.js";
-import { getStoredToken } from "../lib/authHeaders.js";
-
-function authHeaders() {
-  const token = getStoredToken();
-  return token ? { Authorization: `Bearer ${token}`, Accept: "application/json" } : { Accept: "application/json" };
-}
+import { authenticatedFetch } from "../lib/authenticatedFetch.js";
 
 export async function fetchProviderAppointments(barberId, date) {
-  const origin = getApiOrigin();
   const q = new URLSearchParams({ barberId: String(barberId) });
   if (date) q.set("date", date);
-  const res = await fetch(`${origin}/api/barber/appointments?${q.toString()}`, { headers: authHeaders() });
+  const res = await authenticatedFetch(`/api/barber/appointments?${q.toString()}`, {
+    headers: { Accept: "application/json" },
+  });
   const data = await res.json().catch(() => ({}));
   if (!res.ok || !data?.ok) throw new Error(data?.message || `HTTP ${res.status}`);
   return data;

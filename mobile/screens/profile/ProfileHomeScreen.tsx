@@ -47,8 +47,9 @@ export default function ProfileHomeScreen() {
 
   // Customer Profile — barbers/shop owners also get a business tools section below.
   const role = String(user?.role || "").toLowerCase();
-  const isBarber = role === "barber" && user?.barberId;
+  const isBarber = role === "barber";
   const isShopOwner = role === "shop_owner";
+  const resolvedBarberId = user?.barberId != null ? String(user.barberId) : "";
 
   const menu: { key: keyof ProfileStackParamList; label: string }[] = [
     { key: "EditProfile", label: t("profile.menuPersonalInfo") },
@@ -65,15 +66,24 @@ export default function ProfileHomeScreen() {
   ];
 
   const staffMenu: { key: keyof ProfileStackParamList; label: string; params?: object }[] = [];
-  if (isBarber && user?.barberId) {
-    staffMenu.push(
-      { key: "ProviderSchedule", label: "Today's bookings", params: { barberId: String(user.barberId), barberName: user.name || "My schedule" } },
-      { key: "BarberDetail", label: "My barber profile", params: { barberId: String(user.barberId), barberName: user.name || "My profile" } },
-      { key: "BarberEdit", label: "Edit profile", params: { barberId: String(user.barberId), barberName: user.name || "My profile" } },
-      { key: "BarberGallery", label: "Haircut gallery", params: { barberId: String(user.barberId), barberName: user.name || "My profile" } },
-      { key: "BarberServices", label: "Services & pricing", params: { barberId: String(user.barberId), barberName: user.name || "My profile" } },
-      { key: "EditBarberSchedule", label: "Business hours", params: { barberId: String(user.barberId), barberName: user.name || "My profile" } },
-    );
+  if (isBarber) {
+    staffMenu.push({
+      key: "ProviderSchedule",
+      label: "My schedule",
+      params: {
+        barberId: resolvedBarberId || undefined,
+        barberName: user?.name || "My schedule",
+      },
+    });
+    if (resolvedBarberId) {
+      staffMenu.push(
+        { key: "BarberDetail", label: "My barber profile", params: { barberId: resolvedBarberId, barberName: user?.name || "My profile" } },
+        { key: "BarberEdit", label: "Edit profile", params: { barberId: resolvedBarberId, barberName: user?.name || "My profile" } },
+        { key: "BarberGallery", label: "Haircut gallery", params: { barberId: resolvedBarberId, barberName: user?.name || "My profile" } },
+        { key: "BarberServices", label: "Services & pricing", params: { barberId: resolvedBarberId, barberName: user?.name || "My profile" } },
+        { key: "EditBarberSchedule", label: "Business hours", params: { barberId: resolvedBarberId, barberName: user?.name || "My profile" } },
+      );
+    }
   }
   if (isShopOwner) {
     staffMenu.push({ key: "ShopRoster", label: "Shop dashboard" });

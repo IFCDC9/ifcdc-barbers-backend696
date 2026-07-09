@@ -3,6 +3,7 @@ import { signOutSupabase } from "../lib/supabase";
 import { decodeJwtPayload, isOwnerAdminDashboardPayload } from "../auth/jwtSession";
 import { getAuthMe, type JsonAuth } from "../auth/authSessionApi";
 import { getAuthToken, setAuthToken } from "./authService";
+import { refreshAuthSession } from "./sessionApi";
 import { isSuperAdminUser } from "../utils/adminAccess";
 import { hasStaffDashboardAccess, resolveStaffRole } from "../utils/staffDashboardAccess";
 
@@ -61,6 +62,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const me = await getAuthMe(t, 15_000);
       if (!me.ok) {
         if (me.status === 401 || me.status === 403) {
+          const refreshed = await refreshAuthSession(t);
+          if (refreshed?.token) {
+            await setAuthToken(refreshed.token);
+            applySession(refreshed.token, refreshed.user ?? null);
+            return;
+          }
           console.warn("[auth] stored session rejected; clearing token", { status: me.status, url: me.url });
           await setAuthToken(null);
           applySession(null, null);
@@ -81,6 +88,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       applySession(t, me.json.user ?? null);
+      if (me.json.token) {
+        const fresh = String(me.json.token).trim();
+        await setAuthToken(fresh);
+        setToken(fresh);
+      }
     } finally {
       setLoading(false);
     }
@@ -94,7 +106,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       await setAuthToken(t);
       const me = await getAuthMe(t, 15_000);
-      applySession(t, me.ok ? me.json.user ?? null : null);
+      if (me.ok && me.json.token) {
+        const fresh = String(me.json.token).trim();
+        await setAuthToken(fresh);
+        applySession(fresh, me.json.user ?? null);
+      } else {
+        applySession(t, me.ok ? me.json.user ?? null : null);
+      }
     } catch (e) {
       const raw = e instanceof Error ? e.message : String(e);
       console.error("[auth] SecureStore setItemAsync failed:", raw);

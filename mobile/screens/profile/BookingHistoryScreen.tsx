@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useState } from "react";
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import ProfileScreenLayout from "../../components/ProfileScreenLayout";
@@ -8,6 +8,7 @@ import BookingStatusBadge from "../../components/BookingStatusBadge";
 import { fetchMyBookings, type BookingRow } from "../../services/profileApi";
 import { removeBookingFromHistory } from "../../services/bookingDetailApi";
 import { confirmDelete } from "../../utils/confirmDelete";
+import { useAuthenticatedLoad } from "../../hooks/useAuthenticatedLoad";
 import {
   bookingRemovalBlockedMessage,
   canUserRemoveBookingFromHistory,
@@ -65,25 +66,14 @@ function BookingCard({
 export default function BookingHistoryScreen({ standalone = false }: { standalone?: boolean }) {
   const navigation = useNavigation<{ navigate: (route: string, params?: unknown) => void }>();
   const [rows, setRows] = useState<BookingRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      setRows(await fetchMyBookings());
-    } catch (e) {
-      setError(userFacingApiError(e));
-      setRows([]);
-    } finally {
-      setLoading(false);
-    }
+  const { loading, error, needsSignIn, reload } = useAuthenticatedLoad(async () => {
+    setRows(await fetchMyBookings());
   }, []);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const load = useCallback(() => {
+    void reload();
+  }, [reload]);
 
   const removeRow = useCallback(
     async (row: BookingRow) => {
@@ -109,8 +99,11 @@ export default function BookingHistoryScreen({ standalone = false }: { standalon
       standalone={standalone}
     >
       {loading ? <ScreenLoading /> : null}
-      {error ? <ScreenError message={error} onRetry={load} /> : null}
-      {!loading && !error && rows.length === 0 ? (
+      {needsSignIn ? (
+        <ScreenError message="Session expired. Sign out and sign in again from the app home screen." />
+      ) : null}
+      {error && !needsSignIn ? <ScreenError message={error} onRetry={load} /> : null}
+      {!loading && !error && !needsSignIn && rows.length === 0 ? (
         <ScreenEmpty message={UX.emptyAppointments} />
       ) : null}
       <View style={styles.list}>

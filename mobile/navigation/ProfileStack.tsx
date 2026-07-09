@@ -94,7 +94,7 @@ export type ProfileStackParamList = {
   StyleDiscover: undefined;
   RateMe: undefined;
   Rewards: undefined;
-  ProviderSchedule: { barberId: string; barberName: string };
+  ProviderSchedule: { barberId?: string; barberName?: string };
 } & PaymentStackParamList;
 
 const Stack = createStackNavigator<ProfileStackParamList>();

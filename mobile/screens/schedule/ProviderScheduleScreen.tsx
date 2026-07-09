@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useState } from "react";
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import type { RouteProp } from "@react-navigation/native";
@@ -11,13 +11,14 @@ import {
   fetchProviderAppointments,
   type ProviderAppointment,
 } from "../../services/providerAppointmentsApi";
+import { useAuthenticatedLoad } from "../../hooks/useAuthenticatedLoad";
+import { useAuth } from "../../services/authContext";
 import { formatMoney } from "../../utils/bookingDisplay";
-import { userFacingApiError } from "../../utils/userFacingApiError";
 import { theme } from "../../constants/theme";
 
 export type ProviderScheduleParams = {
-  barberId: string;
-  barberName: string;
+  barberId?: string;
+  barberName?: string;
 };
 
 type Route = RouteProp<{ ProviderSchedule: ProviderScheduleParams }, "ProviderSchedule">;
@@ -40,12 +41,13 @@ function AppointmentCard({
   row: ProviderAppointment;
   onPress: () => void;
 }) {
+  const photo = row.clientPhotoUrl || row.styleImageUrl;
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [pressed && styles.cardPressed]}>
       <ProfileCard style={styles.card}>
         <View style={styles.cardTop}>
-          {row.styleImageUrl ? (
-            <Image source={{ uri: row.styleImageUrl }} style={styles.thumb} />
+          {photo ? (
+            <Image source={{ uri: photo }} style={styles.thumb} />
           ) : (
             <View style={styles.thumbPlaceholder}>
               <Text style={styles.thumbPlaceholderText}>✂</Text>
@@ -59,8 +61,9 @@ function AppointmentCard({
               {row.service}
             </Text>
             <Text style={styles.when}>
-              {row.time} · {formatMoney(row.totalAmount)}
+              {row.date} · {row.time}
             </Text>
+            <Text style={styles.amount}>{formatMoney(row.totalAmount)}</Text>
             <BookingStatusBadge
               paymentStatus={row.paymentStatus}
               bookingStatus={row.bookingStatus}
@@ -79,31 +82,19 @@ function AppointmentCard({
 export default function ProviderScheduleScreen() {
   const navigation = useNavigation<{ navigate: (route: string, params?: object) => void }>();
   const route = useRoute<Route>();
-  const { barberId, barberName } = route.params;
+  const { user } = useAuth();
+  const barberId = route.params?.barberId || (user?.barberId != null ? String(user.barberId) : "");
+  const barberName = route.params?.barberName || user?.name || "My schedule";
 
   const [date, setDate] = useState(todayYmd);
   const [rows, setRows] = useState<ProviderAppointment[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await fetchProviderAppointments(barberId, date);
-      setRows(data.appointments);
-      if (data.date) setDate(data.date);
-    } catch (e) {
-      setError(userFacingApiError(e));
-      setRows([]);
-    } finally {
-      setLoading(false);
-    }
+  const { loading, error, needsSignIn, reload } = useAuthenticatedLoad(async () => {
+    if (!barberId) throw new Error("Barber profile not linked to this account.");
+    const data = await fetchProviderAppointments(barberId, date);
+    setRows(data.appointments);
+    if (data.date) setDate(data.date);
   }, [barberId, date]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
 
   const isToday = date === todayYmd();
   const title = isToday ? "Today's bookings" : "My schedule";
@@ -122,8 +113,9 @@ export default function ProviderScheduleScreen() {
       </ProfileCard>
 
       {loading ? <ScreenLoading label="Loading appointments…" /> : null}
-      {error ? <ScreenError message={error} onRetry={() => void load()} /> : null}
-      {!loading && !error && !rows.length ? (
+      {needsSignIn ? <ScreenError message="Session expired. Sign out and sign in again." /> : null}
+      {error && !needsSignIn ? <ScreenError message={error} onRetry={() => void reload()} /> : null}
+      {!loading && !error && !needsSignIn && !rows.length ? (
         <ScreenEmpty message="No appointments scheduled for this day." />
       ) : null}
 
@@ -159,5 +151,6 @@ const styles = StyleSheet.create({
   clientName: { color: theme.colors.text, fontWeight: "800", fontSize: 16 },
   service: { color: theme.colors.textMuted, fontSize: 14 },
   when: { color: theme.colors.textMuted, fontSize: 13 },
+  amount: { color: theme.colors.gold, fontSize: 13, fontWeight: "700" },
   actionsHint: { marginTop: 10, color: theme.colors.gold, fontSize: 12, fontWeight: "600" },
 });

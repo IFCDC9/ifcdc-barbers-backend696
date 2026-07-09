@@ -44,7 +44,7 @@ function getJwtSecret() {
 function signTokenForAppUser(userRow) {
   const claims = jwtClaimsFromAppUser(userRow);
   const secret = getJwtSecret();
-  return jwt.sign(claims, secret, { expiresIn: "7d" });
+  return jwt.sign(claims, secret, { expiresIn: "30d" });
 }
 
 /** Issue HS256 JWT for an `app_users` row (onboarding, auth, etc.). */
@@ -57,22 +57,42 @@ function postLoginRedirectFromClaims(claims) {
   return "app";
 }
 
+/** Normalize JWT payload to a consistent req.user shape (id, barberId, etc.). */
+export function normalizeAuthUser(payload) {
+  if (!payload || typeof payload !== "object") return null;
+  const id = String(payload.id || payload.sub || "").trim();
+  if (!id) return null;
+  const role = String(payload.role || "").trim().toLowerCase();
+  const normalized = { ...payload, id, sub: id };
+  if (normalized.isSuperAdmin == null && role === "super_admin") {
+    normalized.isSuperAdmin = true;
+  }
+  if (normalized.barberId == null && payload.barber_id != null) {
+    normalized.barberId = payload.barber_id;
+  }
+  return normalized;
+}
+
 /**
  * Validates Bearer JWT (HS256). Legacy tokens without isSuperAdmin are normalized when role is super_admin.
  */
-export function resolveAuthPayload(token) {
-  const t = String(token || "").trim();
+export function resolveAuthPayload(token, options = {}) {
+  const { allowExpired = false, graceSeconds = 0 } = options || {};
+  let t = String(token || "").trim();
+  if (t.toLowerCase().startsWith("bearer ")) t = t.slice(7).trim();
   if (!t) return null;
   try {
     const secret = getJwtSecret();
-    const p = jwt.verify(t, secret);
-    if (p && typeof p === "object") {
-      const role = String(p.role || "").trim().toLowerCase();
-      if (p.isSuperAdmin == null && role === "super_admin") {
-        p.isSuperAdmin = true;
-      }
+    const verifyOpts = {};
+    if (allowExpired) verifyOpts.ignoreExpiration = true;
+    const p = jwt.verify(t, secret, verifyOpts);
+    const normalized = normalizeAuthUser(p);
+    if (!normalized) return null;
+    if (allowExpired && normalized.exp) {
+      const expMs = Number(normalized.exp) * 1000;
+      if (Number.isFinite(expMs) && expMs + graceSeconds * 1000 < Date.now()) return null;
     }
-    return p;
+    return normalized;
   } catch {
     return null;
   }
@@ -91,6 +111,31 @@ export function requireAuth(req, res, next) {
   if (!payload) return res.status(401).json({ error: "unauthorized", message: "Invalid or expired token" });
   req.user = payload;
   return next();
+}
+
+async function loadAppUserForTokenRefresh(userId) {
+  const found = await dbQuery(
+    `SELECT id, name, email, phone, profile_image_url, role, barber_id, business_id, account_status, created_at
+     FROM app_users WHERE id = $1::uuid LIMIT 1`,
+    [String(userId)],
+  );
+  return found.rows?.[0] || null;
+}
+
+async function issueSessionResponse(userRow) {
+  const claims = jwtClaimsFromAppUser(userRow);
+  const token = signTokenForAppUser(userRow);
+  const publicUser = publicUserFromAppUser(userRow);
+  const approval = await resolveUserApprovalState(userRow);
+  const redirect = postLoginRedirectFromClaims(claims);
+  return {
+    ok: true,
+    success: true,
+    token,
+    user: { ...publicUser, ...approval },
+    approvalPending: approval.limitedAccess === true,
+    redirect,
+  };
 }
 
 /**
@@ -444,12 +489,7 @@ export function createAuthRouter({ sendEmail }) {
           message: "Invalid token subject",
         });
       }
-      const found = await dbQuery(
-        `SELECT id, name, email, phone, profile_image_url, role, barber_id, business_id, account_status, created_at
-         FROM app_users WHERE id = $1::uuid LIMIT 1`,
-        [id],
-      );
-      const user = found.rows?.[0] || null;
+      const user = await loadAppUserForTokenRefresh(id);
       if (!user) {
         return res.status(401).json({
           ok: false,
@@ -458,17 +498,8 @@ export function createAuthRouter({ sendEmail }) {
           message: "Account no longer exists.",
         });
       }
-      const claims = jwtClaimsFromAppUser(user);
-      const publicUser = publicUserFromAppUser(user);
-      const approval = await resolveUserApprovalState(user);
-      const redirect = postLoginRedirectFromClaims(claims);
-      return res.json({
-        ok: true,
-        success: true,
-        user: { ...publicUser, ...approval },
-        approvalPending: approval.limitedAccess === true,
-        redirect,
-      });
+      const session = await issueSessionResponse(user);
+      return res.json(session);
     } catch (e) {
       console.error("[auth] /me error:", e);
       return res.status(500).json({
@@ -477,6 +508,32 @@ export function createAuthRouter({ sendEmail }) {
         error: "server_error",
         message: "Session lookup failed",
       });
+    }
+  });
+
+  /** Re-issue JWT from a valid (or recently expired) session — keeps mobile/web in sync. */
+  router.post("/refresh", async (req, res) => {
+    try {
+      const token = extractBearerToken(req.headers.authorization);
+      if (!token) {
+        return res.status(401).json({ ok: false, error: "unauthorized", message: "Missing Bearer token" });
+      }
+      let payload = resolveAuthPayload(token);
+      if (!payload) {
+        payload = resolveAuthPayload(token, { allowExpired: true, graceSeconds: 7 * 24 * 60 * 60 });
+      }
+      if (!payload?.id) {
+        return res.status(401).json({ ok: false, error: "unauthorized", message: "Invalid or expired token" });
+      }
+      const user = await loadAppUserForTokenRefresh(payload.id);
+      if (!user) {
+        return res.status(401).json({ ok: false, error: "user_not_found", message: "Account no longer exists." });
+      }
+      const session = await issueSessionResponse(user);
+      return res.json(session);
+    } catch (e) {
+      console.error("[auth] /refresh error:", e);
+      return res.status(500).json({ ok: false, error: "server_error", message: "Session refresh failed" });
     }
   });
 

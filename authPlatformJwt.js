@@ -16,13 +16,18 @@ export function jwtClaimsFromAppUser(user) {
   const biz = user?.business_id ?? user?.businessId;
   const businessIdNum = Number(biz);
   const businessId = Number.isFinite(businessIdNum) ? businessIdNum : null;
+  const barberRaw = user?.barber_id ?? user?.barberId;
+  const barberIdNum = Number(barberRaw);
+  const barberId = barberRaw != null && String(barberRaw).trim() !== "" && Number.isFinite(barberIdNum) ? barberIdNum : barberRaw ?? null;
   return {
     id: user.id,
+    sub: user.id,
     email: user.email,
     role: owner ? "admin" : dbRole,
     isOwner: Boolean(owner),
     isSuperAdmin: Boolean(isSuperAdmin),
     businessId,
+    barberId,
   };
 }
 

@@ -11,47 +11,67 @@ function pointsForBookingAmount(totalAmount) {
 export async function getOrCreateLoyaltyAccount(userId) {
   const uid = String(userId || "").trim();
   if (!uid) return null;
-  await dbQuery(
-    `INSERT INTO loyalty_accounts (user_id) VALUES ($1::uuid) ON CONFLICT (user_id) DO NOTHING`,
-    [uid],
-  );
-  const r = await dbQuery(
-    `SELECT user_id, points_balance, lifetime_earned, updated_at
-     FROM loyalty_accounts WHERE user_id = $1::uuid LIMIT 1`,
-    [uid],
-  );
-  return r.rows?.[0] || { user_id: uid, points_balance: 0, lifetime_earned: 0 };
+  try {
+    await dbQuery(
+      `INSERT INTO loyalty_accounts (user_id) VALUES ($1::uuid) ON CONFLICT (user_id) DO NOTHING`,
+      [uid],
+    );
+    const r = await dbQuery(
+      `SELECT user_id, points_balance, lifetime_earned, updated_at
+       FROM loyalty_accounts WHERE user_id = $1::uuid LIMIT 1`,
+      [uid],
+    );
+    return r.rows?.[0] || { user_id: uid, points_balance: 0, lifetime_earned: 0 };
+  } catch (e) {
+    const msg = String(e?.message || e);
+    if (/loyalty_accounts/i.test(msg) && /does not exist/i.test(msg)) {
+      return { user_id: uid, points_balance: 0, lifetime_earned: 0 };
+    }
+    throw e;
+  }
 }
 
 export async function listLoyaltyTransactions(userId, limit = 30) {
-  const r = await dbQuery(
-    `SELECT id, booking_id, delta, reason, created_at
-     FROM loyalty_transactions
-     WHERE user_id = $1::uuid
-     ORDER BY created_at DESC
-     LIMIT $2`,
-    [String(userId), Math.min(Number(limit) || 30, 100)],
-  );
-  return r.rows || [];
+  try {
+    const r = await dbQuery(
+      `SELECT id, booking_id, delta, reason, created_at
+       FROM loyalty_transactions
+       WHERE user_id = $1::uuid
+       ORDER BY created_at DESC
+       LIMIT $2`,
+      [String(userId), Math.min(Number(limit) || 30, 100)],
+    );
+    return r.rows || [];
+  } catch (e) {
+    const msg = String(e?.message || e);
+    if (/loyalty_transactions/i.test(msg) && /does not exist/i.test(msg)) return [];
+    throw e;
+  }
 }
 
 export async function listActiveRewards({ barberId = null } = {}) {
-  const params = [];
-  let where = `is_active = true`;
-  if (barberId != null && String(barberId).trim()) {
-    params.push(String(barberId));
-    where += ` AND (barber_id IS NULL OR barber_id = $${params.length}::text)`;
-  } else {
-    where += ` AND barber_id IS NULL`;
+  try {
+    const params = [];
+    let where = `is_active = true`;
+    if (barberId != null && String(barberId).trim()) {
+      params.push(String(barberId));
+      where += ` AND (barber_id IS NULL OR barber_id = $${params.length}::text)`;
+    } else {
+      where += ` AND barber_id IS NULL`;
+    }
+    const r = await dbQuery(
+      `SELECT id, barber_id, title, description, points_cost, is_active, created_at, updated_at
+       FROM loyalty_rewards
+       WHERE ${where}
+       ORDER BY points_cost ASC, title ASC`,
+      params,
+    );
+    return r.rows || [];
+  } catch (e) {
+    const msg = String(e?.message || e);
+    if (/loyalty_rewards/i.test(msg) && /does not exist/i.test(msg)) return [];
+    throw e;
   }
-  const r = await dbQuery(
-    `SELECT id, barber_id, title, description, points_cost, is_active, created_at, updated_at
-     FROM loyalty_rewards
-     WHERE ${where}
-     ORDER BY points_cost ASC, title ASC`,
-    params,
-  );
-  return r.rows || [];
 }
 
 export async function listRewardsForBarberManage(barberId) {

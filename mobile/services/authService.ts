@@ -12,6 +12,9 @@ export async function setAuthToken(token: string | null): Promise<void> {
 
 export async function getAuthToken(): Promise<string | null> {
   const token = await SecureStore.getItemAsync(KEY);
-  return token || null;
+  const trimmed = String(token || "").trim();
+  if (!trimmed) return null;
+  if (trimmed.toLowerCase().startsWith("bearer ")) return trimmed.slice(7).trim();
+  return trimmed;
 }
 

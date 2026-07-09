@@ -1066,8 +1066,10 @@ export function createBarberBusinessRouter({ uploadDir } = {}) {
         `SELECT b.id, b.customer_name, b.customer_email, b.service, b.style_title, b.style_image_url,
                 b.date::text AS date, to_char(b.time, 'HH12:MI AM') AS time,
                 b.payment_status, b.booking_status, b.total_amount, b.service_duration_minutes,
-                b.phone, b.created_at
+                b.phone, b.created_at, b.user_id,
+                u.profile_image_url AS client_profile_image_url
          FROM bookings b
+         LEFT JOIN app_users u ON u.id = b.user_id
          WHERE b.deleted_at IS NULL
            AND b.barber_id::text = $1::text
            AND b.date = $2::date
@@ -1086,6 +1088,7 @@ export function createBarberBusinessRouter({ uploadDir } = {}) {
           customerEmail: row.customer_email || "",
           service: row.style_title || row.service || "Appointment",
           styleImageUrl: row.style_image_url || null,
+          clientPhotoUrl: row.client_profile_image_url || row.style_image_url || null,
           date: row.date,
           time: row.time,
           paymentStatus: row.payment_status || "",

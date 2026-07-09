@@ -388,6 +388,23 @@ app.patch("/api/auth/profile", (req, res, next) => {
     next(err);
   });
 });
+app.get("/api/auth/my-bookings", (req, res, next) => {
+  const saved = req.url;
+  const q = saved.includes("?") ? saved.slice(saved.indexOf("?")) : "";
+  req.url = `/my-bookings${q}`;
+  authRouter.handle(req, res, (err) => {
+    req.url = saved;
+    next(err);
+  });
+});
+app.post("/api/auth/refresh", (req, res, next) => {
+  const saved = req.url;
+  req.url = "/refresh";
+  authRouter.handle(req, res, (err) => {
+    req.url = saved;
+    next(err);
+  });
+});
 app.use("/api/auth", authRouter);
 console.log("[boot] mounted /api/auth", summarizeAuthRouterPaths(authRouter).join(" | ") || "(no routes on stack)");
 

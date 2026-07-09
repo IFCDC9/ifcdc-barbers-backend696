@@ -31,7 +31,10 @@ export function createLoyaltyRouter() {
 
   router.get("/api/loyalty/me", requireAuth, async (req, res) => {
     try {
-      const userId = String(req.user.id);
+      const userId = String(req.user?.id || "").trim();
+      if (!userId) {
+        return res.status(401).json({ ok: false, error: "unauthorized", message: "Invalid session" });
+      }
       const barberId = req.user?.barberId ?? req.user?.barber_id ?? null;
       const [account, transactions, rewards] = await Promise.all([
         getOrCreateLoyaltyAccount(userId),

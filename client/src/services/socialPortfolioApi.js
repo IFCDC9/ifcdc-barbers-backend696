@@ -1,9 +1,14 @@
 import { getApiOrigin } from "./api.js";
 import { getAdminAuthHeaders, getStoredToken } from "../lib/authHeaders.js";
+import { authenticatedFetch } from "../lib/authenticatedFetch.js";
 
 function authHeaders() {
+  return { Accept: "application/json" };
+}
+
+function optionalAuthHeaders() {
   const token = getStoredToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  return token ? { Authorization: `Bearer ${token}`, Accept: "application/json" } : { Accept: "application/json" };
 }
 
 export async function fetchPortfolioCategories() {
@@ -17,7 +22,7 @@ export async function fetchPortfolioCategories() {
 export async function fetchPublicPortfolio(slugOrId) {
   const origin = getApiOrigin();
   const res = await fetch(`${origin}/api/portfolio/${encodeURIComponent(String(slugOrId))}`, {
-    headers: { Accept: "application/json", ...authHeaders() },
+    headers: { ...optionalAuthHeaders() },
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data?.message || `HTTP ${res.status}`);
@@ -31,7 +36,7 @@ export async function fetchDiscoverPhotos(filters = {}) {
   if (filters.limit) q.set("limit", String(filters.limit));
   const suffix = q.toString() ? `?${q.toString()}` : "";
   const res = await fetch(`${origin}/api/portfolio/discover${suffix}`, {
-    headers: { Accept: "application/json", ...authHeaders() },
+    headers: optionalAuthHeaders(),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data?.message || `HTTP ${res.status}`);
@@ -39,20 +44,16 @@ export async function fetchDiscoverPhotos(filters = {}) {
 }
 
 export async function fetchReviewableBookings() {
-  const origin = getApiOrigin();
-  const res = await fetch(`${origin}/api/me/reviewable-bookings`, {
-    headers: { Accept: "application/json", ...authHeaders() },
-  });
+  const res = await authenticatedFetch("/api/me/reviewable-bookings", { headers: authHeaders() });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data?.message || `HTTP ${res.status}`);
   return data;
 }
 
 export async function submitBookingReview(bookingId, body) {
-  const origin = getApiOrigin();
-  const res = await fetch(`${origin}/api/bookings/${encodeURIComponent(String(bookingId))}/review`, {
+  const res = await authenticatedFetch(`/api/bookings/${encodeURIComponent(String(bookingId))}/review`, {
     method: "POST",
-    headers: { Accept: "application/json", "Content-Type": "application/json", ...authHeaders() },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));
@@ -61,9 +62,8 @@ export async function submitBookingReview(bookingId, body) {
 }
 
 export async function fetchBookingReviewStatus(bookingId) {
-  const origin = getApiOrigin();
-  const res = await fetch(`${origin}/api/bookings/${encodeURIComponent(String(bookingId))}/review-status`, {
-    headers: { Accept: "application/json", ...authHeaders() },
+  const res = await authenticatedFetch(`/api/bookings/${encodeURIComponent(String(bookingId))}/review-status`, {
+    headers: authHeaders(),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data?.message || `HTTP ${res.status}`);

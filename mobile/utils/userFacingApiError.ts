@@ -31,7 +31,10 @@ export function userFacingApiError(e: unknown, fallback = DEFAULT): string {
     return UX.errorConnection;
   }
   if (msg.includes("401") || msg.includes("403") || msg.toLowerCase().includes("access denied")) {
-    return UX.errorPermission;
+    if (msg.toLowerCase().includes("expired") || msg.toLowerCase().includes("invalid or expired")) {
+      return "Session expired. Sign in again.";
+    }
+    return "Session expired. Sign in again.";
   }
   if (msg.includes("500") || msg.includes("502") || msg.includes("503")) {
     return `${UX.errorConnection} ${UX.errorRetry}`;

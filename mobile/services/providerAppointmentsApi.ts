@@ -6,6 +6,7 @@ export type ProviderAppointment = {
   customerEmail: string;
   service: string;
   styleImageUrl: string | null;
+  clientPhotoUrl: string | null;
   date: string;
   time: string;
   paymentStatus: string;
