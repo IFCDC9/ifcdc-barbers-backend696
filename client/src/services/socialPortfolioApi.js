@@ -1,6 +1,6 @@
 import { getApiOrigin } from "./api.js";
 import { getAdminAuthHeaders, getStoredToken } from "../lib/authHeaders.js";
-import { authenticatedFetch } from "../lib/authenticatedFetch.js";
+import { authenticatedFetch, authenticatedJson } from "../lib/appSession.js";
 
 function authHeaders() {
   return { Accept: "application/json" };
@@ -44,9 +44,7 @@ export async function fetchDiscoverPhotos(filters = {}) {
 }
 
 export async function fetchReviewableBookings() {
-  const res = await authenticatedFetch("/api/me/reviewable-bookings", { headers: authHeaders() });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data?.message || `HTTP ${res.status}`);
+  const data = await authenticatedJson("/api/me/reviewable-bookings", { headers: authHeaders() });
   return {
     ok: true,
     bookings: Array.isArray(data?.bookings) ? data.bookings : [],

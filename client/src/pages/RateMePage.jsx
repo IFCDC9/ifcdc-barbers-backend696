@@ -1,35 +1,43 @@
 import { Link, useNavigate } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { fetchReviewableBookings } from "../services/socialPortfolioApi.js";
-
-function readUser() {
-  try {
-    return JSON.parse(localStorage.getItem("user") || "null");
-  } catch {
-    return null;
-  }
-}
+import { hasWebSession } from "../lib/appSession.js";
 
 export default function RateMePage() {
   const navigate = useNavigate();
-  const user = readUser();
+  const signedIn = hasWebSession();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  useEffect(() => {
-    if (!user) {
+  const load = useCallback(async () => {
+    if (!hasWebSession()) {
       setLoading(false);
+      setError(null);
       return;
     }
     setLoading(true);
-    fetchReviewableBookings()
-      .then((data) => setRows(Array.isArray(data?.bookings) ? data.bookings : []))
-      .catch((e) => setError(e?.message || "Could not load"))
-      .finally(() => setLoading(false));
-  }, [user]);
+    setError(null);
+    try {
+      const data = await fetchReviewableBookings();
+      setRows(Array.isArray(data?.bookings) ? data.bookings : []);
+    } catch (e) {
+      const msg = String(e?.message || "Could not load reviews");
+      setError(
+        msg.includes("Network error") || msg.includes("timed out")
+          ? "Could not reach the server. Wait a moment and tap Try again."
+          : msg,
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-  if (!user) {
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  if (!signedIn) {
     return (
       <div className="ifcdc-profile">
         <h1 className="ifcdc-page-title">Rate Me</h1>
@@ -49,7 +57,14 @@ export default function RateMePage() {
       <h1 className="ifcdc-page-title">Rate Me</h1>
       <p className="ifcdc-page-lead">Verified reviews appear on your barber&apos;s public profile.</p>
       {loading ? <p className="ifcdc-page-hint">Loading…</p> : null}
-      {error ? <p className="ifcdc-error-msg">{error}</p> : null}
+      {error ? (
+        <div className="ifcdc-error-msg">
+          <p>{error}</p>
+          <button type="button" className="ifcdc-book-wizard__cta ifcdc-book-wizard__cta--ghost" onClick={() => void load()}>
+            Try again
+          </button>
+        </div>
+      ) : null}
       {!loading && !rows.length && !error ? (
         <p className="ifcdc-page-hint">No completed visits waiting for a review.</p>
       ) : null}

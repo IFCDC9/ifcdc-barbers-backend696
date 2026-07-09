@@ -88,7 +88,7 @@ function networkErrorHint() {
   return "Check VITE_API_BASE / VITE_API_URL and that the deployed API is up."
 }
 
-function wrapNetworkError(err) {
+export function wrapNetworkError(err) {
   const msg = err instanceof Error ? err.message : String(err);
   const name = err instanceof Error ? err.name : "";
   if (name === "AbortError" || msg.includes("aborted")) {

@@ -1,18 +1,11 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useCallback, useEffect, useState } from "react";
 import { fetchMyLoyalty, redeemReward } from "../services/loyaltyApi.js";
-
-function readUser() {
-  try {
-    return JSON.parse(localStorage.getItem("user") || "null");
-  } catch {
-    return null;
-  }
-}
+import { hasWebSession } from "../lib/appSession.js";
 
 export default function RewardsPage() {
   const navigate = useNavigate();
-  const user = readUser();
+  const signedIn = hasWebSession();
   const [points, setPoints] = useState(0);
   const [rewards, setRewards] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -20,6 +13,11 @@ export default function RewardsPage() {
   const [message, setMessage] = useState("");
 
   const load = useCallback(async () => {
+    if (!hasWebSession()) {
+      setLoading(false);
+      setError(null);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -27,33 +25,34 @@ export default function RewardsPage() {
       setPoints(Number(data.points) || 0);
       setRewards(Array.isArray(data.rewards) ? data.rewards : []);
     } catch (e) {
-      setError(e?.message || "Could not load rewards");
+      const msg = String(e?.message || "Could not load rewards");
+      setError(
+        msg.includes("Network error") || msg.includes("timed out")
+          ? "Could not reach the server. Wait a moment and tap Try again."
+          : msg,
+      );
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    if (!user) {
-      setLoading(false);
-      return;
-    }
     void load();
-  }, [user, load]);
+  }, [load]);
 
   const onRedeem = async (reward) => {
     setMessage("");
     try {
       const result = await redeemReward(reward.id);
       setMessage(result.message || "Redeemed!");
-      setPoints(Number(result.account?.points_balance) || 0);
+      setPoints(Number(result.account?.points_balance ?? result.points) || 0);
       await load();
     } catch (e) {
       setMessage(e?.message || "Redemption failed");
     }
   };
 
-  if (!user) {
+  if (!signedIn) {
     return (
       <div className="ifcdc-profile">
         <h1 className="ifcdc-page-title">Rewards</h1>
@@ -73,9 +72,16 @@ export default function RewardsPage() {
       <h1 className="ifcdc-page-title">Rewards</h1>
       <p className="ifcdc-page-lead">Earn 1 point per $1 after each completed booking.</p>
       {loading ? <p className="ifcdc-page-hint">Loading…</p> : null}
-      {error ? <p className="ifcdc-error-msg">{error}</p> : null}
+      {error ? (
+        <div className="ifcdc-error-msg">
+          <p>{error}</p>
+          <button type="button" className="ifcdc-book-wizard__cta ifcdc-book-wizard__cta--ghost" onClick={() => void load()}>
+            Try again
+          </button>
+        </div>
+      ) : null}
       {message ? <p className="ifcdc-page-hint">{message}</p> : null}
-      {!loading ? (
+      {!loading && !error ? (
         <>
           <div className="ifcdc-book-wizard__summary" style={{ textAlign: "center", marginBottom: 16 }}>
             <div style={{ fontSize: 13, opacity: 0.8 }}>Your balance</div>
@@ -83,6 +89,9 @@ export default function RewardsPage() {
             <div style={{ fontSize: 12, opacity: 0.7 }}>points</div>
           </div>
           <h2 className="ifcdc-book-wizard__heading">Redeem</h2>
+          {!rewards.length ? (
+            <p className="ifcdc-page-hint">No rewards available yet. Check back soon.</p>
+          ) : null}
           <ul className="ifcdc-book-wizard__list">
             {rewards.map((reward) => {
               const cost = Number(reward.points_cost) || 0;

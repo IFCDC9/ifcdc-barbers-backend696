@@ -1,5 +1,6 @@
 import { apiFullUrl } from "../constants/config";
 import { isJwtExpired } from "../auth/jwtSession";
+import { fetchWithTimeout } from "../auth/authSessionApi";
 import { apiFetch } from "./api";
 import { getAuthToken, setAuthToken } from "./authService";
 import { refreshAuthSession, SessionExpiredError } from "./sessionApi";
@@ -14,12 +15,20 @@ export async function wakeApiIfNeeded(): Promise<void> {
   if (!wakePromise) {
     wakePromise = (async () => {
       try {
-        await fetch(apiFullUrl("/health"), {
-          method: "GET",
-          headers: { Accept: "application/json" },
-          signal: AbortSignal.timeout(12_000),
-        });
-        lastWakeAt = Date.now();
+        const paths = ["/health", "/api/health"];
+        for (const path of paths) {
+          try {
+            await fetchWithTimeout(apiFullUrl(path), {
+              method: "GET",
+              headers: { Accept: "application/json" },
+              timeoutMs: 12_000,
+            });
+            lastWakeAt = Date.now();
+            break;
+          } catch {
+            /* try next probe */
+          }
+        }
       } catch {
         /* non-fatal — protected routes may still succeed */
       } finally {
