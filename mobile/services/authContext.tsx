@@ -75,14 +75,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!me.ok) {
         if (me.status === 401 || me.status === 403) {
           const refreshed = await refreshAuthSession(cachedToken);
-          if (refreshed?.token) {
+          if (refreshed.ok) {
             await setAuthToken(refreshed.token);
             applySession(refreshed.token, refreshed.user ?? null);
             return;
           }
-          console.warn("[auth] stored session rejected; clearing token", { status: me.status, url: me.url });
-          await setAuthToken(null);
-          applySession(null, null);
+          if (refreshed.reason === "invalid") {
+            console.warn("[auth] stored session rejected; clearing token", { status: me.status, url: me.url });
+            await setAuthToken(null);
+            applySession(null, null);
+          }
           return;
         }
         if (me.status === 404) {

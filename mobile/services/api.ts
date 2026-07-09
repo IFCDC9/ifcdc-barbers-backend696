@@ -5,9 +5,9 @@ import { refreshAuthSession, SessionExpiredError } from "./sessionApi";
 
 type ApiFetchOptions = RequestInit & { auth?: boolean; timeoutMs?: number; retries?: number };
 
-const DEFAULT_TIMEOUT_MS = 45_000;
-const DEFAULT_RETRIES = 2;
-const RETRY_BASE_DELAY_MS = 1200;
+const DEFAULT_TIMEOUT_MS = 35_000;
+const DEFAULT_RETRIES = 1;
+const RETRY_BASE_DELAY_MS = 1000;
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -88,7 +88,7 @@ async function apiFetchOnce(path: string, options: ApiFetchOptions = {}) {
 
   if (res.status === 401 && auth && token) {
     const refreshed = await refreshAuthSession(token);
-    if (refreshed?.token) {
+    if (refreshed.ok) {
       await setAuthToken(refreshed.token);
       try {
         res = await doFetch(refreshed.token);
@@ -96,6 +96,8 @@ async function apiFetchOnce(path: string, options: ApiFetchOptions = {}) {
         const message = e instanceof Error ? e.message : String(e);
         throw new Error(`[api] network error ${url} — ${message}`);
       }
+    } else if (refreshed.reason === "invalid") {
+      throw new SessionExpiredError("Invalid or expired token");
     }
   }
 

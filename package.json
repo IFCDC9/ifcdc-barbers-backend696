@@ -14,7 +14,7 @@
     "dev:full": "npm run dev:all",
     "tunnel": "ngrok http 10000",
     "build": "node -e \"const {execSync}=require('child_process');try{require('fs').writeFileSync('DEPLOY_COMMIT.txt',execSync('git rev-parse HEAD',{encoding:'utf8'}).trim())}catch(e){console.warn('[build] DEPLOY_COMMIT.txt skipped',e.message)} console.log('[build] backend ready')\"",
-    "verify:deploy": "node scripts/verify-production-deploy.mjs",
+    "verify:rewards-rateme": "node scripts/verify-rewards-rateme-production.mjs",
     "verify:storage": "node scripts/verify-supabase-production.mjs",
     "audit:rls": "node --import ./loadBackendEnv.mjs scripts/audit-supabase-rls.mjs",
     "audit:security": "node --import ./loadBackendEnv.mjs scripts/audit-supabase-security.mjs",

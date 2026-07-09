@@ -14,6 +14,14 @@ export function decodeJwtPayload(token: string): Record<string, unknown> | null 
   }
 }
 
+/** True when JWT exp is in the past (optional skew seconds). */
+export function isJwtExpired(token: string, skewSeconds = 60): boolean {
+  const payload = decodeJwtPayload(token);
+  const exp = Number(payload?.exp);
+  if (!Number.isFinite(exp)) return false;
+  return exp * 1000 <= Date.now() + skewSeconds * 1000;
+}
+
 /** Matches backend platform owner JWT (service@ifcdc.org + super_admin in DB → isOwner + isSuperAdmin). */
 export function isOwnerAdminDashboardPayload(payload: Record<string, unknown> | null): boolean {
   if (!payload) return false;

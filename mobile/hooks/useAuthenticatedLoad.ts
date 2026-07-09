@@ -13,14 +13,13 @@ type LoadState = {
 };
 
 /**
- * Load protected data using the persisted JWT immediately (no auth-bootstrap gate).
- * Ignores stale responses, retries on focus, and keeps prior content visible while refreshing.
+ * Load protected data — uses SecureStore token directly, never blocks on /me bootstrap.
  */
 export function useAuthenticatedLoad(
   loadFn: () => Promise<void>,
   deps: React.DependencyList = [],
 ) {
-  const { token: contextToken, signOut } = useAuth();
+  const { token: contextToken } = useAuth();
   const [state, setState] = useState<LoadState>({
     loading: true,
     error: null,
@@ -66,10 +65,9 @@ export function useAuthenticatedLoad(
     } catch (e) {
       if (requestId !== requestIdRef.current || !mountedRef.current) return;
       if (isSessionExpiredError(e)) {
-        await signOut();
         setState({
           loading: false,
-          error: "Session expired. Sign in again.",
+          error: "Session expired. Sign out and sign in again.",
           needsSignIn: true,
           loadedOnce: false,
         });
@@ -82,7 +80,7 @@ export function useAuthenticatedLoad(
         loadedOnce: prev.loadedOnce,
       }));
     }
-  }, [contextToken, signOut]);
+  }, [contextToken]);
 
   useEffect(() => {
     void run();
@@ -91,8 +89,8 @@ export function useAuthenticatedLoad(
 
   useFocusEffect(
     useCallback(() => {
-      void run({ silent: true });
-    }, [run]),
+      if (state.loadedOnce) void run({ silent: true });
+    }, [run, state.loadedOnce]),
   );
 
   const reload = useCallback(async () => {

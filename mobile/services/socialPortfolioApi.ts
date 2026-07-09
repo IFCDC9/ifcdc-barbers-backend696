@@ -1,6 +1,6 @@
 import { apiFetch } from "./api";
 import { apiFullUrl } from "../constants/config";
-import { getAuthToken } from "./authService";
+import { ensureValidAppToken } from "./appSession";
 
 export type PortfolioCategory = { id: string; label: string };
 
@@ -194,7 +194,7 @@ export async function uploadReviewPhoto(
     parentPhotoId?: string;
   } = {},
 ): Promise<PortfolioPhoto[]> {
-  const token = await getAuthToken();
+  const token = await ensureValidAppToken();
   const form = new FormData();
   const filename = localUri.split("/").pop() || "haircut.jpg";
   form.append("files", { uri: localUri, name: filename, type: "image/jpeg" } as unknown as Blob);
@@ -218,7 +218,7 @@ export async function uploadReviewPhoto(
 export async function togglePortfolioPhotoLike(
   photoId: string,
 ): Promise<{ liked: boolean; likeCount?: number }> {
-  const token = await getAuthToken();
+  const token = await ensureValidAppToken();
   if (!token) {
     throw new Error("Sign in to like photos.");
   }
