@@ -16,6 +16,7 @@ import { getServiceCardImageUrl } from "../lib/styleImageUrl.js";
 import LanguageDropdown from "../components/LanguageDropdown.jsx";
 import { DEFAULT_LANGUAGE } from "../lib/languages.js";
 import { fetchBarberManagedRewards, saveBarberReward } from "../services/loyaltyApi.js";
+import { UNAVAILABILITY_REASON_OPTIONS } from "../constants/unavailabilityReasons.js";
 
 function authHeaders() {
   try {
@@ -334,6 +335,9 @@ export default function BarberSettings() {
           blockedDates: blockedDates.map((row) => ({
             blocked_date: row.blocked_date || row.blockedDate || "",
             note: row.note || "",
+            client_reason: row.client_reason || row.clientReason || null,
+            return_date: row.return_date || row.returnDate || null,
+            client_message: row.client_message || row.clientMessage || null,
           })),
           appointment_interval_minutes: appointmentInterval,
           timezone: scheduleTimezone,
@@ -347,7 +351,10 @@ export default function BarberSettings() {
   };
 
   const addBlockedDate = () => {
-    setBlockedDates((prev) => [...prev, { blocked_date: "", note: "" }]);
+    setBlockedDates((prev) => [
+      ...prev,
+      { blocked_date: "", note: "", client_reason: "", return_date: "", client_message: "" },
+    ]);
   };
 
   const updateBlockedDate = (index, patch) => {
@@ -1059,7 +1066,8 @@ export default function BarberSettings() {
           <div style={{ marginTop: 20, paddingTop: 16, borderTop: `1px solid ${theme.colors.border}` }}>
             <CardTitle>Time off / blocked dates</CardTitle>
             <p style={{ fontSize: 13, color: theme.colors.muted, marginTop: 8 }}>
-              Clients cannot book on these days across the app, website, and checkout.
+              Clients cannot book on these days. Choose a client-facing reason — private notes are never shown to
+              clients.
             </p>
             {blockedDates.length === 0 ? (
               <p style={{ fontSize: 13, color: theme.colors.muted, marginTop: 8 }}>No blocked dates.</p>
@@ -1072,9 +1080,37 @@ export default function BarberSettings() {
                   value={row.blocked_date || ""}
                   onChange={(e) => updateBlockedDate(index, { blocked_date: e.target.value })}
                 />
+                <label style={{ fontSize: 12, color: theme.colors.muted }}>Client-facing reason</label>
+                <select
+                  style={inputStyle}
+                  value={row.client_reason || row.clientReason || ""}
+                  onChange={(e) => updateBlockedDate(index, { client_reason: e.target.value })}
+                >
+                  {UNAVAILABILITY_REASON_OPTIONS.map((opt) => (
+                    <option key={opt.code || "default"} value={opt.code}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+                {(row.client_reason || row.clientReason) === "custom" ? (
+                  <input
+                    type="text"
+                    placeholder="Custom message shown to clients"
+                    style={inputStyle}
+                    value={row.client_message || row.clientMessage || ""}
+                    onChange={(e) => updateBlockedDate(index, { client_message: e.target.value })}
+                  />
+                ) : null}
+                <input
+                  type="date"
+                  style={inputStyle}
+                  value={row.return_date || row.returnDate || ""}
+                  onChange={(e) => updateBlockedDate(index, { return_date: e.target.value })}
+                  placeholder="Return date (optional)"
+                />
                 <input
                   type="text"
-                  placeholder="Note (optional)"
+                  placeholder="Private note (not shown to clients)"
                   style={inputStyle}
                   value={row.note || ""}
                   onChange={(e) => updateBlockedDate(index, { note: e.target.value })}

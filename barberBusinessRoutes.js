@@ -883,7 +883,8 @@ export function createBarberBusinessRouter({ uploadDir } = {}) {
       [barberId],
     );
     const blocked = await dbQuery(
-      `SELECT id, to_char(blocked_date, 'YYYY-MM-DD') AS blocked_date, note
+      `SELECT id, to_char(blocked_date, 'YYYY-MM-DD') AS blocked_date, note,
+              client_reason, to_char(return_date, 'YYYY-MM-DD') AS return_date, client_message
        FROM barber_blocked_dates WHERE barber_id = $1 ORDER BY blocked_date`,
       [barberId],
     );
@@ -992,6 +993,11 @@ export function createBarberBusinessRouter({ uploadDir } = {}) {
       }
 
       if (blockedDates !== null) {
+        const {
+          normalizeClientReason,
+          normalizeReturnDate,
+          sanitizeClientMessage,
+        } = await import("./barberUnavailabilityReasons.js");
         await dbQuery(`DELETE FROM barber_blocked_dates WHERE barber_id = $1`, [bid]);
         for (const row of blockedDates) {
           const dateStr =
@@ -1000,10 +1006,24 @@ export function createBarberBusinessRouter({ uploadDir } = {}) {
               : String(row?.blocked_date ?? row?.blockedDate ?? "").trim();
           if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) continue;
           const note = typeof row === "object" ? String(row?.note ?? "").trim() : "";
+          const clientReason =
+            typeof row === "object" ? normalizeClientReason(row?.client_reason ?? row?.clientReason) : null;
+          const returnDate =
+            typeof row === "object" ? normalizeReturnDate(row?.return_date ?? row?.returnDate) : null;
+          const clientMessage =
+            typeof row === "object" && clientReason === "custom"
+              ? sanitizeClientMessage(row?.client_message ?? row?.clientMessage)
+              : null;
           await dbQuery(
-            `INSERT INTO barber_blocked_dates (barber_id, blocked_date, note) VALUES ($1, $2::date, $3)
-             ON CONFLICT (barber_id, blocked_date) DO UPDATE SET note = EXCLUDED.note`,
-            [bid, dateStr, note || null],
+            `INSERT INTO barber_blocked_dates
+               (barber_id, blocked_date, note, client_reason, return_date, client_message)
+             VALUES ($1, $2::date, $3, $4, $5::date, $6)
+             ON CONFLICT (barber_id, blocked_date) DO UPDATE SET
+               note = EXCLUDED.note,
+               client_reason = EXCLUDED.client_reason,
+               return_date = EXCLUDED.return_date,
+               client_message = EXCLUDED.client_message`,
+            [bid, dateStr, note || null, clientReason, returnDate, clientMessage],
           );
         }
       }

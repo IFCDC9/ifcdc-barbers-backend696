@@ -11,7 +11,13 @@ export type DaySchedule = {
 export type EditScheduleState = {
   days: DaySchedule[];
   breaks: BreakRow[];
-  blockedDates: Array<{ blocked_date: string; note: string }>;
+  blockedDates: Array<{
+    blocked_date: string;
+    note: string;
+    client_reason: string;
+    return_date: string;
+    client_message: string;
+  }>;
   appointment_interval_minutes: number;
   timezone: string;
 };
@@ -66,6 +72,9 @@ export function scheduleToEditState(schedule: BarberSchedule): EditScheduleState
   base.blockedDates = (schedule.blockedDates || []).map((b) => ({
     blocked_date: String(b.blocked_date || "").slice(0, 10),
     note: String(b.note || ""),
+    client_reason: String(b.client_reason || ""),
+    return_date: String(b.return_date || "").slice(0, 10),
+    client_message: String(b.client_message || ""),
   }));
   base.appointment_interval_minutes = Number(schedule.appointment_interval_minutes) || 30;
   base.timezone = String(schedule.timezone || "America/New_York");
@@ -87,7 +96,13 @@ export function editStateToSavePayload(state: EditScheduleState) {
     })),
     blockedDates: state.blockedDates
       .filter((b) => /^\d{4}-\d{2}-\d{2}$/.test(b.blocked_date))
-      .map((b) => ({ blocked_date: b.blocked_date, note: b.note || undefined })),
+      .map((b) => ({
+        blocked_date: b.blocked_date,
+        note: b.note || undefined,
+        client_reason: b.client_reason || undefined,
+        return_date: b.return_date || undefined,
+        client_message: b.client_reason === "custom" ? b.client_message || undefined : undefined,
+      })),
     appointment_interval_minutes: state.appointment_interval_minutes,
     timezone: state.timezone.trim() || "America/New_York",
   };

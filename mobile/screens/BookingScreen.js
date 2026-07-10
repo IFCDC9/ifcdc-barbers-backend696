@@ -116,6 +116,7 @@ function BookingScreen() {
   const [servicesLoadKey, setServicesLoadKey] = useState(0);
   const [time, setTime] = useState(null);
   const [availableSlots, setAvailableSlots] = useState([]);
+  const [unavailabilityMessage, setUnavailabilityMessage] = useState('');
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [slotsError, setSlotsError] = useState(null);
   const [processingPayment, setProcessingPayment] = useState(false);
@@ -293,6 +294,7 @@ function BookingScreen() {
       setSlotsLoading(true);
       setSlotsError(null);
       setAvailableSlots([]);
+      setUnavailabilityMessage('');
       try {
         const result = await fetchAvailableSlots({
           barberId: barber?.id,
@@ -300,11 +302,20 @@ function BookingScreen() {
           dateLabel: date,
           durationMinutes: cartTotalDuration,
         });
-        if (!cancelled) setAvailableSlots(result.slots || []);
+        if (!cancelled) {
+          setAvailableSlots(result.slots || []);
+          setUnavailabilityMessage(
+            result.unavailability?.message ||
+              (result.reasonIfEmpty === 'blocked_date'
+                ? 'This provider is unavailable at this time. Please choose another available appointment.'
+                : ''),
+          );
+        }
       } catch (e) {
         console.log('available-slots', e);
         if (!cancelled) {
           setAvailableSlots([]);
+          setUnavailabilityMessage('');
           setSlotsError(t('booking.loadTimesError'));
         }
       } finally {
@@ -912,7 +923,9 @@ function BookingScreen() {
             ) : null}
 
             {!slotsLoading && !slotsError && !availableSlots.length ? (
-              <Text style={styles.emptyText}>{t('booking.noTimes')}</Text>
+              <Text style={[styles.emptyText, unavailabilityMessage && styles.unavailabilityText]}>
+                {unavailabilityMessage || t('booking.noTimes')}
+              </Text>
             ) : null}
 
             {!slotsLoading && availableSlots.length ? (
@@ -1151,6 +1164,17 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
     marginBottom: 12,
+  },
+  unavailabilityText: {
+    color: UI.text,
+    fontSize: 15,
+    lineHeight: 22,
+    marginBottom: 12,
+    padding: 12,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(245,200,66,0.35)',
+    backgroundColor: 'rgba(245,200,66,0.08)',
   },
   errorText: {
     color: UI.danger,

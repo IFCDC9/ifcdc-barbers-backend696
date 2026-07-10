@@ -197,6 +197,10 @@ export async function ensureBarberScheduleSchema(barberIdType) {
     `CREATE INDEX IF NOT EXISTS barber_blocked_dates_barber_idx ON barber_blocked_dates (barber_id, blocked_date);`,
   );
 
+  await dbQuery(`ALTER TABLE barber_blocked_dates ADD COLUMN IF NOT EXISTS client_reason TEXT;`);
+  await dbQuery(`ALTER TABLE barber_blocked_dates ADD COLUMN IF NOT EXISTS return_date DATE;`);
+  await dbQuery(`ALTER TABLE barber_blocked_dates ADD COLUMN IF NOT EXISTS client_message TEXT;`);
+
   const settingsCur = await tableBarberIdType("barber_settings");
   if (settingsCur && settingsCur !== want) {
     console.warn(`[migrate] barber_settings barber_id is ${settingsCur}, barbers.id is ${want} — recreating barber_settings`);

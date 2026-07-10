@@ -63,6 +63,7 @@ export default function BookingWizard() {
   const [servicesUsingFallback, setServicesUsingFallback] = useState(false);
   const [time, setTime] = useState(null);
   const [availableSlots, setAvailableSlots] = useState([]);
+  const [unavailabilityMessage, setUnavailabilityMessage] = useState("");
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [slotsError, setSlotsError] = useState(null);
   const [guestEmail, setGuestEmail] = useState("");
@@ -167,6 +168,7 @@ export default function BookingWizard() {
     setSlotsLoading(true);
     setSlotsError(null);
     setAvailableSlots([]);
+    setUnavailabilityMessage("");
     (async () => {
       try {
         const result = await fetchAvailableSlots({
@@ -175,10 +177,19 @@ export default function BookingWizard() {
           dateLabel: date,
           durationMinutes: cartTotalDuration,
         });
-        if (!cancelled) setAvailableSlots(result.slots || []);
+        if (!cancelled) {
+          setAvailableSlots(result.slots || []);
+          setUnavailabilityMessage(
+            result.unavailability?.message ||
+              (result.reasonIfEmpty === "blocked_date"
+                ? "This provider is unavailable at this time. Please choose another available appointment."
+                : ""),
+          );
+        }
       } catch (e) {
         if (!cancelled) {
           setAvailableSlots([]);
+          setUnavailabilityMessage("");
           setSlotsError(e?.message || "Could not load available times.");
         }
       } finally {
@@ -548,7 +559,9 @@ export default function BookingWizard() {
           {slotsLoading ? <p className="ifcdc-page-hint">Loading times…</p> : null}
           {slotsError ? <p className="ifcdc-error-msg">{slotsError}</p> : null}
           {!slotsLoading && !availableSlots.length ? (
-            <p className="ifcdc-page-hint">No times for this date. Try another day.</p>
+            <p className={`ifcdc-page-hint${unavailabilityMessage ? " ifcdc-book-wizard__unavailable-msg" : ""}`}>
+              {unavailabilityMessage || "No times for this date. Try another day."}
+            </p>
           ) : null}
           <ul className="ifcdc-book-wizard__list ifcdc-book-wizard__list--grid">
             {availableSlots.map((slot) => {

@@ -19,6 +19,9 @@ export type BlockedDateRow = {
   id?: number;
   blocked_date: string;
   note?: string | null;
+  client_reason?: string | null;
+  return_date?: string | null;
+  client_message?: string | null;
 };
 
 export type BarberSchedule = {

@@ -175,6 +175,8 @@ export async function fetchAvailableSlots({ barberName, barberId, dateLabel, dur
     date: json.date,
     barberId: json.barberId,
     usedFallback: json.usedFallback,
+    reasonIfEmpty: json.reasonIfEmpty || null,
+    unavailability: json.unavailability || null,
   };
 }
 

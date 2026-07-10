@@ -14,7 +14,7 @@ import ProfileScreenLayout from "../../components/ProfileScreenLayout";
 import ProfileCard from "../../components/ProfileCard";
 import GlowButton from "../../components/GlowButton";
 import ScheduleTimeField from "../../components/ScheduleTimeField";
-import { WEEKDAYS } from "../../constants/scheduleDays";
+import { UNAVAILABILITY_REASON_OPTIONS } from "../../constants/unavailabilityReasons";
 import {
   fetchBarberSchedule,
   saveBarberSchedule,
@@ -97,11 +97,17 @@ export default function EditBarberScheduleScreen() {
   const addBlockedDate = () => {
     setState((prev) => ({
       ...prev,
-      blockedDates: [...prev.blockedDates, { blocked_date: "", note: "" }],
+      blockedDates: [
+        ...prev.blockedDates,
+        { blocked_date: "", note: "", client_reason: "", return_date: "", client_message: "" },
+      ],
     }));
   };
 
-  const updateBlocked = (index: number, patch: Partial<{ blocked_date: string; note: string }>) => {
+  const updateBlocked = (
+    index: number,
+    patch: Partial<EditScheduleState["blockedDates"][0]>,
+  ) => {
     setState((prev) => ({
       ...prev,
       blockedDates: prev.blockedDates.map((b, i) => (i === index ? { ...b, ...patch } : b)),
@@ -232,7 +238,10 @@ export default function EditBarberScheduleScreen() {
           </ProfileCard>
 
           <ProfileCard>
-            <Text style={styles.sectionTitle}>Blocked dates</Text>
+            <Text style={styles.sectionTitle}>Time off / blocked dates</Text>
+            <Text style={styles.muted}>
+              Clients cannot book on these days. Choose a client-facing reason — private notes are never shown.
+            </Text>
             {state.blockedDates.length === 0 ? (
               <Text style={styles.muted}>No blocked dates.</Text>
             ) : null}
@@ -245,10 +254,43 @@ export default function EditBarberScheduleScreen() {
                   placeholderTextColor="rgba(255,255,255,0.35)"
                   style={styles.dateInput}
                 />
+                <Text style={styles.fieldLabel}>Client-facing reason</Text>
+                <View style={styles.reasonWrap}>
+                  {UNAVAILABILITY_REASON_OPTIONS.map((opt) => {
+                    const selected = (bd.client_reason || "") === opt.code;
+                    return (
+                      <Pressable
+                        key={opt.code || "default"}
+                        onPress={() => updateBlocked(index, { client_reason: opt.code })}
+                        style={[styles.reasonChip, selected && styles.reasonChipOn]}
+                      >
+                        <Text style={[styles.reasonChipText, selected && styles.reasonChipTextOn]}>
+                          {opt.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+                {bd.client_reason === "custom" ? (
+                  <TextInput
+                    value={bd.client_message}
+                    onChangeText={(v) => updateBlocked(index, { client_message: v })}
+                    placeholder="Custom message shown to clients"
+                    placeholderTextColor="rgba(255,255,255,0.35)"
+                    style={[styles.dateInput, { flex: 1 }]}
+                  />
+                ) : null}
+                <TextInput
+                  value={bd.return_date}
+                  onChangeText={(v) => updateBlocked(index, { return_date: v })}
+                  placeholder="Return date YYYY-MM-DD (optional)"
+                  placeholderTextColor="rgba(255,255,255,0.35)"
+                  style={styles.dateInput}
+                />
                 <TextInput
                   value={bd.note}
                   onChangeText={(v) => updateBlocked(index, { note: v })}
-                  placeholder="Note (optional)"
+                  placeholder="Private note (not shown to clients)"
                   placeholderTextColor="rgba(255,255,255,0.35)"
                   style={[styles.dateInput, { flex: 1 }]}
                 />
@@ -333,6 +375,19 @@ const styles = StyleSheet.create({
   dayChipTextOn: { color: theme.colors.gold },
   removeLink: { color: "#f87171", fontSize: 13, fontWeight: "600", marginTop: 4 },
   blockedRow: { gap: 8, marginBottom: 12 },
+  fieldLabel: { color: theme.colors.textMuted, fontSize: 12, fontWeight: "600" },
+  reasonWrap: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  reasonChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    maxWidth: "100%",
+  },
+  reasonChipOn: { borderColor: theme.colors.borderGold, backgroundColor: "rgba(245,200,66,0.12)" },
+  reasonChipText: { color: theme.colors.textMuted, fontSize: 11, fontWeight: "600" },
+  reasonChipTextOn: { color: theme.colors.gold },
   dateInput: {
     color: theme.colors.text,
     fontSize: 15,

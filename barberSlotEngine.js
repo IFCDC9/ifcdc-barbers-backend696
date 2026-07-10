@@ -1,4 +1,5 @@
 import { dbQuery } from "./db.js";
+import { buildClientUnavailability } from "./barberUnavailabilityReasons.js";
 
 const DEFAULT_INTERVAL = 30;
 const DEFAULT_TIMEZONE = process.env.SHOP_TIMEZONE || "America/New_York";
@@ -140,17 +141,32 @@ export async function loadBarberSchedule(barberId, barberName = "") {
     [bid],
   );
   const blocked = await dbQuery(
-    `SELECT to_char(blocked_date, 'YYYY-MM-DD') AS blocked_date
+    `SELECT to_char(blocked_date, 'YYYY-MM-DD') AS blocked_date,
+            client_reason,
+            to_char(return_date, 'YYYY-MM-DD') AS return_date,
+            client_message
      FROM barber_blocked_dates WHERE barber_id = $1 ORDER BY blocked_date`,
     [bid],
   );
+
+  const blockedDateMeta = {};
+  const blockedDates = (blocked.rows || []).map((r) => {
+    const d = String(r.blocked_date);
+    blockedDateMeta[d] = {
+      client_reason: r.client_reason || null,
+      return_date: r.return_date || null,
+      client_message: r.client_message || null,
+    };
+    return d;
+  });
 
   return {
     intervalMinutes,
     timezone,
     availability: avail.rows || [],
     breaks: breaks.rows || [],
-    blockedDates: (blocked.rows || []).map((r) => String(r.blocked_date)),
+    blockedDates,
+    blockedDateMeta,
   };
 }
 
@@ -187,6 +203,7 @@ export function demoFallbackSchedule() {
     })),
     breaks: [],
     blockedDates: [],
+    blockedDateMeta: {},
   };
 }
 
@@ -320,6 +337,7 @@ export async function getAvailableSlotsForBarberDate(
   const schedule = await loadBarberSchedule(barberId, barberName);
   let minuteStarts = buildScheduleSlotMinutes(schedule, dateStr);
   let reasonIfEmpty = null;
+  let unavailability = null;
   let usedFallback = false;
 
   const hasConfiguredHours = (schedule.availability || []).some((row) => !row.is_off);
@@ -327,12 +345,20 @@ export async function getAvailableSlotsForBarberDate(
   if (!minuteStarts.length) {
     if (schedule.blockedDates.includes(dateStr)) {
       reasonIfEmpty = "blocked_date";
+      unavailability = buildClientUnavailability(schedule.blockedDateMeta?.[dateStr]);
     } else if (!hasConfiguredHours) {
       reasonIfEmpty = "no_schedule";
-      const fallbackSchedule = { ...demoFallbackSchedule(), blockedDates: schedule.blockedDates };
+      const fallbackSchedule = {
+        ...demoFallbackSchedule(),
+        blockedDates: schedule.blockedDates,
+        blockedDateMeta: schedule.blockedDateMeta,
+      };
       minuteStarts = buildScheduleSlotMinutes(fallbackSchedule, dateStr);
       usedFallback = minuteStarts.length > 0;
-      if (!minuteStarts.length) reasonIfEmpty = "blocked_date";
+      if (!minuteStarts.length) {
+        reasonIfEmpty = "blocked_date";
+        unavailability = buildClientUnavailability(schedule.blockedDateMeta?.[dateStr]);
+      }
     } else {
       reasonIfEmpty = "closed_day";
     }
@@ -378,6 +404,7 @@ export async function getAvailableSlotsForBarberDate(
     slots,
     usedFallback,
     reasonIfEmpty,
+    unavailability,
     durationMinutes: requestedDuration,
   };
 }
@@ -427,12 +454,17 @@ export async function validateBookingSlot(
 
   const schedule = await loadBarberSchedule(barberId, barberName);
   if (schedule.blockedDates.includes(dateStr)) {
-    return { ok: false, code: "blocked_date", message: "Barber is unavailable on this date." };
+    const { message } = buildClientUnavailability(schedule.blockedDateMeta?.[dateStr]);
+    return { ok: false, code: "blocked_date", message };
   }
 
   let allowedMinutes = buildScheduleSlotMinutes(schedule, dateStr);
   if (!allowedMinutes.length && !(schedule.availability || []).some((row) => !row.is_off)) {
-    const fallbackSchedule = { ...demoFallbackSchedule(), blockedDates: schedule.blockedDates };
+    const fallbackSchedule = {
+      ...demoFallbackSchedule(),
+      blockedDates: schedule.blockedDates,
+      blockedDateMeta: schedule.blockedDateMeta,
+    };
     allowedMinutes = buildScheduleSlotMinutes(fallbackSchedule, dateStr);
   }
   const bookingMin = parseTimeToMinutes(timeSql);
