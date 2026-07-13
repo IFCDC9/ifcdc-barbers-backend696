@@ -289,7 +289,13 @@ export default function BookingWizard() {
       });
       const stillOpen = slotCheck.slots?.some((s) => s.available && s.time === time);
       if (!stillOpen) {
-        setError("That time was just taken. Pick another slot.");
+        const closedMsg =
+          slotCheck.unavailability?.message ||
+          (slotCheck.reasonIfEmpty === "blocked_date" || slotCheck.reasonIfEmpty === "closed_day"
+            ? `${barber.name || "This provider"} is unavailable on this date. Please choose another available appointment.`
+            : "That time was just taken. Pick another slot.");
+        setError(closedMsg);
+        setUnavailabilityMessage(slotCheck.unavailability?.message || "");
         setStep(4);
         setTime(null);
         setAvailableSlots(slotCheck.slots || []);

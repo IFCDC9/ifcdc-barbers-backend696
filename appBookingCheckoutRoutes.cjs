@@ -46,8 +46,10 @@ const {
   normalizePayPalEnvValue,
   getPayPalSecret,
 } = require("./paypalEnv.cjs");
-const { captureOrGetCompletedPayPalOrder } = require("./paypalOrderCaptureHelpers.cjs");
+const { captureOrGetCompletedPayPalOrder, getPayPalOrder } = require("./paypalOrderCaptureHelpers.cjs");
 const { sendOrphanedPaymentAdminAlert } = require("./orphanedPaymentAlert.cjs");
+const { refundCapturedBookingOrAlert } = require("./orphanPaymentRefund.cjs");
+const { bookingDateToYmd } = require("./bookingDateYmd.cjs");
 const { resolvePayPalCheckoutReturnUrls } = require("./publicSiteConfig.cjs");
 const { expireStalePendingPaymentBookings } = require("./bookingCleanup.cjs");
 
@@ -1059,18 +1061,127 @@ router.post("/finalize", async (req, res) => {
     console.log("[app-bookings] finalize START", { paypalOrderId: orderID });
 
     const client = getPayPalHttpClient();
-    const { order: capture, captureId: capturedIdFromOrder, alreadyCaptured } =
-      await captureOrGetCompletedPayPalOrder(client, orderID);
-
     const { dbQuery } = await loadDb();
 
-    const markPaymentFailed = async (bookingId, status = PAYMENT_STATUS.PAYMENT_FAILED) => {
+    const markPaymentFailed = async (bookingId, status = PAYMENT_STATUS.PAYMENT_FAILED, captureId = null) => {
       if (!bookingId) return;
       await dbQuery(
-        `UPDATE bookings SET payment_status = $2, booking_status = 'pending_payment', is_paid_booking = false WHERE id = $1::uuid`,
-        [bookingId, status],
+        `UPDATE bookings SET
+           payment_status = $2,
+           booking_status = 'pending_payment',
+           is_paid_booking = false,
+           paypal_capture_id = COALESCE(paypal_capture_id, $3)
+         WHERE id = $1::uuid`,
+        [bookingId, status, captureId || null],
       ).catch(() => {});
     };
+
+    // Load pending booking BEFORE capturing so closed/vacation days never take money.
+    const foundEarly = await dbQuery(
+      `SELECT id, user_id, business_id, customer_name, customer_email, service, service_duration_minutes,
+              barber_id, barber_name, date, time, total_price, deposit_amount, tip_amount,
+              remaining_balance, platform_fee, amount_paid, amount_charged, balance_due,
+              service_price, payment_status, paypal_capture_id, total_amount, booking_status
+       FROM bookings WHERE paypal_order_id = $1 LIMIT 1`,
+      [orderID],
+    );
+    let row = foundEarly.rows?.[0] || null;
+
+    const slotEngine = await loadSlotEngine();
+    let preCaptureSlotOk = true;
+    let preCaptureSlotMessage = "";
+    let preCaptureSlotCode = "";
+
+    if (row) {
+      const finalizeDateStr = bookingDateToYmd(row.date);
+      const finalizeTimeLabel = slotEngine.minutesToSlotLabel(
+        slotEngine.parseTimeToMinutes(String(row.time || "").slice(0, 8)) ?? 0,
+      );
+      if (!finalizeDateStr || !/^\d{4}-\d{2}-\d{2}$/.test(finalizeDateStr)) {
+        preCaptureSlotOk = false;
+        preCaptureSlotCode = "bad_date";
+        preCaptureSlotMessage = "Invalid booking date — pick another day.";
+      } else {
+        const finalizeSlotCheck = await slotEngine.validateBookingSlot(
+          row.barber_id,
+          finalizeDateStr,
+          finalizeTimeLabel,
+          row.barber_name || "",
+          {
+            excludeBookingId: row.id,
+            durationMinutes: Number(row.service_duration_minutes) || 30,
+          },
+        );
+        if (!finalizeSlotCheck.ok) {
+          preCaptureSlotOk = false;
+          preCaptureSlotCode = finalizeSlotCheck.code || "slot_unavailable";
+          preCaptureSlotMessage =
+            finalizeSlotCheck.message || "That time is no longer available. Please choose another time.";
+        }
+      }
+
+      if (!preCaptureSlotOk) {
+        // Do not capture if PayPal has not already taken funds.
+        let existingOrder = null;
+        try {
+          existingOrder = await getPayPalOrder(client, orderID);
+        } catch (peekErr) {
+          console.warn("[app-bookings] finalize pre-capture order peek failed:", peekErr?.message || peekErr);
+        }
+        const alreadyPaid =
+          String(existingOrder?.status || "").toUpperCase() === "COMPLETED" &&
+          Boolean(extractCaptureIdFromOrder(existingOrder));
+
+        if (!alreadyPaid) {
+          await markPaymentFailed(row.id, PAYMENT_STATUS.PAYMENT_FAILED);
+          console.warn("[app-bookings] finalize blocked BEFORE capture", {
+            paypalOrderId: orderID,
+            bookingId: row.id,
+            code: preCaptureSlotCode,
+            message: preCaptureSlotMessage,
+            dateYmd: bookingDateToYmd(row.date),
+          });
+          return res.status(409).json({
+            verified: false,
+            paymentCaptured: false,
+            error: preCaptureSlotCode,
+            message: preCaptureSlotMessage,
+            paypalOrderId: orderID,
+            bookingId: row.id,
+          });
+        }
+
+        // Funds already captured earlier — refund automatically.
+        const captureIdEarly = extractCaptureIdFromOrder(existingOrder);
+        const capturedUsdEarly = extractPayPalCapturedUsd(existingOrder);
+        const refundResult = await refundCapturedBookingOrAlert({
+          dbQuery,
+          bookingId: row.id,
+          paypalOrderId: orderID,
+          captureId: captureIdEarly,
+          customerEmail: row.customer_email,
+          capturedUsd: capturedUsdEarly,
+          reason: preCaptureSlotCode,
+          extra: { message: preCaptureSlotMessage, dateYmd: bookingDateToYmd(row.date) },
+        });
+        return res.status(409).json({
+          verified: false,
+          paymentCaptured: true,
+          refunded: Boolean(refundResult.refunded),
+          refundId: refundResult.refundId || null,
+          error: preCaptureSlotCode,
+          message: refundResult.refunded
+            ? `${preCaptureSlotMessage} Your payment of $${Number(capturedUsdEarly || 0).toFixed(2)} has been refunded.`
+            : `${preCaptureSlotMessage} Payment was captured — support has been notified to refund you.`,
+          paypalOrderId: orderID,
+          captureId: captureIdEarly,
+          bookingId: row.id,
+        });
+      }
+    }
+
+    const { order: capture, captureId: capturedIdFromOrder, alreadyCaptured } =
+      await captureOrGetCompletedPayPalOrder(client, orderID);
 
     if (capture?.status !== "COMPLETED") {
       const pending = await dbQuery(
@@ -1109,36 +1220,41 @@ router.post("/finalize", async (req, res) => {
       });
     }
 
-    const found = await dbQuery(
-      `SELECT id, user_id, business_id, customer_name, customer_email, service, service_duration_minutes,
-              barber_id, barber_name, date, time, total_price, deposit_amount, tip_amount,
-              remaining_balance, platform_fee, amount_paid, amount_charged, balance_due,
-              service_price, payment_status, paypal_capture_id
-       FROM bookings WHERE paypal_order_id = $1 LIMIT 1`,
-      [orderID],
-    );
-    const row = found.rows?.[0];
+    if (!row) {
+      const found = await dbQuery(
+        `SELECT id, user_id, business_id, customer_name, customer_email, service, service_duration_minutes,
+                barber_id, barber_name, date, time, total_price, deposit_amount, tip_amount,
+                remaining_balance, platform_fee, amount_paid, amount_charged, balance_due,
+                service_price, payment_status, paypal_capture_id, total_amount
+         FROM bookings WHERE paypal_order_id = $1 LIMIT 1`,
+        [orderID],
+      );
+      row = found.rows?.[0] || null;
+    }
+
     if (!row) {
       const capturedUsd = extractPayPalCapturedUsd(capture);
-      await sendOrphanedPaymentAdminAlert({
+      await refundCapturedBookingOrAlert({
+        dbQuery,
+        bookingId: null,
         paypalOrderId: orderID,
         captureId,
-        reason: "booking_not_found",
         capturedUsd,
+        reason: "booking_not_found",
       });
       console.error("[app-bookings] finalize booking_not_found", { paypalOrderId: orderID, captureId });
       return res.status(404).json({
         verified: false,
         paymentCaptured: true,
         error: "booking_not_found",
-        message: "PayPal payment captured but no pending booking for this order. Support has been notified.",
+        message: "PayPal payment captured but no pending booking for this order. A refund has been attempted and support notified.",
         paypalOrderId: orderID,
         captureId,
       });
     }
 
-    const slotEngine = await loadSlotEngine();
-    const finalizeDateStr = String(row.date || "").slice(0, 10);
+    // Re-check slot after capture (race with another booking confirming in parallel).
+    const finalizeDateStr = bookingDateToYmd(row.date);
     const finalizeTimeLabel = slotEngine.minutesToSlotLabel(
       slotEngine.parseTimeToMinutes(String(row.time || "").slice(0, 8)) ?? 0,
     );
@@ -1153,23 +1269,26 @@ router.post("/finalize", async (req, res) => {
       },
     );
     if (!finalizeSlotCheck.ok) {
-      await markPaymentFailed(row.id, PAYMENT_STATUS.PAYMENT_FAILED);
-      await sendOrphanedPaymentAdminAlert({
+      const capturedUsd = extractPayPalCapturedUsd(capture);
+      const refundResult = await refundCapturedBookingOrAlert({
+        dbQuery,
+        bookingId: row.id,
         paypalOrderId: orderID,
         captureId,
-        bookingId: row.id,
         customerEmail: row.customer_email,
+        capturedUsd,
         reason: finalizeSlotCheck.code || "slot_unavailable",
-        capturedUsd: extractPayPalCapturedUsd(capture),
-        extra: { message: finalizeSlotCheck.message },
+        extra: { message: finalizeSlotCheck.message, dateYmd: finalizeDateStr },
       });
       return res.status(409).json({
         verified: false,
         paymentCaptured: true,
+        refunded: Boolean(refundResult.refunded),
+        refundId: refundResult.refundId || null,
         error: finalizeSlotCheck.code || "slot_unavailable",
-        message:
-          finalizeSlotCheck.message ||
-          "That time is no longer available. Contact support if payment was captured.",
+        message: refundResult.refunded
+          ? `${finalizeSlotCheck.message || "That time is no longer available."} Your payment has been refunded.`
+          : `${finalizeSlotCheck.message || "That time is no longer available."} Support has been notified to refund you.`,
         paypalOrderId: orderID,
         captureId,
         bookingId: row.id,
@@ -1215,7 +1334,7 @@ router.post("/finalize", async (req, res) => {
 
     const capturedUsd = extractPayPalCapturedUsd(capture);
     if (capturedUsd == null) {
-      await markPaymentFailed(row.id, PAYMENT_STATUS.PAYMENT_FAILED);
+      await markPaymentFailed(row.id, PAYMENT_STATUS.PAYMENT_FAILED, captureId);
       return res.status(400).json({
         verified: false,
         error: "no_capture_amount",
@@ -1239,16 +1358,19 @@ router.post("/finalize", async (req, res) => {
         settlement.paymentStatus === PAYMENT_STATUS.PAYMENT_MISMATCH
           ? PAYMENT_STATUS.PAYMENT_MISMATCH
           : PAYMENT_STATUS.PAYMENT_FAILED;
-      await markPaymentFailed(row.id, failStatus);
-      await sendOrphanedPaymentAdminAlert({
+      const refundResult = await refundCapturedBookingOrAlert({
+        dbQuery,
+        bookingId: row.id,
         paypalOrderId: orderID,
         captureId,
-        bookingId: row.id,
         customerEmail: row.customer_email,
-        reason: settlement.error || "settlement_failed",
         capturedUsd,
+        reason: settlement.error || "settlement_failed",
         extra: { message: settlement.message, fullRequired: settlement.fullRequired },
       });
+      if (!refundResult.refunded) {
+        await markPaymentFailed(row.id, failStatus, captureId);
+      }
       console.error("[app-bookings] finalize settlement FAILED", {
         paypalOrderId: orderID,
         captureId,
@@ -1257,14 +1379,17 @@ router.post("/finalize", async (req, res) => {
         error: settlement.error,
         message: settlement.message,
         capturedUsd,
+        refunded: refundResult.refunded,
       });
       return res.status(400).json({
         verified: false,
         paymentCaptured: true,
+        refunded: Boolean(refundResult.refunded),
         error: settlement.error,
-        message:
-          settlement.message ||
-          "PayPal captured your payment but the booking could not be confirmed. Support has been notified.",
+        message: refundResult.refunded
+          ? "Payment could not be matched to the booking total and has been refunded."
+          : settlement.message ||
+            "PayPal captured your payment but the booking could not be confirmed. Support has been notified.",
         paypalOrderId: orderID,
         captureId,
         bookingId: row.id,
@@ -1290,16 +1415,19 @@ router.post("/finalize", async (req, res) => {
         normalizePaymentStatus(fresh.payment_status) === PAYMENT_STATUS.PAID_IN_FULL &&
         Number(fresh.amount_paid ?? fresh.amount_charged ?? 0) > 0;
       if (!hasPaidCapture) {
-        await markPaymentFailed(row.id, PAYMENT_STATUS.PAYMENT_FAILED);
-        await sendOrphanedPaymentAdminAlert({
+        const refundResult = await refundCapturedBookingOrAlert({
+          dbQuery,
+          bookingId: row.id,
           paypalOrderId: orderID,
           captureId,
-          bookingId: row.id,
           customerEmail: row.customer_email,
-          reason: "payment_not_settled",
           capturedUsd,
+          reason: "payment_not_settled",
           extra: { rowStatus: fresh.payment_status, amountPaid: fresh.amount_paid },
         });
+        if (!refundResult.refunded) {
+          await markPaymentFailed(row.id, PAYMENT_STATUS.PAYMENT_FAILED, captureId);
+        }
         console.error("[app-bookings] finalize payment_not_settled", {
           paypalOrderId: orderID,
           captureId,
@@ -1307,12 +1435,16 @@ router.post("/finalize", async (req, res) => {
           customerEmail: row.customer_email,
           paymentStatus: fresh.payment_status,
           amountPaid: fresh.amount_paid,
+          refunded: refundResult.refunded,
         });
         return res.status(400).json({
           verified: false,
           paymentCaptured: true,
+          refunded: Boolean(refundResult.refunded),
           error: "payment_not_settled",
-          message: "PayPal captured your payment but booking settlement failed. Support has been notified.",
+          message: refundResult.refunded
+            ? "Booking settlement failed and your payment has been refunded."
+            : "PayPal captured your payment but booking settlement failed. Support has been notified.",
           paypalOrderId: orderID,
           captureId,
           bookingId: row.id,

@@ -37,6 +37,13 @@ function extractCaptureIdFromOrder(order) {
   return null;
 }
 
+/** Read-only order GET — does not capture. */
+async function getPayPalOrder(client, orderID) {
+  const getReq = new paypalSdk.orders.OrdersGetRequest(orderID);
+  const getRes = await client.execute(getReq);
+  return getRes.result;
+}
+
 /**
  * @param {import('@paypal/checkout-server-sdk').core.PayPalHttpClient} client
  * @param {string} orderID
@@ -55,9 +62,7 @@ async function captureOrGetCompletedPayPalOrder(client, orderID) {
       throw err;
     }
     console.warn("[paypal] capture returned ORDER_ALREADY_CAPTURED — fetching order", { orderID });
-    const getReq = new paypalSdk.orders.OrdersGetRequest(orderID);
-    const getRes = await client.execute(getReq);
-    const order = getRes.result;
+    const order = await getPayPalOrder(client, orderID);
     if (String(order?.status || "").toUpperCase() !== "COMPLETED") {
       throw err;
     }
@@ -69,5 +74,6 @@ async function captureOrGetCompletedPayPalOrder(client, orderID) {
 module.exports = {
   isPayPalOrderAlreadyCapturedError,
   extractCaptureIdFromOrder,
+  getPayPalOrder,
   captureOrGetCompletedPayPalOrder,
 };

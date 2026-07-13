@@ -345,7 +345,14 @@ export async function getAvailableSlotsForBarberDate(
   if (!minuteStarts.length) {
     if (schedule.blockedDates.includes(dateStr)) {
       reasonIfEmpty = "blocked_date";
-      unavailability = buildClientUnavailability(schedule.blockedDateMeta?.[dateStr]);
+      const built = buildClientUnavailability(schedule.blockedDateMeta?.[dateStr]);
+      const who = String(barberName || "").trim();
+      unavailability = {
+        ...built,
+        message: who
+          ? built.message.replace(/^This provider/, who).replace(/^This barber/i, who)
+          : built.message,
+      };
     } else if (!hasConfiguredHours) {
       reasonIfEmpty = "no_schedule";
       const fallbackSchedule = {
@@ -361,6 +368,12 @@ export async function getAvailableSlotsForBarberDate(
       }
     } else {
       reasonIfEmpty = "closed_day";
+      const who = String(barberName || "This provider").trim() || "This provider";
+      unavailability = {
+        message: `${who} is unavailable on this date. Please choose another available appointment.`,
+        reason: "closed_day",
+        returnDate: null,
+      };
     }
   }
 
@@ -455,7 +468,11 @@ export async function validateBookingSlot(
   const schedule = await loadBarberSchedule(barberId, barberName);
   if (schedule.blockedDates.includes(dateStr)) {
     const { message } = buildClientUnavailability(schedule.blockedDateMeta?.[dateStr]);
-    return { ok: false, code: "blocked_date", message };
+    const who = String(barberName || "").trim();
+    const personalized = who
+      ? message.replace(/^This provider/, who).replace(/^This barber/i, who)
+      : message;
+    return { ok: false, code: "blocked_date", message: personalized };
   }
 
   let allowedMinutes = buildScheduleSlotMinutes(schedule, dateStr);
@@ -471,7 +488,12 @@ export async function validateBookingSlot(
   if (bookingMin == null) return { ok: false, code: "bad_time", message: "Invalid time" };
 
   if (!allowedMinutes.length) {
-    return { ok: false, code: "closed", message: "No availability on this date — pick another day." };
+    const who = String(barberName || "This provider").trim() || "This provider";
+    return {
+      ok: false,
+      code: "closed",
+      message: `${who} is unavailable on this date. Please choose another available appointment.`,
+    };
   }
 
   if (!allowedMinutes.includes(bookingMin)) {

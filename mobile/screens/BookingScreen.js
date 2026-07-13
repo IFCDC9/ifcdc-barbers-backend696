@@ -394,7 +394,13 @@ function BookingScreen() {
       });
       const stillOpen = slotCheck.slots?.some((s) => s.available && s.time === time);
       if (!stillOpen) {
-        Alert.alert(t('booking.slotTakenTitle'), t('booking.slotTakenBody'));
+        const closedMsg =
+          slotCheck.unavailability?.message ||
+          (slotCheck.reasonIfEmpty === 'blocked_date' || slotCheck.reasonIfEmpty === 'closed_day'
+            ? `${barber?.name || 'This provider'} is unavailable on this date. Please choose another available appointment.`
+            : t('booking.slotTakenBody'));
+        setUnavailabilityMessage(slotCheck.unavailability?.message || '');
+        Alert.alert(t('booking.slotTakenTitle'), closedMsg);
         setStep(4);
         setTime(null);
         setAvailableSlots(slotCheck.slots || []);

@@ -63,7 +63,10 @@ function bookingHasRefundableCapture(booking) {
   }
   const paid = Number(booking?.amount_paid ?? booking?.amount_charged ?? booking?.total_paid ?? 0);
   if (paid > 0.01) return true;
-  return ["paid", "paid_full", "paid_in_full", "deposit_paid"].includes(status);
+  // Allow refund when capture exists but finalize failed before amount_paid was written.
+  return ["paid", "paid_full", "paid_in_full", "deposit_paid", "payment_failed", "payment_mismatch"].includes(
+    status,
+  );
 }
 
 function getAuthPayload(req) {

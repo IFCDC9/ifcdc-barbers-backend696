@@ -14,6 +14,7 @@ import ProfileScreenLayout from "../../components/ProfileScreenLayout";
 import ProfileCard from "../../components/ProfileCard";
 import GlowButton from "../../components/GlowButton";
 import ScheduleTimeField from "../../components/ScheduleTimeField";
+import { WEEKDAYS } from "../../constants/scheduleDays";
 import { UNAVAILABILITY_REASON_OPTIONS } from "../../constants/unavailabilityReasons";
 import {
   fetchBarberSchedule,
@@ -154,7 +155,7 @@ export default function EditBarberScheduleScreen() {
   };
 
   return (
-    <ProfileScreenLayout title="Edit Schedule" subtitle={barberName}>
+    <ProfileScreenLayout title="Edit Schedule" subtitle={barberName || "Provider"}>
       {loading ? <ActivityIndicator color={theme.colors.gold} style={{ marginTop: 24 }} /> : null}
       {usingDefaults && !loading ? (
         <ProfileCard>
@@ -166,8 +167,12 @@ export default function EditBarberScheduleScreen() {
         <>
           <ProfileCard>
             <Text style={styles.sectionTitle}>Working days</Text>
-            {state.days.map((d) => {
-              const meta = WEEKDAYS.find((w) => w.dow === d.day_of_week)!;
+            {(Array.isArray(state.days) ? state.days : []).map((d) => {
+              const meta = WEEKDAYS.find((w) => w.dow === d.day_of_week) || {
+                dow: d.day_of_week,
+                label: `Day ${d.day_of_week}`,
+                short: "?",
+              };
               return (
                 <View key={d.day_of_week} style={styles.dayBlock}>
                   <Pressable

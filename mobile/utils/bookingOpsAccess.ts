@@ -91,5 +91,9 @@ export function canShowRefundClientButton(booking: {
   const capture = String(booking.paypal_capture_id || "").trim();
   if (!capture) return false;
   const paid = Number(booking.amount_charged ?? booking.amount_paid ?? booking.total_paid ?? 0);
-  return paid > 0.01 || ["paid", "paid_full", "deposit_paid", "partial_paid"].includes(display);
+  const status = String(booking.payment_status || "").toLowerCase();
+  if (paid > 0.01) return true;
+  if (["paid", "paid_full", "deposit_paid", "partial_paid"].includes(display)) return true;
+  // Orphan captures: payment_failed after PayPal capture but before amount_paid written
+  return status === "payment_failed" || status === "payment_mismatch";
 }
