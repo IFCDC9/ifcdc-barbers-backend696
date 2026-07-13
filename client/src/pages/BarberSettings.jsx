@@ -597,14 +597,18 @@ export default function BarberSettings() {
         <input
           style={inputStyle}
           value={row.start_time || ""}
-          onChange={(e) => updateDay(d, { start_time: e.target.value })}
+          onChange={(e) => updateDay(d, { start_time: e.target.value, is_off: false })}
           placeholder="09:00"
+          disabled={Boolean(row.is_off)}
+          title={row.is_off ? "Uncheck Off to edit hours for this day" : undefined}
         />
         <input
           style={inputStyle}
           value={row.end_time || ""}
-          onChange={(e) => updateDay(d, { end_time: e.target.value })}
+          onChange={(e) => updateDay(d, { end_time: e.target.value, is_off: false })}
           placeholder="18:00"
+          disabled={Boolean(row.is_off)}
+          title={row.is_off ? "Uncheck Off to edit hours for this day" : undefined}
         />
       </div>
     );
