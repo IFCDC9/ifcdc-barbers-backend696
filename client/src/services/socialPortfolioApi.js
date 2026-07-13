@@ -3,7 +3,10 @@ import { getAdminAuthHeaders, getStoredToken } from "../lib/authHeaders.js";
 import { authenticatedFetch, authenticatedJson } from "../lib/appSession.js";
 
 function authHeaders() {
-  return { Accept: "application/json" };
+  const token = getStoredToken();
+  return token
+    ? { Authorization: `Bearer ${token}`, Accept: "application/json" }
+    : { Accept: "application/json" };
 }
 
 function optionalAuthHeaders() {
@@ -72,14 +75,13 @@ export async function fetchBookingReviewStatus(bookingId) {
 }
 
 export async function uploadReviewPhotos(reviewId, files, meta = {}) {
-  const origin = getApiOrigin();
   const form = new FormData();
   for (const file of files) form.append("files", file);
   if (meta.barberName) form.append("barberName", meta.barberName);
   if (meta.photoType) form.append("photoType", meta.photoType);
   if (meta.styleCategory) form.append("styleCategory", meta.styleCategory);
   if (meta.caption) form.append("caption", meta.caption);
-  const res = await fetch(`${origin}/api/reviews/${encodeURIComponent(String(reviewId))}/photos`, {
+  const res = await authenticatedFetch(`/api/reviews/${encodeURIComponent(String(reviewId))}/photos`, {
     method: "POST",
     headers: authHeaders(),
     body: form,
@@ -90,10 +92,9 @@ export async function uploadReviewPhotos(reviewId, files, meta = {}) {
 }
 
 export async function updateCustomerReview(reviewId, body) {
-  const origin = getApiOrigin();
-  const res = await fetch(`${origin}/api/reviews/${encodeURIComponent(String(reviewId))}`, {
+  const res = await authenticatedFetch(`/api/reviews/${encodeURIComponent(String(reviewId))}`, {
     method: "PATCH",
-    headers: { Accept: "application/json", "Content-Type": "application/json", ...authHeaders() },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));
@@ -102,10 +103,20 @@ export async function updateCustomerReview(reviewId, body) {
 }
 
 export async function deleteCustomerReview(reviewId) {
-  const origin = getApiOrigin();
-  const res = await fetch(`${origin}/api/reviews/${encodeURIComponent(String(reviewId))}`, {
+  const res = await authenticatedFetch(`/api/reviews/${encodeURIComponent(String(reviewId))}`, {
     method: "DELETE",
-    headers: { Accept: "application/json", ...authHeaders() },
+    headers: authHeaders(),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.message || `HTTP ${res.status}`);
+  return data;
+}
+
+export async function replyToReview(reviewId, reply) {
+  const res = await authenticatedFetch(`/api/reviews/${encodeURIComponent(String(reviewId))}/reply`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ reply }),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data?.message || `HTTP ${res.status}`);
@@ -113,10 +124,9 @@ export async function deleteCustomerReview(reviewId) {
 }
 
 export async function togglePhotoLike(photoId) {
-  const origin = getApiOrigin();
-  const res = await fetch(`${origin}/api/photos/${encodeURIComponent(String(photoId))}/like`, {
+  const res = await authenticatedFetch(`/api/photos/${encodeURIComponent(String(photoId))}/like`, {
     method: "POST",
-    headers: { Accept: "application/json", ...authHeaders() },
+    headers: authHeaders(),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data?.message || `HTTP ${res.status}`);
@@ -124,10 +134,9 @@ export async function togglePhotoLike(photoId) {
 }
 
 export async function followBarber(barberId) {
-  const origin = getApiOrigin();
-  const res = await fetch(`${origin}/api/barbers/${encodeURIComponent(String(barberId))}/follow`, {
+  const res = await authenticatedFetch(`/api/barbers/${encodeURIComponent(String(barberId))}/follow`, {
     method: "POST",
-    headers: { Accept: "application/json", ...authHeaders() },
+    headers: authHeaders(),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data?.message || `HTTP ${res.status}`);
@@ -135,10 +144,9 @@ export async function followBarber(barberId) {
 }
 
 export async function unfollowBarber(barberId) {
-  const origin = getApiOrigin();
-  const res = await fetch(`${origin}/api/barbers/${encodeURIComponent(String(barberId))}/follow`, {
+  const res = await authenticatedFetch(`/api/barbers/${encodeURIComponent(String(barberId))}/follow`, {
     method: "DELETE",
-    headers: { Accept: "application/json", ...authHeaders() },
+    headers: authHeaders(),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data?.message || `HTTP ${res.status}`);
@@ -146,10 +154,9 @@ export async function unfollowBarber(barberId) {
 }
 
 export async function reportContent(body) {
-  const origin = getApiOrigin();
-  const res = await fetch(`${origin}/api/content/report`, {
+  const res = await authenticatedFetch(`/api/content/report`, {
     method: "POST",
-    headers: { Accept: "application/json", "Content-Type": "application/json", ...getStoredToken() ? { Authorization: `Bearer ${getStoredToken()}` } : {} },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));
@@ -185,6 +192,18 @@ export async function hideReview(reviewId) {
     method: "PATCH",
     headers: { Accept: "application/json", "Content-Type": "application/json", ...getAdminAuthHeaders() },
     body: JSON.stringify({ status: "hidden" }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.message || `HTTP ${res.status}`);
+  return data;
+}
+
+export async function removeReview(reviewId, reason = "policy_violation") {
+  const origin = getApiOrigin();
+  const res = await fetch(`${origin}/api/admin/reviews/${encodeURIComponent(reviewId)}`, {
+    method: "DELETE",
+    headers: { Accept: "application/json", "Content-Type": "application/json", ...getAdminAuthHeaders() },
+    body: JSON.stringify({ reason }),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data?.message || `HTTP ${res.status}`);

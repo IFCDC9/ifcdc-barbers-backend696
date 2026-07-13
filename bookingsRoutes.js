@@ -1177,6 +1177,19 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
             }),
           )
           .catch(() => {});
+        void import("./socialPortfolioService.js")
+          .then((m) =>
+            m.notifyCustomerReviewPrompt({
+              id,
+              barber_id: booking.barber_id,
+              barber_name: booking.barber_name,
+              user_id: booking.user_id,
+              customer_email: booking.customer_email,
+              customer_name: booking.customer_name,
+              booking_status: "completed",
+            }),
+          )
+          .catch(() => {});
         void import("./loyaltyService.js")
           .then((m) => m.earnLoyaltyForCompletedBooking({ ...booking, id }))
           .catch(() => {});

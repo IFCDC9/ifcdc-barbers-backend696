@@ -17,3 +17,28 @@ test("badge definitions cover social proof milestones", () => {
   assert.ok(BARBER_BADGE_DEFINITIONS.hundred_five_star);
   assert.ok(BARBER_BADGE_DEFINITIONS.most_liked);
 });
+
+test("review notification email helpers are exported", async () => {
+  const mod = await import("../reviewNotificationEmail.cjs");
+  assert.equal(typeof mod.emailBarberNewReview, "function");
+  assert.equal(typeof mod.emailCustomerReviewPrompt, "function");
+  assert.equal(typeof mod.emailAdminReviewModeration, "function");
+  assert.match(String(mod.ADMIN_REVIEW_EMAIL || ""), /@/);
+});
+
+test("portfolio routes expose reply and admin delete", async () => {
+  const fs = await import("node:fs/promises");
+  const src = await fs.readFile(new URL("../socialPortfolioRoutes.js", import.meta.url), "utf8");
+  assert.match(src, /\/api\/reviews\/:reviewId\/reply/);
+  assert.match(src, /\/api\/admin\/reviews\/:id/);
+  assert.match(src, /adminDeleteReview/);
+  assert.match(src, /replyToBarberReview/);
+});
+
+test("web portfolio API sends bearer auth for review mutations", async () => {
+  const fs = await import("node:fs/promises");
+  const src = await fs.readFile(new URL("../client/src/services/socialPortfolioApi.js", import.meta.url), "utf8");
+  assert.match(src, /function authHeaders\(\)[\s\S]*Authorization:\s*`Bearer/);
+  assert.match(src, /replyToReview/);
+  assert.match(src, /removeReview/);
+});

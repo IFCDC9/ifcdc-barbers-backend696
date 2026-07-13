@@ -9,6 +9,7 @@ import {
 } from "./socialPortfolioConstants.js";
 import {
   addReviewPhotos,
+  adminDeleteReview,
   createBarberReview,
   deleteCustomerReview,
   followBarber,
@@ -18,6 +19,7 @@ import {
   listDiscoverPhotos,
   listPendingContentReports,
   listReviewableBookings,
+  replyToBarberReview,
   reportContent,
   resolveContentReport,
   setPhotoVisibility,
@@ -161,6 +163,21 @@ export function createSocialPortfolioRouter() {
     } catch (e) {
       console.error("[portfolio] delete review failed:", e?.message || e);
       return res.status(500).json({ ok: false, message: "Failed to delete review." });
+    }
+  });
+
+  router.post("/api/reviews/:reviewId/reply", requireAuth, async (req, res) => {
+    try {
+      const result = await replyToBarberReview({
+        userId: req.user.id,
+        reviewId: req.params.reviewId,
+        reply: req.body?.reply ?? req.body?.barberReply,
+      });
+      if (!result.ok) return res.status(400).json(result);
+      return res.json(result);
+    } catch (e) {
+      console.error("[portfolio] reply review failed:", e?.message || e);
+      return res.status(500).json({ ok: false, message: "Failed to save reply." });
     }
   });
 
@@ -318,11 +335,43 @@ export function createSocialPortfolioRouter() {
     const admin = await requirePlatformAdmin(req, res);
     if (!admin) return;
     try {
-      const result = await setReviewVisibility(req.params.id, req.body?.status);
+      const result = await setReviewVisibility(req.params.id, req.body?.status, {
+        adminUserId: admin.id,
+        reason: req.body?.reason || req.body?.adminNotes || "",
+      });
       if (!result.ok) return res.status(400).json(result);
+      void logAdminActivity({
+        eventType: ADMIN_ACTIVITY.CONTENT_MODERATED,
+        adminUserId: admin.id,
+        detail: `Review ${req.params.id} visibility → ${req.body?.status}`,
+        metadata: { reviewId: req.params.id, status: req.body?.status },
+        req,
+      });
       return res.json(result);
     } catch (e) {
       return res.status(500).json({ ok: false, message: "Failed to update review." });
+    }
+  });
+
+  router.delete("/api/admin/reviews/:id", async (req, res) => {
+    const admin = await requirePlatformAdmin(req, res);
+    if (!admin) return;
+    try {
+      const result = await adminDeleteReview(req.params.id, {
+        adminUserId: admin.id,
+        reason: req.body?.reason || req.body?.adminNotes || "policy_violation",
+      });
+      if (!result.ok) return res.status(400).json(result);
+      void logAdminActivity({
+        eventType: ADMIN_ACTIVITY.CONTENT_MODERATED,
+        adminUserId: admin.id,
+        detail: `Review ${req.params.id} removed`,
+        metadata: { reviewId: req.params.id, action: "removed" },
+        req,
+      });
+      return res.json(result);
+    } catch (e) {
+      return res.status(500).json({ ok: false, message: "Failed to remove review." });
     }
   });
 

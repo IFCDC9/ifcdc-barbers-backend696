@@ -32,6 +32,8 @@ export type PortfolioReview = {
   customerName: string;
   verifiedClient: boolean;
   createdAt: string | null;
+  barberReply?: string;
+  barberReplyAt?: string | null;
   photos: PortfolioPhoto[];
 };
 
@@ -267,6 +269,15 @@ export async function reportPortfolioContent(body: {
   await apiFetch("/api/content/report", { method: "POST", body: JSON.stringify(body) });
 }
 
+export async function replyToPortfolioReview(reviewId: string, reply: string): Promise<PortfolioReview> {
+  const res = await apiFetch(`/api/reviews/${encodeURIComponent(reviewId)}/reply`, {
+    method: "POST",
+    body: JSON.stringify({ reply }),
+  });
+  const data = await parseJson<{ review: PortfolioReview }>(res);
+  return data.review;
+}
+
 export async function fetchContentReports(): Promise<ContentReport[]> {
   const res = await apiFetch("/api/admin/content/reports");
   const data = await parseJson<{ reports: ContentReport[] }>(res);
@@ -287,6 +298,13 @@ export async function hideReview(reviewId: string): Promise<void> {
   await apiFetch(`/api/admin/reviews/${encodeURIComponent(reviewId)}/visibility`, {
     method: "PATCH",
     body: JSON.stringify({ status: "hidden" }),
+  });
+}
+
+export async function removeReview(reviewId: string, reason = "policy_violation"): Promise<void> {
+  await apiFetch(`/api/admin/reviews/${encodeURIComponent(reviewId)}`, {
+    method: "DELETE",
+    body: JSON.stringify({ reason }),
   });
 }
 

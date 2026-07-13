@@ -9,6 +9,7 @@ import {
   fetchContentReports,
   hidePhoto,
   hideReview,
+  removeReview,
   resolveContentReport,
 } from "../services/socialPortfolioApi.js";
 
@@ -49,6 +50,10 @@ export default function AdminContentModeration() {
         if (report.targetType === "review") await hideReview(report.targetId);
         else await hidePhoto(report.targetId);
         await resolveContentReport(report.id, { status: "action_taken" });
+      } else if (action === "remove") {
+        if (report.targetType === "review") await removeReview(report.targetId, report.reason || "policy_violation");
+        else await hidePhoto(report.targetId);
+        await resolveContentReport(report.id, { status: "action_taken", adminNotes: "Content removed by admin" });
       } else {
         await resolveContentReport(report.id, { status: "dismissed" });
       }
@@ -102,6 +107,18 @@ export default function AdminContentModeration() {
               >
                 Hide content
               </Button>
+              {report.targetType === "review" ? (
+                <Button
+                  variant="ghost"
+                  type="button"
+                  disabled={busyId === report.id}
+                  onClick={() => {
+                    if (window.confirm("Permanently remove this review?")) void act(report, "remove");
+                  }}
+                >
+                  Remove review
+                </Button>
+              ) : null}
               <Button variant="ghost" type="button" disabled={busyId === report.id} onClick={() => void act(report, "dismiss")}>
                 Dismiss
               </Button>

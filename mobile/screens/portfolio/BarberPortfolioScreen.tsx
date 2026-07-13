@@ -3,10 +3,12 @@ import {
   Alert,
   Image,
   Linking,
+  Pressable,
   ScrollView,
   Share,
   StyleSheet,
   Text,
+  TextInput,
   useWindowDimensions,
   View,
 } from "react-native";
@@ -23,6 +25,7 @@ import {
   fetchBarberPortfolio,
   followPortfolioBarber,
   portfolioShareUrl,
+  replyToPortfolioReview,
   reportPortfolioContent,
   togglePortfolioPhotoLike,
   unfollowPortfolioBarber,
@@ -56,6 +59,16 @@ export default function BarberPortfolioScreen() {
   const [busy, setBusy] = useState(false);
   const [portfolio, setPortfolio] = useState<BarberPortfolio | null>(null);
   const [error, setError] = useState("");
+  const [tab, setTab] = useState<"about" | "reviews" | "gallery">("about");
+  const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
+
+  const canReply =
+    Boolean(portfolio?.id) &&
+    Boolean(user) &&
+    (user?.role === "super_admin" ||
+      user?.role === "admin" ||
+      String((user as { barber_id?: string; barberId?: string })?.barber_id || (user as { barberId?: string })?.barberId || "") ===
+        String(portfolio?.id || ""));
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -111,6 +124,30 @@ export default function BarberPortfolioScreen() {
       });
     } catch {
       /* user dismissed */
+    }
+  };
+
+  const onReply = async (reviewId: string) => {
+    const text = String(replyDrafts[reviewId] || "").trim();
+    if (!text) return;
+    setBusy(true);
+    try {
+      const updated = await replyToPortfolioReview(reviewId, text);
+      setPortfolio((p) =>
+        p
+          ? {
+              ...p,
+              reviews: p.reviews.map((r) =>
+                r.id === reviewId ? { ...r, ...updated, photos: r.photos } : r,
+              ),
+            }
+          : p,
+      );
+      setReplyDrafts((d) => ({ ...d, [reviewId]: "" }));
+    } catch (e) {
+      Alert.alert("Reply", userFacingApiError(e));
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -301,6 +338,21 @@ export default function BarberPortfolioScreen() {
           ) : null}
         </ProfileCard>
 
+        <View style={styles.tabs}>
+          {(
+            [
+              { id: "about" as const, label: "About" },
+              { id: "reviews" as const, label: `Reviews (${portfolio.reviewCount || 0})` },
+              { id: "gallery" as const, label: "Gallery" },
+            ] as const
+          ).map((t) => (
+            <Pressable key={t.id} onPress={() => setTab(t.id)} style={[styles.tab, tab === t.id && styles.tabOn]}>
+              <Text style={[styles.tabText, tab === t.id && styles.tabTextOn]}>{t.label}</Text>
+            </Pressable>
+          ))}
+        </View>
+
+        {tab === "about" ? (
         <ProfileCard style={styles.section}>
           <Text style={styles.sectionTitle}>Services & portfolio</Text>
           {portfolio.services.length ? (
@@ -331,16 +383,26 @@ export default function BarberPortfolioScreen() {
             <Text style={styles.muted}>Services coming soon.</Text>
           )}
         </ProfileCard>
+        ) : null}
 
-        {portfolio.gallery.length ? (
+        {tab === "gallery" ? (
           <ProfileCard style={styles.section}>
             <Text style={styles.sectionTitle}>Style gallery</Text>
-            <PortfolioPhotoGrid photos={portfolio.gallery} onLike={onLike} onPhotoLongPress={onReportPhoto} />
+            {portfolio.gallery.length ? (
+              <PortfolioPhotoGrid photos={portfolio.gallery} onLike={onLike} onPhotoLongPress={onReportPhoto} />
+            ) : (
+              <Text style={styles.muted}>No gallery photos yet.</Text>
+            )}
           </ProfileCard>
         ) : null}
 
+        {tab === "reviews" ? (
         <ProfileCard style={styles.section}>
-          <Text style={styles.sectionTitle}>Client reviews</Text>
+          <Text style={styles.sectionTitle}>Reviews</Text>
+          <Text style={styles.muted}>
+            {Number(portfolio.averageRating || 0).toFixed(1)} average · {portfolio.reviewCount} review
+            {portfolio.reviewCount === 1 ? "" : "s"} · Verified clients only
+          </Text>
           {portfolio.reviews.length ? (
             portfolio.reviews.map((review) => (
               <View key={review.id} style={styles.review}>
@@ -359,12 +421,37 @@ export default function BarberPortfolioScreen() {
                 {review.photos?.length ? (
                   <PortfolioPhotoGrid photos={review.photos} columns={3} onLike={onLike} onPhotoLongPress={onReportPhoto} />
                 ) : null}
+                {review.barberReply ? (
+                  <View style={styles.replyBox}>
+                    <Text style={styles.replyLabel}>Provider reply</Text>
+                    <Text style={styles.muted}>{review.barberReply}</Text>
+                  </View>
+                ) : null}
+                {canReply ? (
+                  <View style={{ gap: 8, marginTop: 8 }}>
+                    <TextInput
+                      value={replyDrafts[review.id] || ""}
+                      onChangeText={(v) => setReplyDrafts((d) => ({ ...d, [review.id]: v }))}
+                      placeholder={review.barberReply ? "Update your public reply…" : "Reply publicly…"}
+                      placeholderTextColor={palette.muted}
+                      multiline
+                      style={styles.replyInput}
+                    />
+                    <GlowButton
+                      label={review.barberReply ? "Update reply" : "Post reply"}
+                      variant="outline"
+                      onPress={() => void onReply(review.id)}
+                      disabled={busy}
+                    />
+                  </View>
+                ) : null}
               </View>
             ))
           ) : (
             <Text style={styles.muted}>No reviews yet.</Text>
           )}
         </ProfileCard>
+        ) : null}
 
         {(portfolio.shop.name || portfolio.shop.phone) && (
           <ProfileCard style={styles.section}>
@@ -408,8 +495,38 @@ const styles = StyleSheet.create({
   },
   badgeText: { ...typography.caption, color: palette.gold, fontWeight: "700", fontSize: 10 },
   actions: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  tabs: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  tab: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: palette.border,
+  },
+  tabOn: { borderColor: palette.gold, backgroundColor: palette.goldBg },
+  tabText: { ...typography.caption, color: palette.muted, fontWeight: "700" },
+  tabTextOn: { color: palette.gold },
   section: { gap: 12 },
   sectionTitle: { ...typography.heading, color: palette.gold, fontSize: 15 },
+  replyBox: {
+    marginTop: 8,
+    padding: 10,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: palette.borderGold,
+    backgroundColor: palette.goldBg,
+    gap: 4,
+  },
+  replyLabel: { ...typography.caption, color: palette.gold, fontWeight: "700" },
+  replyInput: {
+    minHeight: 72,
+    borderWidth: 1,
+    borderColor: palette.border,
+    borderRadius: radius.md,
+    padding: 10,
+    color: palette.text,
+    textAlignVertical: "top",
+  },
   serviceRow: {
     flexDirection: "row",
     alignItems: "center",

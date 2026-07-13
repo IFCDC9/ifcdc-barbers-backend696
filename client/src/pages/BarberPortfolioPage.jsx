@@ -4,13 +4,14 @@ import { Page, PageHeader } from "../components/ui/Page.jsx";
 import { Card, CardTitle } from "../components/ui/Card.jsx";
 import { Button } from "../components/ui/Button.jsx";
 import { theme } from "../components/ui/theme.js";
-import { getStoredToken } from "../lib/authHeaders.js";
 import {
   fetchPublicPortfolio,
   followBarber,
+  replyToReview,
   togglePhotoLike,
   unfollowBarber,
 } from "../services/socialPortfolioApi.js";
+import { getStoredToken, getStoredUser } from "../lib/authHeaders.js";
 import StyleCoverImage from "../components/StyleCoverImage.jsx";
 import { isRenderableStyleImageUrl } from "../lib/styleImageUrl.js";
 
@@ -43,6 +44,33 @@ export default function BarberPortfolioPage() {
   const [error, setError] = React.useState("");
   const [portfolio, setPortfolio] = React.useState(null);
   const [busy, setBusy] = React.useState("");
+  const [tab, setTab] = React.useState("about");
+  const [replyDrafts, setReplyDrafts] = React.useState({});
+  const user = getStoredUser();
+  const canReply =
+    Boolean(portfolio?.id) &&
+    Boolean(user) &&
+    (user.role === "super_admin" ||
+      user.role === "admin" ||
+      String(user.barber_id || user.barberId || "") === String(portfolio?.id || ""));
+
+  const onReply = async (reviewId) => {
+    const text = String(replyDrafts[reviewId] || "").trim();
+    if (!text) return;
+    setBusy(`reply-${reviewId}`);
+    try {
+      const result = await replyToReview(reviewId, text);
+      setPortfolio((p) => ({
+        ...p,
+        reviews: (p.reviews || []).map((r) => (r.id === reviewId ? { ...r, ...result.review, photos: r.photos } : r)),
+      }));
+      setReplyDrafts((d) => ({ ...d, [reviewId]: "" }));
+    } catch (e) {
+      setError(e?.message || "Failed to save reply");
+    } finally {
+      setBusy("");
+    }
+  };
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -197,6 +225,32 @@ export default function BarberPortfolioPage() {
         {portfolio.bio ? <p style={{ margin: 0, color: theme.colors.muted, lineHeight: 1.6 }}>{portfolio.bio}</p> : null}
       </Card>
 
+      <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
+        {[
+          { id: "about", label: "About" },
+          { id: "reviews", label: `Reviews (${portfolio.reviewCount || 0})` },
+          { id: "gallery", label: "Gallery" },
+        ].map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setTab(t.id)}
+            style={{
+              padding: "10px 14px",
+              borderRadius: 999,
+              border: `1px solid ${tab === t.id ? theme.colors.accent : theme.colors.border}`,
+              background: tab === t.id ? "rgba(212,175,55,.15)" : "transparent",
+              color: tab === t.id ? theme.colors.accent : theme.colors.text,
+              fontWeight: 800,
+              cursor: "pointer",
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "about" ? (
       <Card style={{ marginTop: 16 }}>
         <CardTitle>Services & portfolio</CardTitle>
         <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
@@ -243,8 +297,9 @@ export default function BarberPortfolioPage() {
           )}
         </div>
       </Card>
+      ) : null}
 
-      {(portfolio.gallery || []).length ? (
+      {tab === "gallery" && (portfolio.gallery || []).length ? (
       <Card style={{ marginTop: 16 }}>
         <CardTitle>Style gallery</CardTitle>
         <div
@@ -284,24 +339,88 @@ export default function BarberPortfolioPage() {
       </Card>
       ) : null}
 
+      {tab === "gallery" && !(portfolio.gallery || []).length ? (
+        <Card style={{ marginTop: 16 }}>
+          <p style={{ color: theme.colors.muted, margin: 0 }}>No gallery photos yet.</p>
+        </Card>
+      ) : null}
+
+      {tab === "reviews" ? (
       <Card style={{ marginTop: 16 }}>
-        <CardTitle>Customer reviews</CardTitle>
+        <CardTitle>Reviews</CardTitle>
+        <p style={{ margin: "8px 0 0", color: theme.colors.muted }}>
+          {Number(portfolio.averageRating || 0).toFixed(1)} average · {portfolio.reviewCount || 0} review
+          {portfolio.reviewCount === 1 ? "" : "s"} · Verified clients only
+        </p>
         <div style={{ display: "grid", gap: 12, marginTop: 12 }}>
           {(portfolio.reviews || []).map((review) => (
             <div key={review.id} style={{ paddingBottom: 12, borderBottom: `1px solid ${theme.colors.border}` }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
                 <strong>{review.customerName}</strong>
                 {review.verifiedClient !== false ? (
-                  <span style={{ ...pillStyle("gold"), marginLeft: 8, fontSize: 10 }}>✓ Verified Client</span>
+                  <span style={{ fontSize: 11, color: theme.colors.accent, fontWeight: 700 }}>✓ Verified Client</span>
                 ) : null}
                 <Stars value={review.rating} />
               </div>
               {review.comment ? <p style={{ margin: "8px 0 0", color: theme.colors.muted }}>{review.comment}</p> : null}
+              {(review.photos || []).length ? (
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+                  {review.photos.map((photo) => (
+                    <img
+                      key={photo.id}
+                      src={photo.thumbnailUrl || photo.photoUrl}
+                      alt={photo.caption || "Service photo"}
+                      style={{ width: 88, height: 88, objectFit: "cover", borderRadius: 8 }}
+                    />
+                  ))}
+                </div>
+              ) : null}
+              {review.barberReply ? (
+                <div
+                  style={{
+                    marginTop: 10,
+                    padding: 10,
+                    borderRadius: 8,
+                    background: "rgba(212,175,55,.08)",
+                    border: `1px solid ${theme.colors.border}`,
+                  }}
+                >
+                  <strong style={{ color: theme.colors.accent }}>Provider reply</strong>
+                  <p style={{ margin: "6px 0 0", color: theme.colors.muted }}>{review.barberReply}</p>
+                </div>
+              ) : null}
+              {canReply ? (
+                <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+                  <textarea
+                    value={replyDrafts[review.id] || ""}
+                    onChange={(e) => setReplyDrafts((d) => ({ ...d, [review.id]: e.target.value }))}
+                    placeholder={review.barberReply ? "Update your public reply…" : "Reply publicly…"}
+                    rows={3}
+                    style={{
+                      width: "100%",
+                      padding: 10,
+                      borderRadius: 8,
+                      border: `1px solid ${theme.colors.border}`,
+                      background: theme.colors.subtle || "transparent",
+                      color: theme.colors.text,
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    disabled={busy === `reply-${review.id}`}
+                    onClick={() => void onReply(review.id)}
+                  >
+                    {review.barberReply ? "Update reply" : "Post reply"}
+                  </Button>
+                </div>
+              ) : null}
             </div>
           ))}
           {!portfolio.reviews?.length ? <p style={{ color: theme.colors.muted }}>No reviews yet.</p> : null}
         </div>
       </Card>
+      ) : null}
 
       {portfolio.shop?.name || portfolio.shop?.phone ? (
         <Card style={{ marginTop: 16 }}>

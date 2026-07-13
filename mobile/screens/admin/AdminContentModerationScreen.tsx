@@ -11,6 +11,7 @@ import {
   fetchContentReports,
   hidePhoto,
   hideReview,
+  removeReview,
   resolveContentReport,
   type ContentReport,
 } from "../../services/socialPortfolioApi";
@@ -39,13 +40,17 @@ function ModerationInner() {
     }, [load]),
   );
 
-  const act = async (report: ContentReport, action: "dismiss" | "hide") => {
+  const act = async (report: ContentReport, action: "dismiss" | "hide" | "remove") => {
     setBusyId(report.id);
     try {
       if (action === "hide") {
         if (report.targetType === "review") await hideReview(report.targetId);
         else await hidePhoto(report.targetId);
         await resolveContentReport(report.id, { status: "action_taken", adminNotes: "Content hidden by admin" });
+      } else if (action === "remove") {
+        if (report.targetType === "review") await removeReview(report.targetId, report.reason || "policy_violation");
+        else await hidePhoto(report.targetId);
+        await resolveContentReport(report.id, { status: "action_taken", adminNotes: "Content removed by admin" });
       } else {
         await resolveContentReport(report.id, { status: "dismissed", adminNotes: "No action required" });
       }
@@ -84,6 +89,19 @@ function ModerationInner() {
                   ])
                 }
               />
+              {report.targetType === "review" ? (
+                <GlowButton
+                  label="Remove review"
+                  variant="danger"
+                  disabled={busyId === report.id}
+                  onPress={() =>
+                    Alert.alert("Remove review", "Permanently delete this review?", [
+                      { text: "Cancel", style: "cancel" },
+                      { text: "Remove", style: "destructive", onPress: () => void act(report, "remove") },
+                    ])
+                  }
+                />
+              ) : null}
               <GlowButton
                 label="Dismiss"
                 variant="outline"

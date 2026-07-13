@@ -38,8 +38,34 @@ function mapReviewRow(row, photos = []) {
     customerName: row.customer_name || "Verified customer",
     verifiedClient: true,
     createdAt: row.created_at ? new Date(row.created_at).toISOString() : null,
+    status: row.status || "published",
+    barberReply: row.barber_reply || "",
+    barberReplyAt: row.barber_reply_at ? new Date(row.barber_reply_at).toISOString() : null,
     photos,
   };
+}
+
+async function assertUserCanReplyAsBarber(userId, barberId) {
+  const uid = String(userId || "").trim();
+  const bid = String(barberId || "").trim();
+  if (!uid || !bid) return { ok: false, message: "Not authorized." };
+  const r = await dbQuery(
+    `SELECT 1
+     FROM app_users u
+     WHERE u.id = $1::uuid
+       AND (
+         lower(coalesce(u.role, '')) IN ('super_admin', 'admin')
+         OR u.barber_id::text = $2::text
+         OR EXISTS (
+           SELECT 1 FROM barbers b
+           WHERE b.id::text = $2::text AND b.user_id = u.id
+         )
+       )
+     LIMIT 1`,
+    [uid, bid],
+  );
+  if (!r.rows?.[0]) return { ok: false, message: "Only this provider can reply to reviews." };
+  return { ok: true };
 }
 
 function mapPhotoRow(row, { likedByViewer = false } = {}) {
@@ -812,10 +838,153 @@ export async function createBarberReview({
 
   await notifyBarberFollowersNewPhotos(barberId, savedPhotos.length).catch(() => {});
 
+  void import("./reviewNotificationEmail.cjs")
+    .then((m) =>
+      m.emailBarberNewReview({
+        dbQuery,
+        barberId,
+        rating: normalizedRating,
+        comment: review.comment,
+        customerName: "A verified client",
+      }),
+    )
+    .catch(() => {});
+
+  try {
+    const pushNotifier = require("./pushNotifier.cjs");
+    const barberUsers = await dbQuery(
+      `SELECT user_id AS id FROM barbers WHERE id::text = $1::text AND user_id IS NOT NULL
+       UNION
+       SELECT id FROM app_users WHERE barber_id::text = $1::text AND role = 'barber'`,
+      [barberId],
+    );
+    const userIds = [...new Set((barberUsers.rows || []).map((r) => String(r.id)).filter(Boolean))];
+    if (userIds.length) {
+      await pushNotifier.sendPushToUsers({
+        dbQuery,
+        userIds,
+        kind: "admin_alert",
+        title: "New client review",
+        body: `You received a ${normalizedRating}★ review.`,
+        data: { type: "new_review", barberId, reviewId: String(review.id) },
+      });
+    }
+  } catch {
+    /* ignore */
+  }
+
   return {
     ok: true,
     review: mapReviewRow(review, savedPhotos),
   };
+}
+
+export async function replyToBarberReview({ userId, reviewId, reply }) {
+  const r = await dbQuery(`SELECT * FROM barber_reviews WHERE id = $1::uuid LIMIT 1`, [String(reviewId)]);
+  const review = r.rows?.[0];
+  if (!review) return { ok: false, message: "Review not found." };
+  if (String(review.status || "").toLowerCase() === "hidden") {
+    return { ok: false, message: "Cannot reply to a hidden review." };
+  }
+
+  const allowed = await assertUserCanReplyAsBarber(userId, review.barber_id);
+  if (!allowed.ok) return allowed;
+
+  const text = String(reply || "").trim();
+  if (!text) return { ok: false, message: "Reply cannot be empty." };
+  if (text.length > 2000) return { ok: false, message: "Reply is too long." };
+
+  const upd = await dbQuery(
+    `UPDATE barber_reviews
+     SET barber_reply = $2,
+         barber_reply_at = NOW(),
+         barber_reply_by = $3::uuid,
+         updated_at = NOW()
+     WHERE id = $1::uuid
+     RETURNING *`,
+    [String(reviewId), text, userId],
+  );
+  const updated = upd.rows?.[0];
+  const photos = await loadPhotosForReviews([updated.id], userId);
+  return {
+    ok: true,
+    review: mapReviewRow(
+      { ...updated, customer_name: "Verified customer" },
+      photos.get(String(updated.id)) || [],
+    ),
+  };
+}
+
+export async function adminDeleteReview(reviewId, { adminUserId, reason = "" } = {}) {
+  const r = await dbQuery(`SELECT * FROM barber_reviews WHERE id = $1::uuid LIMIT 1`, [String(reviewId)]);
+  const review = r.rows?.[0];
+  if (!review) return { ok: false, message: "Review not found." };
+
+  let barberName = "";
+  try {
+    const br = await dbQuery(`SELECT name FROM barbers WHERE id::text = $1::text LIMIT 1`, [
+      String(review.barber_id),
+    ]);
+    barberName = br.rows?.[0]?.name || "";
+  } catch {
+    /* ignore */
+  }
+
+  await dbQuery(`DELETE FROM barber_reviews WHERE id = $1::uuid`, [String(reviewId)]);
+
+  void import("./reviewNotificationEmail.cjs")
+    .then((m) =>
+      m.emailAdminReviewModeration({
+        action: "removed",
+        targetType: "review",
+        targetId: String(reviewId),
+        reason: reason || "admin_removed",
+        details: `Deleted by admin ${adminUserId || ""}`,
+        barberName,
+        adminNotes: reason || "",
+      }),
+    )
+    .catch(() => {});
+
+  return { ok: true, message: "Review removed." };
+}
+
+/** Push + email clients to leave a review after appointment completion. */
+export async function notifyCustomerReviewPrompt(bookingRow) {
+  if (!bookingRow?.id) return;
+  if (String(bookingRow.booking_status || "").toLowerCase() !== "completed") return;
+
+  const bookingId = String(bookingRow.id);
+  const barberName = String(bookingRow.barber_name || "your provider");
+  const customerName = String(bookingRow.customer_name || "").trim();
+  const customerEmail = String(bookingRow.customer_email || "").trim();
+  const userId = bookingRow.user_id ? String(bookingRow.user_id) : null;
+
+  void import("./reviewNotificationEmail.cjs")
+    .then((m) =>
+      m.emailCustomerReviewPrompt({
+        to: customerEmail,
+        customerName,
+        barberName,
+        bookingId,
+      }),
+    )
+    .catch(() => {});
+
+  if (!userId) return;
+  try {
+    const pushNotifier = require("./pushNotifier.cjs");
+    await pushNotifier.sendPushToUsers({
+      dbQuery,
+      userIds: [userId],
+      kind: "booking_status_update",
+      title: "Rate your visit",
+      body: `How was your appointment with ${barberName}? Leave a review.`,
+      data: { type: "leave_review", bookingId, barberId: String(bookingRow.barber_id || "") },
+    });
+  } catch {
+    /* ignore */
+  }
 }
 
 export async function addReviewPhotos({ userId, reviewId, photos = [] }) {
@@ -1087,15 +1256,52 @@ export async function reportContent({ userId, targetType, targetId, reason, deta
      VALUES ($1::uuid, $2, $3, $4, $5, 'pending')`,
     [userId || null, t, String(targetId), String(reason || "other"), String(details || "").trim() || null],
   );
+  let barberName = "";
   if (t === "review") {
     await dbQuery(`UPDATE barber_reviews SET status = 'reported' WHERE id = $1::uuid`, [String(targetId)]).catch(
       () => {},
     );
+    try {
+      const rr = await dbQuery(
+        `SELECT b.name FROM barber_reviews r
+         LEFT JOIN barbers b ON b.id::text = r.barber_id
+         WHERE r.id = $1::uuid LIMIT 1`,
+        [String(targetId)],
+      );
+      barberName = rr.rows?.[0]?.name || "";
+    } catch {
+      /* ignore */
+    }
   } else {
     await dbQuery(`UPDATE review_photos SET status = 'reported' WHERE id = $1::uuid`, [String(targetId)]).catch(
       () => {},
     );
+    try {
+      const pr = await dbQuery(
+        `SELECT b.name FROM review_photos p
+         LEFT JOIN barbers b ON b.id::text = p.barber_id
+         WHERE p.id = $1::uuid LIMIT 1`,
+        [String(targetId)],
+      );
+      barberName = pr.rows?.[0]?.name || "";
+    } catch {
+      /* ignore */
+    }
   }
+
+  void import("./reviewNotificationEmail.cjs")
+    .then((m) =>
+      m.emailAdminReviewModeration({
+        action: "reported",
+        targetType: t,
+        targetId: String(targetId),
+        reason: String(reason || "other"),
+        details: String(details || ""),
+        barberName,
+      }),
+    )
+    .catch(() => {});
+
   return { ok: true, message: "Report submitted. Our team will review it." };
 }
 
@@ -1191,13 +1397,43 @@ export async function resolveContentReport(reportId, { status, adminNotes, admin
   return { ok: true };
 }
 
-export async function setReviewVisibility(reviewId, status) {
+export async function setReviewVisibility(reviewId, status, { adminUserId, reason = "" } = {}) {
   const s = String(status || "").toLowerCase();
   if (!["published", "hidden"].includes(s)) return { ok: false, message: "Invalid status." };
+  const existing = await dbQuery(`SELECT * FROM barber_reviews WHERE id = $1::uuid LIMIT 1`, [String(reviewId)]);
+  const review = existing.rows?.[0];
+  if (!review) return { ok: false, message: "Review not found." };
+
   await dbQuery(`UPDATE barber_reviews SET status = $2, updated_at = NOW() WHERE id = $1::uuid`, [
     String(reviewId),
     s,
   ]);
+
+  if (s === "hidden") {
+    let barberName = "";
+    try {
+      const br = await dbQuery(`SELECT name FROM barbers WHERE id::text = $1::text LIMIT 1`, [
+        String(review.barber_id),
+      ]);
+      barberName = br.rows?.[0]?.name || "";
+    } catch {
+      /* ignore */
+    }
+    void import("./reviewNotificationEmail.cjs")
+      .then((m) =>
+        m.emailAdminReviewModeration({
+          action: "hidden",
+          targetType: "review",
+          targetId: String(reviewId),
+          reason: reason || "admin_hidden",
+          details: `Hidden by admin ${adminUserId || ""}`,
+          barberName,
+          adminNotes: reason || "",
+        }),
+      )
+      .catch(() => {});
+  }
+
   return { ok: true };
 }
 

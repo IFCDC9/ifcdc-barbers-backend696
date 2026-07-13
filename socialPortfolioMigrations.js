@@ -33,6 +33,9 @@ export async function ensureSocialPortfolioSchema() {
   await dbQuery(
     `CREATE INDEX IF NOT EXISTS barber_reviews_customer_idx ON barber_reviews (customer_user_id, created_at DESC);`,
   );
+  await dbQuery(`ALTER TABLE barber_reviews ADD COLUMN IF NOT EXISTS barber_reply TEXT;`);
+  await dbQuery(`ALTER TABLE barber_reviews ADD COLUMN IF NOT EXISTS barber_reply_at TIMESTAMPTZ;`);
+  await dbQuery(`ALTER TABLE barber_reviews ADD COLUMN IF NOT EXISTS barber_reply_by UUID;`);
 
   await dbQuery(`
     CREATE TABLE IF NOT EXISTS review_photos (

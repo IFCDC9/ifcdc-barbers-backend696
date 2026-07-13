@@ -24,7 +24,7 @@
         "title": "IFCDC Barbers",
         "subtitle": "Book cuts with style photos",
         "privacyPolicyUrl": "https://ifcdcbarbersapp.com/privacy",
-        "releaseNotes": "Version 1.1.5 (Build 59)\n\n• Booking calendar shows all working days from the barber’s real weekly schedule (including Friday and Saturday)\n• Gold available days respect days off, vacation/blocked dates, fully booked dates, past dates, and the advance booking window\n• Admin schedule: hour fields disabled while a day is marked Off\n• Includes prior calendar, Admin schedule crash, and PayPal orphan-capture fixes",
+        "releaseNotes": "Version 1.1.5 (Build 60)\n\n• Complete Review & Ratings system: post-appointment prompts, star ratings, written reviews, and service photos\n• Reviews tab on barber profiles (app + website) with overall rating and review count\n• Only completed appointments can leave reviews; providers can reply publicly\n• Super Admin moderation (hide/remove) with emails to barbers and service@ifcdc.org\n• Calendar working-day fix and prior PayPal/schedule stability fixes",
         "screenshots": {
           "APP_IPAD_PRO_3GEN_129": [
             "store/apple/screenshot/en-US/APP_IPAD_PRO_3GEN_129/iPad Pro 13-inch (M4)-06_AURA.png",
