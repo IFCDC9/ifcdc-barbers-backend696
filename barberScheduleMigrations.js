@@ -233,6 +233,10 @@ export async function ensureBarberScheduleSchema(barberIdType) {
     ALTER TABLE barber_settings
       ADD COLUMN IF NOT EXISTS timezone TEXT NOT NULL DEFAULT 'America/New_York';
   `);
+  await dbQuery(`
+    ALTER TABLE barber_settings
+      ADD COLUMN IF NOT EXISTS booking_window_days INT NOT NULL DEFAULT 90;
+  `);
 }
 
 /** Demo schedule for legacy catalog barbers — skipped in production. */

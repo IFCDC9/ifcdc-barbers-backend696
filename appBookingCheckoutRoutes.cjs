@@ -350,6 +350,64 @@ router.get("/available-slots", async (req, res) => {
   }
 });
 
+router.get("/booking-calendar", async (req, res) => {
+  try {
+    const { dbQuery } = await loadDb();
+    await expireStalePendingPaymentBookings(dbQuery);
+
+    const barberIdRaw = stripQuotes(req.query.barberId ?? req.query.barberUuid);
+    const barberNameQ = stripQuotes(req.query.barberName);
+    if (!barberIdRaw && !barberNameQ) {
+      return res.status(400).json({ ok: false, error: "query_required", message: "barberId or barberName required" });
+    }
+
+    const barbersIdType = await getBarbersIdColumnTypeCached();
+    const resolved = await resolveBarberIdentity(dbQuery, barberIdRaw || null, barberNameQ || null);
+    if (!resolved) {
+      return res.status(400).json({ ok: false, error: "barber_unresolved", message: BARBER_RESOLVE_MSG });
+    }
+    const barberKey = resolved.barberRow?.id ?? resolved.barberUuid ?? resolved.barberDbId;
+    if (!(await isBarberBookable(dbQuery, barberKey, { channel: "mobile" }))) {
+      return res.status(400).json({ ok: false, error: "barber_not_bookable", message: "This provider is not available for booking." });
+    }
+    const scheduleId = scheduleBarberIdFromResolved(resolved, barbersIdType);
+
+    const year = Number(stripQuotes(req.query.year));
+    const month = Number(stripQuotes(req.query.month));
+    let fromYmd = stripQuotes(req.query.from);
+    let toYmd = stripQuotes(req.query.to);
+    if (Number.isFinite(year) && Number.isFinite(month) && month >= 1 && month <= 12) {
+      fromYmd = `${year}-${String(month).padStart(2, "0")}-01`;
+      const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+      toYmd = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fromYmd || "") || !/^\d{4}-\d{2}-\d{2}$/.test(toYmd || "")) {
+      return res.status(400).json({
+        ok: false,
+        error: "bad_range",
+        message: "Pass year+month or from/to as YYYY-MM-DD",
+      });
+    }
+
+    const slotEngine = await loadSlotEngine();
+    const durationMinutes = Math.max(1, Number(stripQuotes(req.query.durationMinutes)) || 30);
+    const payload = await slotEngine.getBookingCalendarDays(
+      scheduleId,
+      fromYmd,
+      toYmd,
+      resolved.barberName || barberNameQ || "",
+      { durationMinutes },
+    );
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+    return res.json({ ok: true, barberId: scheduleId, from: fromYmd, to: toYmd, ...payload });
+  } catch (e) {
+    console.error("[app-bookings] booking-calendar:", e?.stack || e);
+    const barberErr = bookingStartErrorResponse(res, e);
+    if (barberErr) return barberErr;
+    return res.status(500).json({ ok: false, error: "server_error", message: "Unable to load booking calendar." });
+  }
+});
+
 router.get("/occupied-slots", async (req, res) => {
   try {
     const barberName = stripQuotes(req.query.barberName);

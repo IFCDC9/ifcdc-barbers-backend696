@@ -155,7 +155,10 @@ export async function fetchAvailableSlots({ barberName, barberId, dateLabel, dur
   const q = new URLSearchParams();
   if (barberId != null && String(barberId).trim()) q.set("barberId", String(barberId));
   if (barberName) q.set("barberName", barberName);
-  if (dateLabel) q.set("dateLabel", dateLabel);
+  if (dateLabel) {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(String(dateLabel))) q.set("date", String(dateLabel));
+    else q.set("dateLabel", dateLabel);
+  }
   if (durationMinutes != null && Number(durationMinutes) > 0) {
     q.set("durationMinutes", String(Math.round(Number(durationMinutes))));
   }

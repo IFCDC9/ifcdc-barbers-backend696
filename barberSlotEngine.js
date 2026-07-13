@@ -123,12 +123,15 @@ export async function loadBarberSchedule(barberId, barberName = "") {
 
   const settings = await dbQuery(
     `SELECT COALESCE(appointment_interval_minutes, 30) AS interval_minutes,
-            COALESCE(NULLIF(trim(timezone), ''), $2) AS timezone
+            COALESCE(NULLIF(trim(timezone), ''), $2) AS timezone,
+            COALESCE(booking_window_days, 90) AS booking_window_days
      FROM barber_settings WHERE barber_id = $1 LIMIT 1`,
     [bid, DEFAULT_TIMEZONE],
   );
   const intervalMinutes = Math.max(5, Math.min(120, Number(settings.rows?.[0]?.interval_minutes) || DEFAULT_INTERVAL));
   const timezone = String(settings.rows?.[0]?.timezone || DEFAULT_TIMEZONE);
+  const { normalizeBookingWindowDays } = await import("./bookingWindow.js");
+  const bookingWindowDays = normalizeBookingWindowDays(settings.rows?.[0]?.booking_window_days);
 
   const avail = await dbQuery(
     `SELECT day_of_week, start_time, end_time, is_off
@@ -163,6 +166,7 @@ export async function loadBarberSchedule(barberId, barberName = "") {
   return {
     intervalMinutes,
     timezone,
+    bookingWindowDays,
     availability: avail.rows || [],
     breaks: breaks.rows || [],
     blockedDates,
@@ -195,6 +199,7 @@ export function demoFallbackSchedule() {
   return {
     intervalMinutes: DEFAULT_INTERVAL,
     timezone: DEFAULT_TIMEZONE,
+    bookingWindowDays: 90,
     availability: [0, 1, 2, 3, 4, 5, 6].map((day_of_week) => ({
       day_of_week,
       start_time: "09:00:00",
@@ -335,6 +340,19 @@ export async function getAvailableSlotsForBarberDate(
   const { excludeBookingId = null, durationMinutes = 30 } = options || {};
   const requestedDuration = Math.max(1, Number(durationMinutes) || 30);
   const schedule = await loadBarberSchedule(barberId, barberName);
+  const windowCheck = checkDateWithinBookingWindow(schedule, dateStr, barberName);
+  if (!windowCheck.ok) {
+    return {
+      timezone: schedule.timezone,
+      intervalMinutes: schedule.intervalMinutes,
+      bookingWindowDays: schedule.bookingWindowDays,
+      slots: [],
+      usedFallback: false,
+      reasonIfEmpty: windowCheck.code,
+      unavailability: windowCheck.unavailability,
+      durationMinutes: requestedDuration,
+    };
+  }
   let minuteStarts = buildScheduleSlotMinutes(schedule, dateStr);
   let reasonIfEmpty = null;
   let unavailability = null;
@@ -414,6 +432,7 @@ export async function getAvailableSlotsForBarberDate(
   return {
     timezone: schedule.timezone,
     intervalMinutes: schedule.intervalMinutes,
+    bookingWindowDays: schedule.bookingWindowDays,
     slots,
     usedFallback,
     reasonIfEmpty,
@@ -466,6 +485,14 @@ export async function validateBookingSlot(
   if (!timeSql) return { ok: false, code: "bad_time", message: "Invalid time format" };
 
   const schedule = await loadBarberSchedule(barberId, barberName);
+  const windowCheck = checkDateWithinBookingWindow(schedule, dateStr, barberName);
+  if (!windowCheck.ok) {
+    return {
+      ok: false,
+      code: windowCheck.code,
+      message: windowCheck.unavailability?.message || "That date is outside the booking window.",
+    };
+  }
   if (schedule.blockedDates.includes(dateStr)) {
     const { message } = buildClientUnavailability(schedule.blockedDateMeta?.[dateStr]);
     const who = String(barberName || "").trim();
@@ -516,3 +543,193 @@ export async function validateBookingSlot(
 
   return { ok: true, timeSql, durationMinutes: requestedDuration };
 }
+
+function todayYmdInTimezone(timezone) {
+  try {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: timezone || DEFAULT_TIMEZONE,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+  } catch {
+    return new Date().toISOString().slice(0, 10);
+  }
+}
+
+function addDaysYmd(ymd, days) {
+  const [y, m, d] = String(ymd).split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + Number(days)));
+  return dt.toISOString().slice(0, 10);
+}
+
+function daysInclusive(fromYmd, toYmd) {
+  const out = [];
+  let cur = fromYmd;
+  let guard = 0;
+  while (cur <= toYmd && guard < 400) {
+    out.push(cur);
+    cur = addDaysYmd(cur, 1);
+    guard += 1;
+  }
+  return out;
+}
+
+/**
+ * @returns {{ ok: true } | { ok: false, code: string, unavailability: object }}
+ */
+export function checkDateWithinBookingWindow(schedule, dateStr, barberName = "") {
+  const tz = schedule?.timezone || DEFAULT_TIMEZONE;
+  const today = todayYmdInTimezone(tz);
+  const windowDays = Number(schedule?.bookingWindowDays) || 90;
+  const last = addDaysYmd(today, windowDays);
+  const who = String(barberName || "This provider").trim() || "This provider";
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateStr || ""))) {
+    return {
+      ok: false,
+      code: "bad_date",
+      unavailability: { message: "Invalid date.", reason: "bad_date", returnDate: null },
+    };
+  }
+  if (dateStr < today) {
+    return {
+      ok: false,
+      code: "past_date",
+      unavailability: {
+        message: "Past dates cannot be booked. Please choose another available date.",
+        reason: "past_date",
+        returnDate: null,
+      },
+    };
+  }
+  if (dateStr > last) {
+    return {
+      ok: false,
+      code: "outside_window",
+      unavailability: {
+        message: `${who} only accepts bookings up to ${windowDays} days in advance. Please choose an earlier date.`,
+        reason: "outside_window",
+        returnDate: null,
+      },
+    };
+  }
+  return { ok: true };
+}
+
+/**
+ * Month/range calendar markers for client date pickers.
+ * @returns {Promise<{ timezone: string, bookingWindowDays: number, today: string, lastBookableDate: string, days: object[] }>}
+ */
+export async function getBookingCalendarDays(barberId, fromYmd, toYmd, barberName = "", options = {}) {
+  const durationMinutes = Math.max(1, Number(options?.durationMinutes) || 30);
+  const schedule = await loadBarberSchedule(barberId, barberName);
+  const tz = schedule.timezone;
+  const today = todayYmdInTimezone(tz);
+  const lastBookableDate = addDaysYmd(today, schedule.bookingWindowDays || 90);
+  const who = String(barberName || "This provider").trim() || "This provider";
+
+  const from = /^\d{4}-\d{2}-\d{2}$/.test(fromYmd) ? fromYmd : today;
+  const to = /^\d{4}-\d{2}-\d{2}$/.test(toYmd) ? toYmd : lastBookableDate;
+  const dates = daysInclusive(from, to);
+  const days = [];
+
+  for (const dateStr of dates) {
+    if (dateStr < today) {
+      days.push({
+        date: dateStr,
+        status: "past",
+        selectable: false,
+        message: "Past dates cannot be booked.",
+        reason: "past_date",
+      });
+      continue;
+    }
+    if (dateStr > lastBookableDate) {
+      days.push({
+        date: dateStr,
+        status: "outside_window",
+        selectable: false,
+        message: `${who} only accepts bookings up to ${schedule.bookingWindowDays} days in advance.`,
+        reason: "outside_window",
+      });
+      continue;
+    }
+
+    if (schedule.blockedDates.includes(dateStr)) {
+      const built = buildClientUnavailability(schedule.blockedDateMeta?.[dateStr]);
+      const message = who
+        ? built.message.replace(/^This provider/, who).replace(/^This barber/i, who)
+        : built.message;
+      const status =
+        built.reason === "vacation" || built.reason === "holiday"
+          ? "vacation"
+          : built.reason === "day_off"
+            ? "day_off"
+            : "blocked";
+      days.push({
+        date: dateStr,
+        status,
+        selectable: false,
+        message,
+        reason: built.reason || "blocked_date",
+        returnDate: built.returnDate || null,
+      });
+      continue;
+    }
+
+    const minuteStarts = buildScheduleSlotMinutes(schedule, dateStr);
+    if (!minuteStarts.length) {
+      days.push({
+        date: dateStr,
+        status: "closed",
+        selectable: false,
+        message: `${who} is off on this date.`,
+        reason: "closed_day",
+      });
+      continue;
+    }
+
+    const existingBookings = await loadBookingsForDate(barberId, dateStr, barberName, {});
+    let openCount = 0;
+    for (const m of minuteStarts) {
+      let free = true;
+      for (const booking of existingBookings) {
+        if (intervalsOverlap(m, durationMinutes, booking.startMinutes, booking.durationMinutes)) {
+          free = false;
+          break;
+        }
+      }
+      if (free) openCount += 1;
+    }
+    if (!openCount) {
+      days.push({
+        date: dateStr,
+        status: "fully_booked",
+        selectable: false,
+        message: `All appointment times are booked for this date with ${who}.`,
+        reason: "fully_booked",
+        openSlots: 0,
+      });
+      continue;
+    }
+
+    days.push({
+      date: dateStr,
+      status: "available",
+      selectable: true,
+      message: null,
+      reason: null,
+      openSlots: openCount,
+    });
+  }
+
+  return {
+    timezone: tz,
+    bookingWindowDays: schedule.bookingWindowDays,
+    today,
+    lastBookableDate,
+    days,
+  };
+}
+

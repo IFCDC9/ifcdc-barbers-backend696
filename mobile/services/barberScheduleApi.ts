@@ -31,6 +31,7 @@ export type BarberSchedule = {
   blockedDates: BlockedDateRow[];
   appointment_interval_minutes: number;
   timezone: string;
+  booking_window_days?: number;
 };
 
 export type BarberListRow = {
@@ -49,6 +50,8 @@ type ScheduleApiJson = {
   appointmentInterval?: number;
   appointment_interval_minutes?: number;
   timezone?: string;
+  booking_window_days?: number;
+  bookingWindowDays?: number;
   message?: string;
   error?: string;
 };
@@ -67,6 +70,7 @@ function normalizeSchedule(json: ScheduleApiJson): BarberSchedule {
     appointment_interval_minutes:
       Number(json.appointmentInterval ?? json.appointment_interval_minutes) || 30,
     timezone: String(json.timezone || "America/New_York"),
+    booking_window_days: Number(json.bookingWindowDays ?? json.booking_window_days) || 90,
   };
 }
 

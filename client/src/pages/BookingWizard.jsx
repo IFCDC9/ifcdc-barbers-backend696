@@ -22,6 +22,7 @@ import {
 } from "../lib/bookingPayPalReturnUrl.js";
 import ProviderTypeDropdown from "../components/ProviderTypeDropdown.jsx";
 import { providerTypeLabel } from "../lib/providerTypes.js";
+import BookingMonthCalendar from "../components/BookingMonthCalendar.jsx";
 
 const FALLBACK_SERVICE_PRICE = 25;
 const CHECKOUT_STORAGE = "ifcdc_app_checkout_pending";
@@ -83,7 +84,6 @@ export default function BookingWizard() {
     step === 4 && Boolean(barber && date),
   );
 
-  const dates = useMemo(() => buildDateOptions(7), []);
   const user = useMemo(() => readUser(), []);
   const cartTotalPrice = useMemo(
     () => selectedServices.reduce((sum, s) => sum + (Number(s?.price) || 0), 0),
@@ -458,23 +458,17 @@ export default function BookingWizard() {
         <section className="ifcdc-book-wizard__panel">
           <h2 className="ifcdc-book-wizard__heading">Pick a date</h2>
           <p className="ifcdc-page-hint">Barber: {barber?.name}</p>
-          <ul className="ifcdc-book-wizard__list ifcdc-book-wizard__list--grid">
-            {dates.map((d) => (
-              <li key={d}>
-                <button
-                  type="button"
-                  className={`ifcdc-book-wizard__pick${date === d ? " ifcdc-book-wizard__pick--on" : ""}`}
-                  onClick={() => {
-                    setDate(d);
-                    setStep(3);
-                    setError(null);
-                  }}
-                >
-                  {d}
-                </button>
-              </li>
-            ))}
-          </ul>
+          <BookingMonthCalendar
+            barberId={barber?.id}
+            barberName={barber?.name}
+            value={date}
+            durationMinutes={30}
+            onSelectDate={(ymd) => {
+              setDate(ymd);
+              setStep(3);
+              setError(null);
+            }}
+          />
           <button type="button" className="ifcdc-book-wizard__back" onClick={() => setStep(1)}>
             ← Change barber
           </button>

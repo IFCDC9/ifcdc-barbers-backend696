@@ -17,6 +17,7 @@ import LanguageDropdown from "../components/LanguageDropdown.jsx";
 import { DEFAULT_LANGUAGE } from "../lib/languages.js";
 import { fetchBarberManagedRewards, saveBarberReward } from "../services/loyaltyApi.js";
 import { UNAVAILABILITY_REASON_OPTIONS } from "../constants/unavailabilityReasons.js";
+import { BOOKING_WINDOW_DAY_OPTIONS } from "../constants/bookingWindow.js";
 
 function authHeaders() {
   try {
@@ -104,6 +105,7 @@ export default function BarberSettings() {
   const [blockedDates, setBlockedDates] = React.useState([]);
   const [scheduleTimezone, setScheduleTimezone] = React.useState("America/New_York");
   const [appointmentInterval, setAppointmentInterval] = React.useState(30);
+  const [bookingWindowDays, setBookingWindowDays] = React.useState(90);
   const [loyaltyRewards, setLoyaltyRewards] = React.useState([]);
   const [rewardDraft, setRewardDraft] = React.useState({ title: "", description: "", points_cost: "50" });
   const [settings, setSettings] = React.useState({
@@ -199,6 +201,7 @@ export default function BarberSettings() {
         setBlockedDates(Array.isArray(sched.blockedDates) ? sched.blockedDates : []);
         setScheduleTimezone(String(sched.timezone || "America/New_York"));
         setAppointmentInterval(Number(sched.appointmentInterval ?? sched.appointment_interval_minutes) || 30);
+        setBookingWindowDays(Number(sched.bookingWindowDays ?? sched.booking_window_days) || 90);
         if (Array.isArray(sched.availability) && sched.availability.length) {
           setAvailability(sched.availability);
         }
@@ -341,6 +344,7 @@ export default function BarberSettings() {
           })),
           appointment_interval_minutes: appointmentInterval,
           timezone: scheduleTimezone,
+          booking_window_days: bookingWindowDays,
         },
         authHeaders(),
       );
@@ -1125,6 +1129,50 @@ export default function BarberSettings() {
                 + Add blocked date
               </Button>
             </div>
+          </div>
+
+          <div style={{ marginTop: 20, paddingTop: 16, borderTop: `1px solid ${theme.colors.border}` }}>
+            <CardTitle>Booking window &amp; slot settings</CardTitle>
+            <p style={{ fontSize: 13, color: theme.colors.muted, marginTop: 8 }}>
+              Control how far ahead clients can book and the appointment interval.
+            </p>
+            <label style={{ display: "grid", gap: 6, fontSize: 12, color: theme.colors.muted, fontWeight: 800, marginTop: 12 }}>
+              How far ahead can clients book?
+              <select
+                style={inputStyle}
+                value={bookingWindowDays}
+                onChange={(e) => setBookingWindowDays(Number(e.target.value) || 90)}
+              >
+                {BOOKING_WINDOW_DAY_OPTIONS.map((opt) => (
+                  <option key={opt.days} value={opt.days}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label style={{ display: "grid", gap: 6, fontSize: 12, color: theme.colors.muted, fontWeight: 800, marginTop: 12 }}>
+              Appointment interval (minutes)
+              <select
+                style={inputStyle}
+                value={appointmentInterval}
+                onChange={(e) => setAppointmentInterval(Number(e.target.value) || 30)}
+              >
+                {[15, 30, 45, 60].map((n) => (
+                  <option key={n} value={n}>
+                    {n} min
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label style={{ display: "grid", gap: 6, fontSize: 12, color: theme.colors.muted, fontWeight: 800, marginTop: 12 }}>
+              Timezone
+              <input
+                style={inputStyle}
+                value={scheduleTimezone}
+                onChange={(e) => setScheduleTimezone(e.target.value)}
+                placeholder="America/New_York"
+              />
+            </label>
           </div>
 
           <div style={{ marginTop: 14 }}>

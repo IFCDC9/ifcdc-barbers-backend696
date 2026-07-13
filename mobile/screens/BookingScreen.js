@@ -28,6 +28,7 @@ import { resolveMobilePayPalReturnUrl } from '../utils/paypalReturnUrl';
 import { subscribeScheduleUpdated } from '../services/scheduleEvents';
 import { useLiveSlotRefresh } from '../hooks/useLiveSlotRefresh';
 import AppointmentTimeSlotList from '../components/AppointmentTimeSlotList';
+import BookingMonthCalendar from '../components/BookingMonthCalendar';
 import ServicePickerCard from '../components/ServicePickerCard';
 import ShareButton from '../components/ShareButton';
 import { DEFAULT_BOOKING_SERVICES } from '../lib/defaultBookingServices.js';
@@ -104,8 +105,19 @@ function BookingScreen() {
    * "Tomorrow", "Monday"…) is preserved in state and sent to the backend
    * unchanged so the API contract is untouched.
    */
-  const dateDisplay = (v) =>
-    t(`booking.dates.${String(v || '').toLowerCase()}`, { defaultValue: v });
+  const dateDisplay = (v) => {
+    if (!v) return '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(String(v))) {
+      const [y, m, d] = String(v).split('-').map(Number);
+      return new Date(y, m - 1, d).toLocaleDateString(undefined, {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      });
+    }
+    return t(`booking.dates.${String(v).toLowerCase()}`, { defaultValue: v });
+  };
   const [step, setStep] = useState(1);
   const [barber, setBarber] = useState(null);
   const [date, setDate] = useState(null);
@@ -151,7 +163,6 @@ function BookingScreen() {
   const [barbersError, setBarbersError] = useState(null);
   const [providerFilter, setProviderFilter] = useState('');
   const [scheduleRefreshKey, setScheduleRefreshKey] = useState(0);
-  const dates = useMemo(() => buildDateOptions(7), []);
 
   useEffect(() => {
     return subscribeScheduleUpdated(() => setScheduleRefreshKey((k) => k + 1));
@@ -802,20 +813,21 @@ function BookingScreen() {
         {step === 2 && (
           <>
             <Text style={{ color: '#fff', marginBottom: 10 }}>{t('booking.selectDate')}</Text>
-            {dates.map((d) => (
-              <TouchableOpacity
-                key={d}
-                onPress={() => {
-                  setDate(d);
-                  setSelectedServices([]);
-                  setTime(null);
-                  setStep(3);
-                }}
-                style={styles.rowBtn}
-              >
-                <Text style={{ color: '#fff' }}>{dateDisplay(d)}</Text>
-              </TouchableOpacity>
-            ))}
+            <BookingMonthCalendar
+              barberId={barber?.id}
+              barberName={barber?.name}
+              value={date}
+              durationMinutes={30}
+              onSelectDate={(ymd) => {
+                setDate(ymd);
+                setSelectedServices([]);
+                setTime(null);
+                setStep(3);
+              }}
+            />
+            <TouchableOpacity onPress={() => setStep(1)} style={[styles.rowBtn, { marginTop: 8 }]}>
+              <Text style={{ color: UI.gold }}>{t('common.back', { defaultValue: 'Back' })}</Text>
+            </TouchableOpacity>
           </>
         )}
 

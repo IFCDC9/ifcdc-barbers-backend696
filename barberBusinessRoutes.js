@@ -890,13 +890,16 @@ export function createBarberBusinessRouter({ uploadDir } = {}) {
     );
     const settings = await dbQuery(
       `SELECT COALESCE(appointment_interval_minutes, 30) AS appointment_interval_minutes,
-              COALESCE(NULLIF(trim(timezone), ''), 'America/New_York') AS timezone
+              COALESCE(NULLIF(trim(timezone), ''), 'America/New_York') AS timezone,
+              COALESCE(booking_window_days, 90) AS booking_window_days
        FROM barber_settings WHERE barber_id = $1 LIMIT 1`,
       [barberId],
     );
     const st = settings.rows?.[0] || {};
     const appointmentInterval = Number(st.appointment_interval_minutes) || 30;
     const timezone = String(st.timezone || "America/New_York");
+    const { normalizeBookingWindowDays } = await import("./bookingWindow.js");
+    const bookingWindowDays = normalizeBookingWindowDays(st.booking_window_days);
 
     return {
       success: true,
@@ -907,6 +910,8 @@ export function createBarberBusinessRouter({ uploadDir } = {}) {
       appointmentInterval,
       timezone,
       appointment_interval_minutes: appointmentInterval,
+      booking_window_days: bookingWindowDays,
+      bookingWindowDays,
     };
   }
 
@@ -951,6 +956,8 @@ export function createBarberBusinessRouter({ uploadDir } = {}) {
         req.body?.appointmentIntervalMinutes ??
         req.body?.appointmentInterval;
       const timezoneRaw = String(req.body?.timezone ?? "").trim();
+      const windowRaw =
+        req.body?.booking_window_days ?? req.body?.bookingWindowDays ?? req.body?.bookingWindow;
 
       await dbQuery(`DELETE FROM barber_availability WHERE barber_id = $1`, [bid]);
 
@@ -1028,16 +1035,33 @@ export function createBarberBusinessRouter({ uploadDir } = {}) {
         }
       }
 
-      if (intervalRaw != null || timezoneRaw) {
+      if (intervalRaw != null || timezoneRaw || windowRaw != null) {
+        const { normalizeBookingWindowDays } = await import("./bookingWindow.js");
         await dbQuery(
           `INSERT INTO barber_settings (barber_id) VALUES ($1) ON CONFLICT (barber_id) DO NOTHING`,
           [bid],
         );
         const interval = intervalRaw != null ? Math.max(5, Math.min(120, num(intervalRaw, 30))) : null;
-        if (interval != null && timezoneRaw) {
+        const windowDays = windowRaw != null ? normalizeBookingWindowDays(windowRaw) : null;
+        if (interval != null && timezoneRaw && windowDays != null) {
+          await dbQuery(
+            `UPDATE barber_settings SET appointment_interval_minutes = $2, timezone = $3, booking_window_days = $4 WHERE barber_id = $1`,
+            [bid, interval, timezoneRaw, windowDays],
+          );
+        } else if (interval != null && timezoneRaw) {
           await dbQuery(
             `UPDATE barber_settings SET appointment_interval_minutes = $2, timezone = $3 WHERE barber_id = $1`,
             [bid, interval, timezoneRaw],
+          );
+        } else if (interval != null && windowDays != null) {
+          await dbQuery(
+            `UPDATE barber_settings SET appointment_interval_minutes = $2, booking_window_days = $3 WHERE barber_id = $1`,
+            [bid, interval, windowDays],
+          );
+        } else if (timezoneRaw && windowDays != null) {
+          await dbQuery(
+            `UPDATE barber_settings SET timezone = $2, booking_window_days = $3 WHERE barber_id = $1`,
+            [bid, timezoneRaw, windowDays],
           );
         } else if (interval != null) {
           await dbQuery(
@@ -1046,6 +1070,11 @@ export function createBarberBusinessRouter({ uploadDir } = {}) {
           );
         } else if (timezoneRaw) {
           await dbQuery(`UPDATE barber_settings SET timezone = $2 WHERE barber_id = $1`, [bid, timezoneRaw]);
+        } else if (windowDays != null) {
+          await dbQuery(`UPDATE barber_settings SET booking_window_days = $2 WHERE barber_id = $1`, [
+            bid,
+            windowDays,
+          ]);
         }
       }
 

@@ -20,6 +20,7 @@ export type EditScheduleState = {
   }>;
   appointment_interval_minutes: number;
   timezone: string;
+  booking_window_days: number;
 };
 
 const DEFAULT_START = "09:00";
@@ -38,6 +39,7 @@ export function defaultEditScheduleState(): EditScheduleState {
     blockedDates: [],
     appointment_interval_minutes: 30,
     timezone: "America/New_York",
+    booking_window_days: 90,
   };
 }
 
@@ -78,6 +80,7 @@ export function scheduleToEditState(schedule: BarberSchedule): EditScheduleState
   }));
   base.appointment_interval_minutes = Number(schedule.appointment_interval_minutes) || 30;
   base.timezone = String(schedule.timezone || "America/New_York");
+  base.booking_window_days = Number(schedule.booking_window_days) || 90;
   return base;
 }
 
@@ -105,6 +108,7 @@ export function editStateToSavePayload(state: EditScheduleState) {
       })),
     appointment_interval_minutes: state.appointment_interval_minutes,
     timezone: state.timezone.trim() || "America/New_York",
+    booking_window_days: state.booking_window_days || 90,
   };
 }
 

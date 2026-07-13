@@ -15,6 +15,7 @@ import ProfileCard from "../../components/ProfileCard";
 import GlowButton from "../../components/GlowButton";
 import ScheduleTimeField from "../../components/ScheduleTimeField";
 import { WEEKDAYS } from "../../constants/scheduleDays";
+import { BOOKING_WINDOW_DAY_OPTIONS } from "../../constants/bookingWindow";
 import { UNAVAILABILITY_REASON_OPTIONS } from "../../constants/unavailabilityReasons";
 import {
   fetchBarberSchedule,
@@ -339,6 +340,28 @@ export default function EditBarberScheduleScreen() {
               autoCapitalize="none"
               style={styles.dateInput}
             />
+            <Text style={[styles.sectionTitle, { marginTop: 16 }]}>How far ahead can clients book?</Text>
+            <View style={styles.intervalRow}>
+              {BOOKING_WINDOW_DAY_OPTIONS.map((opt) => (
+                <Pressable
+                  key={opt.days}
+                  onPress={() => setState((prev) => ({ ...prev, booking_window_days: opt.days }))}
+                  style={[
+                    styles.intervalChip,
+                    state.booking_window_days === opt.days && styles.intervalChipOn,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.intervalText,
+                      state.booking_window_days === opt.days && styles.intervalTextOn,
+                    ]}
+                  >
+                    {opt.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
           </ProfileCard>
 
           <GlowButton label={saving ? "Saving…" : "Save schedule"} onPress={onSave} disabled={saving} loading={saving} />

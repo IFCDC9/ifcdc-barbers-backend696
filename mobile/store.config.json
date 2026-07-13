@@ -1,7 +1,7 @@
 {
   "configVersion": 0,
   "apple": {
-    "version": "1.1.4",
+    "version": "1.1.5",
     "copyright": "2026 IFCDC Barbers",
     "release": {
       "automaticRelease": true
@@ -24,7 +24,7 @@
         "title": "IFCDC Barbers",
         "subtitle": "Book cuts with style photos",
         "privacyPolicyUrl": "https://ifcdcbarbersapp.com/privacy",
-        "releaseNotes": "Version 1.1.4 (Build 57)\n\n• Fix Admin schedule crash (WEEKDAYS import)\n• Safer PayPal finalize: validate before capture and auto-refund orphans\n• Client-facing unavailability reasons for blocked dates\n• Admin booking view shows PayPal order/capture/refund IDs",
+        "releaseNotes": "Version 1.1.5 (Build 58)\n\n• Full month calendar for booking dates with advance windows up to 12 months\n• Fix Admin schedule crash (WEEKDAYS import)\n• Safer PayPal finalize with auto-refund for orphan captures\n• Client-facing unavailability reasons on blocked dates",
         "screenshots": {
           "APP_IPAD_PRO_3GEN_129": [
             "store/apple/screenshot/en-US/APP_IPAD_PRO_3GEN_129/iPad Pro 13-inch (M4)-06_AURA.png",
