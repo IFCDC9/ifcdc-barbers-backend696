@@ -10,11 +10,13 @@ import {
 import {
   addReviewPhotos,
   adminDeleteReview,
+  clearBarberReply,
   createBarberReview,
   deleteCustomerReview,
   followBarber,
   getBookingReviewStatus,
   getPublicBarberPortfolio,
+  listAdminReviews,
   listCustomerFollowupReminders,
   listDiscoverPhotos,
   listPendingContentReports,
@@ -22,6 +24,7 @@ import {
   replyToBarberReview,
   reportContent,
   resolveContentReport,
+  restoreReview,
   setPhotoVisibility,
   setReviewVisibility,
   togglePhotoLike,
@@ -84,6 +87,9 @@ export function createSocialPortfolioRouter() {
       const viewer = optionalAuth(req);
       const result = await getPublicBarberPortfolio(req.params.slugOrId, {
         viewerUserId: viewer?.id || null,
+        reviewSort: req.query?.sort || req.query?.reviewSort || "newest",
+        reviewLimit: req.query?.limit || 20,
+        reviewOffset: req.query?.offset || 0,
       });
       if (!result.ok) return res.status(404).json(result);
       res.set("Cache-Control", "public, max-age=60");
@@ -178,6 +184,19 @@ export function createSocialPortfolioRouter() {
     } catch (e) {
       console.error("[portfolio] reply review failed:", e?.message || e);
       return res.status(500).json({ ok: false, message: "Failed to save reply." });
+    }
+  });
+
+  router.delete("/api/reviews/:reviewId/reply", requireAuth, async (req, res) => {
+    try {
+      const result = await clearBarberReply({
+        userId: req.user.id,
+        reviewId: req.params.reviewId,
+      });
+      if (!result.ok) return res.status(400).json(result);
+      return res.json(result);
+    } catch (e) {
+      return res.status(500).json({ ok: false, message: "Failed to remove reply." });
     }
   });
 
@@ -372,6 +391,47 @@ export function createSocialPortfolioRouter() {
       return res.json(result);
     } catch (e) {
       return res.status(500).json({ ok: false, message: "Failed to remove review." });
+    }
+  });
+
+  router.post("/api/admin/reviews/:id/restore", async (req, res) => {
+    const admin = await requirePlatformAdmin(req, res);
+    if (!admin) return;
+    try {
+      const result = await restoreReview(req.params.id, {
+        adminUserId: admin.id,
+        reason: req.body?.reason || "restored",
+      });
+      if (!result.ok) return res.status(400).json(result);
+      void logAdminActivity({
+        eventType: ADMIN_ACTIVITY.CONTENT_MODERATED,
+        adminUserId: admin.id,
+        detail: `Review ${req.params.id} restored`,
+        metadata: { reviewId: req.params.id, action: "restored" },
+        req,
+      });
+      return res.json(result);
+    } catch (e) {
+      return res.status(500).json({ ok: false, message: "Failed to restore review." });
+    }
+  });
+
+  router.get("/api/admin/reviews", async (req, res) => {
+    const admin = await requirePlatformAdmin(req, res);
+    if (!admin) return;
+    try {
+      const result = await listAdminReviews({
+        q: req.query?.q,
+        status: req.query?.status,
+        stars: req.query?.stars,
+        hasPhotos: req.query?.hasPhotos,
+        limit: req.query?.limit,
+        offset: req.query?.offset,
+      });
+      return res.json(result);
+    } catch (e) {
+      console.error("[portfolio] admin reviews failed:", e?.message || e);
+      return res.status(500).json({ ok: false, message: "Failed to load reviews." });
     }
   });
 

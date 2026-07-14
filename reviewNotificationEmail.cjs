@@ -96,20 +96,31 @@ async function emailBarberNewReview({ dbQuery, barberId, rating, comment, custom
   }
 }
 
-async function emailCustomerReviewPrompt({ to, customerName, barberName, bookingId }) {
+async function emailCustomerReviewPrompt({
+  to,
+  customerName,
+  barberName,
+  bookingId,
+  deepLinkWeb,
+  deepLinkApp,
+}) {
   try {
     const email = String(to || "").trim();
     if (!email.includes("@")) return { ok: false, reason: "no_customer_email" };
-    const subject = `How was your visit with ${barberName || "your barber"}?`;
-    const reviewUrl = `${WEB_URL}/profile/bookings/${encodeURIComponent(String(bookingId || ""))}/review`;
+    const subject = `Your appointment is complete — rate ${barberName || "your barber"}`;
+    const reviewUrl =
+      deepLinkWeb ||
+      `${WEB_URL}/profile/bookings/${encodeURIComponent(String(bookingId || ""))}/review`;
+    const appLink = deepLinkApp || `ifcdc-barbers://review/${encodeURIComponent(String(bookingId || ""))}`;
     const html =
       `<div style="font-family:system-ui,sans-serif;line-height:1.5;color:#111">` +
       `<p style="margin:0 0 8px;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#b8860b;font-weight:700;">IFCDC Barbers</p>` +
-      `<h2 style="margin:0 0 12px;">Leave a review</h2>` +
+      `<h2 style="margin:0 0 12px;">How was your experience?</h2>` +
       `<p>Hi ${escapeHtml(customerName || "there")},</p>` +
-      `<p>Your appointment with <strong>${escapeHtml(barberName || "your provider")}</strong> is complete. Share a 1–5 star rating, a short review, and optional photos of your finished look.</p>` +
+      `<p>Your appointment is complete. How was your experience with <strong>${escapeHtml(barberName || "your provider")}</strong>? Tap below to leave a rating, review, and photos.</p>` +
       `<p style="margin:20px 0;"><a href="${escapeHtml(reviewUrl)}" style="display:inline-block;background:#111;color:#FFD700;padding:12px 18px;border-radius:999px;text-decoration:none;font-weight:700;">Leave a review</a></p>` +
-      `<p style="color:#666;font-size:13px;">Only clients with completed appointments can leave reviews.</p>` +
+      `<p style="color:#666;font-size:13px;">App link: <a href="${escapeHtml(appLink)}">${escapeHtml(appLink)}</a></p>` +
+      `<p style="color:#666;font-size:13px;">Only clients with completed appointments can leave reviews — one review per booking.</p>` +
       `</div>`;
     return await sendEmail({ to: email, subject, html, label: "review_prompt_customer" });
   } catch (e) {
@@ -122,13 +133,27 @@ async function emailAdminReviewModeration({
   action,
   targetType,
   targetId,
+  bookingId,
   reason,
   details,
   barberName,
+  shopName,
+  customerName,
+  customerEmail,
+  rating,
+  comment,
+  photoUrls,
   adminNotes,
+  adminUserId,
 }) {
   try {
     const subject = `[IFCDC Reviews] ${String(action || "update").toUpperCase()} — ${targetType || "content"}`;
+    const photos = Array.isArray(photoUrls) ? photoUrls.filter(Boolean) : [];
+    const photoHtml = photos.length
+      ? `<li><strong>Photos:</strong><ul>${photos
+          .map((u) => `<li><a href="${escapeHtml(u)}">${escapeHtml(u)}</a></li>`)
+          .join("")}</ul></li>`
+      : "";
     const html =
       `<div style="font-family:system-ui,sans-serif;line-height:1.5;color:#111">` +
       `<p style="margin:0 0 8px;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#b8860b;font-weight:700;">IFCDC Barbers · Moderation</p>` +
@@ -136,13 +161,21 @@ async function emailAdminReviewModeration({
       `<ul>` +
       `<li><strong>Action:</strong> ${escapeHtml(action)}</li>` +
       `<li><strong>Type:</strong> ${escapeHtml(targetType)}</li>` +
-      `<li><strong>ID:</strong> ${escapeHtml(targetId)}</li>` +
+      `<li><strong>Review ID:</strong> ${escapeHtml(targetId)}</li>` +
+      `<li><strong>Booking ID:</strong> ${escapeHtml(bookingId || "—")}</li>` +
+      `<li><strong>Client:</strong> ${escapeHtml(customerName || "—")} (${escapeHtml(customerEmail || "—")})</li>` +
       `<li><strong>Barber:</strong> ${escapeHtml(barberName || "—")}</li>` +
+      `<li><strong>Shop:</strong> ${escapeHtml(shopName || "—")}</li>` +
+      `<li><strong>Stars:</strong> ${escapeHtml(rating != null ? String(rating) : "—")} ${rating != null ? starsText(rating) : ""}</li>` +
+      `<li><strong>Review text:</strong> ${escapeHtml(comment || "—")}</li>` +
+      photoHtml +
       `<li><strong>Reason:</strong> ${escapeHtml(reason || "—")}</li>` +
       `<li><strong>Details:</strong> ${escapeHtml(details || "—")}</li>` +
       `<li><strong>Admin notes:</strong> ${escapeHtml(adminNotes || "—")}</li>` +
+      `<li><strong>Admin user:</strong> ${escapeHtml(adminUserId || "—")}</li>` +
+      `<li><strong>Date/time:</strong> ${escapeHtml(new Date().toISOString())}</li>` +
       `</ul>` +
-      `<p><a href="${WEB_URL}/admin/content-moderation">Open content moderation</a></p>` +
+      `<p><a href="${WEB_URL}/admin/content-moderation">Open Admin Content Moderation</a></p>` +
       `</div>`;
     return await sendEmail({
       to: ADMIN_REVIEW_EMAIL,

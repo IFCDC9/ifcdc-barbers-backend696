@@ -229,9 +229,17 @@ async function loadReviewStats(barberId) {
   const r = await dbQuery(
     `SELECT COUNT(*)::int AS review_count,
             COALESCE(ROUND(AVG(rating)::numeric, 2), 0)::float8 AS average_rating,
-            COUNT(*) FILTER (WHERE rating = 5)::int AS five_star_count
+            COUNT(*) FILTER (WHERE rating = 5)::int AS five_star_count,
+            COUNT(*) FILTER (WHERE rating = 4)::int AS four_star_count,
+            COUNT(*) FILTER (WHERE rating = 3)::int AS three_star_count,
+            COUNT(*) FILTER (WHERE rating = 2)::int AS two_star_count,
+            COUNT(*) FILTER (WHERE rating = 1)::int AS one_star_count,
+            COUNT(*) FILTER (WHERE EXISTS (
+              SELECT 1 FROM review_photos rp
+              WHERE rp.review_id = barber_reviews.id AND rp.status = 'published'
+            ))::int AS with_photos_count
      FROM barber_reviews
-     WHERE barber_id = $1::text AND status = 'published'`,
+     WHERE barber_id = $1::text AND status = 'published' AND deleted_at IS NULL`,
     [String(barberId)],
   );
   const row = r.rows?.[0] || {};
@@ -239,6 +247,14 @@ async function loadReviewStats(barberId) {
     reviewCount: Number(row.review_count) || 0,
     averageRating: Number(row.average_rating) || 0,
     fiveStarCount: Number(row.five_star_count) || 0,
+    ratingBreakdown: {
+      5: Number(row.five_star_count) || 0,
+      4: Number(row.four_star_count) || 0,
+      3: Number(row.three_star_count) || 0,
+      2: Number(row.two_star_count) || 0,
+      1: Number(row.one_star_count) || 0,
+    },
+    withPhotosCount: Number(row.with_photos_count) || 0,
   };
 }
 
@@ -291,7 +307,7 @@ async function loadBarberBadges(barberId) {
   }));
 }
 
-export async function getPublicBarberPortfolio(slugOrId, { viewerUserId = null } = {}) {
+export async function getPublicBarberPortfolio(slugOrId, { viewerUserId = null, reviewSort = "newest", reviewLimit = 20, reviewOffset = 0 } = {}) {
   const barber = await resolveBarberForPortfolio(slugOrId);
   if (!barber) return { ok: false, message: "Barber not found" };
 
@@ -306,15 +322,25 @@ export async function getPublicBarberPortfolio(slugOrId, { viewerUserId = null }
     [barberId],
   );
 
+  const sort = String(reviewSort || "newest").toLowerCase();
+  let orderSql = "r.created_at DESC";
+  if (sort === "highest") orderSql = "r.rating DESC, r.created_at DESC";
+  else if (sort === "lowest") orderSql = "r.rating ASC, r.created_at DESC";
+  else if (sort === "photos") {
+    orderSql = `(SELECT COUNT(*) FROM review_photos rp WHERE rp.review_id = r.id AND rp.status = 'published') DESC, r.created_at DESC`;
+  }
+  const limit = Math.min(50, Math.max(1, Number(reviewLimit) || 20));
+  const offset = Math.max(0, Number(reviewOffset) || 0);
+
   const reviewsR = await dbQuery(
     `SELECT r.*, COALESCE(u.name, b.customer_name, 'Verified customer') AS customer_name
      FROM barber_reviews r
      LEFT JOIN app_users u ON u.id = r.customer_user_id
      LEFT JOIN bookings b ON b.id = r.booking_id
-     WHERE r.barber_id = $1::text AND r.status = 'published'
-     ORDER BY r.created_at DESC
-     LIMIT 50`,
-    [barberId],
+     WHERE r.barber_id = $1::text AND r.status = 'published' AND r.deleted_at IS NULL
+     ORDER BY ${orderSql}
+     LIMIT $2 OFFSET $3`,
+    [barberId, limit, offset],
   );
   const reviewIds = (reviewsR.rows || []).map((r) => r.id);
   const photoMap = await loadPhotosForReviews(reviewIds, viewerUserId);
@@ -438,6 +464,8 @@ export async function getPublicBarberPortfolio(slugOrId, { viewerUserId = null }
           : null,
       averageRating: stats.averageRating,
       reviewCount: stats.reviewCount,
+      ratingBreakdown: stats.ratingBreakdown,
+      withPhotosCount: stats.withPhotosCount,
       followerCount,
       isFollowing,
       badges,
@@ -451,6 +479,13 @@ export async function getPublicBarberPortfolio(slugOrId, { viewerUserId = null }
       },
       services,
       reviews,
+      reviewsMeta: {
+        sort,
+        limit,
+        offset,
+        hasMore: reviews.length >= limit,
+        total: stats.reviewCount,
+      },
       gallery,
       bookable: Boolean(bookable.rows?.length),
       publicUrl: `/p/${publicSlug}`,
@@ -920,6 +955,110 @@ export async function adminDeleteReview(reviewId, { adminUserId, reason = "" } =
   const review = r.rows?.[0];
   if (!review) return { ok: false, message: "Review not found." };
 
+  const photos = await loadPhotosForReviews([review.id], null);
+  const snapshot = {
+    ...mapReviewRow(review, photos.get(String(review.id)) || []),
+    status: review.status,
+  };
+
+  let barberName = "";
+  let shopName = "";
+  let customerEmail = "";
+  let customerName = "Verified customer";
+  try {
+    const br = await dbQuery(
+      `SELECT b.name AS barber_name, bs.name AS shop_name, bk.customer_email, bk.customer_name, u.email AS user_email
+       FROM barber_reviews r
+       LEFT JOIN barbers b ON b.id::text = r.barber_id
+       LEFT JOIN businesses bs ON bs.id = b.business_id
+       LEFT JOIN bookings bk ON bk.id = r.booking_id
+       LEFT JOIN app_users u ON u.id = r.customer_user_id
+       WHERE r.id = $1::uuid LIMIT 1`,
+      [String(reviewId)],
+    );
+    barberName = br.rows?.[0]?.barber_name || "";
+    shopName = br.rows?.[0]?.shop_name || "";
+    customerEmail = br.rows?.[0]?.customer_email || br.rows?.[0]?.user_email || "";
+    customerName = br.rows?.[0]?.customer_name || customerName;
+  } catch {
+    /* ignore */
+  }
+
+  await dbQuery(
+    `UPDATE barber_reviews
+     SET status = 'removed',
+         deleted_at = COALESCE(deleted_at, NOW()),
+         deleted_by = $2::uuid,
+         delete_reason = $3,
+         moderated_at = NOW(),
+         moderated_by = $2::uuid,
+         moderation_reason = $3,
+         updated_at = NOW()
+     WHERE id = $1::uuid`,
+    [String(reviewId), adminUserId || null, reason || "policy_violation"],
+  );
+
+  await dbQuery(
+    `INSERT INTO review_moderation_logs (review_id, action, reason, admin_user_id, snapshot)
+     VALUES ($1::uuid, 'removed', $2, $3::uuid, $4::jsonb)`,
+    [String(reviewId), reason || "policy_violation", adminUserId || null, JSON.stringify(snapshot)],
+  ).catch(() => {});
+
+  void import("./reviewNotificationEmail.cjs")
+    .then((m) =>
+      m.emailAdminReviewModeration({
+        action: "removed",
+        targetType: "review",
+        targetId: String(reviewId),
+        bookingId: review.booking_id,
+        reason: reason || "admin_removed",
+        details: `Soft-deleted by admin ${adminUserId || ""}`,
+        barberName,
+        shopName,
+        customerName,
+        customerEmail,
+        rating: review.rating,
+        comment: review.comment,
+        photoUrls: (snapshot.photos || []).map((p) => p.photoUrl).filter(Boolean),
+        adminNotes: reason || "",
+        adminUserId,
+      }),
+    )
+    .catch(() => {});
+
+  return { ok: true, message: "Review removed from public view." };
+}
+
+export async function restoreReview(reviewId, { adminUserId, reason = "" } = {}) {
+  const r = await dbQuery(`SELECT * FROM barber_reviews WHERE id = $1::uuid LIMIT 1`, [String(reviewId)]);
+  const review = r.rows?.[0];
+  if (!review) return { ok: false, message: "Review not found." };
+
+  await dbQuery(
+    `UPDATE barber_reviews
+     SET status = 'published',
+         deleted_at = NULL,
+         deleted_by = NULL,
+         delete_reason = NULL,
+         moderated_at = NOW(),
+         moderated_by = $2::uuid,
+         moderation_reason = $3,
+         updated_at = NOW()
+     WHERE id = $1::uuid`,
+    [String(reviewId), adminUserId || null, reason || "restored"],
+  );
+
+  await dbQuery(
+    `INSERT INTO review_moderation_logs (review_id, action, reason, admin_user_id, snapshot)
+     VALUES ($1::uuid, 'restored', $2, $3::uuid, $4::jsonb)`,
+    [
+      String(reviewId),
+      reason || "restored",
+      adminUserId || null,
+      JSON.stringify({ rating: review.rating, comment: review.comment, bookingId: review.booking_id }),
+    ],
+  ).catch(() => {});
+
   let barberName = "";
   try {
     const br = await dbQuery(`SELECT name FROM barbers WHERE id::text = $1::text LIMIT 1`, [
@@ -930,29 +1069,56 @@ export async function adminDeleteReview(reviewId, { adminUserId, reason = "" } =
     /* ignore */
   }
 
-  await dbQuery(`DELETE FROM barber_reviews WHERE id = $1::uuid`, [String(reviewId)]);
-
   void import("./reviewNotificationEmail.cjs")
     .then((m) =>
       m.emailAdminReviewModeration({
-        action: "removed",
+        action: "restored",
         targetType: "review",
         targetId: String(reviewId),
-        reason: reason || "admin_removed",
-        details: `Deleted by admin ${adminUserId || ""}`,
+        bookingId: review.booking_id,
+        reason: reason || "restored",
         barberName,
-        adminNotes: reason || "",
+        rating: review.rating,
+        comment: review.comment,
+        adminUserId,
       }),
     )
     .catch(() => {});
 
-  return { ok: true, message: "Review removed." };
+  return { ok: true, message: "Review restored to public view." };
 }
 
-/** Push + email clients to leave a review after appointment completion. */
+export async function clearBarberReply({ userId, reviewId }) {
+  const r = await dbQuery(`SELECT * FROM barber_reviews WHERE id = $1::uuid LIMIT 1`, [String(reviewId)]);
+  const review = r.rows?.[0];
+  if (!review) return { ok: false, message: "Review not found." };
+  const allowed = await assertUserCanReplyAsBarber(userId, review.barber_id);
+  if (!allowed.ok) return allowed;
+
+  const upd = await dbQuery(
+    `UPDATE barber_reviews
+     SET barber_reply = NULL, barber_reply_at = NULL, barber_reply_by = NULL, updated_at = NOW()
+     WHERE id = $1::uuid
+     RETURNING *`,
+    [String(reviewId)],
+  );
+  const updated = upd.rows?.[0];
+  const photos = await loadPhotosForReviews([updated.id], userId);
+  return {
+    ok: true,
+    review: mapReviewRow(
+      { ...updated, customer_name: "Verified customer" },
+      photos.get(String(updated.id)) || [],
+    ),
+  };
+}
+
+/** Push + email clients to leave a review after appointment completion (once per booking). */
 export async function notifyCustomerReviewPrompt(bookingRow) {
-  if (!bookingRow?.id) return;
-  if (String(bookingRow.booking_status || "").toLowerCase() !== "completed") return;
+  if (!bookingRow?.id) return { ok: false, reason: "missing_booking" };
+  if (String(bookingRow.booking_status || "").toLowerCase() !== "completed") {
+    return { ok: false, reason: "not_completed" };
+  }
 
   const bookingId = String(bookingRow.id);
   const barberName = String(bookingRow.barber_name || "your provider");
@@ -960,31 +1126,99 @@ export async function notifyCustomerReviewPrompt(bookingRow) {
   const customerEmail = String(bookingRow.customer_email || "").trim();
   const userId = bookingRow.user_id ? String(bookingRow.user_id) : null;
 
-  void import("./reviewNotificationEmail.cjs")
-    .then((m) =>
+  // Claim the prompt slot once — concurrent completes lose on unique index.
+  try {
+    const claim = await dbQuery(
+      `UPDATE bookings
+       SET review_prompt_sent_at = NOW()
+       WHERE id = $1::uuid
+         AND review_prompt_sent_at IS NULL
+       RETURNING id`,
+      [bookingId],
+    );
+    if (!claim.rows?.[0]) {
+      return { ok: true, skipped: "already_sent" };
+    }
+  } catch (e) {
+    console.warn("[review-prompt] claim failed:", e?.message || e);
+  }
+
+  const deepLinkApp = `ifcdc-barbers://review/${bookingId}`;
+  const deepLinkWeb = `${String(process.env.PUBLIC_WEB_URL || process.env.EXPO_PUBLIC_WEB_URL || "https://ifcdcbarbersapp.com").replace(/\/$/, "")}/profile/bookings/${encodeURIComponent(bookingId)}/review`;
+
+  let emailStatus = "skipped";
+  let emailError = null;
+  try {
+    const mail = await import("./reviewNotificationEmail.cjs").then((m) =>
       m.emailCustomerReviewPrompt({
         to: customerEmail,
         customerName,
         barberName,
         bookingId,
+        deepLinkApp,
+        deepLinkWeb,
       }),
-    )
-    .catch(() => {});
-
-  if (!userId) return;
-  try {
-    const pushNotifier = require("./pushNotifier.cjs");
-    await pushNotifier.sendPushToUsers({
-      dbQuery,
-      userIds: [userId],
-      kind: "booking_status_update",
-      title: "Rate your visit",
-      body: `How was your appointment with ${barberName}? Leave a review.`,
-      data: { type: "leave_review", bookingId, barberId: String(bookingRow.barber_id || "") },
-    });
-  } catch {
-    /* ignore */
+    );
+    emailStatus = mail?.ok === false ? "failed" : customerEmail ? "sent" : "skipped";
+    emailError = mail?.reason || null;
+  } catch (e) {
+    emailStatus = "failed";
+    emailError = e?.message || String(e);
   }
+
+  await dbQuery(
+    `INSERT INTO notification_delivery_logs (booking_id, channel, kind, recipient, status, error_message, metadata)
+     VALUES ($1::uuid, 'email', 'review_prompt', $2, $3, $4, $5::jsonb)
+     ON CONFLICT DO NOTHING`,
+    [
+      bookingId,
+      customerEmail || null,
+      emailStatus,
+      emailError,
+      JSON.stringify({ deepLinkWeb, deepLinkApp, barberName }),
+    ],
+  ).catch(() => {});
+
+  let pushStatus = "skipped";
+  let pushError = null;
+  if (userId) {
+    try {
+      const pushNotifier = require("./pushNotifier.cjs");
+      await pushNotifier.sendPushToUsers({
+        dbQuery,
+        userIds: [userId],
+        kind: "booking_status_update",
+        title: "Your appointment is complete",
+        body: `Your appointment is complete. How was your experience with ${barberName}? Tap here to leave a rating, review, and photos.`,
+        data: {
+          type: "leave_review",
+          bookingId,
+          barberId: String(bookingRow.barber_id || ""),
+          url: deepLinkApp,
+          webUrl: deepLinkWeb,
+        },
+      });
+      pushStatus = "sent";
+    } catch (e) {
+      pushStatus = "failed";
+      pushError = e?.message || String(e);
+    }
+  }
+
+  await dbQuery(
+    `INSERT INTO notification_delivery_logs (booking_id, channel, kind, recipient, status, error_message, metadata)
+     VALUES ($1::uuid, 'push', 'review_prompt', $2, $3, $4, $5::jsonb)
+     ON CONFLICT DO NOTHING`,
+    [
+      bookingId,
+      userId || null,
+      pushStatus,
+      pushError,
+      JSON.stringify({ deepLinkApp, deepLinkWeb }),
+    ],
+  ).catch(() => {});
+
+  return { ok: true, emailStatus, pushStatus };
 }
 
 export async function addReviewPhotos({ userId, reviewId, photos = [] }) {
@@ -1404,37 +1638,169 @@ export async function setReviewVisibility(reviewId, status, { adminUserId, reaso
   const review = existing.rows?.[0];
   if (!review) return { ok: false, message: "Review not found." };
 
-  await dbQuery(`UPDATE barber_reviews SET status = $2, updated_at = NOW() WHERE id = $1::uuid`, [
-    String(reviewId),
-    s,
-  ]);
+  await dbQuery(
+    `UPDATE barber_reviews
+     SET status = $2,
+         deleted_at = CASE WHEN $2 = 'published' THEN NULL ELSE deleted_at END,
+         moderated_at = NOW(),
+         moderated_by = $3::uuid,
+         moderation_reason = $4,
+         updated_at = NOW()
+     WHERE id = $1::uuid`,
+    [String(reviewId), s, adminUserId || null, reason || s],
+  );
 
-  if (s === "hidden") {
-    let barberName = "";
-    try {
-      const br = await dbQuery(`SELECT name FROM barbers WHERE id::text = $1::text LIMIT 1`, [
-        String(review.barber_id),
-      ]);
-      barberName = br.rows?.[0]?.name || "";
-    } catch {
-      /* ignore */
-    }
-    void import("./reviewNotificationEmail.cjs")
-      .then((m) =>
-        m.emailAdminReviewModeration({
-          action: "hidden",
-          targetType: "review",
-          targetId: String(reviewId),
-          reason: reason || "admin_hidden",
-          details: `Hidden by admin ${adminUserId || ""}`,
-          barberName,
-          adminNotes: reason || "",
-        }),
-      )
-      .catch(() => {});
+  await dbQuery(
+    `INSERT INTO review_moderation_logs (review_id, action, reason, admin_user_id, snapshot)
+     VALUES ($1::uuid, $2, $3, $4::uuid, $5::jsonb)`,
+    [
+      String(reviewId),
+      s === "hidden" ? "hidden" : "restored",
+      reason || s,
+      adminUserId || null,
+      JSON.stringify({ rating: review.rating, comment: review.comment, bookingId: review.booking_id }),
+    ],
+  ).catch(() => {});
+
+  let barberName = "";
+  let customerEmail = "";
+  let customerName = "";
+  let shopName = "";
+  try {
+    const br = await dbQuery(
+      `SELECT b.name AS barber_name, bs.name AS shop_name, bk.customer_email, bk.customer_name, u.email AS user_email
+       FROM barber_reviews r
+       LEFT JOIN barbers b ON b.id::text = r.barber_id
+       LEFT JOIN businesses bs ON bs.id = b.business_id
+       LEFT JOIN bookings bk ON bk.id = r.booking_id
+       LEFT JOIN app_users u ON u.id = r.customer_user_id
+       WHERE r.id = $1::uuid LIMIT 1`,
+      [String(reviewId)],
+    );
+    barberName = br.rows?.[0]?.barber_name || "";
+    shopName = br.rows?.[0]?.shop_name || "";
+    customerEmail = br.rows?.[0]?.customer_email || br.rows?.[0]?.user_email || "";
+    customerName = br.rows?.[0]?.customer_name || "";
+  } catch {
+    /* ignore */
   }
 
+  void import("./reviewNotificationEmail.cjs")
+    .then((m) =>
+      m.emailAdminReviewModeration({
+        action: s === "hidden" ? "hidden" : "restored",
+        targetType: "review",
+        targetId: String(reviewId),
+        bookingId: review.booking_id,
+        reason: reason || s,
+        details: `${s} by admin ${adminUserId || ""}`,
+        barberName,
+        shopName,
+        customerName,
+        customerEmail,
+        rating: review.rating,
+        comment: review.comment,
+        adminNotes: reason || "",
+        adminUserId,
+      }),
+    )
+    .catch(() => {});
+
   return { ok: true };
+}
+
+export async function listAdminReviews({
+  q = "",
+  status = "",
+  stars = "",
+  hasPhotos = "",
+  limit = 50,
+  offset = 0,
+} = {}) {
+  const clauses = ["1=1"];
+  const params = [];
+  const add = (value) => {
+    params.push(value);
+    return `$${params.length}`;
+  };
+
+  const statusFilter = String(status || "").trim().toLowerCase();
+  if (statusFilter && statusFilter !== "all") {
+    if (statusFilter === "removed") clauses.push(`(r.status = 'removed' OR r.deleted_at IS NOT NULL)`);
+    else if (statusFilter === "hidden") clauses.push(`r.status = 'hidden'`);
+    else if (statusFilter === "reported") clauses.push(`r.status = 'reported'`);
+    else if (statusFilter === "published") clauses.push(`r.status = 'published' AND r.deleted_at IS NULL`);
+    else clauses.push(`r.status = ${add(statusFilter)}`);
+  }
+
+  const starN = Number(stars);
+  if (Number.isFinite(starN) && starN >= 1 && starN <= 5) {
+    clauses.push(`r.rating = ${add(starN)}`);
+  }
+
+  if (String(hasPhotos).toLowerCase() === "true" || hasPhotos === "1") {
+    clauses.push(
+      `EXISTS (SELECT 1 FROM review_photos rp WHERE rp.review_id = r.id AND rp.status = 'published')`,
+    );
+  } else if (String(hasPhotos).toLowerCase() === "false" || hasPhotos === "0") {
+    clauses.push(
+      `NOT EXISTS (SELECT 1 FROM review_photos rp WHERE rp.review_id = r.id AND rp.status = 'published')`,
+    );
+  }
+
+  const query = String(q || "").trim();
+  if (query) {
+    const like = `%${query}%`;
+    const p = add(like);
+    clauses.push(`(
+      coalesce(u.name,'') ILIKE ${p}
+      OR coalesce(u.email,'') ILIKE ${p}
+      OR coalesce(bk.customer_name,'') ILIKE ${p}
+      OR coalesce(bk.customer_email,'') ILIKE ${p}
+      OR coalesce(b.name,'') ILIKE ${p}
+      OR coalesce(bs.name,'') ILIKE ${p}
+      OR r.id::text ILIKE ${p}
+      OR r.booking_id::text ILIKE ${p}
+      OR coalesce(r.comment,'') ILIKE ${p}
+    )`);
+  }
+
+  const lim = Math.min(100, Math.max(1, Number(limit) || 50));
+  const off = Math.max(0, Number(offset) || 0);
+  params.push(lim, off);
+
+  const rows = await dbQuery(
+    `SELECT r.*,
+            COALESCE(u.name, bk.customer_name, 'Verified customer') AS customer_name,
+            COALESCE(u.email, bk.customer_email) AS customer_email,
+            b.name AS barber_name,
+            bs.name AS shop_name
+     FROM barber_reviews r
+     LEFT JOIN app_users u ON u.id = r.customer_user_id
+     LEFT JOIN bookings bk ON bk.id = r.booking_id
+     LEFT JOIN barbers b ON b.id::text = r.barber_id
+     LEFT JOIN businesses bs ON bs.id = b.business_id
+     WHERE ${clauses.join(" AND ")}
+     ORDER BY r.created_at DESC
+     LIMIT $${params.length - 1} OFFSET $${params.length}`,
+    params,
+  );
+
+  const reviewIds = (rows.rows || []).map((row) => row.id);
+  const photos = await loadPhotosForReviews(reviewIds, null);
+  return {
+    ok: true,
+    reviews: (rows.rows || []).map((row) => ({
+      ...mapReviewRow(row, photos.get(String(row.id)) || []),
+      status: row.status,
+      deletedAt: row.deleted_at ? new Date(row.deleted_at).toISOString() : null,
+      moderatedAt: row.moderated_at ? new Date(row.moderated_at).toISOString() : null,
+      moderationReason: row.moderation_reason || "",
+      customerEmail: row.customer_email || "",
+      barberName: row.barber_name || "",
+      shopName: row.shop_name || "",
+    })),
+  };
 }
 
 export async function setPhotoVisibility(photoId, status) {

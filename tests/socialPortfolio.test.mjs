@@ -33,6 +33,8 @@ test("portfolio routes expose reply and admin delete", async () => {
   assert.match(src, /\/api\/admin\/reviews\/:id/);
   assert.match(src, /adminDeleteReview/);
   assert.match(src, /replyToBarberReview/);
+  assert.match(src, /restoreReview/);
+  assert.match(src, /listAdminReviews/);
 });
 
 test("web portfolio API sends bearer auth for review mutations", async () => {
@@ -41,4 +43,13 @@ test("web portfolio API sends bearer auth for review mutations", async () => {
   assert.match(src, /function authHeaders\(\)[\s\S]*Authorization:\s*`Bearer/);
   assert.match(src, /replyToReview/);
   assert.match(src, /removeReview/);
+  assert.match(src, /restoreReviewAdmin/);
+});
+
+test("booking completion helper marks complete idempotently", async () => {
+  const fs = await import("node:fs/promises");
+  const src = await fs.readFile(new URL("../bookingCompletion.cjs", import.meta.url), "utf8");
+  assert.match(src, /markBookingCompletedIdempotent/);
+  assert.match(src, /notifyCustomerReviewPrompt/);
+  assert.match(src, /completed_at/);
 });

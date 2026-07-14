@@ -40,6 +40,9 @@ export async function ensureBookingsTable() {
   await dbQuery(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ;`);
   await dbQuery(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS cancelled_by TEXT;`);
   await dbQuery(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS cancellation_reason TEXT;`);
+  await dbQuery(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;`);
+  await dbQuery(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS completed_by TEXT;`);
+  await dbQuery(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS review_prompt_sent_at TIMESTAMPTZ;`);
   await dbQuery(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS rescheduled_from_date DATE;`);
   await dbQuery(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS rescheduled_from_time TIME;`);
   await dbQuery(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS rescheduled_to_date DATE;`);

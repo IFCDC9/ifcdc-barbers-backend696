@@ -37,16 +37,18 @@
 import React from "react";
 import {
   ActivityIndicator,
+  Linking,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { NavigationContainer } from "@react-navigation/native";
+import { NavigationContainer, CommonActions } from "@react-navigation/native";
 import { createStackNavigator } from "@react-navigation/stack";
 import * as SecureStore from "expo-secure-store";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { addNotificationListeners } from "./services/notificationService";
 
 // i18next must be imported before any screen using `useTranslation()`. The
 // `./i18n` module's bottom calls `initSync()`, so this triggers the
@@ -147,9 +149,71 @@ function BootProgress({ phase }: { phase: string }) {
 
 type GatePhase = "storage" | "auth" | "api" | "ready";
 
+const navigationRef = React.createRef<any>();
+
+function openBookingReview(bookingId: string) {
+  const id = String(bookingId || "").trim();
+  if (!id || !navigationRef.current) return;
+  try {
+    navigationRef.current.dispatch(
+      CommonActions.navigate({
+        name: "Main",
+        params: {
+          screen: "Profile",
+          params: {
+            screen: "BookingReview",
+            params: { bookingId: id },
+          },
+        },
+      }),
+    );
+  } catch (e) {
+    console.warn("[deep-link] openBookingReview failed:", String(e));
+  }
+}
+
+function parseReviewDeepLink(url: string | null | undefined): string | null {
+  const raw = String(url || "").trim();
+  if (!raw) return null;
+  // ifcdc-barbers://review/{bookingId}
+  // https://ifcdcbarbersapp.com/profile/bookings/{id}/review
+  const appMatch = raw.match(/(?:ifcdc-barbers:\/\/review\/|\/profile\/bookings\/)([^/?#]+)/i);
+  if (appMatch?.[1]) return decodeURIComponent(appMatch[1]);
+  return null;
+}
+
 function AuthGate() {
   const { token } = useAuth();
   const [phase, setPhase] = React.useState<GatePhase>("storage");
+
+  React.useEffect(() => {
+    if (!token) return;
+    const unsub = addNotificationListeners({
+      onResponse: (response) => {
+        const data = (response?.notification?.request?.content?.data || {}) as Record<string, unknown>;
+        const type = String(data.type || "");
+        const bookingId = String(data.bookingId || "");
+        if (type === "leave_review" && bookingId) {
+          openBookingReview(bookingId);
+          return;
+        }
+        const fromUrl = parseReviewDeepLink(String(data.url || data.webUrl || ""));
+        if (fromUrl) openBookingReview(fromUrl);
+      },
+    });
+    const linkingSub = Linking.addEventListener("url", ({ url }) => {
+      const id = parseReviewDeepLink(url);
+      if (id) openBookingReview(id);
+    });
+    void Linking.getInitialURL().then((url) => {
+      const id = parseReviewDeepLink(url);
+      if (id) openBookingReview(id);
+    });
+    return () => {
+      unsub();
+      linkingSub.remove();
+    };
+  }, [token]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -196,6 +260,25 @@ function AuthGate() {
   return (
     <ProviderBoundary name="NavigationContainer">
       <NavigationContainer
+        ref={navigationRef}
+        linking={{
+          prefixes: ["ifcdc-barbers://", "https://ifcdcbarbersapp.com", "https://www.ifcdcbarbersapp.com"],
+          config: {
+            screens: {
+              Main: {
+                screens: {
+                  Profile: {
+                    screens: {
+                      BookingReview: "review/:bookingId",
+                      BookingDetail: "booking/:bookingId",
+                    },
+                  },
+                },
+              },
+              Login: "login",
+            },
+          },
+        }}
         onReady={() => console.log("[startup] NAV READY", { hasToken: Boolean(token) })}
       >
         <Stack.Navigator

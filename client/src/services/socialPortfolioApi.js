@@ -210,6 +210,32 @@ export async function removeReview(reviewId, reason = "policy_violation") {
   return data;
 }
 
+export async function restoreReviewAdmin(reviewId, reason = "restored") {
+  const origin = getApiOrigin();
+  const res = await fetch(`${origin}/api/admin/reviews/${encodeURIComponent(reviewId)}/restore`, {
+    method: "POST",
+    headers: { Accept: "application/json", "Content-Type": "application/json", ...getAdminAuthHeaders() },
+    body: JSON.stringify({ reason }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.message || `HTTP ${res.status}`);
+  return data;
+}
+
+export async function fetchAdminReviews(params = {}) {
+  const origin = getApiOrigin();
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v != null && String(v).trim() !== "") q.set(k, String(v));
+  }
+  const res = await fetch(`${origin}/api/admin/reviews${q.toString() ? `?${q}` : ""}`, {
+    headers: { Accept: "application/json", ...getAdminAuthHeaders() },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.message || `HTTP ${res.status}`);
+  return data;
+}
+
 export async function hidePhoto(photoId) {
   const origin = getApiOrigin();
   const res = await fetch(`${origin}/api/admin/photos/${encodeURIComponent(photoId)}/visibility`, {

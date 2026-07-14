@@ -50,6 +50,10 @@ const { isDeliverableCustomerEmail } = require("./bookingEmail.cjs");
 const { refundPayPalCapture, round2: roundRefundMoney } = require("./paypalRefund.cjs");
 const { sendBookingRefundEmail } = require("./bookingEmail.cjs");
 const { assessBookingRemoval } = require("./bookingDeletePolicy.cjs");
+const {
+  markBookingCompletedIdempotent,
+  runCompletionSideEffects,
+} = require("./bookingCompletion.cjs");
 
 const BOOKING_ACTIVE = "deleted_at IS NULL";
 const BOOKING_ACTIVE_B = "b.deleted_at IS NULL";
@@ -1141,6 +1145,53 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
       }
 
       const isCancellation = target === "cancelled";
+      let updated;
+
+      if (target === "completed") {
+        const completion = await markBookingCompletedIdempotent(dbQuery, {
+          bookingId: id,
+          actorLabel: actor.role || actor.actor || "staff",
+        });
+        if (!completion?.booking) {
+          return res.status(500).json({ ok: false, message: "Status update failed" });
+        }
+        updated = completion.booking;
+
+        if (completion.firstCompletion) {
+          await recordStatusChange({
+            bookingId: id,
+            previousStatus: currentStatus,
+            newStatus: target,
+            actor: actor.actor,
+            note: transition.override
+              ? note
+                ? `[override] ${note}`
+                : "[override] Status set by elevated role"
+              : note,
+          });
+          await runCompletionSideEffects({
+            booking: { ...booking, ...completion.booking, id },
+            firstCompletion: true,
+            dispatchBookingPush,
+          });
+        }
+
+        return res.json({
+          ok: true,
+          booking: {
+            id: updated.id,
+            booking_status: updated.booking_status,
+            payment_status: updated.payment_status,
+            completed_at: updated.completed_at || null,
+            completed_by: updated.completed_by || null,
+          },
+          message: completion.firstCompletion
+            ? "Booking marked complete. The client will be prompted to leave a review."
+            : "Booking is already completed.",
+          alreadyCompleted: !completion.firstCompletion,
+        });
+      }
+
       const upd = await dbQuery(
         `UPDATE bookings
          SET booking_status = $2,
@@ -1150,7 +1201,7 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
          RETURNING id, booking_status, payment_status, cancelled_at, cancelled_by`,
         [id, target, isCancellation, isCancellation ? actor.role : null],
       );
-      const updated = upd.rows?.[0];
+      updated = upd.rows?.[0];
       if (!updated) return res.status(500).json({ ok: false, message: "Status update failed" });
 
       await recordStatusChange({
@@ -1164,36 +1215,6 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
             : "[override] Status set by elevated role"
           : note,
       });
-
-      if (target === "completed") {
-        void import("./socialPortfolioService.js")
-          .then((m) =>
-            m.scheduleHaircutFollowupReminder({
-              id,
-              barber_id: booking.barber_id,
-              user_id: booking.user_id,
-              customer_email: booking.customer_email,
-              booking_status: "completed",
-            }),
-          )
-          .catch(() => {});
-        void import("./socialPortfolioService.js")
-          .then((m) =>
-            m.notifyCustomerReviewPrompt({
-              id,
-              barber_id: booking.barber_id,
-              barber_name: booking.barber_name,
-              user_id: booking.user_id,
-              customer_email: booking.customer_email,
-              customer_name: booking.customer_name,
-              booking_status: "completed",
-            }),
-          )
-          .catch(() => {});
-        void import("./loyaltyService.js")
-          .then((m) => m.earnLoyaltyForCompletedBooking({ ...booking, id }))
-          .catch(() => {});
-      }
 
       // Best-effort push fanout.
       // dedicated kinds; everything else surfaces as a status update.
@@ -1215,15 +1236,13 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
           ? "checked in"
           : target === "in_progress"
             ? "started"
-            : target === "completed"
-              ? "marked complete"
-              : target === "no_show"
-                ? "marked no-show"
-                : target === "rescheduled"
-                  ? "marked for reschedule"
-                  : target === "cancelled"
-                    ? "cancelled"
-                    : `set to ${STATUS_LABELS[target] || target}`;
+            : target === "no_show"
+              ? "marked no-show"
+              : target === "rescheduled"
+                ? "marked for reschedule"
+                : target === "cancelled"
+                  ? "cancelled"
+                  : `set to ${STATUS_LABELS[target] || target}`;
 
       return res.json({
         ok: true,
@@ -1331,42 +1350,42 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
       const previousStatus = String(booking.booking_status || "").toLowerCase();
 
       if (action === "complete") {
-        const r = await dbQuery(
-          `UPDATE bookings SET booking_status = 'completed'
-           WHERE id = $1::uuid${tenantSql}
-           RETURNING id, booking_status, payment_status`,
-          scopeParams
-        );
-        if (r.rows?.[0]) {
-          await recordStatusChange({
-            bookingId: id,
+        const completion = await markBookingCompletedIdempotent(dbQuery, {
+          bookingId: id,
+          actorLabel: adminActor.role || "admin",
+          tenantSql,
+          scopeParams,
+        });
+        if (!completion?.booking) {
+          return res.status(404).json({ ok: false, message: "Booking not found" });
+        }
+
+        if (completion.firstCompletion) {
+          await runCompletionSideEffects({
+            booking: { ...booking, ...completion.booking, id },
+            firstCompletion: true,
+            recordStatusChange,
             previousStatus,
-            newStatus: "completed",
             actor: adminActor,
             note: req.body?.note || null,
-          });
-          void import("./socialPortfolioService.js")
-            .then((m) =>
-              m.scheduleHaircutFollowupReminder({
-                id,
-                barber_id: booking.barber_id,
-                user_id: booking.user_id,
-                customer_email: booking.customer_email,
-                booking_status: "completed",
-              }),
-            )
-            .catch(() => {});
-          void import("./loyaltyService.js")
-            .then((m) => m.earnLoyaltyForCompletedBooking({ ...booking, id }))
-            .catch(() => {});
-          void dispatchBookingPush({
-            booking,
-            kind: "booking_status_update",
-            audience: ["customer", "barber", "shop_owners"],
-            data: { bookingId: id, status: "completed" },
+            dispatchBookingPush,
           });
         }
-        return res.json({ ok: true, booking: r.rows[0], message: "Booking marked complete" });
+
+        return res.json({
+          ok: true,
+          booking: {
+            id: completion.booking.id,
+            booking_status: completion.booking.booking_status,
+            payment_status: completion.booking.payment_status,
+            completed_at: completion.booking.completed_at || null,
+            completed_by: completion.booking.completed_by || null,
+          },
+          message: completion.firstCompletion
+            ? "Booking marked complete. The client will be prompted to leave a review."
+            : "Booking is already completed.",
+          alreadyCompleted: !completion.firstCompletion,
+        });
       }
 
       if (action === "cancel") {

@@ -36,6 +36,52 @@ export async function ensureSocialPortfolioSchema() {
   await dbQuery(`ALTER TABLE barber_reviews ADD COLUMN IF NOT EXISTS barber_reply TEXT;`);
   await dbQuery(`ALTER TABLE barber_reviews ADD COLUMN IF NOT EXISTS barber_reply_at TIMESTAMPTZ;`);
   await dbQuery(`ALTER TABLE barber_reviews ADD COLUMN IF NOT EXISTS barber_reply_by UUID;`);
+  await dbQuery(`ALTER TABLE barber_reviews ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;`);
+  await dbQuery(`ALTER TABLE barber_reviews ADD COLUMN IF NOT EXISTS deleted_by UUID;`);
+  await dbQuery(`ALTER TABLE barber_reviews ADD COLUMN IF NOT EXISTS delete_reason TEXT;`);
+  await dbQuery(`ALTER TABLE barber_reviews ADD COLUMN IF NOT EXISTS moderated_at TIMESTAMPTZ;`);
+  await dbQuery(`ALTER TABLE barber_reviews ADD COLUMN IF NOT EXISTS moderated_by UUID;`);
+  await dbQuery(`ALTER TABLE barber_reviews ADD COLUMN IF NOT EXISTS moderation_reason TEXT;`);
+
+  await dbQuery(`
+    CREATE TABLE IF NOT EXISTS notification_delivery_logs (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      booking_id UUID,
+      review_id UUID,
+      channel TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      recipient TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      error_message TEXT,
+      metadata JSONB,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+  await dbQuery(
+    `CREATE UNIQUE INDEX IF NOT EXISTS notification_delivery_logs_once_idx
+     ON notification_delivery_logs (booking_id, kind, channel)
+     WHERE booking_id IS NOT NULL AND kind = 'review_prompt'`,
+  );
+  await dbQuery(
+    `CREATE INDEX IF NOT EXISTS notification_delivery_logs_booking_idx
+     ON notification_delivery_logs (booking_id, created_at DESC)`,
+  );
+
+  await dbQuery(`
+    CREATE TABLE IF NOT EXISTS review_moderation_logs (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      review_id UUID NOT NULL,
+      action TEXT NOT NULL,
+      reason TEXT,
+      admin_user_id UUID,
+      snapshot JSONB,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+  await dbQuery(
+    `CREATE INDEX IF NOT EXISTS review_moderation_logs_review_idx
+     ON review_moderation_logs (review_id, created_at DESC)`,
+  );
 
   await dbQuery(`
     CREATE TABLE IF NOT EXISTS review_photos (

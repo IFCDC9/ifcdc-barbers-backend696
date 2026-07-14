@@ -24,7 +24,7 @@
         "title": "IFCDC Barbers",
         "subtitle": "Book cuts with style photos",
         "privacyPolicyUrl": "https://ifcdcbarbersapp.com/privacy",
-        "releaseNotes": "Version 1.1.5 (Build 60)\n\n• Complete Review & Ratings system: post-appointment prompts, star ratings, written reviews, and service photos\n• Reviews tab on barber profiles (app + website) with overall rating and review count\n• Only completed appointments can leave reviews; providers can reply publicly\n• Super Admin moderation (hide/remove) with emails to barbers and service@ifcdc.org\n• Calendar working-day fix and prior PayPal/schedule stability fixes",
+        "releaseNotes": "Version 1.1.5 (Build 61)\n\n• Mark complete now reliably triggers client review push + email (once per booking)\n• Deep link opens the exact booking review screen\n• Soft-delete / restore reviews with audit log and service@ifcdc.org emails\n• Reviews tab sorting, rating breakdown, and admin review moderation search\n• Fixed Mark complete button spinner / refresh UX",
         "screenshots": {
           "APP_IPAD_PRO_3GEN_129": [
             "store/apple/screenshot/en-US/APP_IPAD_PRO_3GEN_129/iPad Pro 13-inch (M4)-06_AURA.png",

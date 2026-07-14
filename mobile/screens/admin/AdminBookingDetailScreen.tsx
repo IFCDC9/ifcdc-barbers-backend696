@@ -90,6 +90,7 @@ export default function AdminBookingDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [booking, setBooking] = useState<AdminBookingDetail | null>(null);
   const [busy, setBusy] = useState(false);
+  const [actionBusy, setActionBusy] = useState<"complete" | "cancel" | "resend" | null>(null);
 
   const canDestructive = canPerformBookingDestructiveOps(user, token);
   const showRefund = useMemo(
@@ -127,15 +128,25 @@ export default function AdminBookingDetailScreen() {
         style: action === "cancel" ? "destructive" : "default",
         onPress: async () => {
           setBusy(true);
+          setActionBusy(action);
           try {
             const result = await patchAdminBookingAction(bookingId, action);
-            if (result.booking) setBooking((prev) => ({ ...(prev || {}), ...result.booking }));
+            if (result.booking) {
+              setBooking((prev) => ({
+                ...(prev || {}),
+                ...result.booking,
+                booking_status:
+                  (result.booking as { booking_status?: string }).booking_status ||
+                  (action === "complete" ? "completed" : prev?.booking_status),
+              }));
+            }
             Alert.alert("Updated", result.message);
-            void load();
+            await load();
           } catch (e) {
             Alert.alert("Action failed", userFacingApiError(e));
           } finally {
             setBusy(false);
+            setActionBusy(null);
           }
         },
       },
@@ -226,6 +237,7 @@ export default function AdminBookingDetailScreen() {
 
   const onResend = async () => {
     setBusy(true);
+    setActionBusy("resend");
     try {
       const message = await resendBookingConfirmation(bookingId);
       Alert.alert("Confirmation", message);
@@ -233,6 +245,7 @@ export default function AdminBookingDetailScreen() {
       Alert.alert("Confirmation", userFacingApiError(e));
     } finally {
       setBusy(false);
+      setActionBusy(null);
     }
   };
 
@@ -383,6 +396,7 @@ export default function AdminBookingDetailScreen() {
             runAction("Mark complete", "Mark this appointment as completed?", "complete")
           }
           disabled={busy}
+          loading={actionBusy === "complete"}
         />
         <View style={styles.actionRow}>
           <GlowButton
@@ -391,7 +405,7 @@ export default function AdminBookingDetailScreen() {
             size="compact"
             onPress={() => void onResend()}
             disabled={busy}
-            loading={busy}
+            loading={actionBusy === "resend"}
             style={styles.actionHalf}
             fullWidth={false}
           />

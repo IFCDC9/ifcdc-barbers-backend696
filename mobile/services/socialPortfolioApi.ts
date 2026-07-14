@@ -308,6 +308,19 @@ export async function removeReview(reviewId: string, reason = "policy_violation"
   });
 }
 
+export async function restoreReview(reviewId: string, reason = "restored"): Promise<void> {
+  await apiFetch(`/api/admin/reviews/${encodeURIComponent(reviewId)}/restore`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
+  });
+}
+
+export async function clearPortfolioReply(reviewId: string): Promise<PortfolioReview> {
+  const res = await apiFetch(`/api/reviews/${encodeURIComponent(reviewId)}/reply`, { method: "DELETE" });
+  const data = await parseJson<{ review: PortfolioReview }>(res);
+  return data.review;
+}
+
 export async function hidePhoto(photoId: string): Promise<void> {
   await apiFetch(`/api/admin/photos/${encodeURIComponent(photoId)}/visibility`, {
     method: "PATCH",

@@ -247,6 +247,7 @@ export default function BookingDetailScreen() {
 
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [statusBusy, setStatusBusy] = useState<string | null>(null);
   const [booking, setBooking] = useState<BookingDetail | null>(null);
   const [history, setHistory] = useState<BookingStatusHistoryRow[]>([]);
   const [canReview, setCanReview] = useState(false);
@@ -259,8 +260,8 @@ export default function BookingDetailScreen() {
   const [followupDue, setFollowupDue] = useState(false);
   const [followupReviewId, setFollowupReviewId] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (opts?: { quiet?: boolean }) => {
+    if (!opts?.quiet) setLoading(true);
     try {
       const [detail, timeline] = await Promise.all([
         fetchBookingById(bookingId),
@@ -469,20 +470,31 @@ export default function BookingDetailScreen() {
     async (target: BookingStatus, label: string, destructive: boolean) => {
       if (!booking) return;
       const proceed = async () => {
+        setStatusBusy(target);
         setBusy(true);
         try {
           const result = await setBookingStatus(bookingId, target);
           if (result.booking) {
             setBooking((prev) =>
-              prev ? { ...prev, ...(result.booking as Partial<BookingDetail>) } : prev,
+              prev
+                ? {
+                    ...prev,
+                    ...(result.booking as Partial<BookingDetail>),
+                    booking_status:
+                      (result.booking as { booking_status?: string }).booking_status ||
+                      (result.booking as { status?: string }).status ||
+                      target,
+                  }
+                : prev,
             );
           }
-          Alert.alert("Updated", result.message);
-          void load();
+          Alert.alert("Updated", result.message || (target === "completed" ? "Booking marked complete." : "Status updated."));
+          await load({ quiet: true });
         } catch (e) {
           Alert.alert("Update failed", userFacingApiError(e));
         } finally {
           setBusy(false);
+          setStatusBusy(null);
         }
       };
 
@@ -938,7 +950,7 @@ export default function BookingDetailScreen() {
             variant="outline"
             onPress={() => void onResend()}
             disabled={busy}
-            loading={busy}
+            loading={Boolean(busy && !statusBusy)}
           />
         ) : null}
         <GlowButton
@@ -1010,6 +1022,7 @@ export default function BookingDetailScreen() {
                 variant={item.destructive ? "outline" : "primary"}
                 onPress={() => void updateStatus(item.status, item.label, !!item.destructive)}
                 disabled={busy}
+                loading={statusBusy === item.status}
               />
             ))}
           </View>
