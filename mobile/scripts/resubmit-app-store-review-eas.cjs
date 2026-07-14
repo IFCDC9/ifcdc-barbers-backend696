@@ -17,8 +17,8 @@ process.chdir(mobileDir);
 
 const req = createRequire(path.join(mobileDir, "node_modules/eas-cli/package.json"));
 
-const VERSION_STRING = process.env.VERSION_STRING || "1.1.1";
-const BUILD_NUMBER = process.env.BUILD_NUMBER || "51";
+const VERSION_STRING = process.env.VERSION_STRING || "1.1.6";
+const BUILD_NUMBER = process.env.BUILD_NUMBER || "62";
 
 async function main() {
   const { createAnalyticsAsync } = req("eas-cli/build/analytics/AnalyticsManager");
