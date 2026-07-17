@@ -6,7 +6,7 @@ export const LOYALTY_POINTS_PER_COMPLETED_APPOINTMENT = Math.max(
   Number(process.env.LOYALTY_POINTS_PER_COMPLETED_APPOINTMENT || 5),
 );
 
-const PAID_STATUSES = new Set(["paid", "paid_full"]);
+const PAID_STATUSES = new Set(["paid", "paid_full", "paid_in_full"]);
 const REWARD_COLUMNS = `
   id, barber_id, business_id, reward_key, title, description, points_cost, reward_type, reward_value,
   eligible_services, eligible_barbers, expires_at, quantity_limit, quantity_redeemed,
@@ -1045,7 +1045,7 @@ export async function getLoyaltyAdminReport({ limit = 20 } = {}) {
               COALESCE(SUM(COALESCE(b.total_paid, b.amount_paid, b.total_amount, 0)), 0) AS total_spent
        FROM app_users u JOIN bookings b
          ON b.user_id = u.id OR lower(trim(b.customer_email)) = lower(trim(u.email))
-       WHERE b.payment_status IN ('paid', 'paid_full', 'deposit_paid')
+       WHERE b.payment_status IN ('paid', 'paid_full', 'paid_in_full', 'deposit_paid')
          AND b.booking_status = 'completed' AND b.refunded_at IS NULL
        GROUP BY u.id, u.name, u.email ORDER BY total_spent DESC LIMIT $1`,
       [topLimit],

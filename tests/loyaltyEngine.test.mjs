@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
+import { createRequire } from "node:module";
 import {
   LOYALTY_POINTS_PER_COMPLETED_APPOINTMENT,
   evaluateRewardForBooking,
 } from "../loyaltyService.js";
+
+const require = createRequire(import.meta.url);
+const { bookingPaymentViewFromRow } = require("../bookingPaymentSettlement.cjs");
 
 const booking = {
   business_id: 10,
@@ -85,5 +89,15 @@ assert.deepEqual(
   ),
   { ok: true, discountAmount: 22.5 },
 );
+
+const discountedPayment = bookingPaymentViewFromRow({
+  service_price: 40,
+  platform_fee: 0.99,
+  total_amount: 30.99,
+  amount_paid: 30.99,
+  payment_status: "paid_in_full",
+  paypal_capture_id: "CAPTURE-REWARD",
+});
+assert.equal(discountedPayment.isPaidInFull, true);
 
 console.log("loyaltyEngine tests passed");

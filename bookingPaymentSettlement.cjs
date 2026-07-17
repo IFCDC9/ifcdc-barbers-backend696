@@ -190,6 +190,10 @@ function bookingPaymentViewFromRow(row) {
   );
   const amountPaid = amountCharged;
   const totalDue = round2(Number(row.total_amount ?? servicePrice + platformFee + tipAmount));
+  const settledTotal =
+    Number.isFinite(totalDue) && totalDue > 0
+      ? totalDue
+      : round2(servicePrice + platformFee + tipAmount);
   const paymentStatus = normalizePaymentStatus(row.payment_status);
   const captureId = row.paypal_capture_id || row.stripe_payment_intent_id || row.payment_id || null;
   const transactionId = captureId ? String(captureId) : null;
@@ -201,7 +205,7 @@ function bookingPaymentViewFromRow(row) {
     paymentStatus === PAYMENT_STATUS.PAID_IN_FULL &&
     Boolean(transactionId) &&
     amountPaid > 0 &&
-    withinAmount(amountPaid, servicePrice + platformFee + tipAmount);
+    withinAmount(amountPaid, settledTotal);
 
   let paymentStatusLabel = "PAYMENT NOT COMPLETED";
   if (isPaidInFull) paymentStatusLabel = "PAID IN FULL";
