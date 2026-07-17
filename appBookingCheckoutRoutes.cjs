@@ -567,6 +567,18 @@ router.post("/start", async (req, res) => {
     const cancelUri = stripQuotes(body.cancelUri);
     const customerName = stripQuotes(body.customerName) || "Mobile customer";
     const customerEmail = stripQuotes(body.customerEmail) || "";
+    const requestedPaymentMethod = stripQuotes(body.paymentMethod ?? body.payment_method).toLowerCase();
+    const paymentMethod = ["card", "paypal", "paylater"].includes(requestedPaymentMethod)
+      ? requestedPaymentMethod
+      : "card";
+    const tipAmount = round2(Number(body.tipAmount ?? body.tip_amount ?? 0));
+    if (!Number.isFinite(tipAmount) || tipAmount < 0 || tipAmount > 500) {
+      return res.status(400).json({
+        success: false,
+        error: "invalid_tip",
+        message: "Tip must be between $0 and $500.",
+      });
+    }
     const { isDeliverableCustomerEmail } = require("./bookingEmail.cjs");
     if (!isDeliverableCustomerEmail(customerEmail)) {
       return res.status(400).json({
@@ -680,8 +692,8 @@ router.post("/start", async (req, res) => {
         duration_minutes: Number(s.duration_minutes) || 30,
       })),
     );
-    let total = round2(haircutPrice + platformFee);
-    let barberPayout = round2(Math.max(0, haircutPrice - platformFee));
+    let total = round2(haircutPrice + platformFee + tipAmount);
+    let barberPayout = round2(Math.max(0, haircutPrice - platformFee) + tipAmount);
 
     let ins;
     try {
@@ -708,7 +720,7 @@ router.post("/start", async (req, res) => {
          NULL, $1, $2, $3, $4, $5, $6, $7::jsonb, $8::date, $9::time, $10,
          $11, 0, 0, 0, 0, 'full', 'unpaid', 'paypal',
          NULL, $12, $13, 'pending_payment', false,
-         'pending', $14, false, 0, 0, $15
+         'pending', $14, false, $15, 0, $16
        )
        RETURNING id`,
         [
@@ -726,6 +738,7 @@ router.post("/start", async (req, res) => {
           platformFee,
           total,
           barberPayout,
+          tipAmount,
           Number.isFinite(tenantBiz) ? tenantBiz : null,
         ],
       );
@@ -902,8 +915,8 @@ router.post("/start", async (req, res) => {
       }
 
       const discount = round2(rewardReservation.discountAmount);
-      total = round2(Math.max(0, haircutPrice - discount) + platformFee);
-      barberPayout = round2(Math.max(0, haircutPrice - discount - platformFee));
+      total = round2(Math.max(0, haircutPrice - discount) + platformFee + tipAmount);
+      barberPayout = round2(Math.max(0, haircutPrice - discount - platformFee) + tipAmount);
       try {
         paypalAmount = assertValidPayPalAmount("total", total);
       } catch {
@@ -955,6 +968,12 @@ router.post("/start", async (req, res) => {
         shipping_preference: "NO_SHIPPING",
         user_action: "PAY_NOW",
         brand_name: "IFCDC Barbers",
+        landing_page:
+          paymentMethod === "card"
+            ? "BILLING"
+            : paymentMethod === "paypal"
+              ? "LOGIN"
+              : "NO_PREFERENCE",
         return_url: paypalReturnUrl,
         cancel_url: paypalCancelUrl,
       },
@@ -1021,6 +1040,8 @@ router.post("/start", async (req, res) => {
       total,
       platformFee,
       haircutPrice,
+      tipAmount,
+      paymentMethod,
       depositAmount: 0,
       bookingId,
       serviceIds: serviceRows.map((s) => s.id),

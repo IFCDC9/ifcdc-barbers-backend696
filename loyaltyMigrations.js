@@ -109,6 +109,11 @@ export async function ensureLoyaltySchema() {
     `CREATE UNIQUE INDEX loyalty_rewards_key_uidx
      ON loyalty_rewards (reward_key) WHERE reward_key IS NOT NULL;`,
   );
+  await dbQuery(
+    `CREATE UNIQUE INDEX IF NOT EXISTS loyalty_rewards_promo_code_uidx
+     ON loyalty_rewards (UPPER(metadata->>'promoCode'))
+     WHERE COALESCE(metadata->>'promoCode', '') <> '' AND is_deleted = false;`,
+  );
 
   await dbQuery(`
     CREATE TABLE IF NOT EXISTS loyalty_redemptions (

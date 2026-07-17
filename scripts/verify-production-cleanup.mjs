@@ -3,9 +3,13 @@
  * Final production cleanup verification — canonical domain, storage, no demo routing.
  * Usage: node scripts/verify-production-cleanup.mjs
  */
+import { execSync } from "node:child_process";
+
 const BACKEND = "https://ifcdc-barbers-backend696.onrender.com";
 const CANONICAL = "https://ifcdcbarbersapp.com";
-const EXPECTED_COMMIT_SHORT = "b7e22254";
+const EXPECTED_COMMIT_SHORT =
+  String(process.env.EXPECTED_COMMIT_SHORT || "").trim().slice(0, 8)
+  || execSync("git rev-parse --short=8 HEAD", { encoding: "utf8" }).trim();
 
 let failed = 0;
 function pass(label, ok, detail = "") {

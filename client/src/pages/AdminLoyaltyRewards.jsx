@@ -14,11 +14,13 @@ const EMPTY_DRAFT = {
   points_cost: "",
   reward_type: "custom",
   reward_value: "0",
+  promo_code: "",
   eligible_services: "",
   eligible_barbers: "",
   expires_at: "",
   quantity_limit: "",
   is_active: true,
+  metadata: {},
 };
 
 const panel = {
@@ -82,6 +84,10 @@ export default function AdminLoyaltyRewards() {
         eligible_barbers: commaList(draft.eligible_barbers),
         quantity_limit: draft.quantity_limit ? Number(draft.quantity_limit) : null,
         expires_at: draft.expires_at || null,
+        metadata: {
+          ...(draft.metadata || {}),
+          promoCode: draft.promo_code.trim().toUpperCase() || undefined,
+        },
       }, editingId || undefined);
       setDraft(EMPTY_DRAFT);
       setEditingId("");
@@ -102,11 +108,13 @@ export default function AdminLoyaltyRewards() {
       points_cost: String(reward.points_cost || ""),
       reward_type: reward.reward_type || "custom",
       reward_value: String(reward.reward_value || 0),
+      promo_code: reward.metadata?.promoCode || reward.metadata?.promo_code || "",
       eligible_services: (reward.eligible_services || []).join(", "),
       eligible_barbers: (reward.eligible_barbers || []).join(", "),
       expires_at: reward.expires_at ? String(reward.expires_at).slice(0, 10) : "",
       quantity_limit: reward.quantity_limit == null ? "" : String(reward.quantity_limit),
       is_active: reward.is_active !== false,
+      metadata: reward.metadata || {},
     });
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -156,6 +164,7 @@ export default function AdminLoyaltyRewards() {
             <option value="membership_perk">VIP membership perk</option>
           </select>
           <input type="number" min="0" step="0.01" style={input} placeholder="Reward value" value={draft.reward_value} onChange={(e) => setDraft({ ...draft, reward_value: e.target.value })} />
+          <input style={input} placeholder="Promo code (optional)" value={draft.promo_code} onChange={(e) => setDraft({ ...draft, promo_code: e.target.value.toUpperCase() })} />
           <input style={input} placeholder="Eligible services, comma separated" value={draft.eligible_services} onChange={(e) => setDraft({ ...draft, eligible_services: e.target.value })} />
           <input style={input} placeholder="Eligible barber IDs/names, comma separated" value={draft.eligible_barbers} onChange={(e) => setDraft({ ...draft, eligible_barbers: e.target.value })} />
           <label>
@@ -195,6 +204,7 @@ export default function AdminLoyaltyRewards() {
               </div>
               <small style={{ opacity: 0.7 }}>
                 {reward.reward_type} · value ${Number(reward.reward_value || 0).toFixed(2)}
+                {reward.metadata?.promoCode ? ` · code ${reward.metadata.promoCode}` : ""}
                 {reward.quantity_limit ? ` · ${reward.quantity_redeemed}/${reward.quantity_limit} redeemed` : ""}
               </small>
             </article>

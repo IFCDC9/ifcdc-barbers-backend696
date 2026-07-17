@@ -800,6 +800,11 @@ function normalizeRewardPayload(payload) {
   const pointsCost = Math.floor(Number(payload?.points_cost ?? payload?.pointsCost) || 0);
   const quantityLimit = numberOrNull(payload?.quantity_limit ?? payload?.quantityLimit);
   const expiresAt = text(payload?.expires_at ?? payload?.expirationDate) || null;
+  const metadata = payload?.metadata && typeof payload.metadata === "object" ? { ...payload.metadata } : {};
+  const promoCode = text(metadata.promoCode ?? metadata.promo_code).toUpperCase();
+  delete metadata.promo_code;
+  if (promoCode) metadata.promoCode = promoCode;
+  else delete metadata.promoCode;
   if (!title) return { error: "Reward name is required." };
   if (pointsCost < 1) return { error: "Required points must be at least 1." };
   if (quantityLimit != null && quantityLimit < 1) return { error: "Quantity limit must be at least 1." };
@@ -815,7 +820,7 @@ function normalizeRewardPayload(payload) {
     expiresAt,
     quantityLimit,
     isActive: payload?.is_active ?? payload?.isActive ?? true,
-    metadata: payload?.metadata && typeof payload.metadata === "object" ? payload.metadata : {},
+    metadata,
   };
 }
 
@@ -906,6 +911,9 @@ export async function upsertReward({
     return { ok: true, reward };
   } catch (error) {
     await client.query("ROLLBACK").catch(() => {});
+    if (error?.code === "23505" && error?.constraint === "loyalty_rewards_promo_code_uidx") {
+      return { ok: false, message: "That promo code is already assigned to another reward." };
+    }
     return { ok: false, message: error?.message || "Could not save reward." };
   } finally {
     client.release();

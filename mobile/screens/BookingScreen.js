@@ -72,6 +72,29 @@ const UI = {
 
 const FALLBACK_SERVICE_PRICE = 25;
 
+function estimateRewardDiscount(reward, services, subtotal) {
+  if (!reward) return 0;
+  const type = String(reward.reward_type || '').toLowerCase();
+  const value = Math.max(0, Number(reward.reward_value) || 0);
+  let discount = value;
+  if (type === 'discount_percent') discount = subtotal * Math.min(value, 100) / 100;
+  if (type === 'free_service' || type === 'free_standard_haircut') {
+    const eligible = Array.isArray(reward.eligible_services)
+      ? reward.eligible_services.map((item) => String(item).toLowerCase())
+      : [];
+    const matching = services.filter((service) => {
+      if (!eligible.length) return true;
+      const id = String(service?.id || '').toLowerCase();
+      const name = String(service?.name || '').toLowerCase();
+      return eligible.some((allowed) => id === allowed || name.includes(allowed) || allowed.includes(name));
+    });
+    discount = matching.length ? Math.max(...matching.map((service) => Number(service?.price) || 0)) : 0;
+    if (!discount && !eligible.length) discount = subtotal;
+    if (value > 0) discount = Math.min(discount || value, value);
+  }
+  return Math.round(Math.max(0, Math.min(subtotal, discount)) * 100) / 100;
+}
+
 function parsePayPalReturnToken(url) {
   try {
     const u = new URL(url);
@@ -137,6 +160,10 @@ function BookingScreen() {
   const [guestEmail, setGuestEmail] = useState('');
   const [availableRewards, setAvailableRewards] = useState([]);
   const [selectedRewardId, setSelectedRewardId] = useState(null);
+  const [tipAmount, setTipAmount] = useState(0);
+  const [paymentMethod, setPaymentMethod] = useState('card');
+  const [promoCode, setPromoCode] = useState('');
+  const [promoMessage, setPromoMessage] = useState('');
   const cartTotalPrice = useMemo(
     () =>
       selectedServices.reduce((sum, s) => sum + (Number(s?.price) || 0), 0),
@@ -150,13 +177,23 @@ function BookingScreen() {
       ),
     [selectedServices],
   );
+  const selectedReward = useMemo(
+    () => availableRewards.find((reward) => reward.id === selectedRewardId) || null,
+    [availableRewards, selectedRewardId],
+  );
+  const rewardDiscount = useMemo(
+    () => estimateRewardDiscount(selectedReward, selectedServices, cartTotalPrice),
+    [selectedReward, selectedServices, cartTotalPrice],
+  );
   const pricing = useMemo(
     () =>
       calculateFinalBookingTotal({
         haircutPrice:
           Number.isFinite(cartTotalPrice) && cartTotalPrice > 0 ? cartTotalPrice : FALLBACK_SERVICE_PRICE,
+        discountAmount: rewardDiscount,
+        tipAmount,
       }),
-    [cartTotalPrice],
+    [cartTotalPrice, rewardDiscount, tipAmount],
   );
 
   const [successPayload, setSuccessPayload] = useState(null);
@@ -396,6 +433,11 @@ function BookingScreen() {
     setSlotsError(null);
     setSuccessPayload(null);
     setPhaseLabel('');
+    setSelectedRewardId(null);
+    setTipAmount(0);
+    setPaymentMethod('card');
+    setPromoCode('');
+    setPromoMessage('');
   };
 
   const resolveCustomerEmail = () => {
@@ -410,6 +452,23 @@ function BookingScreen() {
       if (exists) return prev.filter((s) => String(s.id) !== String(service.id));
       return [...prev, service];
     });
+  };
+
+  const applyPromoCode = () => {
+    const normalized = promoCode.trim().toUpperCase();
+    if (!normalized) {
+      setPromoMessage('Enter a promo code.');
+      return;
+    }
+    const promoReward = availableRewards.find(
+      (reward) => String(reward?.metadata?.promoCode || reward?.metadata?.promo_code || '').toUpperCase() === normalized,
+    );
+    if (!promoReward) {
+      setPromoMessage('This promo code is not available for this booking.');
+      return;
+    }
+    setSelectedRewardId(promoReward.id);
+    setPromoMessage(`${promoReward.title} applied.`);
   };
 
   const onConfirmPayAndBook = async () => {
@@ -464,6 +523,8 @@ function BookingScreen() {
 
       calculateFinalBookingTotal({
         haircutPrice: Number.isFinite(cartTotalPrice) && cartTotalPrice > 0 ? cartTotalPrice : FALLBACK_SERVICE_PRICE,
+        discountAmount: rewardDiscount,
+        tipAmount,
       });
 
       const redirectUri = resolveMobilePayPalReturnUrl();
@@ -487,6 +548,8 @@ function BookingScreen() {
         customerEmail,
         customerName,
         rewardId: selectedRewardId || undefined,
+        tipAmount,
+        paymentMethod,
       });
 
       const { orderId, approveUrl, paypalReturnUrl, total, platformFee, haircutPrice, depositAmount: dep } = started;
@@ -1021,51 +1084,24 @@ function BookingScreen() {
 
         {step === 5 && (
           <View>
-            <Text style={{ color: '#FFD700', fontSize: 18, marginBottom: 10 }}>
-              {t('booking.confirmTitle')}
-            </Text>
-
-            <Text style={{ color: '#fff' }}>{t('booking.barber')}: {barber?.name}</Text>
-            <Text style={{ color: '#fff' }}>{t('booking.date')}: {dateDisplay(date)}</Text>
-            <Text style={{ color: '#fff' }}>
-              {t('booking.service')}: {selectedServices.map((s) => s.name).join(', ') || '—'}
-            </Text>
-            <Text style={{ color: '#fff' }}>{t('booking.time')}: {time}</Text>
-            <Text style={{ color: '#aaa', fontSize: 13 }}>
-              {t('booking.duration', { defaultValue: 'Duration' })}: {cartTotalDuration} min
-            </Text>
-
-            <View
-              style={{
-                marginTop: 20,
-                padding: 15,
-                backgroundColor: '#111',
-                borderRadius: 10,
-              }}
-            >
-              {selectedServices.map((s) => (
-                <Text key={String(s.id)} style={{ color: '#fff', marginBottom: 4 }}>
-                  {s.name}: ${Number(s.price || 0).toFixed(2)}
-                </Text>
-              ))}
-              <Text style={{ color: '#FFD700', marginTop: 8 }}>
-                {t('booking.platformFee')}: ${pricing.platformFee.toFixed(2)}
-              </Text>
-              <Text style={{ color: '#fff', marginTop: 10, fontSize: 18 }}>
-                {t('booking.totalPayPal')}: ${pricing.total.toFixed(2)}
-              </Text>
-              <Text style={{ color: '#666', fontSize: 12, marginTop: 8 }}>
-                {t('booking.amountServerNote')}
-              </Text>
+            <View style={styles.checkoutHeader}>
+              <View style={styles.checkoutLock}>
+                <Text style={{ fontSize: 20 }}>🔒</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.checkoutTitle}>Secure Checkout</Text>
+                <Text style={styles.checkoutSubtitle}>Choose your preferred payment method.</Text>
+              </View>
             </View>
 
             {user?.email && availableRewards.length ? (
-              <View style={{ marginTop: 16 }}>
-                <Text style={{ color: UI.gold, fontSize: 15, fontWeight: '800', marginBottom: 8 }}>
-                  Apply a Loyalty Reward
-                </Text>
+              <View style={styles.checkoutSection}>
+                <Text style={styles.checkoutSectionTitle}>Available rewards</Text>
                 <TouchableOpacity
-                  onPress={() => setSelectedRewardId(null)}
+                  onPress={() => {
+                    setSelectedRewardId(null);
+                    setPromoMessage('');
+                  }}
                   style={[
                     styles.rewardOption,
                     !selectedRewardId && styles.rewardOptionSelected,
@@ -1076,14 +1112,17 @@ function BookingScreen() {
                 {availableRewards.map((reward) => (
                   <TouchableOpacity
                     key={reward.id}
-                    onPress={() => setSelectedRewardId(reward.id)}
+                    onPress={() => {
+                      setSelectedRewardId(reward.id);
+                      setPromoMessage('');
+                    }}
                     style={[
                       styles.rewardOption,
                       selectedRewardId === reward.id && styles.rewardOptionSelected,
                     ]}
                   >
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.rewardOptionTitle}>{reward.title}</Text>
+                      <Text style={styles.rewardOptionTitle}>Redeem {reward.title}</Text>
                       <Text style={styles.rewardOptionMeta}>
                         {reward.points_cost} points
                         {Number(reward.reward_value) > 0 ? ` · $${Number(reward.reward_value).toFixed(2)} value` : ''}
@@ -1099,6 +1138,94 @@ function BookingScreen() {
                 </Text>
               </View>
             ) : null}
+
+            <View style={styles.checkoutSection}>
+              <Text style={styles.checkoutSectionTitle}>Apply promo code</Text>
+              <View style={styles.promoRow}>
+                <TextInput
+                  value={promoCode}
+                  onChangeText={(value) => {
+                    setPromoCode(value);
+                    setPromoMessage('');
+                  }}
+                  placeholder="Promo code"
+                  placeholderTextColor={UI.dim}
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                  style={styles.promoInput}
+                />
+                <TouchableOpacity onPress={applyPromoCode} style={styles.promoButton}>
+                  <Text style={styles.promoButtonText}>Apply</Text>
+                </TouchableOpacity>
+              </View>
+              {promoMessage ? <Text style={styles.checkoutHint}>{promoMessage}</Text> : null}
+            </View>
+
+            <View style={styles.checkoutSection}>
+              <Text style={styles.checkoutSectionTitle}>Add a tip</Text>
+              <View style={styles.tipRow}>
+                {[0, 15, 20, 25].map((percent) => {
+                  const amount = Math.round(cartTotalPrice * percent) / 100;
+                  const selected = Math.abs(tipAmount - amount) < 0.01;
+                  return (
+                    <TouchableOpacity
+                      key={percent}
+                      onPress={() => setTipAmount(amount)}
+                      style={[styles.tipButton, selected && styles.tipButtonSelected]}
+                    >
+                      <Text style={[styles.tipButtonText, selected && styles.tipButtonTextSelected]}>
+                        {percent ? `${percent}%` : 'No tip'}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+              <View style={styles.customTipRow}>
+                <Text style={styles.checkoutHint}>Custom tip</Text>
+                <TextInput
+                  value={String(tipAmount)}
+                  onChangeText={(value) => setTipAmount(Math.max(0, Math.min(500, Number(value) || 0)))}
+                  keyboardType="decimal-pad"
+                  style={styles.customTipInput}
+                />
+              </View>
+            </View>
+
+            <View style={styles.checkoutSection}>
+              <Text style={styles.checkoutSectionTitle}>Booking summary</Text>
+              <View style={styles.summaryLine}>
+                <Text style={styles.summaryKey}>Service</Text>
+                <Text style={styles.summaryLineValue}>{selectedServices.map((s) => s.name).join(', ') || '—'}</Text>
+              </View>
+              <View style={styles.summaryLine}>
+                <Text style={styles.summaryKey}>Barber</Text>
+                <Text style={styles.summaryLineValue}>{barber?.name}</Text>
+              </View>
+              <View style={styles.summaryLine}>
+                <Text style={styles.summaryKey}>Date</Text>
+                <Text style={styles.summaryLineValue}>{dateDisplay(date)}</Text>
+              </View>
+              <View style={styles.summaryLine}>
+                <Text style={styles.summaryKey}>Time</Text>
+                <Text style={styles.summaryLineValue}>{time}</Text>
+              </View>
+              <View style={styles.summaryLine}>
+                <Text style={styles.summaryKey}>Tip</Text>
+                <Text style={styles.summaryLineValue}>${pricing.tipAmount.toFixed(2)}</Text>
+              </View>
+              <View style={styles.summaryLine}>
+                <Text style={styles.summaryKey}>Discount</Text>
+                <Text style={styles.summaryLineValue}>−${pricing.discountAmount.toFixed(2)}</Text>
+              </View>
+              <View style={styles.summaryLine}>
+                <Text style={styles.summaryKey}>{t('booking.platformFee')}</Text>
+                <Text style={styles.summaryLineValue}>${pricing.platformFee.toFixed(2)}</Text>
+              </View>
+              <View style={[styles.summaryLine, styles.totalLine]}>
+                <Text style={styles.totalLabel}>Total</Text>
+                <Text style={styles.totalValue}>${pricing.total.toFixed(2)}</Text>
+              </View>
+            </View>
 
             {!user?.email ? (
               <View style={{ marginTop: 16 }}>
@@ -1134,6 +1261,43 @@ function BookingScreen() {
               </Text>
             )}
 
+            <View style={styles.paymentMethods}>
+              <TouchableOpacity
+                onPress={() => setPaymentMethod('card')}
+                style={[
+                  styles.paymentMethod,
+                  styles.cardPaymentMethod,
+                  paymentMethod === 'card' && styles.paymentMethodSelected,
+                ]}
+              >
+                <Text style={styles.paymentMethodIcon}>💳</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.paymentMethodTitle}>Pay with Debit or Credit Card</Text>
+                  <Text style={styles.paymentMethodDetail}>
+                    Visa, Mastercard, American Express, Discover, and other supported cards.
+                  </Text>
+                </View>
+                <Text style={styles.paymentMethodRadio}>{paymentMethod === 'card' ? '●' : '○'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setPaymentMethod('paypal')}
+                style={[styles.paymentMethod, paymentMethod === 'paypal' && styles.paymentMethodSelected]}
+              >
+                <Text style={styles.paymentMethodIcon}>🅿️</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.paymentMethodTitle}>Pay with PayPal</Text>
+                  <Text style={styles.paymentMethodDetail}>Sign in with your PayPal account if you prefer.</Text>
+                </View>
+                <Text style={styles.paymentMethodRadio}>{paymentMethod === 'paypal' ? '●' : '○'}</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.noAccountNote}>
+              <Text style={styles.noAccountText}>
+                No PayPal account required. Pay securely with your debit or credit card.
+              </Text>
+            </View>
+
             {phaseLabel ? (
               <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 16 }}>
                 <ActivityIndicator color="#FFD700" style={{ marginRight: 10 }} />
@@ -1143,21 +1307,18 @@ function BookingScreen() {
 
             <TouchableOpacity
               disabled={processingPayment}
-              style={{
-                marginTop: 20,
-                padding: 15,
-                backgroundColor: '#FFD700',
-                borderRadius: 10,
-                opacity: processingPayment ? 0.5 : 1,
-              }}
+              style={[styles.checkoutButton, processingPayment && { opacity: 0.5 }]}
               onPress={onConfirmPayAndBook}
             >
-              <Text style={{ color: '#000', textAlign: 'center', fontWeight: '700' }}>
+              <Text style={styles.checkoutButtonText}>
                 {processingPayment
                   ? t('common.processing')
-                  : t('booking.payWithPayPal', { amount: `$${pricing.total.toFixed(2)}` })}
+                  : paymentMethod === 'card'
+                    ? `Continue with Card · $${pricing.total.toFixed(2)}`
+                    : `Continue with PayPal · $${pricing.total.toFixed(2)}`}
               </Text>
             </TouchableOpacity>
+            <Text style={styles.poweredBy}>IFCDC Barbers checkout · Securely powered by PayPal</Text>
 
             <TouchableOpacity
               onPress={() => setStep(4)}
@@ -1173,6 +1334,218 @@ function BookingScreen() {
 }
 
 const styles = StyleSheet.create({
+  checkoutHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 18,
+  },
+  checkoutLock: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(245,200,66,0.13)',
+  },
+  checkoutTitle: {
+    color: UI.gold,
+    fontSize: 24,
+    fontWeight: '900',
+  },
+  checkoutSubtitle: {
+    color: UI.muted,
+    fontSize: 14,
+    marginTop: 3,
+  },
+  checkoutSection: {
+    marginBottom: 14,
+    padding: 14,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(245,200,66,0.2)',
+    backgroundColor: 'rgba(0,0,0,0.26)',
+  },
+  checkoutSectionTitle: {
+    color: UI.gold,
+    fontSize: 15,
+    fontWeight: '800',
+    marginBottom: 10,
+  },
+  checkoutHint: {
+    color: UI.muted,
+    fontSize: 11,
+    marginTop: 6,
+  },
+  promoRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  promoInput: {
+    flex: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: UI.border,
+    borderRadius: radius.sm,
+    color: UI.text,
+    backgroundColor: UI.surface,
+  },
+  promoButton: {
+    justifyContent: 'center',
+    paddingHorizontal: 18,
+    borderWidth: 1,
+    borderColor: UI.gold,
+    borderRadius: radius.sm,
+  },
+  promoButtonText: {
+    color: UI.gold,
+    fontWeight: '800',
+  },
+  tipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 7,
+  },
+  tipButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderWidth: 1,
+    borderColor: UI.glass,
+    borderRadius: radius.sm,
+  },
+  tipButtonSelected: {
+    borderColor: UI.gold,
+    backgroundColor: UI.goldSoft,
+  },
+  tipButtonText: {
+    color: UI.muted,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  tipButtonTextSelected: {
+    color: UI.gold,
+  },
+  customTipRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 10,
+  },
+  customTipInput: {
+    width: 90,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: UI.border,
+    borderRadius: radius.sm,
+    color: UI.text,
+    backgroundColor: UI.surface,
+    textAlign: 'right',
+  },
+  summaryLine: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 14,
+    paddingVertical: 5,
+  },
+  summaryKey: {
+    color: UI.muted,
+    fontSize: 13,
+  },
+  summaryLineValue: {
+    flex: 1,
+    color: UI.text,
+    fontSize: 13,
+    fontWeight: '700',
+    textAlign: 'right',
+  },
+  totalLine: {
+    marginTop: 7,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: UI.border,
+  },
+  totalLabel: {
+    color: UI.gold,
+    fontSize: 17,
+    fontWeight: '900',
+  },
+  totalValue: {
+    color: UI.gold,
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  paymentMethods: {
+    gap: 10,
+    marginTop: 18,
+  },
+  paymentMethod: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: 15,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: UI.glass,
+    backgroundColor: UI.card,
+  },
+  cardPaymentMethod: {
+    paddingVertical: 18,
+    borderColor: 'rgba(245,200,66,0.5)',
+    backgroundColor: 'rgba(245,200,66,0.08)',
+  },
+  paymentMethodSelected: {
+    borderColor: UI.gold,
+  },
+  paymentMethodIcon: {
+    fontSize: 21,
+  },
+  paymentMethodTitle: {
+    color: UI.text,
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  paymentMethodDetail: {
+    color: UI.muted,
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 3,
+  },
+  paymentMethodRadio: {
+    color: UI.gold,
+    fontSize: 18,
+  },
+  noAccountNote: {
+    marginTop: 12,
+    padding: 12,
+    borderRadius: radius.sm,
+    backgroundColor: 'rgba(83,193,126,0.1)',
+  },
+  noAccountText: {
+    color: '#9ee5ba',
+    fontSize: 12,
+    lineHeight: 17,
+    textAlign: 'center',
+  },
+  checkoutButton: {
+    marginTop: 18,
+    padding: 16,
+    backgroundColor: UI.gold,
+    borderRadius: radius.md,
+  },
+  checkoutButtonText: {
+    color: UI.onGold,
+    textAlign: 'center',
+    fontWeight: '900',
+    fontSize: 15,
+  },
+  poweredBy: {
+    color: UI.dim,
+    fontSize: 11,
+    textAlign: 'center',
+    marginTop: 8,
+  },
   rowBtn: {
     padding: 15,
     marginBottom: 10,

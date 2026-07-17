@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { usePayPalScriptReducer } from "@paypal/react-paypal-js";
 import {
   fetchAvailableSlots,
   fetchBarbersList,
@@ -28,6 +29,29 @@ import { fetchMyLoyalty } from "../services/loyaltyApi.js";
 const FALLBACK_SERVICE_PRICE = 25;
 const CHECKOUT_STORAGE = "ifcdc_app_checkout_pending";
 
+function estimateRewardDiscount(reward, services, subtotal) {
+  if (!reward) return 0;
+  const type = String(reward.reward_type || "").toLowerCase();
+  const value = Math.max(0, Number(reward.reward_value) || 0);
+  let discount = value;
+  if (type === "discount_percent") discount = subtotal * Math.min(value, 100) / 100;
+  if (type === "free_service" || type === "free_standard_haircut") {
+    const eligible = Array.isArray(reward.eligible_services)
+      ? reward.eligible_services.map((item) => String(item).toLowerCase())
+      : [];
+    const matching = services.filter((service) => {
+      if (!eligible.length) return true;
+      const id = String(service?.id || "").toLowerCase();
+      const name = String(service?.name || "").toLowerCase();
+      return eligible.some((allowed) => id === allowed || name.includes(allowed) || allowed.includes(name));
+    });
+    discount = matching.length ? Math.max(...matching.map((service) => Number(service?.price) || 0)) : 0;
+    if (!discount && !eligible.length) discount = subtotal;
+    if (value > 0) discount = Math.min(discount || value, value);
+  }
+  return Math.round(Math.max(0, Math.min(subtotal, discount)) * 100) / 100;
+}
+
 function buildDateOptions(count = 7) {
   const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
   const now = new Date();
@@ -55,6 +79,7 @@ function readUser() {
 export default function BookingWizard() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const [{ isResolved: isPayPalResolved }] = usePayPalScriptReducer();
 
   const [step, setStep] = useState(1);
   const [barber, setBarber] = useState(null);
@@ -80,6 +105,11 @@ export default function BookingWizard() {
   const [slotsRefreshKey, setSlotsRefreshKey] = useState(0);
   const [availableRewards, setAvailableRewards] = useState([]);
   const [selectedRewardId, setSelectedRewardId] = useState("");
+  const [tipAmount, setTipAmount] = useState(0);
+  const [paymentMethod, setPaymentMethod] = useState("card");
+  const [payLaterEligible, setPayLaterEligible] = useState(false);
+  const [promoCode, setPromoCode] = useState("");
+  const [promoMessage, setPromoMessage] = useState("");
 
   useEffect(() => subscribeScheduleUpdated(() => setSlotsRefreshKey((k) => k + 1)), []);
   useLiveSlotRefresh(
@@ -100,14 +130,49 @@ export default function BookingWizard() {
       ),
     [selectedServices],
   );
+  const selectedReward = useMemo(
+    () => availableRewards.find((reward) => reward.id === selectedRewardId) || null,
+    [availableRewards, selectedRewardId],
+  );
+  const rewardDiscount = useMemo(
+    () => estimateRewardDiscount(selectedReward, selectedServices, cartTotalPrice),
+    [selectedReward, selectedServices, cartTotalPrice],
+  );
   const pricing = useMemo(
     () =>
       calculateFinalBookingTotal({
         haircutPrice:
           Number.isFinite(cartTotalPrice) && cartTotalPrice > 0 ? cartTotalPrice : FALLBACK_SERVICE_PRICE,
+        discountAmount: rewardDiscount,
+        tipAmount,
       }),
-    [cartTotalPrice],
+    [cartTotalPrice, rewardDiscount, tipAmount],
   );
+
+  useEffect(() => {
+    if (!isPayPalResolved || !window.paypal?.isFundingEligible || !window.paypal?.FUNDING?.PAYLATER) {
+      setPayLaterEligible(false);
+      return;
+    }
+    setPayLaterEligible(Boolean(window.paypal.isFundingEligible(window.paypal.FUNDING.PAYLATER)));
+  }, [isPayPalResolved]);
+
+  const applyPromoCode = () => {
+    const normalized = promoCode.trim().toUpperCase();
+    if (!normalized) {
+      setPromoMessage("Enter a promo code.");
+      return;
+    }
+    const promoReward = availableRewards.find(
+      (reward) => String(reward?.metadata?.promoCode || reward?.metadata?.promo_code || "").toUpperCase() === normalized,
+    );
+    if (!promoReward) {
+      setPromoMessage("This promo code is not available for this booking.");
+      return;
+    }
+    setSelectedRewardId(promoReward.id);
+    setPromoMessage(`${promoReward.title} applied.`);
+  };
 
   useEffect(() => {
     let active = true;
@@ -366,6 +431,8 @@ export default function BookingWizard() {
         customerEmail,
         customerName: String(user?.name || "").trim() || "Web customer",
         rewardId: selectedRewardId || undefined,
+        tipAmount,
+        paymentMethod,
       });
 
       sessionStorage.setItem(
@@ -397,6 +464,11 @@ export default function BookingWizard() {
     setTime(null);
     setAvailableSlots([]);
     setSuccessPayload(null);
+    setSelectedRewardId("");
+    setTipAmount(0);
+    setPaymentMethod("card");
+    setPromoCode("");
+    setPromoMessage("");
     setError(null);
     setPhaseLabel("");
   };
@@ -643,68 +715,115 @@ export default function BookingWizard() {
       ) : null}
 
       {step === 5 ? (
-        <section className="ifcdc-book-wizard__panel">
-          <h2 className="ifcdc-book-wizard__heading">Review &amp; pay</h2>
-          <div className="ifcdc-book-wizard__summary">
-            <p>
-              <strong>Barber:</strong> {barber?.name}
-            </p>
-            <p>
-              <strong>Services:</strong> {selectedServices.map((s) => s.name).join(", ")}
-            </p>
-            <p>
-              <strong>Duration:</strong> {cartTotalDuration} min
-            </p>
-            <p>
-              <strong>When:</strong> {date} at {time}
-            </p>
-            {selectedServices.map((s) => (
-              <p key={s.id}>
-                {s.name}: ${Number(s.price || 0).toFixed(2)}
-              </p>
-            ))}
-            <p>
-              <strong>Platform fee:</strong> ${pricing.platformFee.toFixed(2)}
-            </p>
-            <p>
-              <strong>Total due today:</strong> ${pricing.total.toFixed(2)}
-            </p>
+        <section className="ifcdc-book-wizard__panel ifcdc-checkout">
+          <div className="ifcdc-checkout__header">
+            <span className="ifcdc-checkout__lock" aria-hidden="true">🔒</span>
+            <div>
+              <h2 className="ifcdc-checkout__title">Secure Checkout</h2>
+              <p>Choose your preferred payment method.</p>
+            </div>
           </div>
 
           {user?.email && availableRewards.length ? (
-            <div className="ifcdc-book-wizard__summary" style={{ marginBottom: 16 }}>
-              <h3 style={{ marginTop: 0, color: "#d4af37" }}>Apply a Loyalty Reward</h3>
-              <label style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+            <div className="ifcdc-checkout__section">
+              <h3>Available rewards</h3>
+              <label className="ifcdc-checkout__reward">
                 <input
                   type="radio"
                   name="loyalty-reward"
                   checked={!selectedRewardId}
-                  onChange={() => setSelectedRewardId("")}
+                  onChange={() => {
+                    setSelectedRewardId("");
+                    setPromoMessage("");
+                  }}
                 />
                 No reward
               </label>
               {availableRewards.map((reward) => (
-                <label key={reward.id} style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                <label key={reward.id} className="ifcdc-checkout__reward">
                   <input
                     type="radio"
                     name="loyalty-reward"
                     checked={selectedRewardId === reward.id}
-                    onChange={() => setSelectedRewardId(reward.id)}
+                    onChange={() => {
+                      setSelectedRewardId(reward.id);
+                      setPromoMessage("");
+                    }}
                   />
                   <span>
-                    <strong>{reward.title}</strong>
-                    <small style={{ display: "block", opacity: 0.72 }}>
+                    <strong>Redeem {reward.title}</strong>
+                    <small>
                       {reward.points_cost} points
                       {Number(reward.reward_value) > 0 ? ` · $${Number(reward.reward_value).toFixed(2)} value` : ""}
                     </small>
                   </span>
                 </label>
               ))}
-              <small style={{ opacity: 0.72 }}>
+              <small className="ifcdc-checkout__muted">
                 Points are reserved at checkout and redeemed only after the paid appointment is completed.
               </small>
             </div>
           ) : null}
+
+          <div className="ifcdc-checkout__section">
+            <h3>Apply promo code</h3>
+            <div className="ifcdc-checkout__promo">
+              <input
+                type="text"
+                value={promoCode}
+                onChange={(event) => {
+                  setPromoCode(event.target.value);
+                  setPromoMessage("");
+                }}
+                placeholder="Promo code"
+                autoCapitalize="characters"
+              />
+              <button type="button" onClick={applyPromoCode}>Apply</button>
+            </div>
+            {promoMessage ? <small className="ifcdc-checkout__muted">{promoMessage}</small> : null}
+          </div>
+
+          <div className="ifcdc-checkout__section">
+            <h3>Add a tip</h3>
+            <div className="ifcdc-checkout__tips">
+              {[0, 15, 20, 25].map((percent) => {
+                const amount = Math.round(cartTotalPrice * percent) / 100;
+                return (
+                  <button
+                    key={percent}
+                    type="button"
+                    className={Math.abs(tipAmount - amount) < 0.01 ? "is-selected" : ""}
+                    onClick={() => setTipAmount(amount)}
+                  >
+                    {percent ? `${percent}%` : "No tip"}
+                  </button>
+                );
+              })}
+              <label>
+                Custom
+                <input
+                  type="number"
+                  min="0"
+                  max="500"
+                  step="0.01"
+                  value={tipAmount}
+                  onChange={(event) => setTipAmount(Math.max(0, Math.min(500, Number(event.target.value) || 0)))}
+                />
+              </label>
+            </div>
+          </div>
+
+          <div className="ifcdc-checkout__summary" aria-label="Booking summary">
+            <h3>Booking summary</h3>
+            <div><span>Service</span><strong>{selectedServices.map((s) => s.name).join(", ")}</strong></div>
+            <div><span>Barber</span><strong>{barber?.name}</strong></div>
+            <div><span>Date</span><strong>{date}</strong></div>
+            <div><span>Time</span><strong>{time}</strong></div>
+            <div><span>Tip</span><strong>${pricing.tipAmount.toFixed(2)}</strong></div>
+            <div><span>Discount</span><strong>−${pricing.discountAmount.toFixed(2)}</strong></div>
+            <div><span>Platform fee</span><strong>${pricing.platformFee.toFixed(2)}</strong></div>
+            <div className="ifcdc-checkout__total"><span>Total</span><strong>${pricing.total.toFixed(2)}</strong></div>
+          </div>
 
           {!user?.email ? (
             <label className="ifcdc-label" htmlFor="bk-guest-email">
@@ -723,14 +842,66 @@ export default function BookingWizard() {
             <p className="ifcdc-page-hint">Confirmation will be sent to {user.email}</p>
           )}
 
+          <div className="ifcdc-checkout__methods">
+            <button
+              type="button"
+              className={`ifcdc-checkout__method ifcdc-checkout__method--card ${paymentMethod === "card" ? "is-selected" : ""}`}
+              onClick={() => setPaymentMethod("card")}
+            >
+              <span className="ifcdc-checkout__method-icon" aria-hidden="true">💳</span>
+              <span>
+                <strong>Pay with Debit or Credit Card</strong>
+                <small>Visa, Mastercard, American Express, Discover, and other supported cards.</small>
+              </span>
+              <span className="ifcdc-checkout__radio" aria-hidden="true">{paymentMethod === "card" ? "●" : "○"}</span>
+            </button>
+            <button
+              type="button"
+              className={`ifcdc-checkout__method ${paymentMethod === "paypal" ? "is-selected" : ""}`}
+              onClick={() => setPaymentMethod("paypal")}
+            >
+              <span className="ifcdc-checkout__method-icon" aria-hidden="true">🅿️</span>
+              <span>
+                <strong>Pay with PayPal</strong>
+                <small>Sign in with your PayPal account if you prefer.</small>
+              </span>
+              <span className="ifcdc-checkout__radio" aria-hidden="true">{paymentMethod === "paypal" ? "●" : "○"}</span>
+            </button>
+            {payLaterEligible ? (
+              <button
+                type="button"
+                className={`ifcdc-checkout__method ${paymentMethod === "paylater" ? "is-selected" : ""}`}
+                onClick={() => setPaymentMethod("paylater")}
+              >
+                <span className="ifcdc-checkout__method-icon" aria-hidden="true">⏳</span>
+                <span>
+                  <strong>Pay Later</strong>
+                  <small>Choose an eligible PayPal Pay Later offer.</small>
+                </span>
+                <span className="ifcdc-checkout__radio" aria-hidden="true">{paymentMethod === "paylater" ? "●" : "○"}</span>
+              </button>
+            ) : null}
+          </div>
+
+          <p className="ifcdc-checkout__card-note">
+            No PayPal account required. Pay securely with your debit or credit card.
+          </p>
+
           <button
             type="button"
             className="ifcdc-book-wizard__cta"
             disabled={processingPayment}
             onClick={() => void onConfirmPayAndBook()}
           >
-            {processingPayment ? "Processing…" : "Pay with PayPal"}
+            {processingPayment
+              ? "Processing…"
+              : paymentMethod === "card"
+                ? `Continue with Card · $${pricing.total.toFixed(2)}`
+                : paymentMethod === "paylater"
+                  ? `Continue with Pay Later · $${pricing.total.toFixed(2)}`
+                  : `Continue with PayPal · $${pricing.total.toFixed(2)}`}
           </button>
+          <p className="ifcdc-checkout__powered">IFCDC Barbers checkout · Securely powered by PayPal</p>
           <button type="button" className="ifcdc-book-wizard__back" onClick={() => setStep(4)} disabled={processingPayment}>
             ← Change time
           </button>

@@ -1,14 +1,14 @@
 {
   "configVersion": 0,
   "apple": {
-    "version": "1.1.7",
+    "version": "1.1.8",
     "copyright": "2026 IFCDC Barbers",
     "release": {
       "automaticRelease": true
     },
     "info": {
       "en-US": {
-        "description": "IFCDC Barbers makes it easy to book professional barbershop appointments. Browse real haircut and style photos, choose your service, pick a barber and time, and pay securely with PayPal.\n\nFeatures:\n• Book appointments with live availability\n• View service photos and style gallery before you book\n• Secure PayPal checkout and email confirmations\n• AURA assistant for quick booking help\n• Manage your profile and booking history\n\nOfficial app for IFCDC Barbers — smart booking powered by real style photos.",
+        "description": "IFCDC Barbers makes it easy to book professional barbershop appointments. Browse real haircut and style photos, choose your service, pick a barber and time, and pay securely by debit card, credit card, or PayPal.\n\nFeatures:\n• Book appointments with live availability\n• View service photos and style gallery before you book\n• Secure checkout powered by PayPal and email confirmations\n• AURA assistant for quick booking help\n• Manage your profile and booking history\n\nOfficial app for IFCDC Barbers — smart booking powered by real style photos.",
         "keywords": [
           "barber",
           "haircut",
@@ -19,12 +19,12 @@
           "barbershop"
         ],
         "marketingUrl": "https://ifcdcbarbersapp.com",
-        "promoText": "Book your next cut — browse styles, pick a barber, pay with PayPal.",
+        "promoText": "Book your next cut — browse styles, pick a barber, and pay securely by card or PayPal.",
         "supportUrl": "https://ifcdcbarbersapp.com",
         "title": "IFCDC Barbers",
         "subtitle": "Book cuts with style photos",
         "privacyPolicyUrl": "https://ifcdcbarbersapp.com/privacy",
-        "releaseNotes": "Version 1.1.7 (Build 63)\n\n• New multi-tier loyalty rewards from 25 to 200 points\n• Rewards reserve safely during checkout and redeem after paid appointment completion\n• Available, upcoming, reserved, redeemed, and full reward history views\n• Admin reward tier configuration, reporting, liability, and audit logs\n• Automatic reward restoration for cancelled, failed, refunded, or expired checkout reservations",
+        "releaseNotes": "Version 1.1.8 (Build 64)\n\n• Redesigned Secure Checkout makes debit and credit card payment clear and prominent\n• Card checkout no longer requires a PayPal account when guest card checkout is offered\n• Separate card, PayPal, and eligible Pay Later choices\n• Full booking summary now shows service, barber, date, time, tip, discount, fee, and total\n• Apply loyalty rewards and configured promo codes before payment",
         "screenshots": {
           "APP_IPAD_PRO_3GEN_129": [
             "store/apple/screenshot/en-US/APP_IPAD_PRO_3GEN_129/iPad Pro 13-inch (M4)-06_AURA.png",
@@ -86,7 +86,7 @@
       "demoUsername": "apple.review@ifcdcbarbersapp.com",
       "demoPassword": "IFCDC-Review2026!",
       "demoRequired": true,
-      "notes": "APP REVIEW NOTES — Build 63 (Version 1.1.7)\n\nReview Account:\nEmail: apple.review@ifcdcbarbersapp.com\nPassword: IFCDC-Review2026!\n\nWhat's new:\n• Multi-tier loyalty rewards from 25 through 200 points\n• Rewards are selected and reserved during checkout\n• Points are redeemed only after a paid appointment is completed\n• Cancelled, failed, refunded, and expired reservations restore points automatically\n• Client Rewards includes progress, available/upcoming rewards, redemptions, and history\n• Admins can configure tiers and review reports/audit logs\n\nCustomer booking flow:\nHome → Book → provider → service → date/time → optionally select an available reward → PayPal LIVE checkout.\n\nRewards:\nProfile → Rewards. Five points are awarded per paid, completed appointment. No points are awarded for cancelled, refunded, no-show, failed, or duplicate bookings.\n\nAURA:\nAURA is a text assistant for booking information and does not process payments.\n\nAccount Deletion:\nProfile → Delete Account → Type DELETE → Confirm\n\nBackend: https://ifcdc-barbers-backend696.onrender.com (live PayPal)\nBuild: Version 1.1.7 (Build 63)"
+      "notes": "APP REVIEW NOTES — Build 64 (Version 1.1.8)\n\nReview Account:\nEmail: apple.review@ifcdcbarbersapp.com\nPassword: IFCDC-Review2026!\n\nWhat's new:\n• Secure Checkout now presents debit/credit card first and PayPal second\n• Customers may use PayPal guest card checkout without a PayPal account when PayPal offers it\n• Pay Later is shown only when PayPal determines the customer is eligible\n• Checkout shows service, barber, date, time, tip, discount, platform fee, and total before payment\n• Loyalty rewards and configured promo codes can be applied before payment\n\nCustomer booking flow:\nHome → Book → provider → service → date/time → choose reward/tip/payment method → PayPal LIVE secure checkout.\n\nPayment processing:\nPayPal remains the payment processor. Choosing Card requests PayPal's guest-card billing experience; choosing PayPal requests PayPal login. Funding availability is determined by PayPal.\n\nRewards:\nProfile → Rewards. Five points are awarded per paid, completed appointment. No points are awarded for cancelled, refunded, no-show, failed, or duplicate bookings.\n\nAURA:\nAURA is a text assistant for booking information and does not process payments.\n\nAccount Deletion:\nProfile → Delete Account → Type DELETE → Confirm\n\nBackend: https://ifcdc-barbers-backend696.onrender.com (live PayPal)\nBuild: Version 1.1.8 (Build 64)"
     }
   }
 }

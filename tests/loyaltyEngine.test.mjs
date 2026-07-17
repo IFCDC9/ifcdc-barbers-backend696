@@ -4,6 +4,7 @@ import {
   LOYALTY_POINTS_PER_COMPLETED_APPOINTMENT,
   evaluateRewardForBooking,
 } from "../loyaltyService.js";
+import { calculateFinalBookingTotal } from "../client/src/lib/bookingPaymentTotals.js";
 
 const require = createRequire(import.meta.url);
 const { bookingPaymentViewFromRow } = require("../bookingPaymentSettlement.cjs");
@@ -99,5 +100,22 @@ const discountedPayment = bookingPaymentViewFromRow({
   paypal_capture_id: "CAPTURE-REWARD",
 });
 assert.equal(discountedPayment.isPaidInFull, true);
+
+assert.deepEqual(
+  calculateFinalBookingTotal({
+    haircutPrice: 40,
+    discountAmount: 10,
+    tipAmount: 6,
+  }),
+  {
+    haircutPrice: 40,
+    depositAmount: 0,
+    platformFee: 0.99,
+    discountAmount: 10,
+    tipAmount: 6,
+    total: 36.99,
+    remainingBalance: 0,
+  },
+);
 
 console.log("loyaltyEngine tests passed");
