@@ -4,6 +4,7 @@
 import { getApiOrigin } from "./api.js";
 import { DEFAULT_BOOKING_SERVICES } from "../lib/defaultBookingServices.js";
 import { enrichBookingServicesWithPublishedStyles } from "../lib/bookingServiceImages.js";
+import { getStoredToken } from "../lib/authHeaders.js";
 
 const BOOKING_FETCH_TIMEOUT_MS = 25_000;
 export const SERVICES_FETCH_TIMEOUT_MS = 12_000;
@@ -185,9 +186,14 @@ export async function fetchAvailableSlots({ barberName, barberId, dateLabel, dur
 
 export async function startAppBookingCheckout(payload) {
   const url = apiUrl("/api/app-bookings/start");
+  const token = getStoredToken();
   const res = await bookingFetch(url, {
     method: "POST",
-    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${String(token).replace(/^Bearer\s+/i, "")}` } : {}),
+    },
     body: JSON.stringify(payload),
   });
   const json = await parseJson(res);

@@ -49,6 +49,7 @@ import { IFCDC_FOOTER_CLEARANCE } from '../constants/profileLayout';
 import ProviderTypeDropdown from '../components/ProviderTypeDropdown';
 import { providerTypeMeta } from '../constants/providerTypes';
 import { useAuth } from '../services/authContext';
+import { fetchMyLoyalty } from '../services/loyaltyApi';
 
 /** Visual tokens only — booking/payment logic unchanged */
 const UI = {
@@ -134,6 +135,8 @@ function BookingScreen() {
   const [processingPayment, setProcessingPayment] = useState(false);
   const [phaseLabel, setPhaseLabel] = useState('');
   const [guestEmail, setGuestEmail] = useState('');
+  const [availableRewards, setAvailableRewards] = useState([]);
+  const [selectedRewardId, setSelectedRewardId] = useState(null);
   const cartTotalPrice = useMemo(
     () =>
       selectedServices.reduce((sum, s) => sum + (Number(s?.price) || 0), 0),
@@ -237,6 +240,47 @@ function BookingScreen() {
       alive = false;
     };
   }, [step]);
+
+  useEffect(() => {
+    let active = true;
+    if (step !== 5 || !user?.email || !barber?.id) {
+      setAvailableRewards([]);
+      setSelectedRewardId(null);
+      return () => {
+        active = false;
+      };
+    }
+    fetchMyLoyalty(barber.id)
+      .then((data) => {
+        if (!active) return;
+        const barberValues = [barber.id, barber.name].map((value) => String(value || '').toLowerCase());
+        const serviceValues = selectedServices.flatMap((service) =>
+          [service.id, service.name].map((value) => String(value || '').toLowerCase()),
+        );
+        const eligible = (Array.isArray(data.availableRewards) ? data.availableRewards : []).filter((reward) => {
+          const allowedBarbers = (reward.eligible_barbers || []).map((value) => String(value).toLowerCase());
+          const allowedServices = (reward.eligible_services || []).map((value) => String(value).toLowerCase());
+          return (
+            (!allowedBarbers.length || barberValues.some((value) => allowedBarbers.includes(value)))
+            && (
+              !allowedServices.length
+              || serviceValues.some((value) =>
+                allowedServices.some((allowed) =>
+                  value === allowed || value.includes(allowed) || allowed.includes(value),
+                ),
+              )
+            )
+          );
+        });
+        setAvailableRewards(eligible);
+      })
+      .catch(() => {
+        if (active) setAvailableRewards([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [step, user?.email, barber?.id, barber?.name, selectedServices]);
 
   useEffect(() => {
     let cancelled = false;
@@ -442,6 +486,7 @@ function BookingScreen() {
         redirectUri,
         customerEmail,
         customerName,
+        rewardId: selectedRewardId || undefined,
       });
 
       const { orderId, approveUrl, paypalReturnUrl, total, platformFee, haircutPrice, depositAmount: dep } = started;
@@ -1014,6 +1059,47 @@ function BookingScreen() {
               </Text>
             </View>
 
+            {user?.email && availableRewards.length ? (
+              <View style={{ marginTop: 16 }}>
+                <Text style={{ color: UI.gold, fontSize: 15, fontWeight: '800', marginBottom: 8 }}>
+                  Apply a Loyalty Reward
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setSelectedRewardId(null)}
+                  style={[
+                    styles.rewardOption,
+                    !selectedRewardId && styles.rewardOptionSelected,
+                  ]}
+                >
+                  <Text style={styles.rewardOptionTitle}>No reward</Text>
+                </TouchableOpacity>
+                {availableRewards.map((reward) => (
+                  <TouchableOpacity
+                    key={reward.id}
+                    onPress={() => setSelectedRewardId(reward.id)}
+                    style={[
+                      styles.rewardOption,
+                      selectedRewardId === reward.id && styles.rewardOptionSelected,
+                    ]}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.rewardOptionTitle}>{reward.title}</Text>
+                      <Text style={styles.rewardOptionMeta}>
+                        {reward.points_cost} points
+                        {Number(reward.reward_value) > 0 ? ` · $${Number(reward.reward_value).toFixed(2)} value` : ''}
+                      </Text>
+                    </View>
+                    <Text style={{ color: UI.gold }}>
+                      {selectedRewardId === reward.id ? '✓' : '○'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+                <Text style={{ color: UI.dim, fontSize: 11, marginTop: 5 }}>
+                  Points are reserved now and redeemed only after the paid appointment is completed.
+                </Text>
+              </View>
+            ) : null}
+
             {!user?.email ? (
               <View style={{ marginTop: 16 }}>
                 <Text style={{ color: '#FFD700', marginBottom: 8 }}>
@@ -1170,6 +1256,31 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     marginBottom: 12,
+  },
+  rewardOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 12,
+    marginBottom: 8,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: UI.glass,
+    backgroundColor: UI.card,
+  },
+  rewardOptionSelected: {
+    borderColor: UI.gold,
+    backgroundColor: UI.goldSoft,
+  },
+  rewardOptionTitle: {
+    color: UI.text,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  rewardOptionMeta: {
+    color: UI.muted,
+    fontSize: 11,
+    marginTop: 2,
   },
   hintText: {
     color: UI.muted,

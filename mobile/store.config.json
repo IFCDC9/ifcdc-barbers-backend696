@@ -1,7 +1,7 @@
 {
   "configVersion": 0,
   "apple": {
-    "version": "1.1.6",
+    "version": "1.1.7",
     "copyright": "2026 IFCDC Barbers",
     "release": {
       "automaticRelease": true
@@ -24,7 +24,7 @@
         "title": "IFCDC Barbers",
         "subtitle": "Book cuts with style photos",
         "privacyPolicyUrl": "https://ifcdcbarbersapp.com/privacy",
-        "releaseNotes": "Version 1.1.6 (Build 62)\n\n• Production App Store release with all approved TestFlight fixes\n• Mark complete reliably triggers one-time client review push + email\n• Deep link opens the exact booking review screen\n• Soft-delete / restore reviews with audit log and service@ifcdc.org emails\n• Full booking calendar, Fri/Sat availability, Reviews & Ratings, and AURA assistant\n• Live PayPal checkout on the production backend",
+        "releaseNotes": "Version 1.1.7 (Build 63)\n\n• New multi-tier loyalty rewards from 25 to 200 points\n• Rewards reserve safely during checkout and redeem after paid appointment completion\n• Available, upcoming, reserved, redeemed, and full reward history views\n• Admin reward tier configuration, reporting, liability, and audit logs\n• Automatic reward restoration for cancelled, failed, refunded, or expired checkout reservations",
         "screenshots": {
           "APP_IPAD_PRO_3GEN_129": [
             "store/apple/screenshot/en-US/APP_IPAD_PRO_3GEN_129/iPad Pro 13-inch (M4)-06_AURA.png",
@@ -86,7 +86,7 @@
       "demoUsername": "apple.review@ifcdcbarbersapp.com",
       "demoPassword": "IFCDC-Review2026!",
       "demoRequired": true,
-      "notes": "APP REVIEW NOTES — Build 62 (Version 1.1.6)\n\nReview Account:\nEmail: apple.review@ifcdcbarbersapp.com\nPassword: IFCDC-Review2026!\n\nWhat's new in this production release:\n• Full booking calendar with configurable advance windows\n• Mark complete triggers one-time client review push + email\n• Reviews, ratings, photo uploads, barber replies, and admin soft-delete/restore\n• AURA text assistant for booking help\n• Live PayPal checkout on production\n\nCustomer booking flow (required):\nHome → Book → select provider → service → date/time → PayPal checkout (LIVE payments).\n\nReviews:\nAfter a completed booking, review push/email opens Booking Review. Profile → Rate Me also lists reviewable visits.\n\nAURA:\nAURA tab / sheet — ask about booking, services, or hours (text only; does not book or pay).\n\nAdmin (optional):\nReview account if configured as platform admin → Admin → bookings, content moderation, barbers.\n\nAccount Deletion:\nProfile → Delete Account → Type DELETE → Confirm\n\nDemo video:\nhttps://vtkxuagevtiwtoheomjt.supabase.co/storage/v1/object/public/barber-styles/app-review/account-deletion-demo-build36.mp4\n\nBackend: https://ifcdc-barbers-backend696.onrender.com (live PayPal)\nBuild: Version 1.1.6 (Build 62)"
+      "notes": "APP REVIEW NOTES — Build 63 (Version 1.1.7)\n\nReview Account:\nEmail: apple.review@ifcdcbarbersapp.com\nPassword: IFCDC-Review2026!\n\nWhat's new:\n• Multi-tier loyalty rewards from 25 through 200 points\n• Rewards are selected and reserved during checkout\n• Points are redeemed only after a paid appointment is completed\n• Cancelled, failed, refunded, and expired reservations restore points automatically\n• Client Rewards includes progress, available/upcoming rewards, redemptions, and history\n• Admins can configure tiers and review reports/audit logs\n\nCustomer booking flow:\nHome → Book → provider → service → date/time → optionally select an available reward → PayPal LIVE checkout.\n\nRewards:\nProfile → Rewards. Five points are awarded per paid, completed appointment. No points are awarded for cancelled, refunded, no-show, failed, or duplicate bookings.\n\nAURA:\nAURA is a text assistant for booking information and does not process payments.\n\nAccount Deletion:\nProfile → Delete Account → Type DELETE → Confirm\n\nBackend: https://ifcdc-barbers-backend696.onrender.com (live PayPal)\nBuild: Version 1.1.7 (Build 63)"
     }
   }
 }

@@ -34,7 +34,9 @@ async function markBookingCompletedIdempotent(dbQuery, {
        AND lower(coalesce(booking_status, '')) <> 'completed'
      RETURNING id, booking_status, payment_status, completed_at, completed_by,
                barber_id, barber_name, user_id, customer_email, customer_name,
-               service, style_id, business_id, client_id`,
+               service, style_id, business_id, client_id, is_paid_booking,
+               total_price, total_amount, amount_paid, total_paid, refunded_at,
+               services_json, service_price, loyalty_redemption_id`,
     [...params, String(actorLabel || "system")],
   );
 
@@ -45,7 +47,9 @@ async function markBookingCompletedIdempotent(dbQuery, {
   const existing = await dbQuery(
     `SELECT id, booking_status, payment_status, completed_at, completed_by,
             barber_id, barber_name, user_id, customer_email, customer_name,
-            service, style_id, business_id, client_id
+            service, style_id, business_id, client_id, is_paid_booking,
+            total_price, total_amount, amount_paid, total_paid, refunded_at,
+            services_json, service_price, loyalty_redemption_id
      FROM bookings
      WHERE id = $1::uuid ${tenantSql}
      LIMIT 1`,
@@ -81,7 +85,14 @@ async function runCompletionSideEffects({
   }
 
   if (!firstCompletion) {
-    return { reviewPrompt: false, skipped: "already_completed" };
+    let loyalty = null;
+    try {
+      const loyaltyService = await import("./loyaltyService.js");
+      loyalty = await loyaltyService.earnLoyaltyForCompletedBooking({ ...booking, id: booking.id });
+    } catch (error) {
+      console.warn("[loyalty] completion retry award:", error?.message || error);
+    }
+    return { reviewPrompt: false, skipped: "already_completed", loyalty };
   }
 
   void import("./socialPortfolioService.js")
@@ -110,9 +121,13 @@ async function runCompletionSideEffects({
     )
     .catch(() => {});
 
-  void import("./loyaltyService.js")
-    .then((m) => m.earnLoyaltyForCompletedBooking({ ...booking, id: booking.id }))
-    .catch(() => {});
+  let loyalty = null;
+  try {
+    const loyaltyService = await import("./loyaltyService.js");
+    loyalty = await loyaltyService.earnLoyaltyForCompletedBooking({ ...booking, id: booking.id });
+  } catch (error) {
+    console.warn("[loyalty] completion award:", error?.message || error);
+  }
 
   if (typeof dispatchBookingPush === "function") {
     void dispatchBookingPush({
@@ -123,7 +138,7 @@ async function runCompletionSideEffects({
     });
   }
 
-  return { reviewPrompt: true };
+  return { reviewPrompt: true, loyalty };
 }
 
 module.exports = {

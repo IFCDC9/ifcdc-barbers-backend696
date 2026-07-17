@@ -1,4 +1,5 @@
 import { API_URL, apiFullUrl } from "../constants/config";
+import { getAuthToken } from "./authService";
 import { fetchWithTimeout } from "../auth/authSessionApi";
 import { DEFAULT_BOOKING_SERVICES } from "../lib/defaultBookingServices.js";
 import {
@@ -255,9 +256,14 @@ export async function startAppBookingCheckout(payload) {
   console.log("PAYPAL ENV (mobile):", process.env.EXPO_PUBLIC_PAYPAL_ENV ?? "(unset)");
 
   try {
+    const token = await getAuthToken().catch(() => null);
     const res = await bookingFetch(url, {
       method: "POST",
-      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
       body: JSON.stringify(payload),
     });
     const json = await parseJson(res);

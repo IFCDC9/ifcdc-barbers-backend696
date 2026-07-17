@@ -612,6 +612,9 @@ function AdminDashboard() {
           <a href="/admin/barbers" style={{ ...goldButton, textDecoration: "none", display: "inline-block", background: "#222", color: "#d4af37", border: "1px solid #d4af37" }}>
             Barber management
           </a>
+          <a href="/admin/loyalty" style={{ ...goldButton, textDecoration: "none", display: "inline-block", background: "#222", color: "#d4af37", border: "1px solid #d4af37" }}>
+            Loyalty rewards
+          </a>
         </div>
 
         {/* —— Money Dashboard (paid bookings + PayPal) —— */}

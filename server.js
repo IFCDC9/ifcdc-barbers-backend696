@@ -42,7 +42,7 @@ import { createSocialPortfolioRouter } from "./socialPortfolioRoutes.js";
 import { ensureSocialPortfolioSchema } from "./socialPortfolioMigrations.js";
 import { createLoyaltyRouter } from "./loyaltyRoutes.js";
 import { ensureLoyaltySchema } from "./loyaltyMigrations.js";
-import { seedDefaultRewardsIfEmpty } from "./loyaltyService.js";
+import { expireStaleRewardReservations, seedDefaultRewardsIfEmpty } from "./loyaltyService.js";
 import { createAdminShopsRouter } from "./adminShopsRoutes.js";
 import { ensureAdminBarberManagementSchema } from "./adminBarberMigrations.js";
 import { ensureProviderTypeSchema } from "./providerTypeMigrations.js";
@@ -1110,10 +1110,16 @@ async function startServer() {
   try {
     await ensureLoyaltySchema();
     await seedDefaultRewardsIfEmpty();
+    await expireStaleRewardReservations();
     console.log("[migrate] loyalty schema: ok");
   } catch (e) {
     console.error("[migrate] loyalty failed:", e?.message || e);
   }
+  setInterval(() => {
+    void expireStaleRewardReservations().catch((error) =>
+      console.warn("[loyalty] reservation expiry:", error?.message || error),
+    );
+  }, 5 * 60 * 1000);
 
   void import("./socialPortfolioService.js")
     .then((m) => m.sendDueFollowupReminders())

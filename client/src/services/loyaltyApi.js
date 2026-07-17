@@ -4,8 +4,11 @@ function authHeaders() {
   return { Accept: "application/json" };
 }
 
-export async function fetchMyLoyalty() {
-  return authenticatedJson("/api/loyalty/me", { headers: authHeaders() });
+export async function fetchMyLoyalty(barberId) {
+  const suffix = barberId != null && String(barberId).trim()
+    ? `?barberId=${encodeURIComponent(String(barberId))}`
+    : "";
+  return authenticatedJson(`/api/loyalty/me${suffix}`, { headers: authHeaders() });
 }
 
 export async function redeemReward(rewardId) {
@@ -33,4 +36,49 @@ export async function saveBarberReward(barberId, body, rewardId) {
     body: JSON.stringify(body),
   });
   return data.reward;
+}
+
+export async function fetchAdminRewards() {
+  const data = await authenticatedJson("/api/admin/loyalty/rewards", { headers: authHeaders() });
+  return data.rewards || [];
+}
+
+export async function saveAdminReward(body, rewardId) {
+  return authenticatedJson(
+    rewardId
+      ? `/api/admin/loyalty/rewards/${encodeURIComponent(rewardId)}`
+      : "/api/admin/loyalty/rewards",
+    {
+      method: rewardId ? "PUT" : "POST",
+      headers: { ...authHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+export async function setAdminRewardStatus(rewardId, isActive) {
+  return authenticatedJson(`/api/admin/loyalty/rewards/${encodeURIComponent(rewardId)}/status`, {
+    method: "PATCH",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ is_active: isActive }),
+  });
+}
+
+export async function deleteAdminReward(rewardId) {
+  return authenticatedJson(`/api/admin/loyalty/rewards/${encodeURIComponent(rewardId)}`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
+}
+
+export async function fetchLoyaltyReport() {
+  return authenticatedJson("/api/admin/loyalty/report?limit=30", { headers: authHeaders() });
+}
+
+export async function adjustCustomerPoints(body) {
+  return authenticatedJson("/api/admin/loyalty/adjustments", {
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
 }

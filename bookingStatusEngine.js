@@ -144,6 +144,31 @@ export async function recordStatusChange(entry) {
     console.log(
       `[booking_status] booking=${String(entry.bookingId).slice(0, 8)} ${entry.previousStatus || "—"} → ${entry.newStatus} actor=${entry.actor?.email || entry.actor?.role || "—"}`,
     );
+    const nextStatus = String(entry.newStatus || "").toLowerCase();
+    if (nextStatus === "cancelled" || nextStatus === "no_show") {
+      const loyalty = await import("./loyaltyService.js");
+      const loyaltyActor = {
+        id: entry.actor?.userId || null,
+        email: entry.actor?.email || null,
+        role: entry.actor?.role || null,
+      };
+      await loyalty.restoreRewardForBooking(entry.bookingId, {
+        actor: loyaltyActor,
+        reason: nextStatus,
+      }).catch((error) => console.warn("[loyalty] reward restore:", error?.message || error));
+
+      const booking = await dbQuery(
+        `SELECT payment_status, refunded_at FROM bookings WHERE id = $1::uuid LIMIT 1`,
+        [String(entry.bookingId)],
+      ).catch(() => ({ rows: [] }));
+      const paymentStatus = String(booking.rows?.[0]?.payment_status || "").toLowerCase();
+      if (booking.rows?.[0]?.refunded_at || paymentStatus.includes("refund")) {
+        await loyalty.reverseLoyaltyForBooking(entry.bookingId, {
+          actor: loyaltyActor,
+          reason: "booking_refunded",
+        }).catch((error) => console.warn("[loyalty] points reversal:", error?.message || error));
+      }
+    }
   } catch (e) {
     console.warn("[booking_status_history] insert failed:", e?.message || e);
   }

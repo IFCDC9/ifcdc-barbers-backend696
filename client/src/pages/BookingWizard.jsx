@@ -23,6 +23,7 @@ import {
 import ProviderTypeDropdown from "../components/ProviderTypeDropdown.jsx";
 import { providerTypeLabel } from "../lib/providerTypes.js";
 import BookingMonthCalendar from "../components/BookingMonthCalendar.jsx";
+import { fetchMyLoyalty } from "../services/loyaltyApi.js";
 
 const FALLBACK_SERVICE_PRICE = 25;
 const CHECKOUT_STORAGE = "ifcdc_app_checkout_pending";
@@ -77,6 +78,8 @@ export default function BookingWizard() {
   const [providerFilter, setProviderFilter] = useState("");
   const [error, setError] = useState(null);
   const [slotsRefreshKey, setSlotsRefreshKey] = useState(0);
+  const [availableRewards, setAvailableRewards] = useState([]);
+  const [selectedRewardId, setSelectedRewardId] = useState("");
 
   useEffect(() => subscribeScheduleUpdated(() => setSlotsRefreshKey((k) => k + 1)), []);
   useLiveSlotRefresh(
@@ -105,6 +108,47 @@ export default function BookingWizard() {
       }),
     [cartTotalPrice],
   );
+
+  useEffect(() => {
+    let active = true;
+    if (step !== 5 || !user?.email || !barber?.id) {
+      setAvailableRewards([]);
+      setSelectedRewardId("");
+      return () => {
+        active = false;
+      };
+    }
+    fetchMyLoyalty(barber.id)
+      .then((dashboard) => {
+        if (!active) return;
+        const barberValues = [barber.id, barber.name].map((value) => String(value || "").toLowerCase());
+        const serviceValues = selectedServices.flatMap((service) =>
+          [service.id, service.name].map((value) => String(value || "").toLowerCase()),
+        );
+        const eligible = (Array.isArray(dashboard.availableRewards) ? dashboard.availableRewards : []).filter((reward) => {
+          const allowedBarbers = (reward.eligible_barbers || []).map((value) => String(value).toLowerCase());
+          const allowedServices = (reward.eligible_services || []).map((value) => String(value).toLowerCase());
+          return (
+            (!allowedBarbers.length || barberValues.some((value) => allowedBarbers.includes(value)))
+            && (
+              !allowedServices.length
+              || serviceValues.some((value) =>
+                allowedServices.some((allowed) =>
+                  value === allowed || value.includes(allowed) || allowed.includes(value),
+                ),
+              )
+            )
+          );
+        });
+        setAvailableRewards(eligible);
+      })
+      .catch(() => {
+        if (active) setAvailableRewards([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [step, user?.email, barber?.id, barber?.name, selectedServices]);
 
   const loadBarbers = useCallback(async () => {
     setBarbersLoading(true);
@@ -321,6 +365,7 @@ export default function BookingWizard() {
         cancelUri,
         customerEmail,
         customerName: String(user?.name || "").trim() || "Web customer",
+        rewardId: selectedRewardId || undefined,
       });
 
       sessionStorage.setItem(
@@ -625,6 +670,41 @@ export default function BookingWizard() {
               <strong>Total due today:</strong> ${pricing.total.toFixed(2)}
             </p>
           </div>
+
+          {user?.email && availableRewards.length ? (
+            <div className="ifcdc-book-wizard__summary" style={{ marginBottom: 16 }}>
+              <h3 style={{ marginTop: 0, color: "#d4af37" }}>Apply a Loyalty Reward</h3>
+              <label style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                <input
+                  type="radio"
+                  name="loyalty-reward"
+                  checked={!selectedRewardId}
+                  onChange={() => setSelectedRewardId("")}
+                />
+                No reward
+              </label>
+              {availableRewards.map((reward) => (
+                <label key={reward.id} style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                  <input
+                    type="radio"
+                    name="loyalty-reward"
+                    checked={selectedRewardId === reward.id}
+                    onChange={() => setSelectedRewardId(reward.id)}
+                  />
+                  <span>
+                    <strong>{reward.title}</strong>
+                    <small style={{ display: "block", opacity: 0.72 }}>
+                      {reward.points_cost} points
+                      {Number(reward.reward_value) > 0 ? ` · $${Number(reward.reward_value).toFixed(2)} value` : ""}
+                    </small>
+                  </span>
+                </label>
+              ))}
+              <small style={{ opacity: 0.72 }}>
+                Points are reserved at checkout and redeemed only after the paid appointment is completed.
+              </small>
+            </div>
+          ) : null}
 
           {!user?.email ? (
             <label className="ifcdc-label" htmlFor="bk-guest-email">

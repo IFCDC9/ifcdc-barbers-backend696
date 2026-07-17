@@ -319,6 +319,8 @@ router.get("/available-slots", async (req, res) => {
   try {
     const { dbQuery } = await loadDb();
     await expireStalePendingPaymentBookings(dbQuery);
+    const loyaltyService = await import("./loyaltyService.js");
+    await loyaltyService.expireStaleRewardReservations().catch(() => {});
     const { dateStr, barberId, barberName, resolved } = await resolveAvailableSlotsQuery(req);
     if (!dateStr) {
       return res.status(400).json({ ok: false, error: "bad_date", message: "Pass date=YYYY-MM-DD or dateLabel=Today" });
@@ -678,8 +680,8 @@ router.post("/start", async (req, res) => {
         duration_minutes: Number(s.duration_minutes) || 30,
       })),
     );
-    const total = round2(haircutPrice + platformFee);
-    const barberPayout = round2(Math.max(0, haircutPrice - platformFee));
+    let total = round2(haircutPrice + platformFee);
+    let barberPayout = round2(Math.max(0, haircutPrice - platformFee));
 
     let ins;
     try {
@@ -764,8 +766,9 @@ router.post("/start", async (req, res) => {
     }
     logBookingInsertSuccess(bookingId);
 
-    const paypalAmount = assertValidPayPalAmount("total", total);
-    const amountString = paypalAmount.toFixed(2);
+    let paypalAmount = assertValidPayPalAmount("total", total);
+    let amountString = paypalAmount.toFixed(2);
+    let rewardReservation = null;
     assertValidPayPalAmount("haircutPrice", haircutPrice);
     assertValidPayPalAmount("platformFee", platformFee);
 
@@ -858,6 +861,81 @@ router.post("/start", async (req, res) => {
       });
     }
 
+    const requestedRewardId = stripQuotes(body.rewardId ?? body.reward_id);
+    if (requestedRewardId) {
+      const authorization = String(req.headers?.authorization || "").trim();
+      const { resolveAuthPayload } = await import("./authRoutes.js");
+      const authUser = resolveAuthPayload(authorization);
+      if (!authUser?.id) {
+        await dbQuery(`DELETE FROM bookings WHERE id = $1::uuid`, [bookingId]).catch(() => {});
+        return res.status(401).json({
+          success: false,
+          error: "reward_auth_required",
+          message: "Sign in before applying a loyalty reward.",
+        });
+      }
+      const accountEmail = String(authUser.email || "").trim().toLowerCase();
+      if (accountEmail && accountEmail !== customerEmail.trim().toLowerCase()) {
+        await dbQuery(`DELETE FROM bookings WHERE id = $1::uuid`, [bookingId]).catch(() => {});
+        return res.status(403).json({
+          success: false,
+          error: "reward_account_mismatch",
+          message: "The selected reward belongs to a different account.",
+        });
+      }
+
+      const loyalty = loyaltyService;
+      rewardReservation = await loyalty.reserveRewardForBooking({
+        bookingId,
+        rewardId: requestedRewardId,
+        customerEmail,
+        userId: authUser.id,
+        actor: authUser,
+      });
+      if (!rewardReservation.ok) {
+        await dbQuery(`DELETE FROM bookings WHERE id = $1::uuid`, [bookingId]).catch(() => {});
+        return res.status(400).json({
+          success: false,
+          error: "reward_not_available",
+          message: rewardReservation.message || "The selected reward could not be applied.",
+        });
+      }
+
+      const discount = round2(rewardReservation.discountAmount);
+      total = round2(Math.max(0, haircutPrice - discount) + platformFee);
+      barberPayout = round2(Math.max(0, haircutPrice - discount - platformFee));
+      try {
+        paypalAmount = assertValidPayPalAmount("total", total);
+      } catch {
+        await loyalty.restoreRewardForBooking(bookingId, {
+          actor: "checkout",
+          reason: "zero_value_paypal_checkout",
+        }).catch(() => {});
+        await dbQuery(`DELETE FROM bookings WHERE id = $1::uuid`, [bookingId]).catch(() => {});
+        return res.status(400).json({
+          success: false,
+          error: "reward_requires_shop_checkout",
+          message: "This reward covers the full online total. Please contact the shop to book this reward.",
+        });
+      }
+      amountString = paypalAmount.toFixed(2);
+      await dbQuery(
+        `UPDATE bookings
+         SET total_amount = $2, amount_charged = $2, barber_payout_amount = $3
+         WHERE id = $1::uuid`,
+        [bookingId, total, barberPayout],
+      );
+    }
+
+    const restoreCheckoutReward = async (reason) => {
+      if (!rewardReservation) return;
+      const loyalty = await import("./loyaltyService.js");
+      await loyalty.restoreRewardForBooking(bookingId, {
+        actor: "checkout",
+        reason,
+      }).catch((error) => console.warn("[loyalty] checkout restore:", error?.message || error));
+    };
+
     const client = getPayPalHttpClient();
     const request = new paypalSdk.orders.OrdersCreateRequest();
     request.prefer("return=representation");
@@ -895,6 +973,7 @@ router.post("/start", async (req, res) => {
         environment: getPayPalEnvironmentMeta().environment,
       });
       if (!orderId) {
+        await restoreCheckoutReward("paypal_order_failed");
         await dbQuery(`DELETE FROM bookings WHERE id = $1::uuid`, [bookingId]);
         return res.status(502).json({ success: false, error: "paypal_no_order_id", message: "PayPal did not return an order id" });
       }
@@ -905,6 +984,7 @@ router.post("/start", async (req, res) => {
       approveUrl = approve?.href || "";
       if (!approveUrl) {
         console.error("[paypal] create-order missing approve link", { orderId, links: result?.links });
+        await restoreCheckoutReward("paypal_approval_link_missing");
         await dbQuery(`DELETE FROM bookings WHERE id = $1::uuid`, [bookingId]);
         return res.status(502).json({ success: false, error: "paypal_no_approve_link", message: "PayPal did not return an approve URL" });
       }
@@ -925,6 +1005,7 @@ router.post("/start", async (req, res) => {
         bookingId,
         paypalError: paypalErr,
       });
+      await restoreCheckoutReward("paypal_order_failed");
       await dbQuery(`DELETE FROM bookings WHERE id = $1::uuid`, [bookingId]).catch(() => {});
       pe.paypalDetail = paypalErr;
       throw pe;
@@ -944,6 +1025,15 @@ router.post("/start", async (req, res) => {
       bookingId,
       serviceIds: serviceRows.map((s) => s.id),
       serviceName: serviceTitle,
+      reward: rewardReservation
+        ? {
+            id: rewardReservation.reward?.id,
+            title: rewardReservation.reward?.title,
+            points: Number(rewardReservation.redemption?.points_spent) || 0,
+            discountAmount: Number(rewardReservation.discountAmount) || 0,
+            status: "reserved",
+          }
+        : null,
     };
     console.log("[app-bookings] CHECKOUT START OK:", {
       orderId,
@@ -1139,11 +1229,40 @@ router.post("/finalize", async (req, res) => {
       `SELECT id, user_id, business_id, customer_name, customer_email, service, service_duration_minutes,
               barber_id, barber_name, date, time, total_price, deposit_amount, tip_amount,
               remaining_balance, platform_fee, amount_paid, amount_charged, balance_due,
-              service_price, payment_status, paypal_capture_id, total_amount, booking_status
+              service_price, payment_status, paypal_capture_id, total_amount, booking_status,
+              loyalty_redemption_id
        FROM bookings WHERE paypal_order_id = $1 LIMIT 1`,
       [orderID],
     );
     let row = foundEarly.rows?.[0] || null;
+
+    if (row?.loyalty_redemption_id) {
+      const redemption = await dbQuery(
+        `SELECT status, expires_at FROM loyalty_redemptions WHERE id = $1::uuid LIMIT 1`,
+        [row.loyalty_redemption_id],
+      );
+      const rewardState = String(redemption.rows?.[0]?.status || "");
+      const expired =
+        redemption.rows?.[0]?.expires_at
+        && new Date(redemption.rows[0].expires_at).getTime() <= Date.now();
+      if (rewardState !== "reserved" || expired) {
+        if (rewardState === "reserved") {
+          const loyalty = await import("./loyaltyService.js");
+          await loyalty.restoreRewardForBooking(row.id, {
+            actor: "checkout_finalize",
+            reason: "checkout_reservation_expired",
+          }).catch(() => {});
+        }
+        await markPaymentFailed(row.id);
+        return res.status(409).json({
+          verified: false,
+          paymentCaptured: false,
+          error: "reward_reservation_expired",
+          message: "Your reward reservation expired before payment. No payment was taken; please start checkout again.",
+          bookingId: row.id,
+        });
+      }
+    }
 
     const slotEngine = await loadSlotEngine();
     let preCaptureSlotOk = true;
@@ -1283,7 +1402,7 @@ router.post("/finalize", async (req, res) => {
         `SELECT id, user_id, business_id, customer_name, customer_email, service, service_duration_minutes,
                 barber_id, barber_name, date, time, total_price, deposit_amount, tip_amount,
                 remaining_balance, platform_fee, amount_paid, amount_charged, balance_due,
-                service_price, payment_status, paypal_capture_id, total_amount
+                service_price, payment_status, paypal_capture_id, total_amount, loyalty_redemption_id
          FROM bookings WHERE paypal_order_id = $1 LIMIT 1`,
         [orderID],
       );
