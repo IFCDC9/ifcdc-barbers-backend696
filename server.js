@@ -43,6 +43,8 @@ import { ensureSocialPortfolioSchema } from "./socialPortfolioMigrations.js";
 import { createLoyaltyRouter } from "./loyaltyRoutes.js";
 import { ensureLoyaltySchema } from "./loyaltyMigrations.js";
 import { expireStaleRewardReservations, seedDefaultRewardsIfEmpty } from "./loyaltyService.js";
+import { createHubSpotRouter } from "./hubspotRoutes.js";
+import { ensureHubSpotSchema } from "./hubspotMigrations.js";
 import { createAdminShopsRouter } from "./adminShopsRoutes.js";
 import { ensureAdminBarberManagementSchema } from "./adminBarberMigrations.js";
 import { ensureProviderTypeSchema } from "./providerTypeMigrations.js";
@@ -660,6 +662,20 @@ app.use(adminUsersRouter);
 app.use(createAdminBarbersRouter());
 app.use(createSocialPortfolioRouter());
 app.use(createLoyaltyRouter());
+app.use(
+  "/api/hubspot",
+  createHubSpotRouter({
+    requireAuth,
+    requireAdmin: (req, res, next) => {
+      const role = String(req.user?.role || "").toLowerCase();
+      if (role === "admin" || role === "super_admin" || req.user?.isSuperAdmin === true) {
+        return next();
+      }
+      return res.status(403).json({ ok: false, message: "Access denied." });
+    },
+  }),
+);
+console.log("[boot] mounted /api/hubspot (health, status, verify)");
 app.use(createAdminShopsRouter());
 console.log(
   "[admin] routes mounted: invite, audit, password-reset, barbers, shops, notifications",
@@ -1114,6 +1130,12 @@ async function startServer() {
     console.log("[migrate] loyalty schema: ok");
   } catch (e) {
     console.error("[migrate] loyalty failed:", e?.message || e);
+  }
+  try {
+    await ensureHubSpotSchema();
+    console.log("[migrate] hubspot schema: ok");
+  } catch (e) {
+    console.error("[migrate] hubspot failed:", e?.message || e);
   }
   setInterval(() => {
     void expireStaleRewardReservations().catch((error) =>

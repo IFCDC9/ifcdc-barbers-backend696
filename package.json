@@ -32,6 +32,8 @@
     "test:paypal": "node scripts/verify-paypal-oauth.cjs",
     "test:security": "node tests/securityPolicy.test.mjs",
     "test:loyalty": "node tests/loyaltyEngine.test.mjs",
+    "test:hubspot": "node tests/hubspotPhase1.test.mjs",
+    "verify:hubspot": "node --import ./loadBackendEnv.mjs scripts/verify-hubspot-phase1.mjs",
     "test:photos": "node --import ./loadBackendEnv.mjs scripts/test-photo-pipeline.mjs",
     "test:photos:prod": "node --import ./loadBackendEnv.mjs scripts/test-photo-production-verification.mjs",
     "bootstrap-super-admin": "node scripts/setSuperAdminPassword.mjs --generate"

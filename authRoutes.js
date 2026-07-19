@@ -391,6 +391,24 @@ export function createAuthRouter({ sendEmail }) {
         console.warn("[auth] register acceptance log failed:", acceptErr?.message || acceptErr);
       }
 
+      // HubSpot CRM sync — fire-and-forget; never blocks or fails registration.
+      void import("./hubspotService.js")
+        .then((m) =>
+          m.enqueueContactSync(
+            {
+              id: publicUser.id,
+              email: publicUser.email,
+              name: publicUser.name,
+              phone: publicUser.phone,
+              role: publicUser.role,
+            },
+            { reason: "register" },
+          ),
+        )
+        .catch((hubspotErr) =>
+          console.warn("[hubspot] register enqueue failed:", hubspotErr?.message || hubspotErr),
+        );
+
       return res.json({
         ok: true,
         success: true,
@@ -581,10 +599,28 @@ export function createAuthRouter({ sendEmail }) {
       if (!user) {
         return res.status(404).json({ ok: false, error: "user_not_found", message: "Account not found" });
       }
+      const publicUser = publicUserFromAppUser(user);
+      // HubSpot CRM sync — fire-and-forget; never blocks profile updates.
+      void import("./hubspotService.js")
+        .then((m) =>
+          m.enqueueContactSync(
+            {
+              id: publicUser.id,
+              email: publicUser.email,
+              name: publicUser.name,
+              phone: publicUser.phone,
+              role: publicUser.role,
+            },
+            { reason: "profile_update" },
+          ),
+        )
+        .catch((hubspotErr) =>
+          console.warn("[hubspot] profile enqueue failed:", hubspotErr?.message || hubspotErr),
+        );
       return res.json({
         ok: true,
         success: true,
-        user: publicUserFromAppUser(user),
+        user: publicUser,
       });
     } catch (e) {
       console.error("[auth] PATCH /profile error:", e);
@@ -786,6 +822,22 @@ export function createAuthRouter({ sendEmail }) {
         role: publicUser.role,
         redirect: postLoginRedirectFromClaims(claims),
       });
+      void import("./hubspotService.js")
+        .then((m) =>
+          m.enqueueContactSync(
+            {
+              id: publicUser.id,
+              email: publicUser.email,
+              name: publicUser.name,
+              phone: publicUser.phone,
+              role: publicUser.role,
+            },
+            { reason: "google_register" },
+          ),
+        )
+        .catch((hubspotErr) =>
+          console.warn("[hubspot] google enqueue failed:", hubspotErr?.message || hubspotErr),
+        );
       return res.json({
         ok: true,
         success: true,
@@ -945,6 +997,22 @@ export function createAuthRouter({ sendEmail }) {
         role: publicUser.role,
         redirect: postLoginRedirectFromClaims(claims),
       });
+      void import("./hubspotService.js")
+        .then((m) =>
+          m.enqueueContactSync(
+            {
+              id: publicUser.id,
+              email: publicUser.email,
+              name: publicUser.name,
+              phone: publicUser.phone,
+              role: publicUser.role,
+            },
+            { reason: "apple_register" },
+          ),
+        )
+        .catch((hubspotErr) =>
+          console.warn("[hubspot] apple enqueue failed:", hubspotErr?.message || hubspotErr),
+        );
       return res.json({
         ok: true,
         success: true,
