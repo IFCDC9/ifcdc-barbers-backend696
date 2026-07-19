@@ -2,6 +2,7 @@
  * Isolated HubSpot CRM integration (Phase 1: contacts).
  *
  * - Reads HUBSPOT_SERVICE_KEY and HUBSPOT_SYNC_ENABLED from process.env only.
+ * - Never caches the service key — every request re-reads process.env.
  * - Never logs, returns, or serializes the service key.
  * - Failures are swallowed by callers via fire-and-forget enqueue helpers.
  */
@@ -26,12 +27,23 @@ export function isHubSpotSyncEnabled() {
   return envFlag("HUBSPOT_SYNC_ENABLED");
 }
 
+/**
+ * Always read the live Render/process env value.
+ * Do not store the key in module scope — rotated keys take effect immediately.
+ */
 function getServiceKey() {
   return String(process.env.HUBSPOT_SERVICE_KEY || "").trim();
 }
 
 export function isHubSpotConfigured() {
   return Boolean(getServiceKey());
+}
+
+/** Drop in-flight request chain state after credential rotation / redeploy. */
+export function clearHubSpotClientState() {
+  lastRequestAt = 0;
+  requestChain = Promise.resolve();
+  console.log("[hubspot] client_state_cleared");
 }
 
 function sleep(ms) {
@@ -192,17 +204,46 @@ async function hubspotRequest(path, { method = "GET", body = null } = {}) {
   return next;
 }
 
+async function probeObjectPermission(objectType) {
+  try {
+    await hubspotRequest(`/crm/v3/objects/${objectType}?limit=1`);
+    return { ok: true, status: 200, message: "ok" };
+  } catch (error) {
+    return {
+      ok: false,
+      status: error?.status || null,
+      message: sanitizeErrorMessage(error),
+    };
+  }
+}
+
+/**
+ * Probe CRM scopes needed for Phase 1 (contacts) and Phase 2 readiness (companies/deals).
+ * Never returns credential material.
+ */
+export async function probeHubSpotPermissions() {
+  const [contacts, companies, deals] = await Promise.all([
+    probeObjectPermission("contacts"),
+    probeObjectPermission("companies"),
+    probeObjectPermission("deals"),
+  ]);
+  return { contacts, companies, deals };
+}
+
 /**
  * Verify the private app token can call HubSpot (token info / account).
  * Returns a public-safe summary — never the key.
  */
-export async function verifyHubSpotAuthentication() {
+export async function verifyHubSpotAuthentication({ includePermissions = true } = {}) {
+  clearHubSpotClientState();
+
   if (!isHubSpotConfigured()) {
     return {
       ok: false,
       configured: false,
       syncEnabled: isHubSpotSyncEnabled(),
       authenticated: false,
+      permissions: null,
       message: "HUBSPOT_SERVICE_KEY is not set",
     };
   }
@@ -211,19 +252,29 @@ export async function verifyHubSpotAuthentication() {
     // Lightweight authenticated call — account details without listing contacts.
     const { status, data } = await hubspotRequest("/account-info/v3/details");
     const portalId = data?.portalId ?? data?.portal_id ?? null;
+    const permissions = includePermissions ? await probeHubSpotPermissions() : null;
+    const permissionOk = !permissions
+      || (permissions.contacts?.ok && permissions.companies?.ok && permissions.deals?.ok);
     console.log("[hubspot] auth_ok", {
       httpStatus: status,
       portalId: portalId == null ? null : String(portalId),
       syncEnabled: isHubSpotSyncEnabled(),
+      contacts: permissions?.contacts?.ok ?? null,
+      companies: permissions?.companies?.ok ?? null,
+      deals: permissions?.deals?.ok ?? null,
     });
     return {
       ok: true,
       configured: true,
       syncEnabled: isHubSpotSyncEnabled(),
       authenticated: true,
+      permissionsOk: Boolean(permissionOk),
+      permissions,
       portalId: portalId == null ? null : String(portalId),
       timeZone: data?.timeZone || data?.utcOffset || null,
-      message: "HubSpot authentication succeeded",
+      message: permissionOk
+        ? "HubSpot authentication succeeded"
+        : "HubSpot authenticated, but one or more CRM object permissions failed",
     };
   } catch (error) {
     console.warn("[hubspot] auth_failed", {
@@ -236,7 +287,9 @@ export async function verifyHubSpotAuthentication() {
       configured: true,
       syncEnabled: isHubSpotSyncEnabled(),
       authenticated: false,
+      permissions: null,
       message: sanitizeErrorMessage(error),
+      httpStatus: error?.status || null,
     };
   }
 }
@@ -250,20 +303,95 @@ export async function getHubSpotHealth() {
       configured: false,
       syncEnabled,
       authenticated: false,
+      permissions: null,
       serviceKey: "missing",
       message: "HubSpot not configured",
     };
   }
-  const auth = await verifyHubSpotAuthentication();
+  const auth = await verifyHubSpotAuthentication({ includePermissions: true });
+  const permissionsOk = auth.permissions
+    ? Boolean(auth.permissions.contacts?.ok && auth.permissions.companies?.ok && auth.permissions.deals?.ok)
+    : false;
   return {
-    ok: Boolean(auth.ok),
+    ok: Boolean(auth.ok && auth.authenticated && permissionsOk),
     configured: true,
     syncEnabled,
     authenticated: Boolean(auth.authenticated),
+    permissionsOk,
+    permissions: auth.permissions || null,
     serviceKey: "configured",
     portalId: auth.portalId || null,
     message: auth.message,
+    httpStatus: auth.httpStatus || null,
   };
+}
+
+/**
+ * Admin/ops contact round-trip: create (or find), then update, using email as unique key.
+ * Uses the live HUBSPOT_SERVICE_KEY from process.env on every request.
+ */
+export async function testContactSyncRoundTrip({
+  email,
+  name = "IFCDC HubSpot Phase1 Test",
+  phone = "",
+} = {}) {
+  const normalized = normalizeEmail(email);
+  if (!normalized || !normalized.includes("@")) {
+    return { ok: false, message: "A valid test email is required." };
+  }
+  if (!isHubSpotConfigured()) {
+    return { ok: false, message: "HUBSPOT_SERVICE_KEY is not set" };
+  }
+
+  clearHubSpotClientState();
+
+  const previousSyncFlag = process.env.HUBSPOT_SYNC_ENABLED;
+  process.env.HUBSPOT_SYNC_ENABLED = "1";
+  try {
+    const created = await syncContactToHubSpot(
+      { id: null, email: normalized, name, phone, role: "user" },
+      { reason: "admin_test_create" },
+    );
+    if (!created.ok) {
+      return {
+        ok: false,
+        step: "create_or_update",
+        message: created.message || created.reason || "contact sync failed",
+        action: created.action || null,
+      };
+    }
+
+    const updated = await syncContactToHubSpot(
+      { id: null, email: normalized, name: `${name} Updated`, phone, role: "user" },
+      { reason: "admin_test_update" },
+    );
+    if (!updated.ok) {
+      return {
+        ok: false,
+        step: "update",
+        message: updated.message || updated.reason || "contact update failed",
+        hubspotContactId: created.hubspotContactId || null,
+      };
+    }
+
+    const sameId =
+      Boolean(created.hubspotContactId)
+      && created.hubspotContactId === updated.hubspotContactId;
+
+    return {
+      ok: true,
+      createAction: created.action,
+      updateAction: updated.action,
+      hubspotContactId: updated.hubspotContactId,
+      duplicatePrevented: sameId,
+      message: sameId
+        ? "Contact create/update succeeded; email keyed to a single HubSpot contact"
+        : "Contact sync succeeded but contact IDs differed between passes",
+    };
+  } finally {
+    if (previousSyncFlag == null) delete process.env.HUBSPOT_SYNC_ENABLED;
+    else process.env.HUBSPOT_SYNC_ENABLED = previousSyncFlag;
+  }
 }
 
 async function findContactIdByEmail(email) {

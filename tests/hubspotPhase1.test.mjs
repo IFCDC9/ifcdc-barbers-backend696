@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  clearHubSpotClientState,
   enqueueContactSync,
   isHubSpotConfigured,
   isHubSpotSyncEnabled,
@@ -68,6 +69,14 @@ globalThis.fetch = async (url, init = {}) => {
       text: async () => JSON.stringify({ portalId: 12345, timeZone: "America/New_York" }),
     };
   }
+  if (/\/crm\/v3\/objects\/(contacts|companies|deals)\?limit=1$/.test(href)) {
+    return {
+      ok: true,
+      status: 200,
+      headers: { get: () => null },
+      text: async () => JSON.stringify({ results: [] }),
+    };
+  }
   if (href.includes("/crm/v3/objects/contacts/") && (init.method || "GET") === "GET") {
     return {
       ok: false,
@@ -104,10 +113,14 @@ globalThis.fetch = async (url, init = {}) => {
   };
 };
 
-const auth = await verifyHubSpotAuthentication();
+clearHubSpotClientState();
+const auth = await verifyHubSpotAuthentication({ includePermissions: true });
 assert.equal(auth.ok, true);
 assert.equal(auth.authenticated, true);
 assert.equal(auth.portalId, "12345");
+assert.equal(auth.permissions?.contacts?.ok, true);
+assert.equal(auth.permissions?.companies?.ok, true);
+assert.equal(auth.permissions?.deals?.ok, true);
 assert.ok(!JSON.stringify(auth).toLowerCase().includes("test-key"));
 
 const created = await syncContactToHubSpot(

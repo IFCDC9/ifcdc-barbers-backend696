@@ -13,7 +13,8 @@
 #   OPENAI_API_KEY, JWT_SECRET, GOOGLE_CLIENT_ID (if used)
 #   SUPABASE_URL
 #   SUPABASE_PUBLISHABLE_KEY or SUPABASE_ANON_KEY (public API key)
-#   SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY (server-only)
+#   HUBSPOT_SERVICE_KEY (private app token — Render dashboard only)
+#   HUBSPOT_SYNC_ENABLED=1  (feature flag for contact sync)
 #
 # Optional: PUBLIC_BASE_URL=https://<your-service>.onrender.com
 # (If unset, the app uses RENDER_EXTERNAL_URL from Render automatically.)
@@ -46,6 +47,11 @@ services:
       - key: SUPABASE_SECRET_KEY
         sync: false
       - key: DATABASE_URL
+        sync: false
+      # HubSpot Phase 1 — values set only in Render dashboard (never commit secrets)
+      - key: HUBSPOT_SERVICE_KEY
+        sync: false
+      - key: HUBSPOT_SYNC_ENABLED
         sync: false
 
   # AURA / Twilio voice + chat API — same Node backend as backend696 (repo root), NOT client/

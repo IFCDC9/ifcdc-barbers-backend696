@@ -1,9 +1,11 @@
 import express from "express";
 import {
+  clearHubSpotClientState,
   getHubSpotHealth,
   HUBSPOT_FUTURE_ENTITY_TYPES,
   isHubSpotConfigured,
   isHubSpotSyncEnabled,
+  testContactSyncRoundTrip,
   verifyHubSpotAuthentication,
 } from "./hubspotService.js";
 
@@ -14,7 +16,11 @@ import {
 export function createHubSpotRouter({ requireAuth = null, requireAdmin = null } = {}) {
   const router = express.Router();
 
-  /** GET /api/hubspot/health — connectivity + flag status (no secrets). */
+  const adminHandlers = [];
+  if (typeof requireAuth === "function") adminHandlers.push(requireAuth);
+  if (typeof requireAdmin === "function") adminHandlers.push(requireAdmin);
+
+  /** GET /api/hubspot/health — connectivity + CRM permission probes (no secrets). */
   router.get("/health", async (_req, res) => {
     res.set("Cache-Control", "no-store");
     try {
@@ -27,6 +33,7 @@ export function createHubSpotRouter({ requireAuth = null, requireAdmin = null } 
         configured: isHubSpotConfigured(),
         syncEnabled: isHubSpotSyncEnabled(),
         authenticated: false,
+        permissions: null,
         serviceKey: isHubSpotConfigured() ? "configured" : "missing",
         message: "HubSpot health check failed",
       });
@@ -43,21 +50,18 @@ export function createHubSpotRouter({ requireAuth = null, requireAdmin = null } 
       serviceKey: isHubSpotConfigured() ? "configured" : "missing",
       phase: 1,
       futureEntityTypes: HUBSPOT_FUTURE_ENTITY_TYPES,
+      credentialSource: "process.env.HUBSPOT_SERVICE_KEY",
+      keyCached: false,
     });
   });
 
-  /**
-   * POST /api/hubspot/verify — admin-only explicit auth probe.
-   * Falls back to public (still no secrets) if admin middleware is not wired.
-   */
-  const verifyHandlers = [];
-  if (typeof requireAuth === "function") verifyHandlers.push(requireAuth);
-  if (typeof requireAdmin === "function") verifyHandlers.push(requireAdmin);
-  router.post("/verify", ...verifyHandlers, async (_req, res) => {
+  /** POST /api/hubspot/verify — admin-only explicit auth + permission probe. */
+  router.post("/verify", ...adminHandlers, async (_req, res) => {
     res.set("Cache-Control", "no-store");
     try {
-      const result = await verifyHubSpotAuthentication();
-      return res.status(result.ok ? 200 : 503).json(result);
+      clearHubSpotClientState();
+      const result = await verifyHubSpotAuthentication({ includePermissions: true });
+      return res.status(result.ok && result.authenticated ? 200 : 503).json(result);
     } catch (error) {
       console.warn("[hubspot] verify error:", error?.message || error);
       return res.status(503).json({
@@ -66,6 +70,31 @@ export function createHubSpotRouter({ requireAuth = null, requireAdmin = null } 
         syncEnabled: isHubSpotSyncEnabled(),
         authenticated: false,
         message: "HubSpot verification failed",
+      });
+    }
+  });
+
+  /**
+   * POST /api/hubspot/test-contact — admin-only create + update round-trip by email.
+   * Body: { email?, name?, phone? }
+   */
+  router.post("/test-contact", ...adminHandlers, async (req, res) => {
+    res.set("Cache-Control", "no-store");
+    try {
+      const email =
+        String(req.body?.email || "").trim()
+        || `hubspot.phase1.${Date.now()}@ifcdcbarbersapp.com`;
+      const result = await testContactSyncRoundTrip({
+        email,
+        name: String(req.body?.name || "IFCDC HubSpot Phase1 Test").trim(),
+        phone: String(req.body?.phone || "").trim(),
+      });
+      return res.status(result.ok ? 200 : 503).json(result);
+    } catch (error) {
+      console.warn("[hubspot] test-contact error:", error?.message || error);
+      return res.status(503).json({
+        ok: false,
+        message: "HubSpot contact test failed",
       });
     }
   });

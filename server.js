@@ -1133,7 +1133,15 @@ async function startServer() {
   }
   try {
     await ensureHubSpotSchema();
-    console.log("[migrate] hubspot schema: ok");
+    const { clearHubSpotClientState, isHubSpotConfigured, isHubSpotSyncEnabled } = await import(
+      "./hubspotService.js"
+    );
+    clearHubSpotClientState();
+    console.log("[migrate] hubspot schema: ok", {
+      configured: isHubSpotConfigured(),
+      syncEnabled: isHubSpotSyncEnabled(),
+      credentialSource: "HUBSPOT_SERVICE_KEY",
+    });
   } catch (e) {
     console.error("[migrate] hubspot failed:", e?.message || e);
   }
