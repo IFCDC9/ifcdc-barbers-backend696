@@ -746,6 +746,25 @@ export async function getAdminStats() {
   return data;
 }
 
+/** Phase 2D HubSpot HQ analytics (GET /api/admin/hubspot/kpis). */
+export async function getHubSpotHqKpis(days = 30) {
+  const origin = getApiOrigin();
+  const url = `${origin}/api/admin/hubspot/kpis?days=${encodeURIComponent(days)}`;
+  const headers = { Accept: "application/json", ...getJwtOrAdminKeyHeaders() };
+  const res = await fetch(url, { headers });
+  const text = await res.text();
+  let data = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = {};
+  }
+  if (!res.ok) {
+    throw new Error(data?.message || data?.error || text?.slice(0, 200) || `HTTP ${res.status}`);
+  }
+  return data;
+}
+
 /** Mark a deposit booking as fully paid (admin JWT or x-admin-key). */
 export async function markBookingFullyPaid(id) {
   const origin = getApiOrigin();

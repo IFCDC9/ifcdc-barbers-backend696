@@ -46,6 +46,7 @@ import { expireStaleRewardReservations, seedDefaultRewardsIfEmpty } from "./loya
 import { createHubSpotRouter } from "./hubspotRoutes.js";
 import { ensureHubSpotSchema } from "./hubspotMigrations.js";
 import { createAdminShopsRouter } from "./adminShopsRoutes.js";
+import { createAdminHubSpotRouter } from "./adminHubspotRoutes.js";
 import { ensureAdminBarberManagementSchema } from "./adminBarberMigrations.js";
 import { ensureProviderTypeSchema } from "./providerTypeMigrations.js";
 import { ensureAppUsersBarberIdTypeAligned } from "./authDbMigrations.js";
@@ -688,6 +689,31 @@ app.use(
   }),
 );
 console.log("[boot] mounted /api/hubspot (health, status, verify)");
+app.use(
+  "/api/admin/hubspot",
+  createAdminHubSpotRouter({
+    requireAuth: (req, res, next) => {
+      const adminKey = String(req.get("x-admin-key") || "").trim();
+      const expected = String(process.env.ADMIN_SECRET || "").trim();
+      if (expected && adminKey && adminKey === expected) {
+        req.user = req.user || { role: "admin", isSuperAdmin: true };
+        return next();
+      }
+      return requireAuth(req, res, next);
+    },
+    requireAdmin: (req, res, next) => {
+      const adminKey = String(req.get("x-admin-key") || "").trim();
+      const expected = String(process.env.ADMIN_SECRET || "").trim();
+      if (expected && adminKey && adminKey === expected) return next();
+      const role = String(req.user?.role || "").toLowerCase();
+      if (role === "admin" || role === "super_admin" || req.user?.isSuperAdmin === true) {
+        return next();
+      }
+      return res.status(403).json({ ok: false, message: "Access denied." });
+    },
+  }),
+);
+console.log("[boot] mounted /api/admin/hubspot (kpis)");
 app.use(createAdminShopsRouter());
 console.log(
   "[admin] routes mounted: invite, audit, password-reset, barbers, shops, notifications",

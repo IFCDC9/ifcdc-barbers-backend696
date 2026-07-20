@@ -19,6 +19,7 @@ import {
   testDealSyncRoundTrip,
   verifyHubSpotAuthentication,
 } from "./hubspotService.js";
+import { isHubSpotHqAnalyticsEnabled } from "./hubspotAnalyticsService.js";
 
 /**
  * HubSpot integration routes — server-side only.
@@ -41,6 +42,7 @@ export function createHubSpotRouter({ requireAuth = null, requireAdmin = null } 
         companySyncEnabled: isHubSpotCompanySyncEnabled(),
         dealSyncEnabled: isHubSpotDealSyncEnabled(),
         workflowSyncEnabled: isHubSpotWorkflowSyncEnabled(),
+        analyticsEnabled: isHubSpotHqAnalyticsEnabled(),
         canonicalRuntime: isHubSpotCanonicalRuntime(),
         canonicalService: {
           serviceId: HUBSPOT_CANONICAL_SERVICE_ID,
@@ -57,6 +59,7 @@ export function createHubSpotRouter({ requireAuth = null, requireAdmin = null } 
         companySyncEnabled: isHubSpotCompanySyncEnabled(),
         dealSyncEnabled: isHubSpotDealSyncEnabled(),
         workflowSyncEnabled: isHubSpotWorkflowSyncEnabled(),
+        analyticsEnabled: isHubSpotHqAnalyticsEnabled(),
         authenticated: false,
         permissions: null,
         serviceKey: isHubSpotConfigured() ? "configured" : "missing",
@@ -76,20 +79,24 @@ export function createHubSpotRouter({ requireAuth = null, requireAdmin = null } 
       companySyncEnabled: isHubSpotCompanySyncEnabled(),
       dealSyncEnabled: isHubSpotDealSyncEnabled(),
       workflowSyncEnabled: isHubSpotWorkflowSyncEnabled(),
+      analyticsEnabled: isHubSpotHqAnalyticsEnabled(),
       canonicalRuntime: isHubSpotCanonicalRuntime(),
       serviceKey: isHubSpotConfigured() ? "configured" : "missing",
-      phase: isHubSpotWorkflowSyncEnabled()
-        ? "2c"
-        : isHubSpotDealSyncEnabled()
-          ? "2b"
-          : isHubSpotCompanySyncEnabled()
-            ? "2a"
-            : 1,
+      phase: isHubSpotHqAnalyticsEnabled()
+        ? "2d"
+        : isHubSpotWorkflowSyncEnabled()
+          ? "2c"
+          : isHubSpotDealSyncEnabled()
+            ? "2b"
+            : isHubSpotCompanySyncEnabled()
+              ? "2a"
+              : 1,
       phases: {
         contacts: true,
         companies: isHubSpotCompanySyncEnabled(),
         deals: isHubSpotDealSyncEnabled(),
         workflows: isHubSpotWorkflowSyncEnabled(),
+        analytics: isHubSpotHqAnalyticsEnabled(),
       },
       futureEntityTypes: HUBSPOT_FUTURE_ENTITY_TYPES,
       credentialSource: "process.env.HUBSPOT_SERVICE_KEY",
@@ -101,6 +108,7 @@ export function createHubSpotRouter({ requireAuth = null, requireAdmin = null } 
         "HUBSPOT_SYNC_COMPANIES",
         "HUBSPOT_SYNC_DEALS",
         "HUBSPOT_SYNC_WORKFLOWS",
+        "HUBSPOT_HQ_ANALYTICS",
       ],
       canonicalService: {
         serviceId: HUBSPOT_CANONICAL_SERVICE_ID,

@@ -1,7 +1,12 @@
 # HubSpot Phase 2 — Implementation Plan
 
-**Status:** Phase 2A–2C implemented (enable via Render flags). Phase 2D not started.  
-**Prerequisite:** Phase 1 approved and production cleanup complete on canonical service `ifcdc-barbers-backend696` (`srv-d6tmai24d50c73cdi0mg`).
+**Status:** Phase 2A–2D implemented (enable via Render flags).
+
+### Phase 2D shipped (code)
+- Feature flag: `HUBSPOT_HQ_ANALYTICS`
+- `GET /api/admin/hubspot/kpis?days=30` — growth, returning rate, volume, revenue, top barbers/shops, CLV, marketing signals, sync health
+- HQ UI: web Admin “HubSpot & CRM analytics” + mobile Platform analytics
+- Docs: property/workflow guide remains in `docs/HUBSPOT_PHASE2C_WORKFLOWS.md`
 
 ### Phase 2C shipped (code)
 - Feature flag: `HUBSPOT_SYNC_WORKFLOWS`
@@ -141,25 +146,25 @@ Configure in HubSpot UI (not hard-coded email in Node). API/backend only sets th
 - Optional: secure webhook endpoint for HubSpot → IFCDC (e.g. “reward claimed”) — Phase 2b if needed
 - Do **not** duplicate campaign sending in Node if HubSpot already owns it
 
-### 4.4 IFCDC HQ analytics & KPIs
+### 4.4 IFCDC HQ analytics & KPIs (shipped — Phase 2D)
+
+**Flag:** `HUBSPOT_HQ_ANALYTICS=1` (requires `HUBSPOT_SYNC_ENABLED` + canonical runtime)
+
+**Endpoint:** `GET /api/admin/hubspot/kpis?days=30` (admin JWT or `x-admin-key`)
 
 **Surfaces (HQ admin):**
 
-- HubSpot sync health (canonical service, auth, last error rates)
-- Contacts synced / companies synced / deals by stage (from mapping tables + light HubSpot reporting APIs)
-- Conversion funnel: scheduled → paid → completed
-- Loyalty engagement correlated to HubSpot lists (read-only)
+- Customer growth, returning rate, appointment volume, revenue trends
+- Top barbers / shops, CLV (emails redacted)
+- Marketing signals from local loyalty campaigns + `hubspot_sync_events` (not HubSpot Marketing open/click rates)
+- HubSpot sync health from `hubspot_sync_contacts|companies|deals`
 
-**Implementation sketch:**
-
-- `GET /api/admin/hubspot/kpis` (admin auth) — aggregates from `hubspot_sync_*` + existing booking/loyalty SQL
-- Optional cached HubSpot Reporting API pulls (rate-limited)
-- Mobile/web HQ cards that consume the admin KPI endpoint (reuse existing admin UI patterns)
+**UI:** web Admin “HubSpot & CRM analytics”; mobile Platform analytics
 
 ### 4.5 Compatibility & safety
 
 - Canonical-only runtime (already in Phase 1 cleanup)
-- Feature flags: `HUBSPOT_SYNC_ENABLED`, plus optional `HUBSPOT_SYNC_COMPANIES`, `HUBSPOT_SYNC_DEALS`
+- Feature flags: `HUBSPOT_SYNC_ENABLED`, plus optional `HUBSPOT_SYNC_COMPANIES`, `HUBSPOT_SYNC_DEALS`, `HUBSPOT_SYNC_WORKFLOWS`, `HUBSPOT_HQ_ANALYTICS`
 - All sync via `enqueue*` fire-and-forget
 - Retries / 429 backoff (existing client)
 - No secret logging

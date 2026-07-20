@@ -7,6 +7,7 @@ import {
   deleteBarberPhoto,
   deleteBooking as apiDeleteBooking,
   getAdminStats,
+  getHubSpotHqKpis,
   markBookingPaid,
   getBarbers,
   getApiDisplayLabel,
@@ -380,6 +381,8 @@ function AdminDashboard() {
   const [stats, setStats] = useState(null);
   const [statsError, setStatsError] = useState(null);
   const [statsLoading, setStatsLoading] = useState(true);
+  const [hubspotKpis, setHubspotKpis] = useState(null);
+  const [hubspotKpisError, setHubspotKpisError] = useState(null);
   const [search, setSearch] = useState("");
   const [dateFilter, setDateFilter] = useState("");
 
@@ -446,6 +449,30 @@ function AdminDashboard() {
     setStatsLoading(true);
     load();
     const interval = setInterval(load, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadKpis = async () => {
+      try {
+        const data = await getHubSpotHqKpis(30);
+        if (!cancelled) {
+          setHubspotKpis(data);
+          setHubspotKpisError(null);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setHubspotKpisError(err?.message || "Failed to load HubSpot HQ analytics");
+          setHubspotKpis(null);
+        }
+      }
+    };
+    loadKpis();
+    const interval = setInterval(loadKpis, 60000);
     return () => {
       cancelled = true;
       clearInterval(interval);
@@ -877,6 +904,100 @@ function AdminDashboard() {
               </table>
             </div>
           </>
+        ) : null}
+
+        {/* —— HubSpot HQ analytics (Phase 2D) —— */}
+        <h2 style={h2Style}>HubSpot &amp; CRM analytics</h2>
+        <p style={{ ...muted, marginTop: -8, marginBottom: 12 }}>
+          Customer growth, retention, revenue trends, and sync health · refreshes every 60s
+        </p>
+        {hubspotKpisError ? (
+          <p style={{ color: "#fecaca", marginBottom: 16 }}>{hubspotKpisError}</p>
+        ) : null}
+        {hubspotKpis && hubspotKpis.enabled === false ? (
+          <p style={{ ...muted, marginBottom: 16 }}>
+            {hubspotKpis.message || "Enable HUBSPOT_HQ_ANALYTICS=1 on Render to activate this dashboard."}
+          </p>
+        ) : null}
+        {hubspotKpis?.enabled ? (
+          <div className="dashboard">
+            <div className="card">
+              <h3>New customers ({hubspotKpis.windowDays}d)</h3>
+              <p>{hubspotKpis.customerGrowth?.newCustomers ?? "—"}</p>
+              <p className="admin-money-card__small" style={{ marginTop: 6 }}>
+                Growth {hubspotKpis.customerGrowth?.growthRate ?? 0}% · total{" "}
+                {hubspotKpis.customerGrowth?.totalCustomers ?? 0}
+              </p>
+            </div>
+            <div className="card">
+              <h3>Returning customer rate</h3>
+              <p>{hubspotKpis.returningCustomerRate?.ratePercent ?? 0}%</p>
+              <p className="admin-money-card__small" style={{ marginTop: 6 }}>
+                {hubspotKpis.returningCustomerRate?.returningCustomers ?? 0} of{" "}
+                {hubspotKpis.returningCustomerRate?.customers ?? 0} customers
+              </p>
+            </div>
+            <div className="card">
+              <h3>Appointments ({hubspotKpis.windowDays}d)</h3>
+              <p>{hubspotKpis.appointmentVolume?.totals?.appointments ?? 0}</p>
+              <p className="admin-money-card__small" style={{ marginTop: 6 }}>
+                Paid {hubspotKpis.appointmentVolume?.totals?.paid ?? 0} · completed{" "}
+                {hubspotKpis.appointmentVolume?.totals?.completed ?? 0}
+              </p>
+            </div>
+            <div className="card">
+              <h3>Revenue ({hubspotKpis.windowDays}d)</h3>
+              <p>${Number(hubspotKpis.revenueTrends?.totals?.revenue ?? 0).toFixed(2)}</p>
+              <p className="admin-money-card__small" style={{ marginTop: 6 }}>
+                Platform fees ${Number(hubspotKpis.revenueTrends?.totals?.platformFees ?? 0).toFixed(2)}
+              </p>
+            </div>
+            <div className="card">
+              <h3>HubSpot contacts synced</h3>
+              <p>{hubspotKpis.hubspotSyncHealth?.contacts?.synced ?? 0}</p>
+              <p className="admin-money-card__small" style={{ marginTop: 6 }}>
+                Companies {hubspotKpis.hubspotSyncHealth?.companies?.synced ?? 0} · deals{" "}
+                {hubspotKpis.hubspotSyncHealth?.deals?.synced ?? 0}
+              </p>
+            </div>
+            <div className="card">
+              <h3>Loyalty campaign activity</h3>
+              <p>{hubspotKpis.marketingCampaignPerformance?.loyaltyEarn?.events ?? 0}</p>
+              <p className="admin-money-card__small" style={{ marginTop: 6 }}>
+                Points awarded{" "}
+                {hubspotKpis.marketingCampaignPerformance?.loyaltyEarn?.pointsAwarded ?? 0} · active
+                campaigns{" "}
+                {hubspotKpis.marketingCampaignPerformance?.loyaltyCampaigns?.active ?? 0}
+              </p>
+            </div>
+            {(hubspotKpis.topBarbers || []).slice(0, 3).map((b) => (
+              <div className="card" key={`tb-${b.barberId}`}>
+                <h3>Top barber: {b.name}</h3>
+                <p>${Number(b.revenue || 0).toFixed(2)}</p>
+                <p className="admin-money-card__small" style={{ marginTop: 6 }}>
+                  {b.paidAppointments} paid appointments
+                </p>
+              </div>
+            ))}
+            {(hubspotKpis.topShops || []).slice(0, 3).map((s) => (
+              <div className="card" key={`ts-${s.businessId}`}>
+                <h3>Top shop: {s.name}</h3>
+                <p>${Number(s.revenue || 0).toFixed(2)}</p>
+                <p className="admin-money-card__small" style={{ marginTop: 6 }}>
+                  {s.paidAppointments} paid appointments
+                </p>
+              </div>
+            ))}
+            {(hubspotKpis.customerLifetimeValue || []).slice(0, 3).map((c) => (
+              <div className="card" key={`clv-${c.customerKey}`}>
+                <h3>CLV: {c.name || c.email || "Customer"}</h3>
+                <p>${Number(c.lifetimeValue || 0).toFixed(2)}</p>
+                <p className="admin-money-card__small" style={{ marginTop: 6 }}>
+                  {c.paidVisits} paid visits
+                </p>
+              </div>
+            ))}
+          </div>
         ) : null}
 
         {/* —— Barbers Management —— */}
