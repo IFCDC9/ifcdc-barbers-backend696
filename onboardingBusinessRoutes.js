@@ -180,6 +180,13 @@ export function mountOnboardingBusinessRoutes(app) {
 
       const token = issueAppUserJwt(u);
       const status = existingAccount ? 200 : 201;
+
+      void import("./hubspotService.js")
+        .then((m) => m.enqueueCompanySyncById(businessId, { reason: "onboarding_business" }))
+        .catch((hubspotErr) =>
+          console.warn("[hubspot] onboarding company enqueue failed:", hubspotErr?.message || hubspotErr),
+        );
+
       return res.status(status).json({
         ok: true,
         success: true,

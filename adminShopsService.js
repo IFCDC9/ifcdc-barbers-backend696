@@ -365,7 +365,15 @@ export async function updateAdminShop(businessId, { name, phone, city, state, ad
       subscriptionStatus != null ? String(subscriptionStatus).trim() : null,
     ],
   );
-  return r.rows?.length > 0;
+  const ok = r.rows?.length > 0;
+  if (ok) {
+    void import("./hubspotService.js")
+      .then((m) => m.enqueueCompanySyncById(businessId, { reason: "admin_shop_update" }))
+      .catch((hubspotErr) =>
+        console.warn("[hubspot] admin shop update company enqueue failed:", hubspotErr?.message || hubspotErr),
+      );
+  }
+  return ok;
 }
 
 export async function setShopAccountStatus(businessId, status) {
@@ -384,6 +392,12 @@ export async function setShopAccountStatus(businessId, status) {
      WHERE business_id = $2::bigint AND role = 'shop_owner'`,
     [ownerStatus, Number(businessId)],
   ).catch(() => {});
+
+  void import("./hubspotService.js")
+    .then((m) => m.enqueueCompanySyncById(businessId, { reason: "admin_shop_account_status" }))
+    .catch((hubspotErr) =>
+      console.warn("[hubspot] admin shop status company enqueue failed:", hubspotErr?.message || hubspotErr),
+    );
 
   return { ok: true };
 }
@@ -617,6 +631,12 @@ export async function approveShop(businessId, { plan = "free", trialDays = 14, m
     }
   }
 
+  void import("./hubspotService.js")
+    .then((m) => m.enqueueCompanySyncById(businessId, { reason: "admin_shop_approve" }))
+    .catch((hubspotErr) =>
+      console.warn("[hubspot] admin shop approve company enqueue failed:", hubspotErr?.message || hubspotErr),
+    );
+
   return { ok: true, userEmailsSent, userEmailMessageIds };
 }
 
@@ -655,6 +675,12 @@ export async function rejectShop(businessId, reason, actorId) {
       if (result.messageId) userEmailMessageIds.push(result.messageId);
     }
   }
+
+  void import("./hubspotService.js")
+    .then((m) => m.enqueueCompanySyncById(businessId, { reason: "admin_shop_reject" }))
+    .catch((hubspotErr) =>
+      console.warn("[hubspot] admin shop reject company enqueue failed:", hubspotErr?.message || hubspotErr),
+    );
 
   return { ok: true, userEmailsSent, userEmailMessageIds };
 }

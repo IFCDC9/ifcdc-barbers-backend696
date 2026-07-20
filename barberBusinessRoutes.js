@@ -440,6 +440,11 @@ export function createBarberBusinessRouter({ uploadDir } = {}) {
             profile.business_id,
           ],
         ).catch(() => {});
+        void import("./hubspotService.js")
+          .then((m) => m.enqueueCompanySyncById(profile.business_id, { reason: "barber_profile_shop_update" }))
+          .catch((hubspotErr) =>
+            console.warn("[hubspot] barber profile company enqueue failed:", hubspotErr?.message || hubspotErr),
+          );
       }
 
       const enriched = await dbQuery(
@@ -1584,6 +1589,11 @@ export function createBarberBusinessRouter({ uploadDir } = {}) {
       if (!row) {
         return res.status(404).json({ success: false, error: "not_found", message: "Shop not found." });
       }
+      void import("./hubspotService.js")
+        .then((m) => m.enqueueCompanySyncById(row.business_id, { reason: "shop_detail_update" }))
+        .catch((hubspotErr) =>
+          console.warn("[hubspot] shop detail company enqueue failed:", hubspotErr?.message || hubspotErr),
+        );
       return res.json({ success: true, shop: row });
     } catch (e) {
       console.error("[barber-business] shop update:", e);

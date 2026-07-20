@@ -8,9 +8,12 @@ import {
   HUBSPOT_CANONICAL_SERVICE_NAME,
   HUBSPOT_FUTURE_ENTITY_TYPES,
   isHubSpotCanonicalRuntime,
+  isHubSpotCompanySyncEnabled,
   isHubSpotConfigured,
+  isHubSpotDealSyncEnabled,
   isHubSpotSyncEnabled,
   listHubSpotEnvNamesPresent,
+  testCompanySyncRoundTrip,
   testContactSyncRoundTrip,
   verifyHubSpotAuthentication,
 } from "./hubspotService.js";
@@ -33,6 +36,8 @@ export function createHubSpotRouter({ requireAuth = null, requireAdmin = null } 
       const health = await getHubSpotHealth();
       return res.status(health.ok ? 200 : 503).json({
         ...health,
+        companySyncEnabled: isHubSpotCompanySyncEnabled(),
+        dealSyncEnabled: isHubSpotDealSyncEnabled(),
         canonicalRuntime: isHubSpotCanonicalRuntime(),
         canonicalService: {
           serviceId: HUBSPOT_CANONICAL_SERVICE_ID,
@@ -46,6 +51,8 @@ export function createHubSpotRouter({ requireAuth = null, requireAdmin = null } 
         ok: false,
         configured: isHubSpotConfigured(),
         syncEnabled: isHubSpotSyncEnabled(),
+        companySyncEnabled: isHubSpotCompanySyncEnabled(),
+        dealSyncEnabled: isHubSpotDealSyncEnabled(),
         authenticated: false,
         permissions: null,
         serviceKey: isHubSpotConfigured() ? "configured" : "missing",
@@ -62,15 +69,26 @@ export function createHubSpotRouter({ requireAuth = null, requireAdmin = null } 
       ok: true,
       configured: isHubSpotConfigured(),
       syncEnabled: isHubSpotSyncEnabled(),
+      companySyncEnabled: isHubSpotCompanySyncEnabled(),
+      dealSyncEnabled: isHubSpotDealSyncEnabled(),
       canonicalRuntime: isHubSpotCanonicalRuntime(),
       serviceKey: isHubSpotConfigured() ? "configured" : "missing",
-      phase: 1,
+      phase: isHubSpotCompanySyncEnabled() ? "2a" : 1,
+      phases: {
+        contacts: true,
+        companies: isHubSpotCompanySyncEnabled(),
+        deals: isHubSpotDealSyncEnabled(),
+      },
       futureEntityTypes: HUBSPOT_FUTURE_ENTITY_TYPES,
       credentialSource: "process.env.HUBSPOT_SERVICE_KEY",
       keyCached: false,
-      // Names only — helps detect typos / wrong service without exposing secrets.
       hubspotEnvNamesPresent: listHubSpotEnvNamesPresent(),
-      expectedEnvNames: ["HUBSPOT_SERVICE_KEY", "HUBSPOT_SYNC_ENABLED"],
+      expectedEnvNames: [
+        "HUBSPOT_SERVICE_KEY",
+        "HUBSPOT_SYNC_ENABLED",
+        "HUBSPOT_SYNC_COMPANIES",
+        "HUBSPOT_SYNC_DEALS",
+      ],
       canonicalService: {
         serviceId: HUBSPOT_CANONICAL_SERVICE_ID,
         serviceName: HUBSPOT_CANONICAL_SERVICE_NAME,
@@ -87,6 +105,7 @@ export function createHubSpotRouter({ requireAuth = null, requireAdmin = null } 
       const result = await verifyHubSpotAuthentication({ includePermissions: true });
       return res.status(result.ok && result.authenticated ? 200 : 503).json({
         ...result,
+        companySyncEnabled: isHubSpotCompanySyncEnabled(),
         canonicalRuntime: isHubSpotCanonicalRuntime(),
       });
     } catch (error) {
@@ -122,6 +141,28 @@ export function createHubSpotRouter({ requireAuth = null, requireAdmin = null } 
       return res.status(503).json({
         ok: false,
         message: "HubSpot contact test failed",
+      });
+    }
+  });
+
+  /**
+   * POST /api/hubspot/test-company — admin-only company upsert round-trip by businessId.
+   * Body: { businessId }
+   */
+  router.post("/test-company", ...adminHandlers, async (req, res) => {
+    res.set("Cache-Control", "no-store");
+    try {
+      const businessId = Number(req.body?.businessId);
+      if (!Number.isFinite(businessId) || businessId <= 0) {
+        return res.status(400).json({ ok: false, message: "businessId is required" });
+      }
+      const result = await testCompanySyncRoundTrip(businessId);
+      return res.status(result.ok ? 200 : 503).json(result);
+    } catch (error) {
+      console.warn("[hubspot] test-company error:", error?.message || error);
+      return res.status(503).json({
+        ok: false,
+        message: "HubSpot company test failed",
       });
     }
   });

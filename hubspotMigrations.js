@@ -29,10 +29,10 @@ export async function ensureHubSpotSchema() {
      WHERE hubspot_contact_id IS NOT NULL;`,
   );
 
-  // Phase 2+ entity stubs — companies (barbershops), deals (appointments), and extensible rows.
+  // Phase 2A — companies (barbershops). BIGINT matches businesses.id (BIGSERIAL).
   await dbQuery(`
     CREATE TABLE IF NOT EXISTS hubspot_sync_companies (
-      business_id INTEGER PRIMARY KEY,
+      business_id BIGINT PRIMARY KEY,
       hubspot_company_id TEXT,
       last_synced_at TIMESTAMPTZ,
       last_sync_status TEXT NOT NULL DEFAULT 'pending',
@@ -43,6 +43,20 @@ export async function ensureHubSpotSchema() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+  // Upgrade legacy INTEGER PK if the stub table already existed.
+  await dbQuery(`
+    DO $$ BEGIN
+      ALTER TABLE hubspot_sync_companies
+        ALTER COLUMN business_id TYPE BIGINT
+        USING business_id::bigint;
+    EXCEPTION WHEN others THEN NULL;
+    END $$;
+  `).catch(() => {});
+  await dbQuery(
+    `CREATE INDEX IF NOT EXISTS hubspot_sync_companies_hubspot_id_idx
+     ON hubspot_sync_companies (hubspot_company_id)
+     WHERE hubspot_company_id IS NOT NULL;`,
+  ).catch(() => {});
 
   await dbQuery(`
     CREATE TABLE IF NOT EXISTS hubspot_sync_deals (

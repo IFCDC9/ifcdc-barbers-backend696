@@ -1,7 +1,15 @@
 # HubSpot Phase 2 — Implementation Plan
 
-**Status:** Draft — awaiting approval before any Phase 2 code lands.  
+**Status:** Phase 2A implemented (awaiting `HUBSPOT_SYNC_COMPANIES=1` on Render). Phase 2B–2D not started.  
 **Prerequisite:** Phase 1 approved and production cleanup complete on canonical service `ifcdc-barbers-backend696` (`srv-d6tmai24d50c73cdi0mg`).
+
+### Phase 2A shipped (code)
+- Feature flag: `HUBSPOT_SYNC_COMPANIES` (requires `HUBSPOT_SYNC_ENABLED` + canonical runtime)
+- `syncCompanyToHubSpot` / `enqueueCompanySyncById` with duplicate prevention via mapping + `ifcdc_business_id`
+- Contact ↔ company associations for shop owners/barbers
+- Hooks: barber/shop-owner signup, onboarding, admin shop update/approve/reject/status, barber profile + shop detail
+- Admin: `POST /api/hubspot/test-company`
+- Enable on Render: set `HUBSPOT_SYNC_COMPANIES=1` on **only** `ifcdc-barbers-backend696`
 
 ---
 

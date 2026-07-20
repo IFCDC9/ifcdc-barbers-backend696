@@ -234,6 +234,13 @@ export async function provisionBarberSignup({
     metadata: { role: "barber", businessName: shop, phone: phoneVal, barberId, businessId },
   });
 
+  // HubSpot Company sync — fire-and-forget; never blocks signup.
+  void import("./hubspotService.js")
+    .then((m) => m.enqueueCompanySyncById(businessId, { reason: "barber_signup" }))
+    .catch((hubspotErr) =>
+      console.warn("[hubspot] barber signup company enqueue failed:", hubspotErr?.message || hubspotErr),
+    );
+
   return {
     barberId,
     businessId,
@@ -332,6 +339,13 @@ export async function provisionShopOwnerSignup({
     detail: `New shop owner signup: ${ownerName} (${shop})`,
     metadata: { role: "shop_owner", businessName: shop, phone: phoneVal, businessId },
   });
+
+  // HubSpot Company sync — fire-and-forget; never blocks signup.
+  void import("./hubspotService.js")
+    .then((m) => m.enqueueCompanySyncById(businessId, { reason: "shop_owner_signup" }))
+    .catch((hubspotErr) =>
+      console.warn("[hubspot] shop owner signup company enqueue failed:", hubspotErr?.message || hubspotErr),
+    );
 
   return {
     barberId,
