@@ -16,7 +16,9 @@
 #   HUBSPOT_SERVICE_KEY (private app token — Render dashboard only)
 #   HUBSPOT_SYNC_ENABLED=1  (feature flag for contact sync)
 #   HUBSPOT_SYNC_COMPANIES=1  (Phase 2A — barbershops → HubSpot Companies)
-#   HUBSPOT_SYNC_DEALS=1      (Phase 2B — appointments → HubSpot Deals; off until 2B)
+#   HUBSPOT_SYNC_DEALS=1      (Phase 2B — appointments → HubSpot Deals)
+#   Optional pipeline stage IDs: HUBSPOT_DEAL_PIPELINE_ID, HUBSPOT_DEAL_STAGE_PAID,
+#     HUBSPOT_DEAL_STAGE_COMPLETED, HUBSPOT_DEAL_STAGE_CANCELLED, HUBSPOT_DEAL_STAGE_NO_SHOW
 #   ADMIN_SECRET (must match local .env ADMIN_SECRET / VITE_ADMIN_API_KEY for x-admin-key ops)
 #
 # HubSpot must ONLY be configured on this service (ifcdc-barbers-backend696).

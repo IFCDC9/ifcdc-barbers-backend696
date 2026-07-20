@@ -15,6 +15,7 @@ import {
   listHubSpotEnvNamesPresent,
   testCompanySyncRoundTrip,
   testContactSyncRoundTrip,
+  testDealSyncRoundTrip,
   verifyHubSpotAuthentication,
 } from "./hubspotService.js";
 
@@ -73,7 +74,11 @@ export function createHubSpotRouter({ requireAuth = null, requireAdmin = null } 
       dealSyncEnabled: isHubSpotDealSyncEnabled(),
       canonicalRuntime: isHubSpotCanonicalRuntime(),
       serviceKey: isHubSpotConfigured() ? "configured" : "missing",
-      phase: isHubSpotCompanySyncEnabled() ? "2a" : 1,
+      phase: isHubSpotDealSyncEnabled()
+        ? "2b"
+        : isHubSpotCompanySyncEnabled()
+          ? "2a"
+          : 1,
       phases: {
         contacts: true,
         companies: isHubSpotCompanySyncEnabled(),
@@ -163,6 +168,28 @@ export function createHubSpotRouter({ requireAuth = null, requireAdmin = null } 
       return res.status(503).json({
         ok: false,
         message: "HubSpot company test failed",
+      });
+    }
+  });
+
+  /**
+   * POST /api/hubspot/test-deal — admin-only deal upsert round-trip by bookingId.
+   * Body: { bookingId }
+   */
+  router.post("/test-deal", ...adminHandlers, async (req, res) => {
+    res.set("Cache-Control", "no-store");
+    try {
+      const bookingId = String(req.body?.bookingId || "").trim();
+      if (!bookingId) {
+        return res.status(400).json({ ok: false, message: "bookingId is required" });
+      }
+      const result = await testDealSyncRoundTrip(bookingId);
+      return res.status(result.ok ? 200 : 503).json(result);
+    } catch (error) {
+      console.warn("[hubspot] test-deal error:", error?.message || error);
+      return res.status(503).json({
+        ok: false,
+        message: "HubSpot deal test failed",
       });
     }
   });

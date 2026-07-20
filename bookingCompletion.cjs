@@ -138,6 +138,13 @@ async function runCompletionSideEffects({
     });
   }
 
+  // HubSpot Deal sync — fire-and-forget; never blocks completion / loyalty / PayPal.
+  void import("./hubspotService.js")
+    .then((m) => m.enqueueDealSyncById(booking.id, { reason: "appointment_completed" }))
+    .catch((hubspotErr) =>
+      console.warn("[hubspot] completion deal enqueue failed:", hubspotErr?.message || hubspotErr),
+    );
+
   return { reviewPrompt: true, loyalty };
 }
 

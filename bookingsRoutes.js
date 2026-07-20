@@ -808,6 +808,12 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
         data: { bookingId: id, reason: reason || null },
       });
 
+      void import("./hubspotService.js")
+        .then((m) => m.enqueueDealSyncById(id, { reason: "appointment_cancelled" }))
+        .catch((hubspotErr) =>
+          console.warn("[hubspot] cancel deal enqueue failed:", hubspotErr?.message || hubspotErr),
+        );
+
       const refundLine = "Refund review may be required depending on payment policy.";
       const baseMessage =
         actor.role === "customer"
@@ -1230,6 +1236,18 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
         audience: ["customer", "barber", "shop_owners"],
         data: { bookingId: id, status: target, previousStatus: currentStatus },
       });
+
+      if (target === "cancelled" || target === "no_show") {
+        void import("./hubspotService.js")
+          .then((m) =>
+            m.enqueueDealSyncById(id, {
+              reason: target === "no_show" ? "appointment_no_show" : "appointment_cancelled_status",
+            }),
+          )
+          .catch((hubspotErr) =>
+            console.warn("[hubspot] status deal enqueue failed:", hubspotErr?.message || hubspotErr),
+          );
+      }
 
       const verb =
         target === "checked_in"
@@ -2278,6 +2296,12 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
 
       const bookingId = insert.rows[0].id;
       console.log("[booking] saved", { bookingId, paypalCaptureId, paymentType, paymentStatus, styleId });
+
+      void import("./hubspotService.js")
+        .then((m) => m.enqueueDealSyncById(bookingId, { reason: "web_book_paid" }))
+        .catch((hubspotErr) =>
+          console.warn("[hubspot] web book deal enqueue failed:", hubspotErr?.message || hubspotErr),
+        );
 
       let emailSent = false;
       let emailError = null;

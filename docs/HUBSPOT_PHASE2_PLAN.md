@@ -1,7 +1,17 @@
 # HubSpot Phase 2 — Implementation Plan
 
-**Status:** Phase 2A implemented (awaiting `HUBSPOT_SYNC_COMPANIES=1` on Render). Phase 2B–2D not started.  
+**Status:** Phase 2A + 2B implemented (enable via Render flags). Phase 2C–2D not started.  
 **Prerequisite:** Phase 1 approved and production cleanup complete on canonical service `ifcdc-barbers-backend696` (`srv-d6tmai24d50c73cdi0mg`).
+
+### Phase 2B shipped (code)
+- Feature flag: `HUBSPOT_SYNC_DEALS` (requires `HUBSPOT_SYNC_ENABLED` + canonical runtime)
+- `syncDealToHubSpot` / `enqueueDealSyncById` with duplicate prevention via mapping + `ifcdc_booking_id`
+- Pipeline keys: `scheduled` | `paid` | `completed` | `cancelled` | `no_show` (+ optional HubSpot stage IDs via env)
+- Skips unpaid `pending_payment` holds (avoids deal spam)
+- Associations: deal ↔ contact, deal ↔ company when mappings exist
+- Hooks: PayPal finalize, web `/api/book`, completion side effects, cancel, no-show status
+- Admin: `POST /api/hubspot/test-deal`
+- Enable on Render: set `HUBSPOT_SYNC_DEALS=1` on **only** `ifcdc-barbers-backend696`
 
 ### Phase 2A shipped (code)
 - Feature flag: `HUBSPOT_SYNC_COMPANIES` (requires `HUBSPOT_SYNC_ENABLED` + canonical runtime)

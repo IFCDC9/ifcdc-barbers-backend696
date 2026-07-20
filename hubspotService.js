@@ -1121,7 +1121,511 @@ export async function testCompanySyncRoundTrip(businessId) {
   }
 }
 
-/** Phase 2 entity types — company sync is Phase 2A; remaining are planned. */
+async function upsertLocalDealRow({
+  bookingId,
+  hubspotDealId = null,
+  status,
+  error = null,
+  metadata = null,
+}) {
+  if (!bookingId) return;
+  try {
+    await dbQuery(
+      `INSERT INTO hubspot_sync_deals
+         (booking_id, hubspot_deal_id, last_synced_at, last_sync_status, last_error, sync_attempts, metadata, updated_at)
+       VALUES ($1::uuid, $2, CASE WHEN $3 = 'synced' THEN NOW() ELSE NULL END, $3, $4, 1,
+               COALESCE($5::jsonb, '{}'::jsonb), NOW())
+       ON CONFLICT (booking_id) DO UPDATE SET
+         hubspot_deal_id = COALESCE(EXCLUDED.hubspot_deal_id, hubspot_sync_deals.hubspot_deal_id),
+         last_synced_at = CASE WHEN EXCLUDED.last_sync_status = 'synced' THEN NOW() ELSE hubspot_sync_deals.last_synced_at END,
+         last_sync_status = EXCLUDED.last_sync_status,
+         last_error = EXCLUDED.last_error,
+         sync_attempts = hubspot_sync_deals.sync_attempts + 1,
+         metadata = COALESCE(EXCLUDED.metadata, hubspot_sync_deals.metadata),
+         updated_at = NOW()`,
+      [
+        String(bookingId),
+        hubspotDealId,
+        status,
+        error,
+        metadata ? JSON.stringify(metadata) : null,
+      ],
+    );
+  } catch (e) {
+    console.warn("[hubspot] local deal mapping update skipped:", sanitizeErrorMessage(e));
+  }
+}
+
+function isBookingPaidForHubSpot(booking) {
+  const ps = String(booking?.payment_status || "").toLowerCase();
+  if (booking?.is_paid_booking === true) return true;
+  if (["paid", "paid_full", "paid_in_full", "captured"].includes(ps)) return true;
+  const paidAmt = Number(booking?.amount_paid ?? booking?.total_paid ?? booking?.amount_charged ?? 0);
+  return Number.isFinite(paidAmt) && paidAmt > 0;
+}
+
+/**
+ * Map IFCDC booking lifecycle → HubSpot deal pipeline key + optional stage id.
+ * Stage IDs are optional Render env vars (portal-specific).
+ */
+export function resolveHubSpotDealPipeline(booking) {
+  const status = String(booking?.booking_status || "").toLowerCase();
+  let key = "scheduled";
+  if (status === "completed") key = "completed";
+  else if (status === "cancelled") key = "cancelled";
+  else if (status === "no_show" || status === "noshow") key = "no_show";
+  else if (isBookingPaidForHubSpot(booking) || status === "confirmed") key = "paid";
+
+  const envKey = {
+    scheduled: "HUBSPOT_DEAL_STAGE_SCHEDULED",
+    paid: "HUBSPOT_DEAL_STAGE_PAID",
+    completed: "HUBSPOT_DEAL_STAGE_COMPLETED",
+    cancelled: "HUBSPOT_DEAL_STAGE_CANCELLED",
+    no_show: "HUBSPOT_DEAL_STAGE_NO_SHOW",
+  }[key];
+  const dealstage = String(process.env[envKey] || "").trim() || null;
+  const pipelineId = String(process.env.HUBSPOT_DEAL_PIPELINE_ID || "").trim() || null;
+  return { key, dealstage, pipelineId };
+}
+
+/** Skip unpaid holds — deals start at paid/confirmed (or terminal statuses). */
+export function shouldSyncBookingAsDeal(booking) {
+  if (!booking?.id) return false;
+  const status = String(booking.booking_status || "").toLowerCase();
+  if (["completed", "cancelled", "no_show", "noshow", "confirmed"].includes(status)) return true;
+  if (isBookingPaidForHubSpot(booking)) return true;
+  return false;
+}
+
+function bookingAmount(booking) {
+  const candidates = [
+    booking?.total_price,
+    booking?.total_amount,
+    booking?.amount_paid,
+    booking?.total_paid,
+    booking?.amount,
+    booking?.service_price,
+  ];
+  for (const c of candidates) {
+    const n = Number(c);
+    if (Number.isFinite(n) && n >= 0) return n;
+  }
+  return 0;
+}
+
+function bookingCloseDate(booking) {
+  const datePart = String(booking?.date || "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
+    return new Date().toISOString().slice(0, 10);
+  }
+  const timePart = String(booking?.time || "12:00").slice(0, 8);
+  const iso = `${datePart}T${timePart.length === 5 ? `${timePart}:00` : timePart}`;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return datePart;
+  return d.toISOString();
+}
+
+function dealPropertiesFromBooking(booking) {
+  const pipeline = resolveHubSpotDealPipeline(booking);
+  const service = String(booking?.service || "Appointment").trim() || "Appointment";
+  const customer = String(booking?.customer_name || "Customer").trim();
+  const datePart = String(booking?.date || "").slice(0, 10);
+  const dealname = `${service} — ${customer}${datePart ? ` — ${datePart}` : ""}`.slice(0, 200);
+  const props = {
+    dealname,
+    amount: String(bookingAmount(booking)),
+    closedate: bookingCloseDate(booking),
+    ifcdc_booking_id: String(booking.id),
+    ifcdc_appointment_status: pipeline.key,
+    ifcdc_payment_status: String(booking.payment_status || "").slice(0, 64),
+  };
+  if (booking.barber_id != null) props.ifcdc_barber_id = String(booking.barber_id);
+  if (booking.business_id != null) props.ifcdc_business_id = String(booking.business_id);
+  if (booking.service) props.ifcdc_service = String(booking.service).slice(0, 256);
+  if (pipeline.dealstage) props.dealstage = pipeline.dealstage;
+  if (pipeline.pipelineId) props.pipeline = pipeline.pipelineId;
+  return { props, pipeline };
+}
+
+async function findDealIdByBookingId(bookingId) {
+  try {
+    const mapped = await dbQuery(
+      `SELECT hubspot_deal_id FROM hubspot_sync_deals
+       WHERE booking_id = $1::uuid AND hubspot_deal_id IS NOT NULL LIMIT 1`,
+      [String(bookingId)],
+    );
+    if (mapped.rows?.[0]?.hubspot_deal_id) {
+      return String(mapped.rows[0].hubspot_deal_id);
+    }
+  } catch {
+    // continue
+  }
+
+  try {
+    const { data } = await hubspotRequest("/crm/v3/objects/deals/search", {
+      method: "POST",
+      body: {
+        filterGroups: [
+          {
+            filters: [
+              {
+                propertyName: "ifcdc_booking_id",
+                operator: "EQ",
+                value: String(bookingId),
+              },
+            ],
+          },
+        ],
+        properties: ["dealname", "ifcdc_booking_id"],
+        limit: 1,
+      },
+    });
+    const id = data?.results?.[0]?.id;
+    return id ? String(id) : null;
+  } catch (error) {
+    if (error?.status === 400 || error?.status === 404) return null;
+    throw error;
+  }
+}
+
+function stripCustomDealProps(properties) {
+  const keep = ["dealname", "amount", "closedate", "dealstage", "pipeline"];
+  const out = {};
+  for (const k of keep) {
+    if (properties[k] != null && properties[k] !== "") out[k] = properties[k];
+  }
+  return out;
+}
+
+async function createDeal(properties) {
+  try {
+    const { data } = await hubspotRequest("/crm/v3/objects/deals", {
+      method: "POST",
+      body: { properties },
+    });
+    return data?.id ? String(data.id) : null;
+  } catch (error) {
+    if (error?.status === 400 && /property|doesn|exist|invalid/i.test(String(error?.message || ""))) {
+      const { data } = await hubspotRequest("/crm/v3/objects/deals", {
+        method: "POST",
+        body: { properties: stripCustomDealProps(properties) },
+      });
+      return data?.id ? String(data.id) : null;
+    }
+    throw error;
+  }
+}
+
+async function updateDeal(dealId, properties) {
+  try {
+    const { data } = await hubspotRequest(`/crm/v3/objects/deals/${encodeURIComponent(dealId)}`, {
+      method: "PATCH",
+      body: { properties },
+    });
+    return data?.id ? String(data.id) : String(dealId);
+  } catch (error) {
+    if (error?.status === 400 && /property|doesn|exist|invalid/i.test(String(error?.message || ""))) {
+      const { data } = await hubspotRequest(`/crm/v3/objects/deals/${encodeURIComponent(dealId)}`, {
+        method: "PATCH",
+        body: { properties: stripCustomDealProps(properties) },
+      });
+      return data?.id ? String(data.id) : String(dealId);
+    }
+    throw error;
+  }
+}
+
+/** HubSpot-defined: deal → contact (3), deal → company (5). */
+const DEAL_TO_CONTACT_ASSOCIATION_TYPE_ID = 3;
+const DEAL_TO_COMPANY_ASSOCIATION_TYPE_ID = 5;
+
+async function associateDealToObject(dealId, toObjectType, toObjectId, associationTypeId) {
+  if (!dealId || !toObjectId) return { ok: false, skipped: true };
+  try {
+    await hubspotRequest(
+      `/crm/v4/objects/deals/${encodeURIComponent(dealId)}/associations/${encodeURIComponent(toObjectType)}/${encodeURIComponent(toObjectId)}`,
+      {
+        method: "PUT",
+        body: [
+          {
+            associationCategory: "HUBSPOT_DEFINED",
+            associationTypeId,
+          },
+        ],
+      },
+    );
+    return { ok: true };
+  } catch (error) {
+    if (error?.status === 409) return { ok: true, alreadyAssociated: true };
+    console.warn("[hubspot] deal_association_failed", {
+      toObjectType,
+      message: sanitizeErrorMessage(error),
+      status: error?.status || null,
+    });
+    return { ok: false, message: sanitizeErrorMessage(error) };
+  }
+}
+
+async function associateDealRelationships(booking, dealId) {
+  const result = { contact: false, company: false };
+  const email = normalizeEmail(booking?.customer_email);
+  if (email) {
+    try {
+      let contactId = null;
+      const mapped = await dbQuery(
+        `SELECT hubspot_contact_id FROM hubspot_sync_contacts
+         WHERE lower(email) = lower($1) AND hubspot_contact_id IS NOT NULL LIMIT 1`,
+        [email],
+      ).catch(() => ({ rows: [] }));
+      contactId = mapped.rows?.[0]?.hubspot_contact_id || null;
+      if (!contactId) {
+        contactId = await findContactIdByEmail(email).catch(() => null);
+      }
+      if (contactId) {
+        const assoc = await associateDealToObject(
+          dealId,
+          "contacts",
+          String(contactId),
+          DEAL_TO_CONTACT_ASSOCIATION_TYPE_ID,
+        );
+        result.contact = Boolean(assoc.ok);
+      }
+    } catch (e) {
+      console.warn("[hubspot] deal_contact_link_skipped:", sanitizeErrorMessage(e));
+    }
+  }
+
+  if (booking?.business_id != null) {
+    try {
+      const companyMap = await dbQuery(
+        `SELECT hubspot_company_id FROM hubspot_sync_companies
+         WHERE business_id = $1::bigint AND hubspot_company_id IS NOT NULL LIMIT 1`,
+        [Number(booking.business_id)],
+      ).catch(() => ({ rows: [] }));
+      const companyId = companyMap.rows?.[0]?.hubspot_company_id;
+      if (companyId) {
+        const assoc = await associateDealToObject(
+          dealId,
+          "companies",
+          String(companyId),
+          DEAL_TO_COMPANY_ASSOCIATION_TYPE_ID,
+        );
+        result.company = Boolean(assoc.ok);
+      }
+    } catch (e) {
+      console.warn("[hubspot] deal_company_link_skipped:", sanitizeErrorMessage(e));
+    }
+  }
+  return result;
+}
+
+export async function loadBookingForHubSpot(bookingId) {
+  const id = String(bookingId || "").trim();
+  if (!id) return null;
+  const r = await dbQuery(
+    `SELECT id, booking_status, payment_status, is_paid_booking,
+            customer_email, customer_name, user_id,
+            barber_id, barber_name, business_id,
+            service, date, time,
+            total_price, total_amount, amount, service_price,
+            amount_paid, total_paid, amount_charged, tip_amount, platform_fee
+     FROM bookings WHERE id = $1::uuid LIMIT 1`,
+    [id],
+  );
+  return r.rows?.[0] || null;
+}
+
+/**
+ * Upsert a HubSpot Deal for an IFCDC booking (appointment).
+ * Idempotent via hubspot_sync_deals + ifcdc_booking_id.
+ */
+export async function syncDealToHubSpot(booking, { reason = "sync" } = {}) {
+  const bookingId = booking?.id ? String(booking.id) : null;
+  if (!bookingId) {
+    return { ok: false, skipped: true, reason: "missing_booking_id" };
+  }
+  if (!isHubSpotConfigured()) {
+    return { ok: false, skipped: true, reason: "not_configured" };
+  }
+  if (!isHubSpotDealSyncEnabled()) {
+    return { ok: false, skipped: true, reason: "deal_sync_disabled" };
+  }
+  if (!shouldSyncBookingAsDeal(booking)) {
+    return { ok: false, skipped: true, reason: "booking_not_eligible" };
+  }
+
+  const { props, pipeline } = dealPropertiesFromBooking(booking);
+
+  try {
+    let dealId = await findDealIdByBookingId(bookingId);
+    let action;
+    if (dealId) {
+      dealId = await updateDeal(dealId, props);
+      action = "deal_updated";
+    } else {
+      dealId = await createDeal(props);
+      action = "deal_created";
+      if (!dealId) {
+        dealId = await findDealIdByBookingId(bookingId);
+        if (dealId) {
+          dealId = await updateDeal(dealId, props);
+          action = "deal_updated";
+        }
+      }
+    }
+
+    if (!dealId) throw new Error("hubspot_deal_id_missing");
+
+    const associations = await associateDealRelationships(booking, dealId);
+
+    await upsertLocalDealRow({
+      bookingId,
+      hubspotDealId: dealId,
+      status: "synced",
+      error: null,
+      metadata: { pipeline: pipeline.key, associations, reason },
+    });
+    await recordEvent({
+      entityType: "deal",
+      localId: bookingId,
+      action,
+      status: "ok",
+      httpStatus: action === "deal_created" ? 201 : 200,
+      message: `${reason}:${pipeline.key}`,
+    });
+
+    console.log("[hubspot] deal_sync_ok", {
+      action,
+      reason,
+      pipeline: pipeline.key,
+      bookingIdSuffix: bookingId.slice(-6),
+      dealIdSuffix: dealId.slice(-6),
+    });
+
+    return {
+      ok: true,
+      action,
+      hubspotDealId: dealId,
+      pipeline: pipeline.key,
+      associations,
+      reason,
+    };
+  } catch (error) {
+    const message = sanitizeErrorMessage(error);
+    await upsertLocalDealRow({
+      bookingId,
+      status: "error",
+      error: message,
+    });
+    await recordEvent({
+      entityType: "deal",
+      localId: bookingId,
+      action: "deal_sync",
+      status: "error",
+      httpStatus: error?.status || null,
+      message,
+    });
+    console.warn("[hubspot] deal_sync_failed", {
+      reason,
+      bookingIdSuffix: bookingId.slice(-6),
+      code: error?.code || "error",
+      status: error?.status || null,
+      message,
+    });
+    return { ok: false, reason, message };
+  }
+}
+
+/**
+ * Fire-and-forget deal sync by booking id — never throws to the caller.
+ */
+export function enqueueDealSyncById(bookingId, options = {}) {
+  try {
+    if (!isHubSpotConfigured() || !isHubSpotDealSyncEnabled()) return;
+    const id = String(bookingId || "").trim();
+    if (!id) return;
+    void (async () => {
+      const booking = await loadBookingForHubSpot(id);
+      if (!booking) return;
+      await syncDealToHubSpot(booking, options);
+    })().catch((error) => {
+      console.warn("[hubspot] enqueue deal sync error:", sanitizeErrorMessage(error));
+    });
+  } catch (error) {
+    console.warn("[hubspot] enqueue deal failed:", sanitizeErrorMessage(error));
+  }
+}
+
+/**
+ * Admin/ops deal round-trip: sync twice and confirm same HubSpot deal id.
+ */
+export async function testDealSyncRoundTrip(bookingId) {
+  const booking = await loadBookingForHubSpot(bookingId);
+  if (!booking) {
+    return { ok: false, message: "Booking not found" };
+  }
+  if (!isHubSpotConfigured()) {
+    return { ok: false, message: "HUBSPOT_SERVICE_KEY is not set" };
+  }
+
+  const previous = process.env.HUBSPOT_SYNC_DEALS;
+  const previousMaster = process.env.HUBSPOT_SYNC_ENABLED;
+  process.env.HUBSPOT_SYNC_ENABLED = "1";
+  process.env.HUBSPOT_SYNC_DEALS = "1";
+  try {
+    clearHubSpotClientState();
+    // Ensure eligibility for test even if unpaid hold — temporarily treat as confirmed paid.
+    const testBooking = {
+      ...booking,
+      booking_status: booking.booking_status || "confirmed",
+      payment_status: booking.payment_status || "paid_in_full",
+      is_paid_booking: true,
+    };
+    const created = await syncDealToHubSpot(testBooking, { reason: "admin_test_deal_create" });
+    if (!created.ok) {
+      return {
+        ok: false,
+        step: "create_or_update",
+        message: created.message || created.reason || "deal sync failed",
+        action: created.action || null,
+      };
+    }
+    const updated = await syncDealToHubSpot(
+      { ...testBooking, booking_status: "completed" },
+      { reason: "admin_test_deal_update" },
+    );
+    if (!updated.ok) {
+      return {
+        ok: false,
+        step: "update",
+        message: updated.message || updated.reason,
+        hubspotDealId: created.hubspotDealId || null,
+      };
+    }
+    const sameId =
+      Boolean(created.hubspotDealId)
+      && created.hubspotDealId === updated.hubspotDealId;
+    return {
+      ok: true,
+      createAction: created.action,
+      updateAction: updated.action,
+      hubspotDealId: updated.hubspotDealId,
+      duplicatePrevented: sameId,
+      pipeline: updated.pipeline || created.pipeline || null,
+      associations: updated.associations || created.associations || null,
+      message: sameId
+        ? "Deal create/update succeeded; booking_id keyed to a single HubSpot deal"
+        : "Deal sync succeeded but deal IDs differed between passes",
+    };
+  } finally {
+    if (previous == null) delete process.env.HUBSPOT_SYNC_DEALS;
+    else process.env.HUBSPOT_SYNC_DEALS = previous;
+    if (previousMaster == null) delete process.env.HUBSPOT_SYNC_ENABLED;
+    else process.env.HUBSPOT_SYNC_ENABLED = previousMaster;
+  }
+}
+
+/** Phase 2 entity types — company = 2A, deal = 2B; remaining planned. */
 export const HUBSPOT_FUTURE_ENTITY_TYPES = Object.freeze([
   "company", // barbershops / businesses
   "deal", // appointments / bookings

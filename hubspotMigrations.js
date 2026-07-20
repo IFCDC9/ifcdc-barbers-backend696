@@ -71,6 +71,11 @@ export async function ensureHubSpotSchema() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+  await dbQuery(
+    `CREATE INDEX IF NOT EXISTS hubspot_sync_deals_hubspot_id_idx
+     ON hubspot_sync_deals (hubspot_deal_id)
+     WHERE hubspot_deal_id IS NOT NULL;`,
+  ).catch(() => {});
 
   await dbQuery(`
     CREATE TABLE IF NOT EXISTS hubspot_sync_entities (
