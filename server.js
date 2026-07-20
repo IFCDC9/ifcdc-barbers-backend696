@@ -665,8 +665,20 @@ app.use(createLoyaltyRouter());
 app.use(
   "/api/hubspot",
   createHubSpotRouter({
-    requireAuth,
+    requireAuth: (req, res, next) => {
+      // Allow ADMIN_SECRET for ops verification (same pattern as booking/barber admin).
+      const adminKey = String(req.get("x-admin-key") || "").trim();
+      const expected = String(process.env.ADMIN_SECRET || "").trim();
+      if (expected && adminKey && adminKey === expected) {
+        req.user = req.user || { role: "admin", isSuperAdmin: true };
+        return next();
+      }
+      return requireAuth(req, res, next);
+    },
     requireAdmin: (req, res, next) => {
+      const adminKey = String(req.get("x-admin-key") || "").trim();
+      const expected = String(process.env.ADMIN_SECRET || "").trim();
+      if (expected && adminKey && adminKey === expected) return next();
       const role = String(req.user?.role || "").toLowerCase();
       if (role === "admin" || role === "super_admin" || req.user?.isSuperAdmin === true) {
         return next();
