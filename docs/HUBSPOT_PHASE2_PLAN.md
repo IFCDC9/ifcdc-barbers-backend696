@@ -1,7 +1,15 @@
 # HubSpot Phase 2 — Implementation Plan
 
-**Status:** Phase 2A + 2B implemented (enable via Render flags). Phase 2C–2D not started.  
+**Status:** Phase 2A–2C implemented (enable via Render flags). Phase 2D not started.  
 **Prerequisite:** Phase 1 approved and production cleanup complete on canonical service `ifcdc-barbers-backend696` (`srv-d6tmai24d50c73cdi0mg`).
+
+### Phase 2C shipped (code)
+- Feature flag: `HUBSPOT_SYNC_WORKFLOWS`
+- Contact enrichment: lifecycle/welcome, loyalty, birthday, rebook eligibility
+- Deal enrichment: confirmation ready, review requested, loyalty points earned
+- Hooks: registration lifecycle, completion → deal + contact refresh, paid finalize confirmation
+- Optional `date_of_birth` on `app_users` + profile PATCH
+- Ops guide: `docs/HUBSPOT_PHASE2C_WORKFLOWS.md`
 
 ### Phase 2B shipped (code)
 - Feature flag: `HUBSPOT_SYNC_DEALS` (requires `HUBSPOT_SYNC_ENABLED` + canonical runtime)

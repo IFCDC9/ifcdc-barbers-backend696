@@ -23,6 +23,7 @@ export async function ensureUsersRoleColumn() {
   await dbQuery(`ALTER TABLE app_users ADD COLUMN IF NOT EXISTS phone TEXT;`);
   await dbQuery(`ALTER TABLE app_users ADD COLUMN IF NOT EXISTS profile_image_url TEXT;`);
   await dbQuery(`ALTER TABLE app_users ADD COLUMN IF NOT EXISTS account_status TEXT DEFAULT 'active';`);
+  await dbQuery(`ALTER TABLE app_users ADD COLUMN IF NOT EXISTS date_of_birth DATE;`);
   await dbQuery(`UPDATE app_users SET account_status = 'active' WHERE account_status IS NULL;`);
 
   // Enforce allowed values via CHECK constraint (idempotent; recreate when shop_owner was missing).

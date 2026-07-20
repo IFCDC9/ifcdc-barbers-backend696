@@ -47,6 +47,11 @@ export function publicUserFromAppUser(user) {
     email: user.email,
     phone: user.phone ?? null,
     profileImageUrl: user.profile_image_url ?? user.profileImageUrl ?? null,
+    dateOfBirth: user.date_of_birth
+      ? String(user.date_of_birth).slice(0, 10)
+      : user.dateOfBirth
+        ? String(user.dateOfBirth).slice(0, 10)
+        : null,
     role: c.role,
     barberId: user.barber_id ?? user.barberId ?? null,
     businessId: c.businessId,

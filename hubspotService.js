@@ -68,6 +68,15 @@ export function isHubSpotDealSyncEnabled() {
 }
 
 /**
+ * Phase 2C — workflow property enrichment for HubSpot Automation.
+ * When enabled, contact/deal syncs include lifecycle, loyalty, review, and birthday fields
+ * that HubSpot workflows enroll on (emails stay in HubSpot, not Node).
+ */
+export function isHubSpotWorkflowSyncEnabled() {
+  return isHubSpotSyncEnabled() && envFlag("HUBSPOT_SYNC_WORKFLOWS");
+}
+
+/**
  * Always read the live Render/process env value.
  * Do not store the key in module scope — rotated keys take effect immediately.
  */
@@ -126,7 +135,111 @@ function contactPropertiesFromUser(user) {
   if (firstname) props.firstname = firstname;
   if (lastname) props.lastname = lastname;
   if (phone) props.phone = phone;
+
+  if (!isHubSpotWorkflowSyncEnabled()) return props;
+
+  if (user?.id) props.ifcdc_user_id = String(user.id);
+  const lifecycle = String(user?.lifecycleStage || user?.ifcdc_lifecycle_stage || "").trim();
+  if (lifecycle) props.ifcdc_lifecycle_stage = lifecycle.slice(0, 64);
+  if (user?.registeredAt) {
+    const d = new Date(user.registeredAt);
+    if (!Number.isNaN(d.getTime())) props.ifcdc_registered_at = d.toISOString();
+  }
+  if (user?.dateOfBirth || user?.date_of_birth) {
+    const raw = String(user.dateOfBirth || user.date_of_birth).slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+      props.date_of_birth = raw;
+      props.ifcdc_date_of_birth = raw;
+    }
+  }
+  if (user?.loyaltyPoints != null && Number.isFinite(Number(user.loyaltyPoints))) {
+    props.ifcdc_loyalty_points = String(Number(user.loyaltyPoints));
+  }
+  if (user?.loyaltyLifetimeEarned != null && Number.isFinite(Number(user.loyaltyLifetimeEarned))) {
+    props.ifcdc_loyalty_lifetime_earned = String(Number(user.loyaltyLifetimeEarned));
+  }
+  if (user?.loyaltyCompletedHaircuts != null && Number.isFinite(Number(user.loyaltyCompletedHaircuts))) {
+    props.ifcdc_loyalty_completed_haircuts = String(Number(user.loyaltyCompletedHaircuts));
+  }
+  if (user?.loyaltyLastEvent) {
+    props.ifcdc_loyalty_last_event = String(user.loyaltyLastEvent).slice(0, 64);
+  }
+  if (user?.loyaltyLastReward) {
+    props.ifcdc_loyalty_last_reward = String(user.loyaltyLastReward).slice(0, 256);
+  }
+  if (user?.lastCompletedAt) {
+    const d = new Date(user.lastCompletedAt);
+    if (!Number.isNaN(d.getTime())) props.ifcdc_last_completed_at = d.toISOString();
+  }
+  if (user?.preferredBarberId != null) {
+    props.ifcdc_preferred_barber_id = String(user.preferredBarberId);
+  }
+  if (user?.rebookEligible === true || user?.rebookEligible === "true") {
+    props.ifcdc_rebook_eligible = "true";
+  }
   return props;
+}
+
+/**
+ * Load loyalty + birthday fields for workflow property enrichment.
+ * Never throws — returns the input user with optional extras.
+ */
+export async function enrichContactUserForWorkflows(user, { reason = "sync" } = {}) {
+  const base = { ...(user || {}) };
+  if (!isHubSpotWorkflowSyncEnabled()) return base;
+
+  const userId = base.id ? String(base.id) : null;
+  if (!userId) return base;
+
+  try {
+    const row = await dbQuery(
+      `SELECT id, name, email, phone, role, barber_id, business_id, created_at,
+              date_of_birth
+       FROM app_users WHERE id = $1::uuid LIMIT 1`,
+      [userId],
+    ).catch(() => ({ rows: [] }));
+    const u = row.rows?.[0];
+    if (u) {
+      base.email = base.email || u.email;
+      base.name = base.name || u.name;
+      base.phone = base.phone ?? u.phone;
+      base.role = base.role || u.role;
+      if (u.date_of_birth) base.dateOfBirth = String(u.date_of_birth).slice(0, 10);
+      if (u.created_at && !base.registeredAt) base.registeredAt = u.created_at;
+      if (u.barber_id != null && base.preferredBarberId == null) {
+        base.preferredBarberId = u.barber_id;
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  try {
+    const loyalty = await dbQuery(
+      `SELECT points_balance, lifetime_earned, completed_haircuts
+       FROM loyalty_accounts WHERE user_id = $1::uuid LIMIT 1`,
+      [userId],
+    ).catch(() => ({ rows: [] }));
+    const acct = loyalty.rows?.[0];
+    if (acct) {
+      if (base.loyaltyPoints == null) base.loyaltyPoints = Number(acct.points_balance) || 0;
+      if (base.loyaltyLifetimeEarned == null) {
+        base.loyaltyLifetimeEarned = Number(acct.lifetime_earned) || 0;
+      }
+      if (base.loyaltyCompletedHaircuts == null) {
+        base.loyaltyCompletedHaircuts = Number(acct.completed_haircuts) || 0;
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  // Welcome / registration enrollment signal
+  if (/register|signup|google_register|apple_register/i.test(String(reason || ""))) {
+    if (!base.lifecycleStage) base.lifecycleStage = "registered";
+  }
+
+  return base;
 }
 
 async function recordEvent({ entityType, localId, action, status, httpStatus = null, message = null }) {
@@ -452,6 +565,15 @@ async function findContactIdByEmail(email) {
   }
 }
 
+function stripCustomContactProps(properties) {
+  const keep = ["email", "firstname", "lastname", "phone", "date_of_birth"];
+  const out = {};
+  for (const k of keep) {
+    if (properties[k] != null && properties[k] !== "") out[k] = properties[k];
+  }
+  return out;
+}
+
 async function createContact(properties) {
   try {
     const { data } = await hubspotRequest("/crm/v3/objects/contacts", {
@@ -464,16 +586,34 @@ async function createContact(properties) {
     if (error?.status === 409 || /already|exists|conflict/i.test(String(error?.message || ""))) {
       return null;
     }
+    if (error?.status === 400 && /property|doesn|exist|invalid/i.test(String(error?.message || ""))) {
+      const { data } = await hubspotRequest("/crm/v3/objects/contacts", {
+        method: "POST",
+        body: { properties: stripCustomContactProps(properties) },
+      });
+      return data?.id ? String(data.id) : null;
+    }
     throw error;
   }
 }
 
 async function updateContact(contactId, properties) {
-  const { data } = await hubspotRequest(`/crm/v3/objects/contacts/${encodeURIComponent(contactId)}`, {
-    method: "PATCH",
-    body: { properties },
-  });
-  return data?.id ? String(data.id) : String(contactId);
+  try {
+    const { data } = await hubspotRequest(`/crm/v3/objects/contacts/${encodeURIComponent(contactId)}`, {
+      method: "PATCH",
+      body: { properties },
+    });
+    return data?.id ? String(data.id) : String(contactId);
+  } catch (error) {
+    if (error?.status === 400 && /property|doesn|exist|invalid/i.test(String(error?.message || ""))) {
+      const { data } = await hubspotRequest(`/crm/v3/objects/contacts/${encodeURIComponent(contactId)}`, {
+        method: "PATCH",
+        body: { properties: stripCustomContactProps(properties) },
+      });
+      return data?.id ? String(data.id) : String(contactId);
+    }
+    throw error;
+  }
 }
 
 /**
@@ -494,7 +634,8 @@ export async function syncContactToHubSpot(user, { reason = "sync" } = {}) {
     return { ok: false, skipped: true, reason: "sync_disabled" };
   }
 
-  const properties = contactPropertiesFromUser({ ...user, email });
+  const enriched = await enrichContactUserForWorkflows({ ...user, email }, { reason });
+  const properties = contactPropertiesFromUser(enriched);
 
   try {
     let contactId = await findContactIdByEmail(email);
@@ -616,6 +757,52 @@ export function enqueueContactSync(user, options = {}) {
     });
   } catch (error) {
     console.warn("[hubspot] enqueue failed:", sanitizeErrorMessage(error));
+  }
+}
+
+/**
+ * Refresh contact workflow properties (loyalty / birthday / rebook) by user id.
+ * Fire-and-forget — never throws.
+ */
+export function enqueueContactWorkflowRefresh(userId, options = {}) {
+  try {
+    if (!isHubSpotConfigured() || !isHubSpotSyncEnabled() || !isHubSpotWorkflowSyncEnabled()) return;
+    const id = String(userId || "").trim();
+    if (!id) return;
+    void (async () => {
+      const row = await dbQuery(
+        `SELECT id, name, email, phone, role, barber_id, date_of_birth, created_at
+         FROM app_users WHERE id = $1::uuid LIMIT 1`,
+        [id],
+      );
+      const user = row.rows?.[0];
+      if (!user?.email) return;
+      await syncContactToHubSpot(
+        {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          phone: user.phone,
+          role: user.role,
+          dateOfBirth: user.date_of_birth,
+          registeredAt: user.created_at,
+          preferredBarberId: user.barber_id,
+          loyaltyLastEvent: options.loyaltyLastEvent || null,
+          loyaltyLastReward: options.loyaltyLastReward || null,
+          lastCompletedAt: options.lastCompletedAt || null,
+          rebookEligible: options.rebookEligible === true,
+          lifecycleStage: options.lifecycleStage || null,
+          loyaltyPoints: options.loyaltyPoints,
+          loyaltyLifetimeEarned: options.loyaltyLifetimeEarned,
+          loyaltyCompletedHaircuts: options.loyaltyCompletedHaircuts,
+        },
+        { reason: options.reason || "workflow_refresh" },
+      );
+    })().catch((error) => {
+      console.warn("[hubspot] workflow contact refresh error:", sanitizeErrorMessage(error));
+    });
+  } catch (error) {
+    console.warn("[hubspot] workflow contact refresh failed:", sanitizeErrorMessage(error));
   }
 }
 
@@ -1244,6 +1431,21 @@ function dealPropertiesFromBooking(booking) {
   if (booking.service) props.ifcdc_service = String(booking.service).slice(0, 256);
   if (pipeline.dealstage) props.dealstage = pipeline.dealstage;
   if (pipeline.pipelineId) props.pipeline = pipeline.pipelineId;
+
+  if (isHubSpotWorkflowSyncEnabled()) {
+    if (pipeline.key === "completed" || booking.ifcdc_review_requested === true) {
+      props.ifcdc_review_requested = "true";
+    }
+    if (pipeline.key === "paid" || booking.ifcdc_confirmation_sent === true) {
+      props.ifcdc_confirmation_ready = "true";
+    }
+    if (booking.loyaltyPointsEarned != null && Number.isFinite(Number(booking.loyaltyPointsEarned))) {
+      props.ifcdc_loyalty_points_earned = String(Number(booking.loyaltyPointsEarned));
+    }
+    if (booking.barber_id != null) {
+      props.ifcdc_rebook_barber_id = String(booking.barber_id);
+    }
+  }
   return { props, pipeline };
 }
 
@@ -1547,7 +1749,11 @@ export function enqueueDealSyncById(bookingId, options = {}) {
     void (async () => {
       const booking = await loadBookingForHubSpot(id);
       if (!booking) return;
-      await syncDealToHubSpot(booking, options);
+      const merged = {
+        ...booking,
+        ...(options.dealExtras && typeof options.dealExtras === "object" ? options.dealExtras : {}),
+      };
+      await syncDealToHubSpot(merged, options);
     })().catch((error) => {
       console.warn("[hubspot] enqueue deal sync error:", sanitizeErrorMessage(error));
     });

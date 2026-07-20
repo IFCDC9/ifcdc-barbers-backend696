@@ -140,7 +140,29 @@ async function runCompletionSideEffects({
 
   // HubSpot Deal sync — fire-and-forget; never blocks completion / loyalty / PayPal.
   void import("./hubspotService.js")
-    .then((m) => m.enqueueDealSyncById(booking.id, { reason: "appointment_completed" }))
+    .then(async (m) => {
+      const loyaltyPoints =
+        loyalty && loyalty.ok && loyalty.points != null ? Number(loyalty.points) : null;
+      m.enqueueDealSyncById(booking.id, {
+        reason: "appointment_completed",
+        dealExtras: {
+          ifcdc_review_requested: true,
+          loyaltyPointsEarned: Number.isFinite(loyaltyPoints) ? loyaltyPoints : undefined,
+        },
+      });
+      const userId = booking.user_id || loyalty?.userId || null;
+      if (userId) {
+        m.enqueueContactWorkflowRefresh(userId, {
+          reason: "appointment_completed_workflow",
+          loyaltyLastEvent: loyalty?.redemption ? "redeemed" : "earned",
+          loyaltyLastReward: loyalty?.redemption?.reward_id
+            ? String(loyalty.redemption.reward_id)
+            : null,
+          lastCompletedAt: new Date().toISOString(),
+          rebookEligible: true,
+        });
+      }
+    })
     .catch((hubspotErr) =>
       console.warn("[hubspot] completion deal enqueue failed:", hubspotErr?.message || hubspotErr),
     );

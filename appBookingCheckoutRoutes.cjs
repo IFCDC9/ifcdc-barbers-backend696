@@ -1712,7 +1712,12 @@ router.post("/finalize", async (req, res) => {
 
     // HubSpot Deal sync — fire-and-forget after paid settlement; never blocks PayPal/email.
     void import("./hubspotService.js")
-      .then((m) => m.enqueueDealSyncById(fresh.id, { reason: "paypal_finalize_paid" }))
+      .then((m) =>
+        m.enqueueDealSyncById(fresh.id, {
+          reason: "paypal_finalize_paid",
+          dealExtras: { ifcdc_confirmation_sent: true },
+        }),
+      )
       .catch((hubspotErr) =>
         console.warn("[hubspot] finalize deal enqueue failed:", hubspotErr?.message || hubspotErr),
       );

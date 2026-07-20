@@ -401,6 +401,8 @@ export function createAuthRouter({ sendEmail }) {
               name: publicUser.name,
               phone: publicUser.phone,
               role: publicUser.role,
+              lifecycleStage: "registered",
+              registeredAt: publicUser.createdAt || new Date().toISOString(),
             },
             { reason: "register" },
           ),
@@ -566,9 +568,20 @@ export function createAuthRouter({ sendEmail }) {
       const phoneRaw = body.phone != null ? String(body.phone).replace(/\D/g, "").slice(0, 15) : null;
       const profileImageUrl =
         body.profileImageUrl != null ? String(body.profileImageUrl).trim().slice(0, 2048) : null;
+      const dateOfBirthRaw =
+        body.dateOfBirth != null || body.date_of_birth != null
+          ? String(body.dateOfBirth ?? body.date_of_birth).trim().slice(0, 10)
+          : null;
 
       if (name !== null && !name) {
         return res.status(400).json({ ok: false, error: "name_required", message: "Name cannot be empty" });
+      }
+      if (dateOfBirthRaw != null && dateOfBirthRaw !== "" && !/^\d{4}-\d{2}-\d{2}$/.test(dateOfBirthRaw)) {
+        return res.status(400).json({
+          ok: false,
+          error: "date_of_birth_invalid",
+          message: "dateOfBirth must be YYYY-MM-DD",
+        });
       }
 
       const sets = [];
@@ -586,13 +599,17 @@ export function createAuthRouter({ sendEmail }) {
         sets.push(`profile_image_url = $${i++}`);
         params.push(profileImageUrl || null);
       }
+      if (body.dateOfBirth !== undefined || body.date_of_birth !== undefined) {
+        sets.push(`date_of_birth = $${i++}::date`);
+        params.push(dateOfBirthRaw || null);
+      }
       if (!sets.length) {
         return res.status(400).json({ ok: false, error: "no_fields", message: "No profile fields to update" });
       }
       params.push(id);
       const updated = await dbQuery(
         `UPDATE app_users SET ${sets.join(", ")} WHERE id = $${i}::uuid
-         RETURNING id, name, email, phone, profile_image_url, role, barber_id, business_id, created_at`,
+         RETURNING id, name, email, phone, profile_image_url, date_of_birth, role, barber_id, business_id, created_at`,
         params,
       );
       const user = updated.rows?.[0];
@@ -610,6 +627,7 @@ export function createAuthRouter({ sendEmail }) {
               name: publicUser.name,
               phone: publicUser.phone,
               role: publicUser.role,
+              dateOfBirth: publicUser.dateOfBirth,
             },
             { reason: "profile_update" },
           ),
@@ -831,6 +849,8 @@ export function createAuthRouter({ sendEmail }) {
               name: publicUser.name,
               phone: publicUser.phone,
               role: publicUser.role,
+              lifecycleStage: "registered",
+              registeredAt: publicUser.createdAt || new Date().toISOString(),
             },
             { reason: "google_register" },
           ),
@@ -1006,6 +1026,8 @@ export function createAuthRouter({ sendEmail }) {
               name: publicUser.name,
               phone: publicUser.phone,
               role: publicUser.role,
+              lifecycleStage: "registered",
+              registeredAt: publicUser.createdAt || new Date().toISOString(),
             },
             { reason: "apple_register" },
           ),
