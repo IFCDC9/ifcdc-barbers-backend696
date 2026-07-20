@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 const repoRoot = path.dirname(fileURLToPath(import.meta.url));
 const rootEnvPath = path.resolve(repoRoot, ".env");
 const backendEnvPath = path.resolve(repoRoot, "backend", ".env");
-dotenv.config({ path: rootEnvPath });
+dotenv.config({ path: rootEnvPath, override: false });
 dotenv.config({ path: backendEnvPath, override: false });
 
 console.log("🔥 ENV PATH:", rootEnvPath, "|", backendEnvPath);

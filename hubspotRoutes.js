@@ -5,6 +5,7 @@ import {
   HUBSPOT_FUTURE_ENTITY_TYPES,
   isHubSpotConfigured,
   isHubSpotSyncEnabled,
+  listHubSpotEnvNamesPresent,
   testContactSyncRoundTrip,
   verifyHubSpotAuthentication,
 } from "./hubspotService.js";
@@ -52,6 +53,9 @@ export function createHubSpotRouter({ requireAuth = null, requireAdmin = null } 
       futureEntityTypes: HUBSPOT_FUTURE_ENTITY_TYPES,
       credentialSource: "process.env.HUBSPOT_SERVICE_KEY",
       keyCached: false,
+      // Names only — helps detect typos / wrong service without exposing secrets.
+      hubspotEnvNamesPresent: listHubSpotEnvNamesPresent(),
+      expectedEnvNames: ["HUBSPOT_SERVICE_KEY", "HUBSPOT_SYNC_ENABLED"],
     });
   });
 

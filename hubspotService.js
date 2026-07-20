@@ -39,6 +39,13 @@ export function isHubSpotConfigured() {
   return Boolean(getServiceKey());
 }
 
+/** Safe diagnostics — env var NAMES only, never values. */
+export function listHubSpotEnvNamesPresent() {
+  return Object.keys(process.env)
+    .filter((name) => /hubspot/i.test(name))
+    .sort();
+}
+
 /** Drop in-flight request chain state after credential rotation / redeploy. */
 export function clearHubSpotClientState() {
   lastRequestAt = 0;
