@@ -26,7 +26,14 @@ function setEnv(map) {
 }
 
 // --- Feature flags ---
-setEnv({ HUBSPOT_SYNC_ENABLED: "1", HUBSPOT_SERVICE_KEY: "test-key-not-real" });
+setEnv({
+  HUBSPOT_SYNC_ENABLED: "1",
+  HUBSPOT_SERVICE_KEY: "test-key-not-real",
+  RENDER: null,
+  RENDER_SERVICE_ID: null,
+  RENDER_SERVICE_NAME: null,
+  RENDER_EXTERNAL_URL: null,
+});
 assert.equal(isHubSpotSyncEnabled(), true);
 assert.equal(isHubSpotConfigured(), true);
 
@@ -35,6 +42,25 @@ assert.equal(isHubSpotSyncEnabled(), false);
 
 setEnv({ HUBSPOT_SYNC_ENABLED: "true", HUBSPOT_SERVICE_KEY: "" });
 assert.equal(isHubSpotConfigured(), false);
+
+// Non-canonical Render service must not sync even with HubSpot env present
+setEnv({
+  HUBSPOT_SYNC_ENABLED: "1",
+  HUBSPOT_SERVICE_KEY: "test-key-not-real",
+  RENDER: "true",
+  RENDER_SERVICE_ID: "srv-d8gn9h77f7vs73evmfgg",
+  RENDER_SERVICE_NAME: "ifcdc-barbers-backend696-d8ui",
+});
+assert.equal(isHubSpotSyncEnabled(), false);
+
+setEnv({
+  HUBSPOT_SYNC_ENABLED: "1",
+  HUBSPOT_SERVICE_KEY: "test-key-not-real",
+  RENDER: "true",
+  RENDER_SERVICE_ID: "srv-d6tmai24d50c73cdi0mg",
+  RENDER_SERVICE_NAME: "ifcdc-barbers-backend696",
+});
+assert.equal(isHubSpotSyncEnabled(), true);
 
 // --- Sync disabled is a safe no-op ---
 setEnv({ HUBSPOT_SYNC_ENABLED: "0", HUBSPOT_SERVICE_KEY: "test-key-not-real" });

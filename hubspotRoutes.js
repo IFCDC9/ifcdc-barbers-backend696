@@ -1,8 +1,13 @@
 import express from "express";
 import {
+  cleanupPhase1TestArtifacts,
   clearHubSpotClientState,
   getHubSpotHealth,
+  HUBSPOT_CANONICAL_HOST,
+  HUBSPOT_CANONICAL_SERVICE_ID,
+  HUBSPOT_CANONICAL_SERVICE_NAME,
   HUBSPOT_FUTURE_ENTITY_TYPES,
+  isHubSpotCanonicalRuntime,
   isHubSpotConfigured,
   isHubSpotSyncEnabled,
   listHubSpotEnvNamesPresent,
@@ -26,7 +31,15 @@ export function createHubSpotRouter({ requireAuth = null, requireAdmin = null } 
     res.set("Cache-Control", "no-store");
     try {
       const health = await getHubSpotHealth();
-      return res.status(health.ok ? 200 : 503).json(health);
+      return res.status(health.ok ? 200 : 503).json({
+        ...health,
+        canonicalRuntime: isHubSpotCanonicalRuntime(),
+        canonicalService: {
+          serviceId: HUBSPOT_CANONICAL_SERVICE_ID,
+          serviceName: HUBSPOT_CANONICAL_SERVICE_NAME,
+          host: HUBSPOT_CANONICAL_HOST,
+        },
+      });
     } catch (error) {
       console.warn("[hubspot] health error:", error?.message || error);
       return res.status(503).json({
@@ -36,6 +49,7 @@ export function createHubSpotRouter({ requireAuth = null, requireAdmin = null } 
         authenticated: false,
         permissions: null,
         serviceKey: isHubSpotConfigured() ? "configured" : "missing",
+        canonicalRuntime: isHubSpotCanonicalRuntime(),
         message: "HubSpot health check failed",
       });
     }
@@ -48,6 +62,7 @@ export function createHubSpotRouter({ requireAuth = null, requireAdmin = null } 
       ok: true,
       configured: isHubSpotConfigured(),
       syncEnabled: isHubSpotSyncEnabled(),
+      canonicalRuntime: isHubSpotCanonicalRuntime(),
       serviceKey: isHubSpotConfigured() ? "configured" : "missing",
       phase: 1,
       futureEntityTypes: HUBSPOT_FUTURE_ENTITY_TYPES,
@@ -56,6 +71,11 @@ export function createHubSpotRouter({ requireAuth = null, requireAdmin = null } 
       // Names only — helps detect typos / wrong service without exposing secrets.
       hubspotEnvNamesPresent: listHubSpotEnvNamesPresent(),
       expectedEnvNames: ["HUBSPOT_SERVICE_KEY", "HUBSPOT_SYNC_ENABLED"],
+      canonicalService: {
+        serviceId: HUBSPOT_CANONICAL_SERVICE_ID,
+        serviceName: HUBSPOT_CANONICAL_SERVICE_NAME,
+        host: HUBSPOT_CANONICAL_HOST,
+      },
     });
   });
 
@@ -65,7 +85,10 @@ export function createHubSpotRouter({ requireAuth = null, requireAdmin = null } 
     try {
       clearHubSpotClientState();
       const result = await verifyHubSpotAuthentication({ includePermissions: true });
-      return res.status(result.ok && result.authenticated ? 200 : 503).json(result);
+      return res.status(result.ok && result.authenticated ? 200 : 503).json({
+        ...result,
+        canonicalRuntime: isHubSpotCanonicalRuntime(),
+      });
     } catch (error) {
       console.warn("[hubspot] verify error:", error?.message || error);
       return res.status(503).json({
@@ -100,6 +123,20 @@ export function createHubSpotRouter({ requireAuth = null, requireAdmin = null } 
         ok: false,
         message: "HubSpot contact test failed",
       });
+    }
+  });
+
+  /**
+   * POST /api/hubspot/cleanup-phase1-tests — admin-only removal of Phase 1 verification artifacts.
+   */
+  router.post("/cleanup-phase1-tests", ...adminHandlers, async (_req, res) => {
+    res.set("Cache-Control", "no-store");
+    try {
+      const result = await cleanupPhase1TestArtifacts({ deleteAppUsers: true });
+      return res.status(result.ok ? 200 : 207).json(result);
+    } catch (error) {
+      console.warn("[hubspot] cleanup-phase1-tests error:", error?.message || error);
+      return res.status(503).json({ ok: false, message: "Phase 1 cleanup failed" });
     }
   });
 

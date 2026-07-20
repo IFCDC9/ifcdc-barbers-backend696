@@ -22,9 +22,39 @@ function envFlag(name) {
   return v === "1" || v === "true" || v === "yes" || v === "on";
 }
 
-/** Feature flag — sync is a no-op when disabled. */
+/** Canonical production API — the only Render service allowed to sync HubSpot. */
+export const HUBSPOT_CANONICAL_SERVICE_ID = "srv-d6tmai24d50c73cdi0mg";
+export const HUBSPOT_CANONICAL_SERVICE_NAME = "ifcdc-barbers-backend696";
+export const HUBSPOT_CANONICAL_HOST = "ifcdc-barbers-backend696.onrender.com";
+
+/**
+ * HubSpot sync must only run on the canonical production service (or local/dev).
+ * Secondary hosts (e.g. ifcdc-barbers-backend696-d8ui) are blocked even if env vars exist.
+ */
+export function isHubSpotCanonicalRuntime() {
+  const serviceId = String(process.env.RENDER_SERVICE_ID || "").trim();
+  if (serviceId) {
+    return serviceId === HUBSPOT_CANONICAL_SERVICE_ID;
+  }
+  const serviceName = String(process.env.RENDER_SERVICE_NAME || "").trim();
+  if (serviceName) {
+    return serviceName === HUBSPOT_CANONICAL_SERVICE_NAME;
+  }
+  const external = String(process.env.RENDER_EXTERNAL_URL || "").trim().toLowerCase();
+  if (external) {
+    try {
+      return new URL(external).hostname === HUBSPOT_CANONICAL_HOST;
+    } catch {
+      return false;
+    }
+  }
+  // Not on Render (local/dev) — allow when env is configured for testing.
+  return String(process.env.RENDER || "").trim() !== "true";
+}
+
+/** Feature flag — sync is a no-op when disabled or on a non-canonical host. */
 export function isHubSpotSyncEnabled() {
-  return envFlag("HUBSPOT_SYNC_ENABLED");
+  return envFlag("HUBSPOT_SYNC_ENABLED") && isHubSpotCanonicalRuntime();
 }
 
 /**
@@ -549,6 +579,124 @@ export function enqueueContactSync(user, options = {}) {
   } catch (error) {
     console.warn("[hubspot] enqueue failed:", sanitizeErrorMessage(error));
   }
+}
+
+const PHASE1_TEST_EMAIL_SQL = `
+  lower(email) LIKE 'phase1.%@%'
+  OR lower(email) LIKE 'hubspot.phase1%@%'
+  OR lower(email) LIKE 'phase1.verify.%@%'
+`;
+
+async function deleteHubSpotContactById(contactId) {
+  const id = String(contactId || "").trim();
+  if (!id) return { ok: false, reason: "missing_id" };
+  try {
+    await hubspotRequest(`/crm/v3/objects/contacts/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
+    return { ok: true };
+  } catch (error) {
+    if (error?.status === 404) return { ok: true, alreadyGone: true };
+    return { ok: false, message: sanitizeErrorMessage(error), httpStatus: error?.status || null };
+  }
+}
+
+/**
+ * Remove Phase 1 verification contacts from HubSpot + local mappings/users.
+ * Safe patterns only (phase1.* / hubspot.phase1*).
+ */
+export async function cleanupPhase1TestArtifacts({ deleteAppUsers = true } = {}) {
+  const summary = {
+    ok: true,
+    hubspotDeleted: 0,
+    hubspotFailed: 0,
+    mappingsDeleted: 0,
+    usersDeleted: 0,
+    emails: [],
+  };
+
+  const mapped = await dbQuery(
+    `SELECT user_id, email, hubspot_contact_id
+     FROM hubspot_sync_contacts
+     WHERE ${PHASE1_TEST_EMAIL_SQL}`,
+  );
+  const users = await dbQuery(
+    `SELECT id, email FROM app_users
+     WHERE ${PHASE1_TEST_EMAIL_SQL}
+        OR name ILIKE 'Phase1 Register%'
+        OR name ILIKE 'IFCDC Phase1%'
+        OR name ILIKE 'IFCDC HubSpot Phase1%'
+        OR name ILIKE 'HubSpot Phase1%'`,
+  );
+
+  const contactIds = new Set();
+  const emails = new Set();
+  for (const row of mapped.rows || []) {
+    if (row.hubspot_contact_id) contactIds.add(String(row.hubspot_contact_id));
+    if (row.email) emails.add(normalizeEmail(row.email));
+  }
+  for (const row of users.rows || []) {
+    if (row.email) emails.add(normalizeEmail(row.email));
+  }
+
+  // Also resolve HubSpot IDs by email when mapping rows are missing.
+  if (isHubSpotConfigured()) {
+    for (const email of emails) {
+      try {
+        const id = await findContactIdByEmail(email);
+        if (id) contactIds.add(id);
+      } catch {
+        // continue — best effort
+      }
+    }
+    for (const contactId of contactIds) {
+      const result = await deleteHubSpotContactById(contactId);
+      if (result.ok) summary.hubspotDeleted += 1;
+      else {
+        summary.hubspotFailed += 1;
+        summary.ok = false;
+      }
+    }
+  }
+
+  const delMaps = await dbQuery(
+    `DELETE FROM hubspot_sync_contacts WHERE ${PHASE1_TEST_EMAIL_SQL} RETURNING email`,
+  );
+  summary.mappingsDeleted = delMaps.rows?.length || 0;
+
+  if (deleteAppUsers) {
+    const delUsers = await dbQuery(
+      `DELETE FROM app_users
+       WHERE ${PHASE1_TEST_EMAIL_SQL}
+          OR name ILIKE 'Phase1 Register%'
+          OR name ILIKE 'IFCDC Phase1%'
+          OR name ILIKE 'IFCDC HubSpot Phase1%'
+          OR name ILIKE 'HubSpot Phase1%'
+       RETURNING email`,
+    );
+    summary.usersDeleted = delUsers.rows?.length || 0;
+    for (const row of delUsers.rows || []) {
+      if (row.email) emails.add(normalizeEmail(row.email));
+    }
+  }
+
+  await dbQuery(
+    `DELETE FROM hubspot_sync_events
+     WHERE message ILIKE '%phase1%'
+        OR message ILIKE '%admin_test_%'
+        OR local_id ILIKE 'phase1.%'
+        OR local_id ILIKE 'hubspot.phase1%'`,
+  ).catch(() => {});
+
+  summary.emails = [...emails].map((e) => e.replace(/^(.{3}).+(@.+)$/, "$1***$2"));
+  await recordEvent({
+    entityType: "contact",
+    localId: "phase1_cleanup",
+    action: "cleanup_phase1_tests",
+    status: summary.ok ? "ok" : "partial",
+    message: `hubspotDeleted=${summary.hubspotDeleted};usersDeleted=${summary.usersDeleted}`,
+  });
+  return summary;
 }
 
 /** Phase 2 stubs — exported so HQ can discover planned entity types. */

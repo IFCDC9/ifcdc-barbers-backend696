@@ -15,6 +15,11 @@
 #   SUPABASE_PUBLISHABLE_KEY or SUPABASE_ANON_KEY (public API key)
 #   HUBSPOT_SERVICE_KEY (private app token — Render dashboard only)
 #   HUBSPOT_SYNC_ENABLED=1  (feature flag for contact sync)
+#   ADMIN_SECRET (must match local .env ADMIN_SECRET / VITE_ADMIN_API_KEY for x-admin-key ops)
+#
+# HubSpot must ONLY be configured on this service (ifcdc-barbers-backend696).
+# Do NOT set HUBSPOT_* on ifcdc-barbers-backend696-d8ui — strip with:
+#   RENDER_API_KEY=rnd_... node scripts/render-strip-d8ui-hubspot.mjs --deploy
 #
 # Optional: PUBLIC_BASE_URL=https://<your-service>.onrender.com
 # (If unset, the app uses RENDER_EXTERNAL_URL from Render automatically.)

@@ -175,6 +175,8 @@ export async function getDeployInfoPayload() {
       serviceName: process.env.RENDER_SERVICE_NAME || null,
       externalUrl: process.env.RENDER_EXTERNAL_URL || null,
     },
+    adminSecretConfigured: Boolean(String(process.env.ADMIN_SECRET || "").trim()),
+    databaseUrlConfigured: Boolean(String(process.env.DATABASE_URL || "").trim()),
     features: {
       paypalFinalizeAlreadyCapturedRecovery: Boolean(captureOrGetCompletedPayPalOrder),
       customerEmailRequiredOnAppStart: paymentFixModulesLoaded,
