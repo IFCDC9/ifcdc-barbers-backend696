@@ -484,6 +484,39 @@ export async function ensurePhase2cHubSpotSetup({ enableWorkflows = false } = {}
     }
     summary.portalId = me.json?.portalId || me.json?.hub_id || null;
 
+    // Inspect scopes on the live token (never return the token itself).
+    try {
+      const key = getKey();
+      const scopeRes = await fetch(`${API}/oauth/v1/access-tokens/${encodeURIComponent(key)}`, {
+        headers: { Accept: "application/json" },
+      });
+      const scopeJson = await scopeRes.json().catch(() => ({}));
+      const scopes = Array.isArray(scopeJson?.scopes) ? scopeJson.scopes.map(String).sort() : [];
+      summary.tokenScopes = {
+        ok: scopeRes.ok,
+        http: scopeRes.status,
+        hasAutomation: scopes.includes("automation"),
+        scopes,
+        hubId: scopeJson?.hub_id || scopeJson?.hubId || null,
+        userId: scopeJson?.user_id || null,
+        appId: scopeJson?.app_id || null,
+        message: scopeRes.ok ? null : scopeJson?.message || null,
+      };
+      if (scopeRes.ok && !scopes.includes("automation")) {
+        summary.notes.push(
+          "Live HUBSPOT_SERVICE_KEY token scopes do not include automation — rotate the private app token after enabling the automation scope, then update Render.",
+        );
+      }
+    } catch (scopeErr) {
+      summary.tokenScopes = {
+        ok: false,
+        http: null,
+        hasAutomation: false,
+        scopes: [],
+        message: String(scopeErr?.message || scopeErr).slice(0, 120),
+      };
+    }
+
     for (const prop of CONTACT_PROPS) {
       summary.properties.push({ object: "contacts", ...(await ensureProperty("contacts", prop)) });
     }
