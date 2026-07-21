@@ -148,6 +148,17 @@ export function createHubSpotRouter({ requireAuth = null, requireAdmin = null } 
           workflowTotal: (s.workflows || []).length,
           notes: s.notes || [],
           automationProbe: s.automationProbe || null,
+          tokenScopes: s.tokenScopes
+            ? {
+                ok: s.tokenScopes.ok,
+                http: s.tokenScopes.http,
+                hasAutomation: s.tokenScopes.hasAutomation,
+                scopes: s.tokenScopes.scopes || [],
+                hubId: s.tokenScopes.hubId || null,
+                appId: s.tokenScopes.appId || null,
+                message: s.tokenScopes.message || null,
+              }
+            : null,
           errorSamples: {
             properties: propErrors.map((p) => ({
               name: p.name,
