@@ -28,10 +28,11 @@ function num(v, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
-function paidPredicate(alias = "b") {
+function paidPredicate(alias = "") {
+  const p = alias ? `${alias}.` : "";
   return `(
-    ${alias}.is_paid_booking = true
-    OR lower(coalesce(${alias}.payment_status, '')) IN ('paid', 'paid_full', 'paid_in_full', 'captured', 'deposit_paid')
+    ${p}is_paid_booking = true
+    OR lower(coalesce(${p}payment_status, '')) IN ('paid', 'paid_full', 'paid_in_full', 'captured', 'deposit_paid')
   )`;
 }
 
