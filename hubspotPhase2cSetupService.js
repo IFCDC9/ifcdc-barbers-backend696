@@ -17,9 +17,47 @@ import { dbQuery } from "./db.js";
 const API = "https://api.hubapi.com";
 
 let lastSetupSummary = null;
+let setupInFlight = null;
+let lastSetupAttemptAt = 0;
+const SETUP_RETRY_COOLDOWN_MS = 2 * 60 * 1000;
 
 export function getLastPhase2cSetupSummary() {
   return lastSetupSummary;
+}
+
+/**
+ * Re-run setup if last attempt failed (e.g. after HubSpot plan upgrade).
+ * Rate-limited; never throws to callers.
+ */
+export function maybeRerunPhase2cSetup({ force = false, enableWorkflows = true } = {}) {
+  const now = Date.now();
+  const workflows = lastSetupSummary?.workflows || [];
+  const workflowOk = workflows.filter((w) => w.status === "exists" || w.status === "created").length;
+  const workflowTotal = Math.max(workflows.length, 6);
+  const failed =
+    !lastSetupSummary ||
+    lastSetupSummary.ok !== true ||
+    lastSetupSummary.automationProbe?.ok === false ||
+    workflowOk < workflowTotal;
+
+  if (!force && !failed) {
+    return Promise.resolve(lastSetupSummary);
+  }
+  if (!force && now - lastSetupAttemptAt < SETUP_RETRY_COOLDOWN_MS) {
+    return Promise.resolve(lastSetupSummary);
+  }
+  if (setupInFlight) return setupInFlight;
+
+  lastSetupAttemptAt = now;
+  setupInFlight = ensurePhase2cHubSpotSetup({ enableWorkflows })
+    .catch((error) => {
+      console.warn("[hubspot] phase2c_setup_retry failed:", error?.message || error);
+      return lastSetupSummary;
+    })
+    .finally(() => {
+      setupInFlight = null;
+    });
+  return setupInFlight;
 }
 
 function envFlag(name) {

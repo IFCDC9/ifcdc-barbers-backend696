@@ -26,6 +26,7 @@ import { dbQuery } from "./db.js";
 import {
   ensurePhase2cHubSpotSetup,
   getLastPhase2cSetupSummary,
+  maybeRerunPhase2cSetup,
   runSafeHubSpotMappingBackfill,
 } from "./hubspotPhase2cSetupService.js";
 
@@ -78,8 +79,14 @@ export function createHubSpotRouter({ requireAuth = null, requireAdmin = null } 
   });
 
   /** GET /api/hubspot/status — lightweight flags without live HubSpot call. */
-  router.get("/status", (_req, res) => {
+  router.get("/status", (req, res) => {
     res.set("Cache-Control", "no-store");
+    const refresh = String(req.query?.refreshSetup || "").trim() === "1";
+    if (refresh) {
+      void maybeRerunPhase2cSetup({ force: true, enableWorkflows: true });
+    } else {
+      void maybeRerunPhase2cSetup({ enableWorkflows: true });
+    }
     res.json({
       ok: true,
       configured: isHubSpotConfigured(),
@@ -165,6 +172,7 @@ export function createHubSpotRouter({ requireAuth = null, requireAdmin = null } 
           },
         };
       })(),
+      setupRefreshRequested: refresh,
     });
   });
 
