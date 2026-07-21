@@ -190,10 +190,6 @@ export async function assertShopCanProcessPayments(businessId) {
 }
 
 export async function resolveBusinessIdForBarber(dbQueryFn, barberDbId) {
-  const r = await dbQueryFn(`SELECT business_id FROM barbers WHERE id::text = $1 LIMIT 1`, [
-    String(barberDbId),
-  ]);
-  const bid = r.rows?.[0]?.business_id;
-  const text = bid != null ? String(bid).trim() : "";
-  return text && /^[0-9]+$/.test(text) ? Number(text) : null;
+  const { resolveNumericBusinessIdForBarber } = await import("./businessIdResolve.js");
+  return resolveNumericBusinessIdForBarber(dbQueryFn, barberDbId);
 }

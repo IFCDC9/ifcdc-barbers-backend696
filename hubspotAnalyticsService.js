@@ -294,26 +294,43 @@ export async function getHubSpotHqKpis({ days = 30 } = {}) {
 
   // --- Top shops ---
   try {
+    const { resolveDefaultShopBusinessId } = await import("./businessIdResolve.js");
+    const defaultShopId = (await resolveDefaultShopBusinessId()) || 1;
     const topS = await dbQuery(
-      `SELECT
-         b.business_id,
-         COALESCE(nullif(trim(biz.name), ''), 'Shop ' || b.business_id::text) AS name,
+      `WITH mapped AS (
+         SELECT
+           COALESCE(
+             b.business_id,
+             CASE
+               WHEN br.business_id ~ '^[1-9][0-9]*$' THEN br.business_id::bigint
+               WHEN lower(coalesce(br.business_id, '')) IN ('default', '0', '') THEN $2::bigint
+               ELSE NULL
+             END
+           ) AS business_id,
+           b.total_paid, b.amount_paid, b.amount_charged, b.total_price, b.amount, b.platform_fee,
+           b.is_paid_booking, b.payment_status, b.completed_at, b.created_at
+         FROM bookings b
+         LEFT JOIN barbers br ON br.id = b.barber_id
+         WHERE coalesce(b.completed_at, b.created_at) >= NOW() - ($1::int * INTERVAL '1 day')
+       )
+       SELECT
+         m.business_id,
+         COALESCE(nullif(trim(biz.name), ''), 'Shop ' || m.business_id::text) AS name,
          COUNT(*)::int AS appointments,
-         COUNT(*) FILTER (WHERE ${paidPredicate("b")})::int AS paid_appointments,
+         COUNT(*) FILTER (WHERE ${paidPredicate("m")})::int AS paid_appointments,
          COALESCE(SUM(
-           CASE WHEN ${paidPredicate("b")}
-             THEN COALESCE(b.total_paid, b.amount_paid, b.amount_charged, b.total_price, b.amount, 0)
+           CASE WHEN ${paidPredicate("m")}
+             THEN COALESCE(m.total_paid, m.amount_paid, m.amount_charged, m.total_price, m.amount, 0)
              ELSE 0 END
          ), 0)::float8 AS revenue,
-         COALESCE(SUM(COALESCE(b.platform_fee, 0)), 0)::float8 AS platform_fees
-       FROM bookings b
-       LEFT JOIN businesses biz ON biz.id = b.business_id
-       WHERE coalesce(b.completed_at, b.created_at) >= NOW() - ($1::int * INTERVAL '1 day')
-         AND b.business_id IS NOT NULL
-       GROUP BY b.business_id, 2
+         COALESCE(SUM(COALESCE(m.platform_fee, 0)), 0)::float8 AS platform_fees
+       FROM mapped m
+       LEFT JOIN businesses biz ON biz.id = m.business_id
+       WHERE m.business_id IS NOT NULL
+       GROUP BY m.business_id, 2
        ORDER BY revenue DESC, paid_appointments DESC
        LIMIT 10`,
-      [windowDays],
+      [windowDays, defaultShopId],
     );
     out.topShops = (topS.rows || []).map((row) => ({
       businessId: row.business_id,

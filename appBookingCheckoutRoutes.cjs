@@ -535,8 +535,9 @@ router.post("/start", async (req, res) => {
     const bizR = await dbQuery(`SELECT business_id FROM barbers WHERE id::text = $1 LIMIT 1`, [
       String(resolvedBarberDbId),
     ]);
-    const shopBusinessId = bizR.rows?.[0]?.business_id;
-    if (shopBusinessId != null && shopBusinessId !== "") {
+    const { resolveNumericBusinessId } = await import("./businessIdResolve.js");
+    const shopBusinessId = await resolveNumericBusinessId(bizR.rows?.[0]?.business_id, dbQuery);
+    if (shopBusinessId != null) {
       const { assertShopCanAcceptBookings, assertShopCanProcessPayments } = await import(
         "./shopAccessPolicy.js"
       );

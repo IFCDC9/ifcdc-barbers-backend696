@@ -51,6 +51,15 @@ If a property is missing, IFCDC falls back to standard HubSpot fields and contin
 
 ## Workflow recipes (create in HubSpot UI)
 
+Prefer the automated scaffold script (creates properties + disabled workflow shells):
+
+```bash
+HUBSPOT_SERVICE_KEY=… node --import ./loadBackendEnv.mjs scripts/hubspot-setup-phase2c-workflows.mjs
+HUBSPOT_SERVICE_KEY=… node --import ./loadBackendEnv.mjs scripts/hubspot-setup-phase2c-workflows.mjs --apply
+```
+
+Then attach Marketing email content in HubSpot and enable each workflow.
+
 ### 1. Welcome email
 - **Enrollment:** Contact is created **OR** `ifcdc_lifecycle_stage` is known `registered`
 - **Filter:** email is known

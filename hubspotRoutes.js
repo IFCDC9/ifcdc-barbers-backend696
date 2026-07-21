@@ -2,6 +2,8 @@ import express from "express";
 import {
   cleanupPhase1TestArtifacts,
   clearHubSpotClientState,
+  enqueueCompanySyncById,
+  enqueueDealSyncById,
   getHubSpotHealth,
   HUBSPOT_CANONICAL_HOST,
   HUBSPOT_CANONICAL_SERVICE_ID,
@@ -20,6 +22,7 @@ import {
   verifyHubSpotAuthentication,
 } from "./hubspotService.js";
 import { isHubSpotHqAnalyticsEnabled } from "./hubspotAnalyticsService.js";
+import { dbQuery } from "./db.js";
 
 /**
  * HubSpot integration routes — server-side only.
@@ -221,6 +224,76 @@ export function createHubSpotRouter({ requireAuth = null, requireAdmin = null } 
     } catch (error) {
       console.warn("[hubspot] cleanup-phase1-tests error:", error?.message || error);
       return res.status(503).json({ ok: false, message: "Phase 1 cleanup failed" });
+    }
+  });
+
+  /**
+   * POST /api/hubspot/backfill — admin-only controlled company/deal enqueue.
+   * Body: { companies?: boolean, deals?: boolean, limit?: number }
+   */
+  router.post("/backfill", ...adminHandlers, async (req, res) => {
+    res.set("Cache-Control", "no-store");
+    try {
+      const limit = Math.min(Math.max(Number(req.body?.limit) || 25, 1), 100);
+      const wantCompanies = req.body?.companies !== false;
+      const wantDeals = req.body?.deals !== false;
+      const queued = { companies: [], deals: [] };
+
+      if (wantCompanies && isHubSpotCompanySyncEnabled()) {
+        const rows = await dbQuery(
+          `SELECT b.id
+           FROM businesses b
+           LEFT JOIN hubspot_sync_companies m ON m.business_id = b.id
+           WHERE m.business_id IS NULL
+              OR m.hubspot_company_id IS NULL
+              OR m.last_sync_status IS DISTINCT FROM 'synced'
+           ORDER BY b.id ASC
+           LIMIT $1`,
+          [limit],
+        );
+        for (const row of rows.rows || []) {
+          enqueueCompanySyncById(row.id, { reason: "admin_backfill" });
+          queued.companies.push(row.id);
+        }
+      }
+
+      if (wantDeals && isHubSpotDealSyncEnabled()) {
+        const rows = await dbQuery(
+          `SELECT b.id::text AS id
+           FROM bookings b
+           LEFT JOIN hubspot_sync_deals m ON m.booking_id = b.id
+           WHERE (
+             b.is_paid_booking = true
+             OR lower(coalesce(b.payment_status, '')) IN ('paid', 'paid_full', 'paid_in_full', 'captured', 'deposit_paid')
+             OR lower(coalesce(b.booking_status, '')) IN ('completed', 'cancelled', 'no_show', 'confirmed')
+           )
+             AND lower(coalesce(b.booking_status, '')) IS DISTINCT FROM 'pending_payment'
+             AND (
+               m.booking_id IS NULL
+               OR m.hubspot_deal_id IS NULL
+               OR m.last_sync_status IS DISTINCT FROM 'synced'
+             )
+           ORDER BY coalesce(b.completed_at, b.created_at) DESC NULLS LAST
+           LIMIT $1`,
+          [limit],
+        );
+        for (const row of rows.rows || []) {
+          enqueueDealSyncById(row.id, { reason: "admin_backfill" });
+          queued.deals.push(row.id);
+        }
+      }
+
+      return res.status(200).json({
+        ok: true,
+        limit,
+        queuedCompanyCount: queued.companies.length,
+        queuedDealCount: queued.deals.length,
+        companySyncEnabled: isHubSpotCompanySyncEnabled(),
+        dealSyncEnabled: isHubSpotDealSyncEnabled(),
+      });
+    } catch (error) {
+      console.warn("[hubspot] backfill error:", error?.message || error);
+      return res.status(503).json({ ok: false, message: "HubSpot backfill failed" });
     }
   });
 

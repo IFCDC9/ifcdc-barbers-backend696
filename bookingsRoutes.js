@@ -89,11 +89,8 @@ function getAuthRole(req) {
 }
 
 async function resolveBusinessIdForBarber(barberId) {
-  if (barberId == null || String(barberId).trim() === "") return null;
-  const r = await dbQuery(`SELECT business_id FROM barbers WHERE id::text = $1 LIMIT 1`, [String(barberId)]);
-  const v = r.rows?.[0]?.business_id;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
+  const { resolveNumericBusinessIdForBarber } = await import("./businessIdResolve.js");
+  return resolveNumericBusinessIdForBarber(dbQuery, barberId);
 }
 
 async function canMarkBookingPaid(req, bookingRow) {

@@ -12,7 +12,19 @@ const TOKEN = String(process.env.RENDER_API_KEY || "").trim();
 const D8UI_SERVICE_ID = String(
   process.env.RENDER_D8UI_SERVICE_ID || "srv-d8gn9h77f7vs73evmfgg",
 ).trim();
-const KEYS = ["HUBSPOT_SERVICE_KEY", "HUBSPOT_SYNC_ENABLED"];
+const KEYS = [
+  "HUBSPOT_SERVICE_KEY",
+  "HUBSPOT_SYNC_ENABLED",
+  "HUBSPOT_SYNC_COMPANIES",
+  "HUBSPOT_SYNC_DEALS",
+  "HUBSPOT_SYNC_WORKFLOWS",
+  "HUBSPOT_HQ_ANALYTICS",
+  "HUBSPOT_DEAL_PIPELINE_ID",
+  "HUBSPOT_DEAL_STAGE_PAID",
+  "HUBSPOT_DEAL_STAGE_COMPLETED",
+  "HUBSPOT_DEAL_STAGE_CANCELLED",
+  "HUBSPOT_DEAL_STAGE_NO_SHOW",
+];
 const DEPLOY = process.argv.includes("--deploy");
 
 if (!TOKEN) {
@@ -20,7 +32,7 @@ if (!TOKEN) {
     "Missing RENDER_API_KEY.\n" +
       "Create one in Render → Account Settings → API Keys, then run:\n" +
       "  RENDER_API_KEY=rnd_... node scripts/render-strip-d8ui-hubspot.mjs --deploy\n" +
-      "Or manually delete HUBSPOT_SERVICE_KEY and HUBSPOT_SYNC_ENABLED on service ifcdc-barbers-backend696-d8ui.",
+      "Or manually delete all HUBSPOT_* keys on service ifcdc-barbers-backend696-d8ui.",
   );
   process.exit(1);
 }

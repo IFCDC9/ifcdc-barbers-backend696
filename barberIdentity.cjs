@@ -164,8 +164,6 @@ async function resolveBarberIdentity(dbQuery, input, barberName = "") {
     barberDbId = numericCatalogBarberId(resolvedName);
   }
 
-  const biz = barberRow.business_id != null ? Number(barberRow.business_id) : null;
-
   const bookingsCol = await getTableBarberIdType(dbQuery, "bookings");
   const servicesCol = await getTableBarberIdType(dbQuery, "barber_services");
 
@@ -187,13 +185,23 @@ async function resolveBarberIdentity(dbQuery, input, barberName = "") {
     assertNotUuidForBigintBarberId(serviceBarberKey, "barber_services", "resolveBarberIdentity");
   }
 
+  let businessId = null;
+  try {
+    const { resolveNumericBusinessId } = await import("./businessIdResolve.js");
+    businessId = await resolveNumericBusinessId(barberRow.business_id, dbQuery);
+  } catch (error) {
+    console.warn("[booking] businessId resolve failed:", error?.message || error);
+    const fallback = barberRow.business_id != null ? Number(barberRow.business_id) : null;
+    businessId = Number.isFinite(fallback) ? fallback : null;
+  }
+
   console.log(`[booking] resolvedDbId=${barberDbId ?? "—"} resolvedUuid=${barberUuid ?? "—"}`);
 
   return {
     barberDbId: barberDbId != null && Number.isFinite(barberDbId) ? barberDbId : null,
     barberUuid,
     barberName: resolvedName,
-    businessId: Number.isFinite(biz) ? biz : null,
+    businessId,
     barberRow,
     serviceBarberKey,
   };
