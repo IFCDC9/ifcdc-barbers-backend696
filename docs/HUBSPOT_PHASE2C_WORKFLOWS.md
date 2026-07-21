@@ -49,6 +49,20 @@ HUBSPOT_SYNC_DEALS=1
 
 If a property is missing, IFCDC falls back to standard HubSpot fields and continues syncing (no booking/payment impact).
 
+## HubSpot private app scopes required for automated setup
+
+In HubSpot → Settings → Integrations → Private Apps → IFCDC app, enable:
+
+- `crm.schemas.contacts.read` / `crm.schemas.contacts.write`
+- `crm.schemas.deals.read` / `crm.schemas.deals.write`
+- `crm.objects.contacts.read` / `crm.objects.contacts.write`
+- `crm.objects.deals.read` / `crm.objects.deals.write`
+- `crm.objects.companies.read` / `crm.objects.companies.write`
+- `automation` (workflows)
+- Marketing email / content scopes needed to create and send the six IFCDC emails
+
+Without schema/automation/marketing scopes, CRM object sync still works; boot setup will report errors on `/api/hubspot/status` → `phase2cSetup.errorSamples`.
+
 ## Workflow recipes (create in HubSpot UI)
 
 Prefer the automated scaffold script (creates properties + disabled workflow shells):

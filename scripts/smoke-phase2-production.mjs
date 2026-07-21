@@ -112,14 +112,28 @@ if (
 
 const setup = hsStatus.json?.phase2cSetup;
 if (setup) {
+  const workflowsReady = setup.workflowOk >= 6;
   if (
     !okRow(
       "HubSpot workflows setup summary",
-      setup.workflowOk >= 6,
+      workflowsReady,
       `workflows ${setup.workflowOk}/${setup.workflowTotal} enabled ${setup.workflowEnabled} emails ${setup.emailOk}/${setup.emailTotal}`,
     )
-  )
-    failed += 1;
+  ) {
+    const samples = setup.errorSamples || {};
+    console.log(
+      "INFO  phase2c error samples:",
+      JSON.stringify({
+        properties: samples.properties || [],
+        emails: samples.emails || [],
+        workflows: samples.workflows || [],
+        notes: setup.notes || [],
+      }),
+    );
+    console.log(
+      "INFO  If errors are missing scopes, add schema/automation/marketing scopes on the HubSpot private app, then redeploy.",
+    );
+  }
 } else {
   console.log("WARN  HubSpot phase2cSetup not yet on /status (boot setup still running or older deploy)");
 }

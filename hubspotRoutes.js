@@ -126,6 +126,9 @@ export function createHubSpotRouter({ requireAuth = null, requireAdmin = null } 
       phase2cSetup: (() => {
         const s = getLastPhase2cSetupSummary();
         if (!s) return null;
+        const propErrors = (s.properties || []).filter((p) => p.status === "error").slice(0, 3);
+        const emailErrors = (s.emails || []).filter((e) => e.status === "error").slice(0, 3);
+        const flowErrors = (s.workflows || []).filter((w) => w.status === "error").slice(0, 3);
         return {
           ok: s.ok,
           ranAt: s.ranAt,
@@ -137,6 +140,23 @@ export function createHubSpotRouter({ requireAuth = null, requireAdmin = null } 
           workflowEnabled: (s.workflows || []).filter((w) => w.enabled).length,
           workflowTotal: (s.workflows || []).length,
           notes: s.notes || [],
+          errorSamples: {
+            properties: propErrors.map((p) => ({
+              name: p.name,
+              http: p.http || null,
+              message: p.message || null,
+            })),
+            emails: emailErrors.map((e) => ({
+              name: e.name,
+              http: e.http || null,
+              message: e.message || null,
+            })),
+            workflows: flowErrors.map((w) => ({
+              name: w.name,
+              http: w.http || null,
+              message: w.message || null,
+            })),
+          },
         };
       })(),
     });
