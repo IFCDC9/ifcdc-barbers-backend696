@@ -507,6 +507,11 @@ export async function ensurePhase2cHubSpotSetup({ enableWorkflows = false } = {}
           "Live HUBSPOT_SERVICE_KEY token scopes do not include automation — rotate the private app token after enabling the automation scope, then update Render.",
         );
       }
+      if (!scopeRes.ok && scopeRes.status === 400) {
+        summary.notes.push(
+          "Token metadata endpoint unavailable for this private-app PAT format (expected). Automation access is validated via GET /automation/v4/flows instead.",
+        );
+      }
     } catch (scopeErr) {
       summary.tokenScopes = {
         ok: false,
