@@ -3,6 +3,7 @@
  * Runs on the canonical Render service using process.env.HUBSPOT_SERVICE_KEY.
  * Never logs or returns the service key.
  */
+import { createHash } from "crypto";
 import {
   enqueueCompanySyncById,
   enqueueDealSyncById,
@@ -69,20 +70,33 @@ function getKey() {
   return String(process.env.HUBSPOT_SERVICE_KEY || "").trim();
 }
 
-async function hs(path, { method = "GET", body } = {}) {
+/** Non-secret fingerprint so we can prove which token Render is using. */
+function tokenFingerprint(key = getKey()) {
+  const s = String(key || "").trim();
+  if (!s) return null;
+  return {
+    sha256_12: createHash("sha256").update(s).digest("hex").slice(0, 12),
+    length: s.length,
+    prefix: s.slice(0, 7),
+    format: s.startsWith("pat-") ? "private_app_pat" : "unknown",
+  };
+}
+
+async function hs(path, { method = "GET", body, auth = true } = {}) {
   const key = getKey();
-  if (!key) {
+  if (auth && !key) {
     const err = new Error("hubspot_not_configured");
     err.code = "hubspot_not_configured";
     throw err;
   }
+  const headers = {
+    "Content-Type": "application/json",
+    Accept: "application/json",
+  };
+  if (auth) headers.Authorization = `Bearer ${key}`;
   const res = await fetch(`${API}${path}`, {
     method,
-    headers: {
-      Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
+    headers,
     body: body ? JSON.stringify(body) : undefined,
   });
   const text = await res.text();
@@ -92,7 +106,7 @@ async function hs(path, { method = "GET", body } = {}) {
   } catch {
     json = { raw: String(text || "").slice(0, 400) };
   }
-  return { ok: res.ok, status: res.status, json, text: String(text || "").slice(0, 400), path, method };
+  return { ok: res.ok, status: res.status, json, text: String(text || "").slice(0, 800), path, method };
 }
 
 /** Extract actionable HubSpot permission details (never includes tokens). */
@@ -111,14 +125,61 @@ function permissionDetails(response) {
   if (Array.isArray(json.context?.requiredGranularScopes)) {
     requiredScopes.push(...json.context.requiredGranularScopes.map(String));
   }
+  if (Array.isArray(json.context?.requiredScopes)) {
+    requiredScopes.push(...json.context.requiredScopes.map(String));
+  }
   return {
     endpoint: `${response?.method || "GET"} ${response?.path || ""}`.trim(),
     http: response?.status || null,
     category: json.category || null,
+    subCategory: json.subCategory || null,
+    status: json.status || null,
     message: json.message || response?.text || null,
     correlationId: json.correlationId || null,
     requiredScopes: [...new Set(requiredScopes)],
     errorMessages: errors.map((e) => e?.message).filter(Boolean).slice(0, 5),
+    errorContext: errors.map((e) => e?.context || null).filter(Boolean).slice(0, 3),
+    hubspotBody: json && typeof json === "object"
+      ? {
+          status: json.status || null,
+          message: json.message || null,
+          category: json.category || null,
+          subCategory: json.subCategory || null,
+          correlationId: json.correlationId || null,
+          context: json.context || null,
+          errors: Array.isArray(json.errors) ? json.errors.slice(0, 5) : undefined,
+        }
+      : null,
+  };
+}
+
+/**
+ * Private-app PATs cannot use GET /oauth/v1/access-tokens/:token (always 400).
+ * Use POST /oauth/v2/private-apps/get/access-token-info instead.
+ */
+async function inspectPrivateAppToken() {
+  const key = getKey();
+  const fingerprint = tokenFingerprint(key);
+  const info = await hs("/oauth/v2/private-apps/get/access-token-info", {
+    method: "POST",
+    body: { tokenKey: key },
+  });
+  const scopes = Array.isArray(info.json?.scopes) ? info.json.scopes.map(String).sort() : [];
+  const hasAutomation = scopes.includes("automation");
+  const hasWorkflowsPublicApi = scopes.includes("workflows-access-public-api");
+  return {
+    ok: info.ok,
+    http: info.status,
+    endpoint: "POST /oauth/v2/private-apps/get/access-token-info",
+    fingerprint,
+    hasAutomation,
+    hasWorkflowsPublicApi,
+    scopes,
+    hubId: info.json?.hubId || info.json?.hub_id || null,
+    userId: info.json?.userId || info.json?.user_id || null,
+    appId: info.json?.appId || info.json?.app_id || null,
+    message: info.ok ? null : info.json?.message || info.text || null,
+    permission: info.ok ? null : permissionDetails(info),
   };
 }
 
@@ -447,6 +508,35 @@ async function listFlows() {
     ok: listed.ok,
     flows: Array.isArray(listed.json?.results) ? listed.json.results : [],
     permission: listed.ok ? null : permissionDetails(listed),
+    raw: listed.json,
+    http: listed.status,
+  };
+}
+
+async function probeAutomationSurfaces() {
+  const v4 = await hs("/automation/v4/flows?limit=100");
+  const v3 = await hs("/automation/v3/workflows");
+  return {
+    v4Flows: {
+      endpoint: "GET /automation/v4/flows?limit=100",
+      ok: v4.ok,
+      http: v4.status,
+      flowCount: Array.isArray(v4.json?.results) ? v4.json.results.length : 0,
+      permission: v4.ok ? null : permissionDetails(v4),
+      hubspotBody: v4.ok
+        ? { resultCount: Array.isArray(v4.json?.results) ? v4.json.results.length : 0 }
+        : permissionDetails(v4).hubspotBody,
+    },
+    v3Workflows: {
+      endpoint: "GET /automation/v3/workflows",
+      ok: v3.ok,
+      http: v3.status,
+      workflowCount: Array.isArray(v3.json?.workflows) ? v3.json.workflows.length : null,
+      permission: v3.ok ? null : permissionDetails(v3),
+      hubspotBody: v3.ok
+        ? { workflowCount: Array.isArray(v3.json?.workflows) ? v3.json.workflows.length : null }
+        : permissionDetails(v3).hubspotBody,
+    },
   };
 }
 
@@ -461,10 +551,13 @@ export async function ensurePhase2cHubSpotSetup({ enableWorkflows = false } = {}
     configured: isHubSpotConfigured(),
     workflowSyncEnabled: isHubSpotWorkflowSyncEnabled(),
     serviceKey: isHubSpotConfigured() ? "configured" : "missing",
+    tokenFingerprint: tokenFingerprint(),
     properties: [],
     emails: [],
     workflows: [],
     automationProbe: null,
+    automationSurfaces: null,
+    tokenScopes: null,
     notes: [],
   };
 
@@ -484,32 +577,20 @@ export async function ensurePhase2cHubSpotSetup({ enableWorkflows = false } = {}
     }
     summary.portalId = me.json?.portalId || me.json?.hub_id || null;
 
-    // Inspect scopes on the live token (never return the token itself).
+    // Inspect scopes on the live private-app token (never return the token itself).
     try {
-      const key = getKey();
-      const scopeRes = await fetch(`${API}/oauth/v1/access-tokens/${encodeURIComponent(key)}`, {
-        headers: { Accept: "application/json" },
-      });
-      const scopeJson = await scopeRes.json().catch(() => ({}));
-      const scopes = Array.isArray(scopeJson?.scopes) ? scopeJson.scopes.map(String).sort() : [];
-      summary.tokenScopes = {
-        ok: scopeRes.ok,
-        http: scopeRes.status,
-        hasAutomation: scopes.includes("automation"),
-        scopes,
-        hubId: scopeJson?.hub_id || scopeJson?.hubId || null,
-        userId: scopeJson?.user_id || null,
-        appId: scopeJson?.app_id || null,
-        message: scopeRes.ok ? null : scopeJson?.message || null,
-      };
-      if (scopeRes.ok && !scopes.includes("automation")) {
+      summary.tokenScopes = await inspectPrivateAppToken();
+      if (summary.tokenScopes.ok && !summary.tokenScopes.hasAutomation) {
         summary.notes.push(
-          "Live HUBSPOT_SERVICE_KEY token scopes do not include automation — rotate the private app token after enabling the automation scope, then update Render.",
+          "Live HUBSPOT_SERVICE_KEY scopes from POST /oauth/v2/private-apps/get/access-token-info do NOT include automation. Enable automation on that private app, then rotate/copy the token into Render HUBSPOT_SERVICE_KEY and redeploy.",
         );
-      }
-      if (!scopeRes.ok && scopeRes.status === 400) {
+      } else if (summary.tokenScopes.ok && summary.tokenScopes.hasAutomation) {
         summary.notes.push(
-          "Token metadata endpoint unavailable for this private-app PAT format (expected). Automation access is validated via GET /automation/v4/flows instead.",
+          "Live token DOES include automation scope. If Automation API still 403s, HubSpot is denying Workflows API access for this portal (plan/feature entitlement), not a missing private-app checkbox.",
+        );
+      } else if (!summary.tokenScopes.ok) {
+        summary.notes.push(
+          `Private-app token info failed (http ${summary.tokenScopes.http}): ${summary.tokenScopes.message || "unknown"}. Falling back to Automation API probe.`,
         );
       }
     } catch (scopeErr) {
@@ -518,6 +599,7 @@ export async function ensurePhase2cHubSpotSetup({ enableWorkflows = false } = {}
         http: null,
         hasAutomation: false,
         scopes: [],
+        fingerprint: tokenFingerprint(),
         message: String(scopeErr?.message || scopeErr).slice(0, 120),
       };
     }
@@ -536,17 +618,34 @@ export async function ensurePhase2cHubSpotSetup({ enableWorkflows = false } = {}
       if (email.id) emailByKey.set(spec.key, email.id);
     }
 
+    summary.automationSurfaces = await probeAutomationSurfaces();
     const listed = await listFlows();
     summary.automationProbe = {
       endpoint: "GET /automation/v4/flows",
       ok: listed.ok,
+      http: listed.http,
       flowCount: listed.flows.length,
       permission: listed.permission,
+      hubspotBody: listed.ok
+        ? { resultCount: listed.flows.length }
+        : listed.permission?.hubspotBody || null,
     };
     if (!listed.ok) {
-      summary.notes.push(
-        "Workflows API list failed — private app needs automation scope AND a HubSpot plan that includes Workflows (Marketing/Sales/Service Professional+). If automation is already enabled, confirm portal tier or create the six IFCDC workflows in HubSpot UI using the created emails.",
-      );
+      const scopesOk = summary.tokenScopes?.ok === true;
+      const hasAuto = summary.tokenScopes?.hasAutomation === true;
+      if (scopesOk && hasAuto) {
+        summary.notes.push(
+          "Automation API list failed despite automation scope on the live token — likely portal Workflows feature entitlement / plan, not Render env. Create the six IFCDC workflows in HubSpot UI using the created emails, or open a HubSpot support ticket with the correlationId.",
+        );
+      } else if (scopesOk && !hasAuto) {
+        summary.notes.push(
+          "Automation API list failed because the live private-app token scopes omit automation (confirmed via access-token-info).",
+        );
+      } else {
+        summary.notes.push(
+          "Workflows API list failed — confirm private app automation scope and that the portal plan includes Workflows. If scopes are correct, create the six IFCDC workflows in HubSpot UI using the created emails.",
+        );
+      }
     }
     const byName = new Map(listed.flows.map((f) => [String(f.name || ""), f]));
 
@@ -577,9 +676,11 @@ export async function ensurePhase2cHubSpotSetup({ enableWorkflows = false } = {}
             emailId,
             endpoint: perm.endpoint,
             category: perm.category,
+            subCategory: perm.subCategory,
             requiredScopes: perm.requiredScopes,
             correlationId: perm.correlationId,
             errorMessages: perm.errorMessages,
+            hubspotBody: perm.hubspotBody,
           });
           continue;
         }
@@ -607,6 +708,7 @@ export async function ensurePhase2cHubSpotSetup({ enableWorkflows = false } = {}
           row.enableStatus = "enable_failed";
           row.enableHttp = enabled.status;
           row.enableMessage = enabled.json?.message || enabled.text;
+          row.enableHubspotBody = permissionDetails(enabled).hubspotBody;
         }
       } else if (shouldEnable && !emailId) {
         const row = summary.workflows[summary.workflows.length - 1];

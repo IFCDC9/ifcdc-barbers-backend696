@@ -139,6 +139,7 @@ export function createHubSpotRouter({ requireAuth = null, requireAdmin = null } 
         return {
           ok: s.ok,
           ranAt: s.ranAt,
+          portalId: s.portalId || null,
           propertyOk: (s.properties || []).filter((p) => p.status === "exists" || p.status === "created").length,
           propertyTotal: (s.properties || []).length,
           emailOk: (s.emails || []).filter((e) => e.id).length,
@@ -147,15 +148,21 @@ export function createHubSpotRouter({ requireAuth = null, requireAdmin = null } 
           workflowEnabled: (s.workflows || []).filter((w) => w.enabled).length,
           workflowTotal: (s.workflows || []).length,
           notes: s.notes || [],
+          tokenFingerprint: s.tokenFingerprint || s.tokenScopes?.fingerprint || null,
           automationProbe: s.automationProbe || null,
+          automationSurfaces: s.automationSurfaces || null,
           tokenScopes: s.tokenScopes
             ? {
                 ok: s.tokenScopes.ok,
                 http: s.tokenScopes.http,
+                endpoint: s.tokenScopes.endpoint || null,
                 hasAutomation: s.tokenScopes.hasAutomation,
+                hasWorkflowsPublicApi: s.tokenScopes.hasWorkflowsPublicApi || false,
                 scopes: s.tokenScopes.scopes || [],
                 hubId: s.tokenScopes.hubId || null,
                 appId: s.tokenScopes.appId || null,
+                userId: s.tokenScopes.userId || null,
+                fingerprint: s.tokenScopes.fingerprint || s.tokenFingerprint || null,
                 message: s.tokenScopes.message || null,
               }
             : null,
@@ -175,10 +182,12 @@ export function createHubSpotRouter({ requireAuth = null, requireAdmin = null } 
               endpoint: w.endpoint || "POST /automation/v4/flows",
               http: w.http || null,
               category: w.category || null,
+              subCategory: w.subCategory || null,
               message: w.message || null,
               requiredScopes: w.requiredScopes || [],
               correlationId: w.correlationId || null,
               errorMessages: w.errorMessages || [],
+              hubspotBody: w.hubspotBody || null,
             })),
           },
         };
@@ -382,6 +391,24 @@ export function createHubSpotRouter({ requireAuth = null, requireAdmin = null } 
         ok: setup.ok,
         setup: {
           ranAt: setup.ranAt,
+          portalId: setup.portalId || null,
+          tokenFingerprint: setup.tokenFingerprint || null,
+          tokenScopes: setup.tokenScopes
+            ? {
+                ok: setup.tokenScopes.ok,
+                http: setup.tokenScopes.http,
+                endpoint: setup.tokenScopes.endpoint || null,
+                hasAutomation: setup.tokenScopes.hasAutomation,
+                hasWorkflowsPublicApi: setup.tokenScopes.hasWorkflowsPublicApi || false,
+                scopes: setup.tokenScopes.scopes || [],
+                hubId: setup.tokenScopes.hubId || null,
+                appId: setup.tokenScopes.appId || null,
+                fingerprint: setup.tokenScopes.fingerprint || null,
+                message: setup.tokenScopes.message || null,
+              }
+            : null,
+          automationProbe: setup.automationProbe || null,
+          automationSurfaces: setup.automationSurfaces || null,
           properties: setup.properties,
           emails: (setup.emails || []).map((e) => ({
             name: e.name,
