@@ -140,6 +140,7 @@ export function createHubSpotRouter({ requireAuth = null, requireAdmin = null } 
           workflowEnabled: (s.workflows || []).filter((w) => w.enabled).length,
           workflowTotal: (s.workflows || []).length,
           notes: s.notes || [],
+          automationProbe: s.automationProbe || null,
           errorSamples: {
             properties: propErrors.map((p) => ({
               name: p.name,
@@ -153,8 +154,13 @@ export function createHubSpotRouter({ requireAuth = null, requireAdmin = null } 
             })),
             workflows: flowErrors.map((w) => ({
               name: w.name,
+              endpoint: w.endpoint || "POST /automation/v4/flows",
               http: w.http || null,
+              category: w.category || null,
               message: w.message || null,
+              requiredScopes: w.requiredScopes || [],
+              correlationId: w.correlationId || null,
+              errorMessages: w.errorMessages || [],
             })),
           },
         };

@@ -58,10 +58,18 @@ In HubSpot → Settings → Integrations → Private Apps → IFCDC app, enable:
 - `crm.objects.contacts.read` / `crm.objects.contacts.write`
 - `crm.objects.deals.read` / `crm.objects.deals.write`
 - `crm.objects.companies.read` / `crm.objects.companies.write`
-- `automation` (workflows)
-- Marketing email / content scopes needed to create and send the six IFCDC emails
+- `automation` (Workflows API — **requires Marketing/Sales/Service Professional or Enterprise**)
+- `content` + `marketing-email` (to create/send the six IFCDC emails)
 
-Without schema/automation/marketing scopes, CRM object sync still works; boot setup will report errors on `/api/hubspot/status` → `phase2cSetup.errorSamples`.
+After changing scopes, generate a **new** private app token, update `HUBSPOT_SERVICE_KEY` on canonical Render, and redeploy.
+
+If `POST /automation/v4/flows` still returns **403** with `automation` enabled, the portal likely lacks Workflows on its HubSpot plan tier. In that case create the six IFCDC workflows in the HubSpot UI and attach the already-created emails (`IFCDC Welcome`, `IFCDC Appointment Confirmation`, etc.).
+
+Check live diagnostics on:
+
+```bash
+curl -sS https://ifcdc-barbers-backend696.onrender.com/api/hubspot/status | jq .phase2cSetup
+```
 
 ## Workflow recipes (create in HubSpot UI)
 

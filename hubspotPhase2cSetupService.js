@@ -54,7 +54,34 @@ async function hs(path, { method = "GET", body } = {}) {
   } catch {
     json = { raw: String(text || "").slice(0, 400) };
   }
-  return { ok: res.ok, status: res.status, json, text: String(text || "").slice(0, 400) };
+  return { ok: res.ok, status: res.status, json, text: String(text || "").slice(0, 400), path, method };
+}
+
+/** Extract actionable HubSpot permission details (never includes tokens). */
+function permissionDetails(response) {
+  const json = response?.json || {};
+  const errors = Array.isArray(json.errors) ? json.errors : [];
+  const requiredScopes = [];
+  for (const err of errors) {
+    const ctx = err?.context || {};
+    for (const key of ["requiredGranularScopes", "requiredScopes", "scopes"]) {
+      const vals = ctx[key];
+      if (Array.isArray(vals)) requiredScopes.push(...vals.map(String));
+      else if (typeof vals === "string") requiredScopes.push(vals);
+    }
+  }
+  if (Array.isArray(json.context?.requiredGranularScopes)) {
+    requiredScopes.push(...json.context.requiredGranularScopes.map(String));
+  }
+  return {
+    endpoint: `${response?.method || "GET"} ${response?.path || ""}`.trim(),
+    http: response?.status || null,
+    category: json.category || null,
+    message: json.message || response?.text || null,
+    correlationId: json.correlationId || null,
+    requiredScopes: [...new Set(requiredScopes)],
+    errorMessages: errors.map((e) => e?.message).filter(Boolean).slice(0, 5),
+  };
 }
 
 const CONTACT_PROPS = [
@@ -378,7 +405,11 @@ function flowCreateBody(spec, emailId) {
 
 async function listFlows() {
   const listed = await hs("/automation/v4/flows?limit=100");
-  return Array.isArray(listed.json?.results) ? listed.json.results : [];
+  return {
+    ok: listed.ok,
+    flows: Array.isArray(listed.json?.results) ? listed.json.results : [],
+    permission: listed.ok ? null : permissionDetails(listed),
+  };
 }
 
 /**
@@ -395,6 +426,7 @@ export async function ensurePhase2cHubSpotSetup({ enableWorkflows = false } = {}
     properties: [],
     emails: [],
     workflows: [],
+    automationProbe: null,
     notes: [],
   };
 
@@ -408,6 +440,7 @@ export async function ensurePhase2cHubSpotSetup({ enableWorkflows = false } = {}
     const me = await hs("/integrations/v1/me");
     if (!me.ok) {
       summary.notes.push(`auth_failed:${me.status}`);
+      summary.authPermission = permissionDetails(me);
       lastSetupSummary = summary;
       return summary;
     }
@@ -427,8 +460,19 @@ export async function ensurePhase2cHubSpotSetup({ enableWorkflows = false } = {}
       if (email.id) emailByKey.set(spec.key, email.id);
     }
 
-    const existing = await listFlows();
-    const byName = new Map(existing.map((f) => [String(f.name || ""), f]));
+    const listed = await listFlows();
+    summary.automationProbe = {
+      endpoint: "GET /automation/v4/flows",
+      ok: listed.ok,
+      flowCount: listed.flows.length,
+      permission: listed.permission,
+    };
+    if (!listed.ok) {
+      summary.notes.push(
+        "Workflows API list failed — private app needs automation scope AND a HubSpot plan that includes Workflows (Marketing/Sales/Service Professional+). If automation is already enabled, confirm portal tier or create the six IFCDC workflows in HubSpot UI using the created emails.",
+      );
+    }
+    const byName = new Map(listed.flows.map((f) => [String(f.name || ""), f]));
 
     for (const spec of WORKFLOWS) {
       const emailId = emailByKey.get(spec.key) || null;
@@ -448,12 +492,18 @@ export async function ensurePhase2cHubSpotSetup({ enableWorkflows = false } = {}
             emailId,
           });
         } else {
+          const perm = permissionDetails(created);
           summary.workflows.push({
             name: spec.name,
             status: "error",
             http: created.status,
-            message: created.json?.message || created.text,
+            message: perm.message,
             emailId,
+            endpoint: perm.endpoint,
+            category: perm.category,
+            requiredScopes: perm.requiredScopes,
+            correlationId: perm.correlationId,
+            errorMessages: perm.errorMessages,
           });
           continue;
         }
