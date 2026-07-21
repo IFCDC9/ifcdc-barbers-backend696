@@ -1169,7 +1169,7 @@ async function startServer() {
   } catch (e) {
     console.error("[migrate] loyalty failed:", e?.message || e);
   }
-  try {
+    try {
     await ensureHubSpotSchema();
     const { clearHubSpotClientState, isHubSpotConfigured, isHubSpotSyncEnabled } = await import(
       "./hubspotService.js"
@@ -1180,6 +1180,31 @@ async function startServer() {
       syncEnabled: isHubSpotSyncEnabled(),
       credentialSource: "HUBSPOT_SERVICE_KEY",
     });
+
+    // Phase 2C: ensure properties/workflows/emails using Render-local HubSpot key.
+    void import("./hubspotPhase2cSetupService.js")
+      .then(async (m) => {
+        const setup = await m.ensurePhase2cHubSpotSetup({
+          enableWorkflows: true,
+        });
+        console.log("[hubspot] phase2c_setup", {
+          ok: setup.ok,
+          propertyCount: setup.properties?.length || 0,
+          emailOk: (setup.emails || []).filter((e) => e.id).length,
+          workflowOk: (setup.workflows || []).filter((w) => w.status === "exists" || w.status === "created")
+            .length,
+          enabled: (setup.workflows || []).filter((w) => w.enabled).length,
+          notes: setup.notes || [],
+        });
+        const backfill = await m.runSafeHubSpotMappingBackfill({ limit: 25 });
+        console.log("[hubspot] safe_backfill", {
+          skipped: backfill.skipped,
+          reason: backfill.reason || null,
+          queuedCompanies: backfill.queuedCompanies,
+          queuedDeals: backfill.queuedDeals,
+        });
+      })
+      .catch((error) => console.warn("[hubspot] phase2c_setup failed:", error?.message || error));
   } catch (e) {
     console.error("[migrate] hubspot failed:", e?.message || e);
   }

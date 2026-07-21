@@ -23,6 +23,11 @@ import {
 } from "./hubspotService.js";
 import { isHubSpotHqAnalyticsEnabled } from "./hubspotAnalyticsService.js";
 import { dbQuery } from "./db.js";
+import {
+  ensurePhase2cHubSpotSetup,
+  getLastPhase2cSetupSummary,
+  runSafeHubSpotMappingBackfill,
+} from "./hubspotPhase2cSetupService.js";
 
 /**
  * HubSpot integration routes — server-side only.
@@ -118,6 +123,22 @@ export function createHubSpotRouter({ requireAuth = null, requireAdmin = null } 
         serviceName: HUBSPOT_CANONICAL_SERVICE_NAME,
         host: HUBSPOT_CANONICAL_HOST,
       },
+      phase2cSetup: (() => {
+        const s = getLastPhase2cSetupSummary();
+        if (!s) return null;
+        return {
+          ok: s.ok,
+          ranAt: s.ranAt,
+          propertyOk: (s.properties || []).filter((p) => p.status === "exists" || p.status === "created").length,
+          propertyTotal: (s.properties || []).length,
+          emailOk: (s.emails || []).filter((e) => e.id).length,
+          emailTotal: (s.emails || []).length,
+          workflowOk: (s.workflows || []).filter((w) => w.status === "exists" || w.status === "created").length,
+          workflowEnabled: (s.workflows || []).filter((w) => w.enabled).length,
+          workflowTotal: (s.workflows || []).length,
+          notes: s.notes || [],
+        };
+      })(),
     });
   });
 
@@ -294,6 +315,45 @@ export function createHubSpotRouter({ requireAuth = null, requireAdmin = null } 
     } catch (error) {
       console.warn("[hubspot] backfill error:", error?.message || error);
       return res.status(503).json({ ok: false, message: "HubSpot backfill failed" });
+    }
+  });
+
+  /**
+   * POST /api/hubspot/setup-phase2c — admin-only ensure properties/emails/workflows.
+   * Body: { enableWorkflows?: boolean, backfill?: boolean, limit?: number }
+   */
+  router.post("/setup-phase2c", ...adminHandlers, async (req, res) => {
+    res.set("Cache-Control", "no-store");
+    try {
+      const enableWorkflows = req.body?.enableWorkflows !== false;
+      const setup = await ensurePhase2cHubSpotSetup({ enableWorkflows });
+      let backfill = null;
+      if (req.body?.backfill) {
+        backfill = await runSafeHubSpotMappingBackfill({
+          limit: Number(req.body?.limit) || 25,
+        });
+      }
+      return res.status(setup.ok ? 200 : 207).json({
+        ok: setup.ok,
+        setup: {
+          ranAt: setup.ranAt,
+          properties: setup.properties,
+          emails: (setup.emails || []).map((e) => ({
+            name: e.name,
+            status: e.status,
+            id: e.id || null,
+            state: e.state || null,
+            http: e.http || null,
+            message: e.message || null,
+          })),
+          workflows: setup.workflows,
+          notes: setup.notes,
+        },
+        backfill,
+      });
+    } catch (error) {
+      console.warn("[hubspot] setup-phase2c error:", error?.message || error);
+      return res.status(503).json({ ok: false, message: "Phase 2C setup failed" });
     }
   });
 

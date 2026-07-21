@@ -4,15 +4,17 @@
  *
  * Usage:
  *   node scripts/smoke-phase2-production.mjs
- *   ADMIN_SECRET=... node scripts/smoke-phase2-production.mjs   # optional KPI unlock
  */
 const BASE = String(
   process.env.API_BASE || "https://ifcdc-barbers-backend696.onrender.com",
 ).replace(/\/+$/, "");
+const D8UI = String(
+  process.env.D8UI_BASE || "https://ifcdc-barbers-backend696-d8ui.onrender.com",
+).replace(/\/+$/, "");
 const ADMIN = String(process.env.ADMIN_SECRET || process.env.VITE_ADMIN_API_KEY || "").trim();
 
-async function probe(path, { method = "GET", headers = {}, body } = {}) {
-  const res = await fetch(`${BASE}${path}`, {
+async function probe(base, path, { method = "GET", headers = {}, body } = {}) {
+  const res = await fetch(`${base}${path}`, {
     method,
     headers: {
       Accept: "application/json",
@@ -37,72 +39,139 @@ function okRow(name, pass, detail) {
 }
 
 console.log(`\n=== Phase 2 production smoke (${BASE}) ===\n`);
+let failed = 0;
 
-const health = await probe("/api/health");
-okRow("API health", health.status === 200 && health.json?.status === "OK", `http ${health.status}`);
+const health = await probe(BASE, "/api/health");
+if (!okRow("API health", health.status === 200 && health.json?.status === "OK", `http ${health.status}`)) failed += 1;
 
-const bookings = await probe("/api/app-bookings/health");
-okRow(
-  "Booking + PayPal health",
-  bookings.status === 200 && bookings.json?.ok === true && Boolean(bookings.json?.paypal?.clientIdSet),
-  `env=${bookings.json?.paypal?.environment || "?"} http ${bookings.status}`,
-);
+const bookings = await probe(BASE, "/api/app-bookings/health");
+if (
+  !okRow(
+    "Booking + PayPal health",
+    bookings.status === 200 && bookings.json?.ok === true && Boolean(bookings.json?.paypal?.clientIdSet),
+    `env=${bookings.json?.paypal?.environment || "?"} http ${bookings.status}`,
+  )
+)
+  failed += 1;
 
-const register = await probe("/api/auth/register", { method: "POST", body: {} });
-okRow(
-  "Registration route",
-  register.status >= 400 && register.status < 500,
-  `validation http ${register.status}`,
-);
+const userReg = await probe(BASE, "/api/auth/register", { method: "POST", body: {} });
+if (!okRow("User registration route", userReg.status >= 400 && userReg.status < 500, `http ${userReg.status}`))
+  failed += 1;
 
-const loyalty = await probe("/api/loyalty/me");
-okRow("Loyalty route", loyalty.status === 401 || loyalty.status === 200, `http ${loyalty.status}`);
+const barberReg = await probe(BASE, "/api/auth/register", {
+  method: "POST",
+  body: { role: "barber" },
+});
+if (!okRow("Barber registration route", barberReg.status >= 400 && barberReg.status < 500, `http ${barberReg.status}`))
+  failed += 1;
 
-const rewards = await probe("/api/barber/loyalty/rewards");
-okRow("Rewards route", rewards.status === 401 || rewards.status === 200, `http ${rewards.status}`);
+const shopReg = await probe(BASE, "/api/auth/register", {
+  method: "POST",
+  body: { role: "shop_owner" },
+});
+if (!okRow("Shop registration route", shopReg.status >= 400 && shopReg.status < 500, `http ${shopReg.status}`))
+  failed += 1;
 
-const reviews = await probe("/api/reviews/00000000-0000-0000-0000-000000000001", {
+const onboarding = await probe(BASE, "/api/onboarding/business", { method: "POST", body: {} });
+if (
+  !okRow(
+    "Shop onboarding route",
+    onboarding.status >= 400 && onboarding.status < 500,
+    `http ${onboarding.status}`,
+  )
+)
+  failed += 1;
+
+const loyalty = await probe(BASE, "/api/loyalty/me");
+if (!okRow("Loyalty route", loyalty.status === 401 || loyalty.status === 200, `http ${loyalty.status}`)) failed += 1;
+
+const rewards = await probe(BASE, "/api/barber/loyalty/rewards");
+if (!okRow("Rewards route", rewards.status === 401 || rewards.status === 200, `http ${rewards.status}`)) failed += 1;
+
+const reviews = await probe(BASE, "/api/reviews/00000000-0000-0000-0000-000000000001", {
   method: "PATCH",
   body: {},
 });
-okRow("Reviews route", reviews.status === 401 || reviews.status === 404 || reviews.status === 400, `http ${reviews.status}`);
+if (!okRow("Reviews route", [401, 400, 404].includes(reviews.status), `http ${reviews.status}`)) failed += 1;
 
-const hsStatus = await probe("/api/hubspot/status");
+const hsStatus = await probe(BASE, "/api/hubspot/status");
 const phases = hsStatus.json?.phases || {};
-okRow(
-  "HubSpot flags",
-  hsStatus.status === 200 &&
-    phases.contacts &&
-    phases.companies &&
-    phases.deals &&
-    phases.workflows &&
-    phases.analytics,
-  JSON.stringify(phases),
-);
+if (
+  !okRow(
+    "HubSpot flags",
+    hsStatus.status === 200 &&
+      phases.contacts &&
+      phases.companies &&
+      phases.deals &&
+      phases.workflows &&
+      phases.analytics,
+    JSON.stringify(phases),
+  )
+)
+  failed += 1;
 
-const hsHealth = await probe("/api/hubspot/health");
-okRow(
-  "HubSpot CRM health",
-  hsHealth.status === 200 && hsHealth.json?.ok === true && hsHealth.json?.authenticated === true,
-  hsHealth.json?.message || `http ${hsHealth.status}`,
-);
+const setup = hsStatus.json?.phase2cSetup;
+if (setup) {
+  if (
+    !okRow(
+      "HubSpot workflows setup summary",
+      setup.workflowOk >= 6,
+      `workflows ${setup.workflowOk}/${setup.workflowTotal} enabled ${setup.workflowEnabled} emails ${setup.emailOk}/${setup.emailTotal}`,
+    )
+  )
+    failed += 1;
+} else {
+  console.log("WARN  HubSpot phase2cSetup not yet on /status (boot setup still running or older deploy)");
+}
 
-const kpisAnon = await probe("/api/admin/hubspot/kpis?days=30");
-okRow("HQ Analytics auth gate", kpisAnon.status === 401, `http ${kpisAnon.status}`);
+const hsHealth = await probe(BASE, "/api/hubspot/health");
+if (
+  !okRow(
+    "HubSpot CRM health (companies/deals)",
+    hsHealth.status === 200 &&
+      hsHealth.json?.ok === true &&
+      hsHealth.json?.authenticated === true &&
+      hsHealth.json?.permissions?.companies?.ok === true &&
+      hsHealth.json?.permissions?.deals?.ok === true,
+    hsHealth.json?.message || `http ${hsHealth.status}`,
+  )
+)
+  failed += 1;
+
+const kpisAnon = await probe(BASE, "/api/admin/hubspot/kpis?days=30");
+if (!okRow("HQ Analytics auth gate", kpisAnon.status === 401, `http ${kpisAnon.status}`)) failed += 1;
 
 if (ADMIN) {
-  const kpis = await probe("/api/admin/hubspot/kpis?days=30", {
+  const kpis = await probe(BASE, "/api/admin/hubspot/kpis?days=30", {
     headers: { "x-admin-key": ADMIN },
   });
   const enabled = kpis.json?.enabled === true;
   const hasGrowth = Boolean(kpis.json?.customerGrowth && !kpis.json.customerGrowth.error);
-  okRow(
-    "HQ Analytics (x-admin-key)",
-    kpis.status === 200 && enabled && hasGrowth,
-    `http ${kpis.status} enabled=${enabled}`,
-  );
+  if (!okRow("HQ Analytics (x-admin-key)", kpis.status === 200 && enabled && hasGrowth, `http ${kpis.status}`))
+    failed += 1;
 } else {
-  console.log("SKIP  HQ Analytics admin payload — set ADMIN_SECRET on Render + local to unlock x-admin-key");
+  console.log("SKIP  HQ Analytics admin payload — production ADMIN_SECRET unset; HQ UI uses admin JWT");
 }
 
-console.log("\nDone.\n");
+const d8 = await probe(D8UI, "/api/hubspot/status");
+const d8Clean =
+  d8.status === 200 &&
+  d8.json?.canonicalRuntime === false &&
+  d8.json?.syncEnabled === false &&
+  !(d8.json?.hubspotEnvNamesPresent || []).includes("HUBSPOT_SERVICE_KEY");
+if (
+  !okRow(
+    "d8ui HubSpot env stripped",
+    d8Clean,
+    d8.status === 200
+      ? `syncEnabled=${d8.json?.syncEnabled} env=${JSON.stringify(d8.json?.hubspotEnvNamesPresent || [])}`
+      : `http ${d8.status}`,
+  )
+) {
+  // Guard already blocks sync; treat leftover env as WARN not hard fail for overall exit unless syncEnabled true
+  if (d8.json?.syncEnabled === true) failed += 1;
+  else console.log("WARN  d8ui still has HubSpot env names present but canonical guard keeps syncEnabled=false");
+}
+
+console.log(failed ? `\nRESULT: ${failed} failure(s)\n` : "\nRESULT: all critical checks passed\n");
+process.exit(failed ? 1 : 0);
