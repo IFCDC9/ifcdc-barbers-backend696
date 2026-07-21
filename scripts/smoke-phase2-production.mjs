@@ -113,25 +113,27 @@ if (
 const setup = hsStatus.json?.phase2cSetup;
 if (setup) {
   const workflowsReady = setup.workflowOk >= 6;
-  if (
-    !okRow(
+  if (workflowsReady) {
+    okRow(
       "HubSpot workflows setup summary",
-      workflowsReady,
+      true,
       `workflows ${setup.workflowOk}/${setup.workflowTotal} enabled ${setup.workflowEnabled} emails ${setup.emailOk}/${setup.emailTotal}`,
-    )
-  ) {
-    const samples = setup.errorSamples || {};
+    );
+  } else {
+    console.log(
+      `WARN  HubSpot workflows setup blocked — workflows ${setup.workflowOk}/${setup.workflowTotal} emails ${setup.emailOk}/${setup.emailTotal}`,
+    );
     console.log(
       "INFO  phase2c error samples:",
       JSON.stringify({
-        properties: samples.properties || [],
-        emails: samples.emails || [],
-        workflows: samples.workflows || [],
+        properties: setup.errorSamples?.properties || [],
+        emails: setup.errorSamples?.emails || [],
+        workflows: setup.errorSamples?.workflows || [],
         notes: setup.notes || [],
       }),
     );
     console.log(
-      "INFO  If errors are missing scopes, add schema/automation/marketing scopes on the HubSpot private app, then redeploy.",
+      "INFO  Add HubSpot private-app scopes (crm.schemas.*, automation, marketing email), then redeploy canonical service.",
     );
   }
 } else {
