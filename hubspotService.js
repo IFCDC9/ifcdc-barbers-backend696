@@ -1599,6 +1599,22 @@ async function associateDealRelationships(booking, dealId) {
       if (!contactId) {
         contactId = await findContactIdByEmail(email).catch(() => null);
       }
+      // Guest checkout may never have synced a contact — upsert from booking email.
+      if (!contactId) {
+        const name = String(booking?.customer_name || "").trim() || email;
+        const sync = await syncContactToHubSpot(
+          {
+            id: booking?.user_id || null,
+            email,
+            name,
+          },
+          { reason: "deal_association_contact_upsert" },
+        ).catch(() => null);
+        contactId = sync?.hubspotContactId || sync?.contactId || null;
+        if (!contactId) {
+          contactId = await findContactIdByEmail(email).catch(() => null);
+        }
+      }
       if (contactId) {
         const assoc = await associateDealToObject(
           dealId,

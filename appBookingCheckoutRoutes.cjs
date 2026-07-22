@@ -589,6 +589,25 @@ router.post("/start", async (req, res) => {
           "A valid customer email is required to send your IFCDC booking confirmation after payment.",
       });
     }
+    // Link guest checkout to an existing app account when email matches.
+    let resolvedUserId = null;
+    try {
+      const authHdr = String(req.headers?.authorization || "").trim();
+      if (authHdr) {
+        const { resolveAuthPayload } = await import("./authRoutes.js");
+        const authUser = resolveAuthPayload(authHdr);
+        if (authUser?.id) resolvedUserId = String(authUser.id);
+      }
+      if (!resolvedUserId) {
+        const u = await dbQuery(
+          `SELECT id FROM app_users WHERE lower(trim(email)) = lower(trim($1)) LIMIT 1`,
+          [customerEmail],
+        );
+        if (u.rows?.[0]?.id) resolvedUserId = String(u.rows[0].id);
+      }
+    } catch (_) {
+      /* never block checkout */
+    }
     const serviceNameRaw = stripQuotes(body.serviceName ?? body.service_name);
     const serviceIdRaw = body.serviceId ?? body.service_id;
     const serviceIdsRaw = body.serviceIds ?? body.service_ids ?? body.services;
@@ -725,7 +744,7 @@ router.post("/start", async (req, res) => {
          paypal_order_id, platform_fee, total_amount, booking_status, is_paid_booking,
          platform_fee_status, barber_payout_amount, barber_fee_billed, tip_amount, total_paid, business_id
        ) VALUES (
-         NULL, $1, $2, $3, $4, $5, $6, $7::jsonb, $8::date, $9::time, $10,
+         $17, $1, $2, $3, $4, $5, $6, $7::jsonb, $8::date, $9::time, $10,
          $11, 0, 0, 0, 0, 'full', 'unpaid', 'paypal',
          NULL, $12, $13, 'pending_payment', false,
          'pending', $14, false, $15, 0, $16
@@ -748,6 +767,7 @@ router.post("/start", async (req, res) => {
           barberPayout,
           tipAmount,
           Number.isFinite(tenantBiz) ? tenantBiz : null,
+          resolvedUserId,
         ],
       );
       await dbQuery(

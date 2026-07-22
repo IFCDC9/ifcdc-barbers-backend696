@@ -139,10 +139,55 @@ async function runCompletionSideEffects({
   }
 
   // HubSpot Deal sync — fire-and-forget; never blocks completion / loyalty / PayPal.
+  // Sync contact first when possible so deal↔contact association can succeed on Starter.
   void import("./hubspotService.js")
     .then(async (m) => {
       const loyaltyPoints =
         loyalty && loyalty.ok && loyalty.points != null ? Number(loyalty.points) : null;
+      const userId = booking.user_id || loyalty?.userId || null;
+      if (userId) {
+        try {
+          const row = await (await import("./db.js")).dbQuery(
+            `SELECT id, name, email, phone, role, barber_id, date_of_birth, created_at
+             FROM app_users WHERE id = $1::uuid LIMIT 1`,
+            [String(userId)],
+          );
+          const user = row.rows?.[0];
+          if (user?.email) {
+            await m.syncContactToHubSpot(
+              {
+                id: user.id,
+                email: user.email,
+                name: user.name,
+                phone: user.phone,
+                role: user.role,
+                dateOfBirth: user.date_of_birth,
+                registeredAt: user.created_at,
+                preferredBarberId: user.barber_id,
+                loyaltyLastEvent: loyalty?.redemption ? "redeemed" : "earned",
+                loyaltyLastReward: loyalty?.redemption?.reward_id
+                  ? String(loyalty.redemption.reward_id)
+                  : null,
+                lastCompletedAt: new Date().toISOString(),
+                rebookEligible: true,
+              },
+              { reason: "appointment_completed_workflow" },
+            );
+          }
+        } catch (e) {
+          console.warn("[hubspot] completion contact sync:", e?.message || e);
+          m.enqueueContactWorkflowRefresh(userId, {
+            reason: "appointment_completed_workflow",
+            loyaltyLastEvent: loyalty?.redemption ? "redeemed" : "earned",
+            loyaltyLastReward: loyalty?.redemption?.reward_id
+              ? String(loyalty.redemption.reward_id)
+              : null,
+            lastCompletedAt: new Date().toISOString(),
+            rebookEligible: true,
+          });
+        }
+      }
+
       m.enqueueDealSyncById(booking.id, {
         reason: "appointment_completed",
         dealExtras: {
@@ -150,17 +195,10 @@ async function runCompletionSideEffects({
           loyaltyPointsEarned: Number.isFinite(loyaltyPoints) ? loyaltyPoints : undefined,
         },
       });
-      const userId = booking.user_id || loyalty?.userId || null;
-      if (userId) {
-        m.enqueueContactWorkflowRefresh(userId, {
-          reason: "appointment_completed_workflow",
-          loyaltyLastEvent: loyalty?.redemption ? "redeemed" : "earned",
-          loyaltyLastReward: loyalty?.redemption?.reward_id
-            ? String(loyalty.redemption.reward_id)
-            : null,
-          lastCompletedAt: new Date().toISOString(),
-          rebookEligible: true,
-        });
+
+      // Guest paid bookings often have user_id null but a matching customer_email —
+      // still deliver Starter loyalty/rebook emails (loyalty already resolves by email).
+      if (booking.customer_email) {
         void import("./hubspotStarterAutomationService.js")
           .then((starter) => {
             starter.enqueueStarterCompletionAutomations({
