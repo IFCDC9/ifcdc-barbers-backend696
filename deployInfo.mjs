@@ -176,6 +176,11 @@ export async function getDeployInfoPayload() {
       externalUrl: process.env.RENDER_EXTERNAL_URL || null,
     },
     adminSecretConfigured: Boolean(String(process.env.ADMIN_SECRET || "").trim()),
+    jwtSecretConfigured: Boolean(
+      String(process.env.AUTH_JWT_SECRET || process.env.JWT_SECRET || "").trim(),
+    ),
+    viteAdminKeyNote:
+      "VITE_ADMIN_API_KEY is a frontend build-time var — confirm it matches ADMIN_SECRET on the web host",
     databaseUrlConfigured: Boolean(String(process.env.DATABASE_URL || "").trim()),
     features: {
       paypalFinalizeAlreadyCapturedRecovery: Boolean(captureOrGetCompletedPayPalOrder),

@@ -23,8 +23,13 @@ function fail(msg) {
   failed += 1;
 }
 
-const sql = slotBlockingWhereSql("$4");
-if (!sql.includes("NOT IN ('cancelled', 'completed', 'no_show')")) {
+const sql = slotBlockingWhereSql("$4", "$5");
+if (
+  !sql.includes("'cancelled'")
+  || !sql.includes("'completed'")
+  || !sql.includes("'no_show'")
+  || !/NOT IN\s*\(/i.test(sql)
+) {
   fail("blocking SQL must exclude cancelled, completed, and no_show");
 } else {
   ok("terminal statuses excluded from slot blocking");

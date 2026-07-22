@@ -44,6 +44,28 @@ let failed = 0;
 const health = await probe(BASE, "/api/health");
 if (!okRow("API health", health.status === 200 && health.json?.status === "OK", `http ${health.status}`)) failed += 1;
 
+const deployInfo = await probe(BASE, "/api/deploy-info");
+if (
+  !okRow(
+    "Deploy info",
+    deployInfo.status === 200 && Boolean(deployInfo.json?.activeCommitShort || deployInfo.json?.activeCommit),
+    deployInfo.json?.activeCommitShort || `http ${deployInfo.status}`,
+  )
+)
+  failed += 1;
+if (deployInfo.json?.adminSecretConfigured === true) {
+  okRow("ADMIN_SECRET on production", true, "configured");
+} else if (deployInfo.status === 200) {
+  if (
+    !okRow(
+      "ADMIN_SECRET on production",
+      false,
+      "adminSecretConfigured=false — run scripts/phase3-align-admin-secrets.mjs",
+    )
+  )
+    failed += 1;
+}
+
 const bookings = await probe(BASE, "/api/app-bookings/health");
 if (
   !okRow(
