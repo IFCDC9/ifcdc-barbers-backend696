@@ -78,44 +78,24 @@ Live status exposes this under `phase2cSetup.professionalBlocker` + `subscriptio
 | `ifcdc_loyalty_points_earned` | Number | Optional copy in review email |
 | `ifcdc_rebook_barber_id` | text | Rebook deep link |
 
-## Starter fallback — create automations in HubSpot UI
+## Starter email automations (production)
 
-Setup creates these marketing emails automatically (when `content` scope is present):
+HubSpot Starter **Simple Automations** only enroll on **email engagement** (opened/clicked/sent). They **cannot** trigger on registration, paid booking, or completion property changes. Property-triggered HubSpot Workflows require **Professional+**.
 
-1. `IFCDC Welcome`
-2. `IFCDC Appointment Confirmation`
-3. `IFCDC Review Request`
-4. `IFCDC Rebooking Reminder`
-5. `IFCDC Birthday`
-6. `IFCDC Loyalty Reward`
+IFCDC Starter production therefore:
 
-Then in HubSpot UI (Starter-supported Simple automation / email tools), wire each:
+| Automation | Trigger | Delivery channel |
+|------------|---------|------------------|
+| Welcome | Registration contact sync | Resend (HubSpot single-send attempted first) |
+| Appointment confirmation | Paid PayPal finalize | Existing `bookingEmail.cjs` (Resend) + HubSpot deal props |
+| Review request | Booking completed | Existing `reviewNotificationEmail.cjs` (Resend) + HubSpot deal props |
+| Rebooking reminder | Completion contact refresh | Resend (HubSpot single-send attempted first) |
+| Birthday | Contact has DOB on sync | Resend (HubSpot single-send attempted first) |
+| Loyalty reward | Completion loyalty refresh | Resend (HubSpot single-send attempted first) |
 
-### 1. Welcome email
-- **Enrollment:** Contact created **OR** `ifcdc_lifecycle_stage` is `registered`
-- **Actions:** Send `IFCDC Welcome` (optional short delay)
+The six HubSpot marketing emails remain CRM assets (`emailId`s on `/api/hubspot/status`). Kill-switch: `HUBSPOT_STARTER_AUTOMATIONS=0`.
 
-### 2. Appointment confirmation
-- **Enrollment:** Deal `ifcdc_appointment_status` is `paid` **OR** `ifcdc_confirmation_ready` is `true`
-- **Actions:** Send `IFCDC Appointment Confirmation`
-
-### 3. Review request
-- **Enrollment:** Deal `ifcdc_appointment_status` is `completed` **OR** `ifcdc_review_requested` is `true`
-- **Delay:** 2–24 hours
-- **Actions:** Send `IFCDC Review Request`
-
-### 4. Rebooking reminder
-- **Enrollment:** Contact `ifcdc_last_completed_at` known **OR** `ifcdc_rebook_eligible` is `true`
-- **Delay:** e.g. 21–28 days
-- **Actions:** Send `IFCDC Rebooking Reminder`
-
-### 5. Birthday promotions
-- **Enrollment:** Contact birthday / `date_of_birth` / `ifcdc_date_of_birth`
-- **Actions:** Send `IFCDC Birthday`
-
-### 6. Loyalty reward notifications
-- **Enrollment:** `ifcdc_loyalty_last_event` is `earned`/`redeemed` **OR** points thresholds
-- **Actions:** Send `IFCDC Loyalty Reward`
+**Upgrade only if** you need HubSpot-hosted Workflows that enroll on CRM property changes and send HubSpot marketing emails without Resend.
 
 ## Verify
 

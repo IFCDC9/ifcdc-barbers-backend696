@@ -161,6 +161,17 @@ async function runCompletionSideEffects({
           lastCompletedAt: new Date().toISOString(),
           rebookEligible: true,
         });
+        void import("./hubspotStarterAutomationService.js")
+          .then((starter) => {
+            starter.enqueueStarterCompletionAutomations({
+              email: booking.customer_email,
+              name: booking.customer_name,
+              sendLoyalty: true,
+              sendRebook: true,
+              sendBirthday: false,
+            });
+          })
+          .catch(() => {});
       }
     })
     .catch((hubspotErr) =>

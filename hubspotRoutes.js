@@ -29,6 +29,7 @@ import {
   maybeRerunPhase2cSetup,
   runSafeHubSpotMappingBackfill,
 } from "./hubspotPhase2cSetupService.js";
+import { getStarterAutomationCatalog } from "./hubspotStarterAutomationService.js";
 
 /**
  * HubSpot integration routes — server-side only.
@@ -218,6 +219,7 @@ export function createHubSpotRouter({ requireAuth = null, requireAdmin = null } 
             emailName: w.emailName || null,
             id: w.id || null,
           })),
+          starterAutomations: getStarterAutomationCatalog(),
         };
       })(),
       setupRefreshRequested: refresh,

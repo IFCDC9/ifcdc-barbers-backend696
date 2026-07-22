@@ -676,6 +676,22 @@ export async function syncContactToHubSpot(user, { reason = "sync" } = {}) {
       message: reason,
     });
 
+    // Starter path: property-triggered HubSpot Workflows are Professional-only.
+    // Deliver welcome via Resend (HubSpot single-send attempted first).
+    try {
+      const { enqueueStarterWelcome } = await import("./hubspotStarterAutomationService.js");
+      enqueueStarterWelcome({ email, name: enriched?.name || user?.name, reason });
+      if (enriched?.dateOfBirth || enriched?.date_of_birth) {
+        const { runStarterAutomationEmail } = await import("./hubspotStarterAutomationService.js");
+        void runStarterAutomationEmail("birthday", {
+          to: email,
+          name: enriched?.name || user?.name,
+        }).catch(() => {});
+      }
+    } catch {
+      // never block CRM sync
+    }
+
     // Preserve shop relationships: associate contact → company when mapping exists.
     if (userId && isHubSpotCompanySyncEnabled()) {
       try {
