@@ -1,17 +1,14 @@
-/** Haircut style categories for discovery and photo tagging. */
-export const HAIRCUT_STYLE_CATEGORIES = [
-  { id: "skin_fade", label: "Skin Fade" },
-  { id: "taper_fade", label: "Taper Fade" },
-  { id: "burst_fade", label: "Burst Fade" },
-  { id: "beard", label: "Beard" },
-  { id: "kids_cuts", label: "Kids Cuts" },
-  { id: "braids", label: "Braids" },
-  { id: "designs", label: "Designs" },
-  { id: "womens_styles", label: "Women's Styles" },
-  { id: "hair_color", label: "Hair Color" },
-];
-
-export const HAIRCUT_CATEGORY_IDS = new Set(HAIRCUT_STYLE_CATEGORIES.map((c) => c.id));
+/** Re-export Discover categories — single source of truth in discoverCategories.js */
+export {
+  DISCOVER_STYLE_CATEGORIES,
+  DISCOVER_CATEGORY_IDS,
+  HAIRCUT_STYLE_CATEGORIES,
+  HAIRCUT_CATEGORY_IDS,
+  STYLE_CATEGORIES,
+  normalizeDiscoverCategory,
+  matchesDiscoverCategoryFilter,
+  bustImageCacheUrl,
+} from "./discoverCategories.js";
 
 /** Automatic recognition badges (computed from portfolio metrics). */
 export const BARBER_BADGE_DEFINITIONS = {

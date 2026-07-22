@@ -9,14 +9,19 @@ export type PortfolioPhoto = {
   photoUrl: string;
   thumbnailUrl: string;
   caption: string;
+  title?: string;
   photoType: string;
   styleCategory: string | null;
+  source?: string;
+  canEdit?: boolean;
+  isPrimary?: boolean;
   is30DayFollowup: boolean;
   parentPhotoId: string | null;
   likeCount: number;
   likedByViewer: boolean;
   barberName?: string;
   barberSlug?: string;
+  barberId?: string;
   serviceId?: string | null;
   serviceName?: string;
   price?: number | null;
@@ -140,9 +145,71 @@ export async function fetchDiscoverPhotos(
   const q = styleCategory
     ? `?styleCategory=${encodeURIComponent(styleCategory)}&limit=${cap}`
     : `?limit=${cap}`;
-  const res = await apiFetch(`/api/portfolio/discover${q}`, { auth: false });
+  // Prefer auth so staff get canEdit flags; still works anonymously.
+  const res = await apiFetch(`/api/portfolio/discover${q}`);
   const data = await parseJson<{ photos: PortfolioPhoto[] }>(res);
   return data.photos || [];
+}
+
+export async function patchDiscoverPhoto(
+  photoId: string,
+  body: {
+    title?: string;
+    caption?: string;
+    description?: string;
+    styleCategory?: string;
+    category?: string;
+    status?: "published" | "hidden";
+    setCover?: boolean;
+  },
+): Promise<{ ok: boolean }> {
+  const res = await apiFetch(`/api/portfolio/discover/${encodeURIComponent(photoId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+  return parseJson(res);
+}
+
+export async function hideDiscoverPhoto(photoId: string): Promise<{ ok: boolean }> {
+  const res = await apiFetch(`/api/portfolio/discover/${encodeURIComponent(photoId)}/hide`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+  return parseJson(res);
+}
+
+export async function setDiscoverPhotoCover(photoId: string): Promise<{ ok: boolean }> {
+  const res = await apiFetch(`/api/portfolio/discover/${encodeURIComponent(photoId)}/cover`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+  return parseJson(res);
+}
+
+export async function deleteDiscoverPhoto(photoId: string): Promise<{ ok: boolean }> {
+  const res = await apiFetch(`/api/portfolio/discover/${encodeURIComponent(photoId)}`, {
+    method: "DELETE",
+  });
+  return parseJson(res);
+}
+
+export async function replaceDiscoverPhotoImage(
+  photoId: string,
+  asset: { uri: string; name?: string; type?: string },
+): Promise<{ ok: boolean; imageUrl?: string }> {
+  const token = await ensureValidAppToken().catch(() => null);
+  const form = new FormData();
+  form.append("image", {
+    uri: asset.uri,
+    name: asset.name || "photo.jpg",
+    type: asset.type || "image/jpeg",
+  } as unknown as Blob);
+  const res = await fetch(apiFullUrl(`/api/portfolio/discover/${encodeURIComponent(photoId)}/image`), {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    body: form,
+  });
+  return parseJson(res);
 }
 
 export async function fetchBookingReviewStatus(bookingId: string): Promise<ReviewStatus> {

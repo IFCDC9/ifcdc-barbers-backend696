@@ -46,6 +46,60 @@ export async function fetchDiscoverPhotos(filters = {}) {
   return data;
 }
 
+export async function patchDiscoverPhoto(photoId, body) {
+  const res = await authenticatedFetch(`/api/portfolio/discover/${encodeURIComponent(String(photoId))}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.message || `HTTP ${res.status}`);
+  return data;
+}
+
+export async function hideDiscoverPhoto(photoId) {
+  const res = await authenticatedFetch(`/api/portfolio/discover/${encodeURIComponent(String(photoId))}/hide`, {
+    method: "POST",
+    headers: authHeaders(),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.message || `HTTP ${res.status}`);
+  return data;
+}
+
+export async function setDiscoverPhotoCover(photoId) {
+  const res = await authenticatedFetch(`/api/portfolio/discover/${encodeURIComponent(String(photoId))}/cover`, {
+    method: "POST",
+    headers: authHeaders(),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.message || `HTTP ${res.status}`);
+  return data;
+}
+
+export async function deleteDiscoverPhoto(photoId) {
+  const res = await authenticatedFetch(`/api/portfolio/discover/${encodeURIComponent(String(photoId))}`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.message || `HTTP ${res.status}`);
+  return data;
+}
+
+export async function replaceDiscoverPhotoImage(photoId, file) {
+  const form = new FormData();
+  form.append("image", file);
+  const res = await authenticatedFetch(`/api/portfolio/discover/${encodeURIComponent(String(photoId))}/image`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: form,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.message || `HTTP ${res.status}`);
+  return data;
+}
+
 export async function fetchReviewableBookings() {
   const data = await authenticatedJson("/api/me/reviewable-bookings", { headers: authHeaders() });
   return {

@@ -1,19 +1,11 @@
 import { dbQuery } from "./db.js";
 import { createRequire } from "node:module";
+import { STYLE_CATEGORIES } from "./discoverCategories.js";
 
 const requireCjs = createRequire(import.meta.url);
 const { ensureBarberStyleGalleryTable } = requireCjs("./styleGalleryStore.cjs");
 
-export const STYLE_CATEGORIES = [
-  "fades",
-  "tapers",
-  "waves",
-  "braids",
-  "beard work",
-  "kids cuts",
-  "designs",
-  "other",
-];
+export { STYLE_CATEGORIES };
 
 export async function ensureStylesTables() {
   await dbQuery(`CREATE EXTENSION IF NOT EXISTS pgcrypto;`);

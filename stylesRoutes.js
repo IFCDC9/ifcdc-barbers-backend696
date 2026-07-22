@@ -2,7 +2,7 @@ import express from "express";
 import multer from "multer";
 import { createRequire } from "node:module";
 import { dbQuery } from "./db.js";
-import { STYLE_CATEGORIES } from "./stylesMigrations.js";
+import { STYLE_CATEGORIES, normalizeDiscoverCategory } from "./discoverCategories.js";
 import { requireAuthOrAdminSecret, requireRole } from "./authRoutes.js";
 import { uploadBarberStyleImage, deleteBarberStyleImageFromUrl } from "./src/services/storageUpload.js";
 import { listStylesWithImages } from "./src/services/barberCmsStore.js";
@@ -32,8 +32,7 @@ const { assertPersistableImageUrl, isPlaceholderImageUrl } = requireCjs("./style
 const { isUuidBarberId } = requireCjs("./barberIdentity.cjs");
 
 function normalizeCategory(raw) {
-  const v = String(raw || "").trim().toLowerCase();
-  return STYLE_CATEGORIES.includes(v) ? v : "other";
+  return normalizeDiscoverCategory(raw);
 }
 
 function getTokenRole(req) {
@@ -410,7 +409,7 @@ export function createStylesRouter() {
   router.patch(
     "/:id/publish",
     requireAuthOrAdminSecret,
-    requireRole(["super_admin", "admin", "barber"]),
+    requireRole(["super_admin", "admin", "barber", "shop_owner"]),
     async (req, res) => {
       const id = String(req.params.id || "").trim();
       const published = req.body?.is_published ?? req.body?.isPublished ?? req.body?.published ?? true;

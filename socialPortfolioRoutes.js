@@ -2,7 +2,7 @@ import express from "express";
 import multer from "multer";
 import { resolveAuthPayload, requireAuth } from "./authRoutes.js";
 import { isJwtGlobalSuperScope } from "./authPlatformJwt.js";
-import { uploadPortfolioPhoto } from "./src/services/storageUpload.js";
+import { uploadPortfolioPhoto, uploadBarberStyleImage } from "./src/services/storageUpload.js";
 import {
   HAIRCUT_STYLE_CATEGORIES,
   CONTENT_REPORT_REASONS,
@@ -10,9 +10,11 @@ import {
 import {
   addReviewPhotos,
   adminDeleteReview,
+  assertCanManageDiscoverPhoto,
   clearBarberReply,
   createBarberReview,
   deleteCustomerReview,
+  deleteDiscoverPhoto,
   followBarber,
   getBookingReviewStatus,
   getPublicBarberPortfolio,
@@ -21,15 +23,19 @@ import {
   listDiscoverPhotos,
   listPendingContentReports,
   listReviewableBookings,
+  replaceDiscoverPhotoImage,
   replyToBarberReview,
   reportContent,
   resolveContentReport,
   restoreReview,
+  setDiscoverPhotoCover,
+  setDiscoverPhotoVisibility,
   setPhotoVisibility,
   setReviewVisibility,
   togglePhotoLike,
   unfollowBarber,
   updateCustomerReview,
+  updateDiscoverPhotoMetadata,
 } from "./socialPortfolioService.js";
 import { logAdminActivity, ADMIN_ACTIVITY } from "./adminActivityLog.js";
 
@@ -59,6 +65,23 @@ async function requirePlatformAdmin(req, res) {
   return payload;
 }
 
+async function requireDiscoverEditor(req, res) {
+  const payload = optionalAuth(req);
+  if (!payload) {
+    res.status(401).json({ ok: false, message: "Sign in required." });
+    return null;
+  }
+  const role = String(payload.role || "").toLowerCase();
+  if (
+    !isJwtGlobalSuperScope(payload) &&
+    !["admin", "super_admin", "barber", "shop_owner"].includes(role)
+  ) {
+    res.status(403).json({ ok: false, message: "Staff only." });
+    return null;
+  }
+  return payload;
+}
+
 export function createSocialPortfolioRouter() {
   const router = express.Router();
 
@@ -73,12 +96,122 @@ export function createSocialPortfolioRouter() {
         styleCategory: req.query.styleCategory || req.query.category || null,
         limit: req.query.limit,
         viewerUserId: viewer?.id || null,
+        viewer,
       });
       if (!result.ok) return res.status(400).json(result);
+      res.set("Cache-Control", "no-store, no-cache, must-revalidate");
       return res.json(result);
     } catch (e) {
       console.error("[portfolio] discover failed:", e?.message || e);
       return res.status(500).json({ ok: false, message: "Failed to load discovery feed." });
+    }
+  });
+
+  router.patch("/api/portfolio/discover/:photoId", async (req, res) => {
+    try {
+      const viewer = await requireDiscoverEditor(req, res);
+      if (!viewer) return;
+      const photoId = String(req.params.photoId || "").trim();
+      const access = await assertCanManageDiscoverPhoto(viewer, photoId);
+      if (!access.ok) return res.status(403).json(access);
+
+      if (req.body?.status === "published" || req.body?.status === "hidden") {
+        const vis = await setDiscoverPhotoVisibility(photoId, req.body.status);
+        if (!vis.ok) return res.status(400).json(vis);
+      }
+      if (req.body?.setCover === true || req.body?.isPrimary === true) {
+        const cover = await setDiscoverPhotoCover(photoId);
+        if (!cover.ok) return res.status(400).json(cover);
+      }
+      const meta = await updateDiscoverPhotoMetadata(photoId, {
+        title: req.body?.title,
+        caption: req.body?.caption,
+        description: req.body?.description,
+        styleCategory: req.body?.styleCategory || req.body?.category,
+      });
+      if (!meta.ok) return res.status(400).json(meta);
+      return res.json({ ok: true });
+    } catch (e) {
+      console.error("[portfolio] discover patch failed:", e?.message || e);
+      return res.status(500).json({ ok: false, message: "Failed to update photo." });
+    }
+  });
+
+  router.post(
+    "/api/portfolio/discover/:photoId/image",
+    uploadMemory.single("image"),
+    async (req, res) => {
+      try {
+        const viewer = await requireDiscoverEditor(req, res);
+        if (!viewer) return;
+        const photoId = String(req.params.photoId || "").trim();
+        const access = await assertCanManageDiscoverPhoto(viewer, photoId);
+        if (!access.ok) return res.status(403).json(access);
+        const file = req.file;
+        if (!file?.buffer) return res.status(400).json({ ok: false, message: "image file required" });
+        const uploaded = await uploadBarberStyleImage({
+          buffer: file.buffer,
+          originalName: file.originalname,
+          mimetype: file.mimetype,
+          barberName: access.barberId || "discover",
+        });
+        const imageUrl =
+          typeof uploaded === "string"
+            ? uploaded
+            : uploaded?.publicUrl || uploaded?.url || uploaded?.imageUrl || "";
+        if (!imageUrl) return res.status(500).json({ ok: false, message: "Upload did not return a URL." });
+        const result = await replaceDiscoverPhotoImage(photoId, imageUrl);
+        if (!result.ok) return res.status(400).json(result);
+        return res.json(result);
+      } catch (e) {
+        console.error("[portfolio] discover replace image failed:", e?.message || e);
+        return res.status(500).json({ ok: false, message: "Failed to replace photo." });
+      }
+    },
+  );
+
+  router.post("/api/portfolio/discover/:photoId/cover", async (req, res) => {
+    try {
+      const viewer = await requireDiscoverEditor(req, res);
+      if (!viewer) return;
+      const photoId = String(req.params.photoId || "").trim();
+      const access = await assertCanManageDiscoverPhoto(viewer, photoId);
+      if (!access.ok) return res.status(403).json(access);
+      const result = await setDiscoverPhotoCover(photoId);
+      if (!result.ok) return res.status(400).json(result);
+      return res.json(result);
+    } catch (e) {
+      return res.status(500).json({ ok: false, message: "Failed to set cover." });
+    }
+  });
+
+  router.post("/api/portfolio/discover/:photoId/hide", async (req, res) => {
+    try {
+      const viewer = await requireDiscoverEditor(req, res);
+      if (!viewer) return;
+      const photoId = String(req.params.photoId || "").trim();
+      const access = await assertCanManageDiscoverPhoto(viewer, photoId);
+      if (!access.ok) return res.status(403).json(access);
+      const result = await setDiscoverPhotoVisibility(photoId, "hidden");
+      if (!result.ok) return res.status(400).json(result);
+      return res.json(result);
+    } catch (e) {
+      return res.status(500).json({ ok: false, message: "Failed to hide photo." });
+    }
+  });
+
+  router.delete("/api/portfolio/discover/:photoId", async (req, res) => {
+    try {
+      const viewer = await requireDiscoverEditor(req, res);
+      if (!viewer) return;
+      const photoId = String(req.params.photoId || "").trim();
+      const access = await assertCanManageDiscoverPhoto(viewer, photoId);
+      if (!access.ok) return res.status(403).json(access);
+      const result = await deleteDiscoverPhoto(photoId);
+      if (!result.ok) return res.status(400).json(result);
+      return res.json(result);
+    } catch (e) {
+      return res.status(500).json({ ok: false, message: "Failed to delete photo." });
     }
   });
 

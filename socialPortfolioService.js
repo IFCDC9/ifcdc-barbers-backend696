@@ -9,6 +9,9 @@ import {
   HAIRCUT_CATEGORY_IDS,
   MAX_REVIEW_PHOTOS,
   REVIEW_EDIT_WINDOW_HOURS,
+  normalizeDiscoverCategory,
+  matchesDiscoverCategoryFilter,
+  bustImageCacheUrl,
 } from "./socialPortfolioConstants.js";
 
 const require = createRequire(import.meta.url);
@@ -493,31 +496,307 @@ export async function getPublicBarberPortfolio(slugOrId, { viewerUserId = null, 
   };
 }
 
-function discoverCategoryPatterns(styleCategory) {
-  const map = {
-    skin_fade: ["skin fade", "skin_fade", "drop fade", "low fade"],
-    taper_fade: ["taper fade", "taper_fade", "taper", "low taper"],
-    burst_fade: ["burst", "burst fade"],
-    beard: ["beard"],
-    kids_cuts: ["kids", "kid cut", "children"],
-    braids: ["braid"],
-    designs: ["design", "line up", "shape up"],
-    womens_styles: ["women", "ladies", "female", "lady"],
-    hair_color: ["color", "dye", "highlight"],
-  };
-  if (!styleCategory) return null;
-  return map[styleCategory] || [String(styleCategory).replace(/_/g, " ")];
+function rowMatchesDiscoverCategory(styleCategory, fields) {
+  return matchesDiscoverCategoryFilter(styleCategory, fields);
 }
 
-function rowMatchesDiscoverCategory(styleCategory, fields) {
-  if (!styleCategory) return true;
-  if (fields.styleCategory && fields.styleCategory === styleCategory) return true;
-  const patterns = discoverCategoryPatterns(styleCategory) || [];
-  const hay = [fields.category, fields.name, fields.title, fields.serviceName]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-  return patterns.some((p) => hay.includes(String(p).toLowerCase()));
+async function resolveDiscoverEditContext(viewer) {
+  if (!viewer?.id && !viewer?.role) return null;
+  const role = String(viewer.role || "").toLowerCase();
+  const userId = viewer.id ? String(viewer.id) : null;
+  let barberId = viewer.barberId || viewer.barber_id || null;
+  let businessId = viewer.businessId || viewer.business_id || null;
+
+  if (userId) {
+    try {
+      const r = await dbQuery(
+        `SELECT role, barber_id, business_id FROM app_users WHERE id = $1::uuid LIMIT 1`,
+        [userId],
+      );
+      const row = r.rows?.[0];
+      if (row) {
+        if (!role) {
+          /* keep */
+        }
+        barberId = barberId || row.barber_id;
+        businessId = businessId ?? row.business_id;
+        return {
+          userId,
+          role: String(row.role || role || "").toLowerCase(),
+          barberId: barberId != null ? String(barberId) : null,
+          businessId: businessId != null ? String(businessId) : null,
+          isPlatformAdmin:
+            String(row.role || "").toLowerCase() === "super_admin" ||
+            String(row.role || "").toLowerCase() === "admin" ||
+            Boolean(viewer.isSuperAdmin),
+        };
+      }
+    } catch {
+      /* fall through */
+    }
+  }
+
+  return {
+    userId,
+    role,
+    barberId: barberId != null ? String(barberId) : null,
+    businessId: businessId != null ? String(businessId) : null,
+    isPlatformAdmin: role === "super_admin" || role === "admin" || Boolean(viewer.isSuperAdmin),
+  };
+}
+
+function canEditDiscoverBarber(editContext, barberId, barberBusinessId) {
+  if (!editContext) return false;
+  if (editContext.isPlatformAdmin) return true;
+  const role = String(editContext.role || "").toLowerCase();
+  const bid = String(barberId || "");
+  if (role === "barber" && editContext.barberId && String(editContext.barberId) === bid) return true;
+  if (
+    role === "shop_owner" &&
+    editContext.businessId &&
+    barberBusinessId != null &&
+    String(editContext.businessId) === String(barberBusinessId)
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function parseDiscoverPhotoId(rawId) {
+  const id = String(rawId || "").trim();
+  if (!id) return null;
+  if (id.startsWith("gal-")) return { source: "gallery", rawId: id.slice(4), discoverId: id };
+  if (id.startsWith("svc-")) {
+    const rest = id.slice(4);
+    const lastDash = rest.lastIndexOf("-");
+    if (lastDash > 0) {
+      return {
+        source: "service",
+        serviceId: rest.slice(0, lastDash),
+        barberId: rest.slice(lastDash + 1),
+        discoverId: id,
+      };
+    }
+  }
+  return { source: "review", rawId: id, discoverId: id };
+}
+
+export async function assertCanManageDiscoverPhoto(viewer, discoverId) {
+  const parsed = parseDiscoverPhotoId(discoverId);
+  if (!parsed) return { ok: false, message: "Invalid photo id." };
+  const ctx = await resolveDiscoverEditContext(viewer);
+  if (!ctx) return { ok: false, message: "Sign in required." };
+
+  let barberId = null;
+  let businessId = null;
+
+  if (parsed.source === "gallery") {
+    const r = await dbQuery(
+      `SELECT g.barber_id, b.business_id
+       FROM barber_style_gallery g
+       JOIN barbers b ON b.id::text = g.barber_id::text
+       WHERE g.id = $1::uuid LIMIT 1`,
+      [parsed.rawId],
+    );
+    if (!r.rows?.[0]) return { ok: false, message: "Photo not found." };
+    barberId = String(r.rows[0].barber_id);
+    businessId = r.rows[0].business_id;
+  } else if (parsed.source === "service") {
+    const r = await dbQuery(
+      `SELECT s.barber_id, b.business_id
+       FROM barber_services s
+       JOIN barbers b ON b.id::text = s.barber_id::text
+       WHERE s.id::text = $1::text LIMIT 1`,
+      [parsed.serviceId],
+    );
+    if (!r.rows?.[0]) return { ok: false, message: "Photo not found." };
+    barberId = String(r.rows[0].barber_id);
+    businessId = r.rows[0].business_id;
+  } else {
+    const r = await dbQuery(
+      `SELECT rp.barber_id, b.business_id
+       FROM review_photos rp
+       JOIN barbers b ON b.id::text = rp.barber_id
+       WHERE rp.id = $1::uuid LIMIT 1`,
+      [parsed.rawId],
+    );
+    if (!r.rows?.[0]) return { ok: false, message: "Photo not found." };
+    barberId = String(r.rows[0].barber_id);
+    businessId = r.rows[0].business_id;
+  }
+
+  if (!canEditDiscoverBarber(ctx, barberId, businessId)) {
+    return { ok: false, message: "Not authorized to manage this photo." };
+  }
+  return { ok: true, parsed, barberId, businessId, ctx };
+}
+
+export async function updateDiscoverPhotoMetadata(discoverId, patch = {}) {
+  const parsed = parseDiscoverPhotoId(discoverId);
+  if (!parsed) return { ok: false, message: "Invalid photo id." };
+  const title = patch.title != null ? String(patch.title).trim() : null;
+  const caption = patch.caption != null ? String(patch.caption).trim() : null;
+  const description = patch.description != null ? String(patch.description).trim() : caption;
+  const category =
+    patch.styleCategory != null || patch.category != null
+      ? normalizeDiscoverCategory(patch.styleCategory || patch.category)
+      : null;
+
+  if (parsed.source === "gallery") {
+    const sets = [];
+    const params = [parsed.rawId];
+    if (title != null) {
+      params.push(title);
+      sets.push(`title = $${params.length}`);
+    }
+    if (description != null) {
+      params.push(description);
+      sets.push(`description = $${params.length}`);
+    }
+    if (category != null) {
+      params.push(category);
+      sets.push(`category = $${params.length}`);
+    }
+    if (!sets.length) return { ok: true };
+    await dbQuery(`UPDATE barber_style_gallery SET ${sets.join(", ")} WHERE id = $1::uuid`, params);
+    return { ok: true };
+  }
+
+  if (parsed.source === "service") {
+    const sets = [];
+    const params = [parsed.serviceId];
+    if (title != null) {
+      params.push(title);
+      sets.push(`name = $${params.length}`);
+    }
+    if (description != null) {
+      params.push(description);
+      sets.push(`description = $${params.length}`);
+    }
+    if (category != null) {
+      params.push(category);
+      sets.push(`category = $${params.length}`);
+    }
+    if (!sets.length) return { ok: true };
+    await dbQuery(`UPDATE barber_services SET ${sets.join(", ")} WHERE id::text = $1::text`, params);
+    return { ok: true };
+  }
+
+  const sets = [];
+  const params = [parsed.rawId];
+  if (caption != null || title != null) {
+    params.push(caption ?? title);
+    sets.push(`caption = $${params.length}`);
+  }
+  if (category != null) {
+    params.push(category);
+    sets.push(`style_category = $${params.length}`);
+  }
+  if (!sets.length) return { ok: true };
+  await dbQuery(`UPDATE review_photos SET ${sets.join(", ")} WHERE id = $1::uuid`, params);
+  return { ok: true };
+}
+
+export async function setDiscoverPhotoVisibility(discoverId, status) {
+  const s = String(status || "").toLowerCase();
+  if (!["published", "hidden"].includes(s)) return { ok: false, message: "Invalid status." };
+  const parsed = parseDiscoverPhotoId(discoverId);
+  if (!parsed) return { ok: false, message: "Invalid photo id." };
+
+  if (parsed.source === "gallery") {
+    await dbQuery(`UPDATE barber_style_gallery SET is_published = $2 WHERE id = $1::uuid`, [
+      parsed.rawId,
+      s === "published",
+    ]);
+    return { ok: true };
+  }
+  if (parsed.source === "service") {
+    await dbQuery(`UPDATE barber_services SET is_active = $2 WHERE id::text = $1::text`, [
+      parsed.serviceId,
+      s === "published",
+    ]);
+    return { ok: true };
+  }
+  await dbQuery(`UPDATE review_photos SET status = $2 WHERE id = $1::uuid`, [parsed.rawId, s]);
+  return { ok: true };
+}
+
+export async function setDiscoverPhotoCover(discoverId) {
+  const parsed = parseDiscoverPhotoId(discoverId);
+  if (!parsed) return { ok: false, message: "Invalid photo id." };
+  if (parsed.source === "gallery") {
+    const row = await dbQuery(`SELECT barber_id, service_id FROM barber_style_gallery WHERE id = $1::uuid`, [
+      parsed.rawId,
+    ]);
+    if (!row.rows?.[0]) return { ok: false, message: "Photo not found." };
+    const barberId = row.rows[0].barber_id;
+    const serviceId = row.rows[0].service_id;
+    if (serviceId != null) {
+      await dbQuery(
+        `UPDATE barber_style_gallery SET is_primary = false
+         WHERE barber_id::text = $1::text AND service_id = $2`,
+        [String(barberId), serviceId],
+      );
+    } else {
+      await dbQuery(
+        `UPDATE barber_style_gallery SET is_primary = false WHERE barber_id::text = $1::text AND service_id IS NULL`,
+        [String(barberId)],
+      );
+    }
+    await dbQuery(`UPDATE barber_style_gallery SET is_primary = true WHERE id = $1::uuid`, [parsed.rawId]);
+    if (serviceId != null) {
+      const img = await dbQuery(`SELECT image_url FROM barber_style_gallery WHERE id = $1::uuid`, [parsed.rawId]);
+      if (img.rows?.[0]?.image_url) {
+        await dbQuery(`UPDATE barber_services SET image_url = $2 WHERE id = $1`, [
+          serviceId,
+          img.rows[0].image_url,
+        ]);
+      }
+    }
+    return { ok: true };
+  }
+  if (parsed.source === "service") {
+    return { ok: true, message: "Service cover image is already the primary service photo." };
+  }
+  return { ok: false, message: "Cover image can only be set for gallery photos." };
+}
+
+export async function deleteDiscoverPhoto(discoverId) {
+  const parsed = parseDiscoverPhotoId(discoverId);
+  if (!parsed) return { ok: false, message: "Invalid photo id." };
+  if (parsed.source === "gallery") {
+    await dbQuery(`DELETE FROM barber_style_gallery WHERE id = $1::uuid`, [parsed.rawId]);
+    return { ok: true };
+  }
+  if (parsed.source === "service") {
+    await dbQuery(`UPDATE barber_services SET image_url = NULL WHERE id::text = $1::text`, [parsed.serviceId]);
+    return { ok: true };
+  }
+  await dbQuery(`DELETE FROM review_photos WHERE id = $1::uuid`, [parsed.rawId]);
+  return { ok: true };
+}
+
+export async function replaceDiscoverPhotoImage(discoverId, imageUrl) {
+  const url = String(imageUrl || "").trim();
+  if (!url) return { ok: false, message: "imageUrl required." };
+  const parsed = parseDiscoverPhotoId(discoverId);
+  if (!parsed) return { ok: false, message: "Invalid photo id." };
+  if (parsed.source === "gallery") {
+    await dbQuery(`UPDATE barber_style_gallery SET image_url = $2 WHERE id = $1::uuid`, [parsed.rawId, url]);
+    return { ok: true, imageUrl: bustImageCacheUrl(url, Date.now()) };
+  }
+  if (parsed.source === "service") {
+    await dbQuery(`UPDATE barber_services SET image_url = $2 WHERE id::text = $1::text`, [
+      parsed.serviceId,
+      url,
+    ]);
+    return { ok: true, imageUrl: bustImageCacheUrl(url, Date.now()) };
+  }
+  await dbQuery(
+    `UPDATE review_photos SET photo_url = $2, thumbnail_url = $2 WHERE id = $1::uuid`,
+    [parsed.rawId, url],
+  );
+  return { ok: true, imageUrl: bustImageCacheUrl(url, Date.now()) };
 }
 
 function buildDiscoverPhotoEntry({
@@ -532,17 +811,25 @@ function buildDiscoverPhotoEntry({
   durationMinutes = null,
   photoType = "standard",
   styleCategory = null,
+  category = null,
   caption = "",
   createdAt = null,
   likedByViewer = false,
   likeCount = 0,
+  source = "gallery",
+  isPrimary = false,
+  sortOrder = null,
+  canEdit = false,
 }) {
-  const url =
+  const resolvedCategory = normalizeDiscoverCategory(styleCategory || category || "");
+  const versionHint = createdAt ? new Date(createdAt).getTime() : Date.now();
+  const resolved =
     resolvePublishedImageUrl(imageUrl, {
       barberId,
       serviceId: serviceId || undefined,
       styleId: id,
     }) || String(imageUrl || "");
+  const url = bustImageCacheUrl(resolved, versionHint);
   if (!url) return null;
   return {
     id: String(id),
@@ -551,12 +838,17 @@ function buildDiscoverPhotoEntry({
     photoUrl: url,
     thumbnailUrl: url,
     caption: caption || serviceName || "",
+    title: caption || serviceName || "",
     photoType,
-    styleCategory,
+    styleCategory: resolvedCategory,
+    source,
+    isPrimary: Boolean(isPrimary),
+    sortOrder: sortOrder != null ? Number(sortOrder) : null,
     is30DayFollowup: false,
     parentPhotoId: null,
     likeCount,
     likedByViewer,
+    canEdit: Boolean(canEdit),
     createdAt: createdAt ? new Date(createdAt).toISOString() : null,
     barberName,
     barberSlug,
@@ -571,23 +863,29 @@ function buildDiscoverPhotoEntry({
   };
 }
 
-export async function listDiscoverPhotos({ styleCategory = null, limit = 24, viewerUserId = null } = {}) {
+export async function listDiscoverPhotos({
+  styleCategory = null,
+  limit = 24,
+  viewerUserId = null,
+  viewer = null,
+} = {}) {
   const cap = Math.min(Math.max(Number(limit) || 24, 1), 100);
-  if (styleCategory && !HAIRCUT_CATEGORY_IDS.has(styleCategory)) {
-    return { ok: false, message: "Invalid style category." };
+  let filterCategory = styleCategory ? String(styleCategory).trim() : null;
+  if (filterCategory) {
+    filterCategory = normalizeDiscoverCategory(filterCategory);
+    if (!HAIRCUT_CATEGORY_IDS.has(filterCategory)) {
+      return { ok: false, message: "Invalid style category." };
+    }
   }
 
-  const fetchLimit = cap;
+  const fetchLimit = Math.min(cap * 4, 200);
+  const editContext = await resolveDiscoverEditContext(viewer || (viewerUserId ? { id: viewerUserId } : null));
 
   const reviewParams = [];
   const reviewWhere = [`rp.status = 'published'`, `lower(coalesce(b.verification_status, 'approved')) = 'approved'`];
-  if (styleCategory) {
-    reviewParams.push(styleCategory);
-    reviewWhere.push(`rp.style_category = $${reviewParams.length}`);
-  }
   reviewParams.push(fetchLimit);
   const reviewR = await dbQuery(
-    `SELECT rp.*, b.name AS barber_name, b.public_slug AS barber_slug,
+    `SELECT rp.*, b.name AS barber_name, b.public_slug AS barber_slug, b.business_id AS barber_business_id,
             EXISTS (
               SELECT 1 FROM photo_likes pl
               WHERE pl.photo_id = rp.id AND pl.user_id = $${reviewParams.length + 1}::uuid
@@ -597,13 +895,13 @@ export async function listDiscoverPhotos({ styleCategory = null, limit = 24, vie
      WHERE ${reviewWhere.join(" AND ")}
      ORDER BY rp.created_at DESC
      LIMIT $${reviewParams.length}`,
-    [...reviewParams, viewerUserId || null],
+    [...reviewParams, viewerUserId || editContext?.userId || null],
   );
 
   const serviceR = await dbQuery(
     `SELECT s.id AS service_id, s.barber_id, s.name AS service_name, s.price, s.duration_minutes,
             s.image_url, s.category, s.created_at,
-            b.name AS barber_name, b.public_slug AS barber_slug
+            b.name AS barber_name, b.public_slug AS barber_slug, b.business_id AS barber_business_id
      FROM barber_services s
      JOIN barbers b ON b.id::text = s.barber_id::text
      WHERE COALESCE(s.is_active, true) = true
@@ -615,9 +913,9 @@ export async function listDiscoverPhotos({ styleCategory = null, limit = 24, vie
   ).catch(() => ({ rows: [] }));
 
   const styleR = await dbQuery(
-    `SELECT g.id, g.barber_id, g.service_id, g.image_url, g.title, g.price, g.duration_minutes,
-            g.category, g.created_at,
-            b.name AS barber_name, b.public_slug AS barber_slug,
+    `SELECT g.id, g.barber_id, g.service_id, g.image_url, g.title, g.description, g.price, g.duration_minutes,
+            g.category, g.created_at, g.is_primary, g.sort_order,
+            b.name AS barber_name, b.public_slug AS barber_slug, b.business_id AS barber_business_id,
             s.name AS linked_service_name, s.price AS linked_service_price,
             s.duration_minutes AS linked_service_duration
      FROM barber_style_gallery g
@@ -636,7 +934,7 @@ export async function listDiscoverPhotos({ styleCategory = null, limit = 24, vie
 
   for (const row of serviceR.rows || []) {
     if (
-      !rowMatchesDiscoverCategory(styleCategory, {
+      !rowMatchesDiscoverCategory(filterCategory, {
         category: row.category,
         name: row.service_name,
         serviceName: row.service_name,
@@ -661,7 +959,10 @@ export async function listDiscoverPhotos({ styleCategory = null, limit = 24, vie
       durationMinutes: row.duration_minutes,
       photoType: "service",
       category: row.category,
+      styleCategory: row.category,
       createdAt: row.created_at,
+      source: "service",
+      canEdit: canEditDiscoverBarber(editContext, barberId, row.barber_business_id),
     });
     if (entry) items.push(entry);
   }
@@ -674,11 +975,12 @@ export async function listDiscoverPhotos({ styleCategory = null, limit = 24, vie
     const serviceName = row.linked_service_name || row.title || "";
     const price = row.linked_service_price != null ? row.linked_service_price : row.price;
     if (
-      !rowMatchesDiscoverCategory(styleCategory, {
+      !rowMatchesDiscoverCategory(filterCategory, {
         category: row.category,
         title: row.title,
         name: serviceName,
         serviceName,
+        caption: row.description,
       })
     ) {
       continue;
@@ -696,24 +998,40 @@ export async function listDiscoverPhotos({ styleCategory = null, limit = 24, vie
       durationMinutes: row.linked_service_duration ?? row.duration_minutes,
       photoType: sid ? "service" : "standard",
       caption: row.title || serviceName,
+      category: row.category,
+      styleCategory: row.category,
       createdAt: row.created_at,
+      source: "gallery",
+      isPrimary: row.is_primary,
+      sortOrder: row.sort_order,
+      canEdit: canEditDiscoverBarber(editContext, barberId, row.barber_business_id),
     });
     if (entry) items.push(entry);
   }
 
   for (const row of reviewR.rows || []) {
     const mapped = mapPhotoRow(row, { likedByViewer: Boolean(row.liked_by_viewer) });
+    const normalizedCat = normalizeDiscoverCategory(mapped.styleCategory || mapped.caption || "");
     if (
-      !rowMatchesDiscoverCategory(styleCategory, {
+      !rowMatchesDiscoverCategory(filterCategory, {
         styleCategory: mapped.styleCategory,
+        category: mapped.styleCategory,
         title: mapped.caption,
+        caption: mapped.caption,
         name: row.barber_name,
       })
     ) {
       continue;
     }
+    const versionHint = row.created_at ? new Date(row.created_at).getTime() : Date.now();
     items.push({
       ...mapped,
+      styleCategory: normalizedCat,
+      photoUrl: bustImageCacheUrl(mapped.photoUrl, versionHint),
+      thumbnailUrl: bustImageCacheUrl(mapped.thumbnailUrl || mapped.photoUrl, versionHint),
+      title: mapped.caption || "",
+      source: "review",
+      canEdit: canEditDiscoverBarber(editContext, mapped.barberId, row.barber_business_id),
       barberName: row.barber_name,
       barberSlug: row.barber_slug,
       serviceName: mapped.caption || "",
@@ -727,7 +1045,7 @@ export async function listDiscoverPhotos({ styleCategory = null, limit = 24, vie
     .slice(0, cap)
     .map(({ createdAtMs, ...rest }) => rest);
 
-  return { ok: true, photos };
+  return { ok: true, photos, styleCategory: filterCategory || null };
 }
 
 export async function assertBookingEligibleForReview(userId, bookingId) {
@@ -1804,10 +2122,7 @@ export async function listAdminReviews({
 }
 
 export async function setPhotoVisibility(photoId, status) {
-  const s = String(status || "").toLowerCase();
-  if (!["published", "hidden"].includes(s)) return { ok: false, message: "Invalid status." };
-  await dbQuery(`UPDATE review_photos SET status = $2 WHERE id = $1::uuid`, [String(photoId), s]);
-  return { ok: true };
+  return setDiscoverPhotoVisibility(photoId, status);
 }
 
 export async function listReviewableBookings(userId) {
