@@ -112,16 +112,25 @@ if (
 
 const setup = hsStatus.json?.phase2cSetup;
 if (setup) {
-  const workflowsReady = setup.workflowOk >= 6;
-  if (workflowsReady) {
+  const starterOk =
+    setup.ok === true &&
+    setup.propertyOk >= (setup.propertyTotal || 1) &&
+    setup.emailOk >= (setup.emailTotal || 1);
+  const mode = setup.subscriptionMode || setup.workflowProvisionMode || "unknown";
+  if (starterOk) {
     okRow(
-      "HubSpot workflows setup summary",
+      "HubSpot Phase 2C Starter setup",
       true,
-      `workflows ${setup.workflowOk}/${setup.workflowTotal} enabled ${setup.workflowEnabled} emails ${setup.emailOk}/${setup.emailTotal}`,
+      `${mode} properties ${setup.propertyOk}/${setup.propertyTotal} emails ${setup.emailOk}/${setup.emailTotal} workflows ${setup.workflowOk}/${setup.workflowTotal} (api ${setup.workflowApiOk ?? "?"})`,
     );
+    if (setup.workflowProvisionMode === "starter_manual") {
+      console.log(
+        "INFO  Workflows API is Professional-only; Starter fallback recorded. Attach emails in HubSpot UI.",
+      );
+    }
   } else {
     console.log(
-      `WARN  HubSpot workflows setup blocked — workflows ${setup.workflowOk}/${setup.workflowTotal} emails ${setup.emailOk}/${setup.emailTotal}`,
+      `WARN  HubSpot Phase 2C incomplete — ok=${setup.ok} properties ${setup.propertyOk}/${setup.propertyTotal} emails ${setup.emailOk}/${setup.emailTotal}`,
     );
     console.log(
       "INFO  phase2c error samples:",
@@ -129,11 +138,9 @@ if (setup) {
         properties: setup.errorSamples?.properties || [],
         emails: setup.errorSamples?.emails || [],
         workflows: setup.errorSamples?.workflows || [],
+        professionalBlocker: setup.professionalBlocker || null,
         notes: setup.notes || [],
       }),
-    );
-    console.log(
-      "INFO  Add HubSpot private-app scopes (crm.schemas.*, automation, marketing email), then redeploy canonical service.",
     );
   }
 } else {

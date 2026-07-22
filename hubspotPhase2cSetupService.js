@@ -1,7 +1,8 @@
 /**
- * Phase 2C HubSpot setup — properties, workflow scaffolds, marketing emails.
- * Runs on the canonical Render service using process.env.HUBSPOT_SERVICE_KEY.
- * Never logs or returns the service key.
+ * Phase 2C HubSpot setup — Starter-compatible by default.
+ * Creates CRM properties + marketing emails (Starter). Workflows API
+ * (Professional+) is probed optionally; on denial we use a manual/UI fallback
+ * and still mark setup ok. Never logs or returns the service key.
  */
 import { createHash } from "crypto";
 import {
@@ -26,20 +27,28 @@ export function getLastPhase2cSetupSummary() {
   return lastSetupSummary;
 }
 
+function propertiesReady(summary) {
+  const props = summary?.properties || [];
+  return props.length > 0 && props.every((p) => p.status === "exists" || p.status === "created");
+}
+
+function emailsReady(summary) {
+  const emails = summary?.emails || [];
+  return emails.length > 0 && emails.every((e) => Boolean(e.id));
+}
+
 /**
- * Re-run setup if last attempt failed (e.g. after HubSpot plan upgrade).
+ * Re-run setup if Starter-required pieces failed (properties/emails).
+ * Does NOT retry solely because Workflows API (Professional) is unavailable.
  * Rate-limited; never throws to callers.
  */
-export function maybeRerunPhase2cSetup({ force = false, enableWorkflows = true } = {}) {
+export function maybeRerunPhase2cSetup({ force = false, enableWorkflows = false } = {}) {
   const now = Date.now();
-  const workflows = lastSetupSummary?.workflows || [];
-  const workflowOk = workflows.filter((w) => w.status === "exists" || w.status === "created").length;
-  const workflowTotal = Math.max(workflows.length, 6);
   const failed =
     !lastSetupSummary ||
     lastSetupSummary.ok !== true ||
-    lastSetupSummary.automationProbe?.ok === false ||
-    workflowOk < workflowTotal;
+    !propertiesReady(lastSetupSummary) ||
+    !emailsReady(lastSetupSummary);
 
   if (!force && !failed) {
     return Promise.resolve(lastSetupSummary);
@@ -540,8 +549,23 @@ async function probeAutomationSurfaces() {
   };
 }
 
+const PROFESSIONAL_WORKFLOWS_BLOCKER = {
+  feature: "Workflows / Automation public API",
+  requiredPlan: "Marketing Hub Professional or Enterprise (or Sales/Service Professional+ with Workflows)",
+  endpoints: [
+    "GET /automation/v4/flows",
+    "POST /automation/v4/flows",
+    "PATCH /automation/v4/flows/{flowId}",
+    "GET /automation/v3/workflows",
+  ],
+  starterFallback:
+    "Create the six IFCDC automations in HubSpot UI (Simple automation / email tools) using the already-created marketing emails. Backend continues to sync enrollment properties on contacts/deals.",
+};
+
 /**
- * Ensure Phase 2C properties, emails, and workflows exist.
+ * Ensure Phase 2C Starter assets exist (properties + marketing emails).
+ * Optionally scaffolds Workflows via API when the portal is Professional+.
+ * On Starter (Workflows API 403), records a manual fallback and still returns ok.
  * @param {{ enableWorkflows?: boolean }} [options]
  */
 export async function ensurePhase2cHubSpotSetup({ enableWorkflows = false } = {}) {
@@ -552,6 +576,9 @@ export async function ensurePhase2cHubSpotSetup({ enableWorkflows = false } = {}
     workflowSyncEnabled: isHubSpotWorkflowSyncEnabled(),
     serviceKey: isHubSpotConfigured() ? "configured" : "missing",
     tokenFingerprint: tokenFingerprint(),
+    subscriptionMode: "unknown",
+    workflowProvisionMode: "pending",
+    professionalBlocker: null,
     properties: [],
     emails: [],
     workflows: [],
@@ -580,17 +607,9 @@ export async function ensurePhase2cHubSpotSetup({ enableWorkflows = false } = {}
     // Inspect scopes on the live private-app token (never return the token itself).
     try {
       summary.tokenScopes = await inspectPrivateAppToken();
-      if (summary.tokenScopes.ok && !summary.tokenScopes.hasAutomation) {
+      if (!summary.tokenScopes.ok) {
         summary.notes.push(
-          "Live HUBSPOT_SERVICE_KEY scopes from POST /oauth/v2/private-apps/get/access-token-info do NOT include automation. Enable automation on that private app, then rotate/copy the token into Render HUBSPOT_SERVICE_KEY and redeploy.",
-        );
-      } else if (summary.tokenScopes.ok && summary.tokenScopes.hasAutomation) {
-        summary.notes.push(
-          "Live token DOES include automation scope. If Automation API still 403s, HubSpot is denying Workflows API access for this portal (plan/feature entitlement), not a missing private-app checkbox.",
-        );
-      } else if (!summary.tokenScopes.ok) {
-        summary.notes.push(
-          `Private-app token info failed (http ${summary.tokenScopes.http}): ${summary.tokenScopes.message || "unknown"}. Falling back to Automation API probe.`,
+          `Private-app token info failed (http ${summary.tokenScopes.http}): ${summary.tokenScopes.message || "unknown"}. Continuing with Starter property/email setup.`,
         );
       }
     } catch (scopeErr) {
@@ -618,6 +637,7 @@ export async function ensurePhase2cHubSpotSetup({ enableWorkflows = false } = {}
       if (email.id) emailByKey.set(spec.key, email.id);
     }
 
+    // Optional Professional probe — never required for Starter setup success.
     summary.automationSurfaces = await probeAutomationSurfaces();
     const listed = await listFlows();
     summary.automationProbe = {
@@ -630,96 +650,132 @@ export async function ensurePhase2cHubSpotSetup({ enableWorkflows = false } = {}
         ? { resultCount: listed.flows.length }
         : listed.permission?.hubspotBody || null,
     };
-    if (!listed.ok) {
-      const scopesOk = summary.tokenScopes?.ok === true;
-      const hasAuto = summary.tokenScopes?.hasAutomation === true;
-      if (scopesOk && hasAuto) {
-        summary.notes.push(
-          "Automation API list failed despite automation scope on the live token — likely portal Workflows feature entitlement / plan, not Render env. Create the six IFCDC workflows in HubSpot UI using the created emails, or open a HubSpot support ticket with the correlationId.",
-        );
-      } else if (scopesOk && !hasAuto) {
-        summary.notes.push(
-          "Automation API list failed because the live private-app token scopes omit automation (confirmed via access-token-info).",
-        );
-      } else {
-        summary.notes.push(
-          "Workflows API list failed — confirm private app automation scope and that the portal plan includes Workflows. If scopes are correct, create the six IFCDC workflows in HubSpot UI using the created emails.",
-        );
-      }
-    }
-    const byName = new Map(listed.flows.map((f) => [String(f.name || ""), f]));
 
-    for (const spec of WORKFLOWS) {
-      const emailId = emailByKey.get(spec.key) || null;
-      let flow = byName.get(spec.name);
-      if (!flow) {
-        const created = await hs("/automation/v4/flows", {
-          method: "POST",
-          body: flowCreateBody(spec, emailId),
-        });
-        if (created.ok) {
-          flow = created.json;
-          summary.workflows.push({
-            name: spec.name,
-            status: "created",
-            id: flow?.id || null,
-            enabled: flow?.isEnabled === true,
-            emailId,
+    const v3Denied = summary.automationSurfaces?.v3Workflows;
+    const professionalDenied =
+      !listed.ok ||
+      (v3Denied &&
+        v3Denied.ok === false &&
+        String(v3Denied.hubspotBody?.message || "").includes("workflows-access-public-api"));
+
+    if (listed.ok) {
+      summary.subscriptionMode = "professional_workflows_api";
+      summary.workflowProvisionMode = "api";
+      summary.notes.push(
+        "Workflows API available — provisioning IFCDC flows via GET/POST /automation/v4/flows.",
+      );
+      const byName = new Map(listed.flows.map((f) => [String(f.name || ""), f]));
+      const shouldEnable = enableWorkflows || envFlag("HUBSPOT_ENABLE_WORKFLOWS");
+
+      for (const spec of WORKFLOWS) {
+        const emailId = emailByKey.get(spec.key) || null;
+        let flow = byName.get(spec.name);
+        if (!flow) {
+          const created = await hs("/automation/v4/flows", {
+            method: "POST",
+            body: flowCreateBody(spec, emailId),
           });
+          if (created.ok) {
+            flow = created.json;
+            summary.workflows.push({
+              name: spec.name,
+              status: "created",
+              id: flow?.id || null,
+              enabled: flow?.isEnabled === true,
+              emailId,
+              provisionMode: "api",
+            });
+          } else {
+            const perm = permissionDetails(created);
+            // API create failed after list succeeded — still fall back per flow.
+            summary.workflows.push({
+              name: spec.name,
+              status: "starter_manual",
+              id: null,
+              enabled: false,
+              emailId,
+              provisionMode: "starter_manual",
+              endpoint: perm.endpoint,
+              http: created.status,
+              message: perm.message,
+              correlationId: perm.correlationId,
+              hubspotBody: perm.hubspotBody,
+            });
+            continue;
+          }
         } else {
-          const perm = permissionDetails(created);
           summary.workflows.push({
             name: spec.name,
-            status: "error",
-            http: created.status,
-            message: perm.message,
+            status: "exists",
+            id: flow.id,
+            enabled: flow.isEnabled === true,
             emailId,
-            endpoint: perm.endpoint,
-            category: perm.category,
-            subCategory: perm.subCategory,
-            requiredScopes: perm.requiredScopes,
-            correlationId: perm.correlationId,
-            errorMessages: perm.errorMessages,
-            hubspotBody: perm.hubspotBody,
+            provisionMode: "api",
           });
-          continue;
         }
-      } else {
+
+        if (shouldEnable && flow?.id && emailId && flow.isEnabled !== true) {
+          const enabled = await hs(`/automation/v4/flows/${encodeURIComponent(flow.id)}`, {
+            method: "PATCH",
+            body: { isEnabled: true },
+          });
+          const row = summary.workflows[summary.workflows.length - 1];
+          if (enabled.ok) {
+            row.enabled = true;
+            row.enableStatus = "enabled";
+          } else {
+            row.enableStatus = "enable_failed";
+            row.enableHttp = enabled.status;
+            row.enableMessage = enabled.json?.message || enabled.text;
+          }
+        }
+      }
+    } else {
+      summary.subscriptionMode = professionalDenied ? "starter" : "workflows_api_unavailable";
+      summary.workflowProvisionMode = "starter_manual";
+      summary.professionalBlocker = {
+        ...PROFESSIONAL_WORKFLOWS_BLOCKER,
+        liveEvidence: {
+          v4: {
+            endpoint: "GET /automation/v4/flows?limit=100",
+            http: listed.http,
+            body: listed.permission?.hubspotBody || null,
+          },
+          v3: v3Denied
+            ? {
+                endpoint: v3Denied.endpoint,
+                http: v3Denied.http,
+                body: v3Denied.hubspotBody || null,
+              }
+            : null,
+        },
+      };
+      summary.notes.push(
+        "HubSpot Starter path: Workflows API requires Professional+. Skipping API workflow create/enable. Properties + marketing emails remain the Starter deliverable; attach emails via HubSpot UI Simple automation / supported automations.",
+      );
+
+      for (const spec of WORKFLOWS) {
         summary.workflows.push({
           name: spec.name,
-          status: "exists",
-          id: flow.id,
-          enabled: flow.isEnabled === true,
-          emailId,
+          key: spec.key,
+          status: "starter_manual",
+          id: null,
+          enabled: false,
+          emailId: emailByKey.get(spec.key) || null,
+          emailName: spec.emailName,
+          provisionMode: "starter_manual",
+          fallback: PROFESSIONAL_WORKFLOWS_BLOCKER.starterFallback,
         });
-      }
-
-      const shouldEnable = enableWorkflows || envFlag("HUBSPOT_ENABLE_WORKFLOWS");
-      if (shouldEnable && flow?.id && emailId && flow.isEnabled !== true) {
-        const enabled = await hs(`/automation/v4/flows/${encodeURIComponent(flow.id)}`, {
-          method: "PATCH",
-          body: { isEnabled: true },
-        });
-        const row = summary.workflows[summary.workflows.length - 1];
-        if (enabled.ok) {
-          row.enabled = true;
-          row.enableStatus = "enabled";
-        } else {
-          row.enableStatus = "enable_failed";
-          row.enableHttp = enabled.status;
-          row.enableMessage = enabled.json?.message || enabled.text;
-          row.enableHubspotBody = permissionDetails(enabled).hubspotBody;
-        }
-      } else if (shouldEnable && !emailId) {
-        const row = summary.workflows[summary.workflows.length - 1];
-        row.enableStatus = "skipped_no_email";
-        summary.notes.push(`${spec.key}: email missing — left disabled`);
       }
     }
 
-    summary.ok =
-      summary.properties.every((p) => p.status === "exists" || p.status === "created") &&
-      summary.workflows.every((w) => w.status === "exists" || w.status === "created");
+    // Starter success = properties + marketing emails. Workflows API is optional.
+    summary.ok = propertiesReady(summary) && emailsReady(summary);
+    if (summary.ok && summary.workflowProvisionMode === "starter_manual") {
+      summary.notes.push(
+        "phase2c_ok_starter: custom properties and marketing emails ready; workflow enrollment is manual/UI until Professional Workflows API is available.",
+      );
+    }
   } catch (error) {
     summary.notes.push(String(error?.message || error).slice(0, 180));
   }

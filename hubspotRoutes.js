@@ -83,9 +83,9 @@ export function createHubSpotRouter({ requireAuth = null, requireAdmin = null } 
     res.set("Cache-Control", "no-store");
     const refresh = String(req.query?.refreshSetup || "").trim() === "1";
     if (refresh) {
-      void maybeRerunPhase2cSetup({ force: true, enableWorkflows: true });
+      void maybeRerunPhase2cSetup({ force: true, enableWorkflows: false });
     } else {
-      void maybeRerunPhase2cSetup({ enableWorkflows: true });
+      void maybeRerunPhase2cSetup({ enableWorkflows: false });
     }
     res.json({
       ok: true,
@@ -140,11 +140,29 @@ export function createHubSpotRouter({ requireAuth = null, requireAdmin = null } 
           ok: s.ok,
           ranAt: s.ranAt,
           portalId: s.portalId || null,
+          subscriptionMode: s.subscriptionMode || null,
+          workflowProvisionMode: s.workflowProvisionMode || null,
+          professionalBlocker: s.professionalBlocker
+            ? {
+                feature: s.professionalBlocker.feature,
+                requiredPlan: s.professionalBlocker.requiredPlan,
+                endpoints: s.professionalBlocker.endpoints,
+                starterFallback: s.professionalBlocker.starterFallback,
+                liveEvidence: s.professionalBlocker.liveEvidence || null,
+              }
+            : null,
           propertyOk: (s.properties || []).filter((p) => p.status === "exists" || p.status === "created").length,
           propertyTotal: (s.properties || []).length,
           emailOk: (s.emails || []).filter((e) => e.id).length,
           emailTotal: (s.emails || []).length,
-          workflowOk: (s.workflows || []).filter((w) => w.status === "exists" || w.status === "created").length,
+          workflowOk: (s.workflows || []).filter((w) =>
+            ["exists", "created", "starter_manual", "manual_ui_or_simple_automations"].includes(
+              String(w.status || ""),
+            ),
+          ).length,
+          workflowApiOk: (s.workflows || []).filter((w) =>
+            ["exists", "created"].includes(String(w.status || "")),
+          ).length,
           workflowEnabled: (s.workflows || []).filter((w) => w.enabled).length,
           workflowTotal: (s.workflows || []).length,
           notes: s.notes || [],
@@ -190,6 +208,16 @@ export function createHubSpotRouter({ requireAuth = null, requireAdmin = null } 
               hubspotBody: w.hubspotBody || null,
             })),
           },
+          workflows: (s.workflows || []).map((w) => ({
+            name: w.name,
+            key: w.key || null,
+            status: w.status,
+            provisionMode: w.provisionMode || null,
+            enabled: Boolean(w.enabled),
+            emailId: w.emailId || null,
+            emailName: w.emailName || null,
+            id: w.id || null,
+          })),
         };
       })(),
       setupRefreshRequested: refresh,
@@ -379,7 +407,7 @@ export function createHubSpotRouter({ requireAuth = null, requireAdmin = null } 
   router.post("/setup-phase2c", ...adminHandlers, async (req, res) => {
     res.set("Cache-Control", "no-store");
     try {
-      const enableWorkflows = req.body?.enableWorkflows !== false;
+      const enableWorkflows = req.body?.enableWorkflows === true;
       const setup = await ensurePhase2cHubSpotSetup({ enableWorkflows });
       let backfill = null;
       if (req.body?.backfill) {
@@ -392,6 +420,9 @@ export function createHubSpotRouter({ requireAuth = null, requireAdmin = null } 
         setup: {
           ranAt: setup.ranAt,
           portalId: setup.portalId || null,
+          subscriptionMode: setup.subscriptionMode || null,
+          workflowProvisionMode: setup.workflowProvisionMode || null,
+          professionalBlocker: setup.professionalBlocker || null,
           tokenFingerprint: setup.tokenFingerprint || null,
           tokenScopes: setup.tokenScopes
             ? {

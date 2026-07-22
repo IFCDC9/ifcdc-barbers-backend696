@@ -9,11 +9,12 @@
 - Docs: property/workflow guide remains in `docs/HUBSPOT_PHASE2C_WORKFLOWS.md`
 
 ### Phase 2C shipped (code)
-- Feature flag: `HUBSPOT_SYNC_WORKFLOWS`
+- Feature flag: `HUBSPOT_SYNC_WORKFLOWS` (property enrichment only — **Starter-compatible**)
 - Contact enrichment: lifecycle/welcome, loyalty, birthday, rebook eligibility
 - Deal enrichment: confirmation ready, review requested, loyalty points earned
 - Hooks: registration lifecycle, completion → deal + contact refresh, paid finalize confirmation
 - Optional `date_of_birth` on `app_users` + profile PATCH
+- Setup: CRM properties + marketing emails via API; Workflows API is Professional-only and falls back to HubSpot UI / Simple automation without failing setup
 - Ops guide: `docs/HUBSPOT_PHASE2C_WORKFLOWS.md`
 
 ### Phase 2B shipped (code)

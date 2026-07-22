@@ -1181,19 +1181,26 @@ async function startServer() {
       credentialSource: "HUBSPOT_SERVICE_KEY",
     });
 
-    // Phase 2C: ensure properties/workflows/emails using Render-local HubSpot key.
+    // Phase 2C: Starter properties + marketing emails (Workflows API optional / Pro+).
     void import("./hubspotPhase2cSetupService.js")
       .then(async (m) => {
         const setup = await m.ensurePhase2cHubSpotSetup({
-          enableWorkflows: true,
+          enableWorkflows: false,
         });
         console.log("[hubspot] phase2c_setup", {
           ok: setup.ok,
+          subscriptionMode: setup.subscriptionMode,
+          workflowProvisionMode: setup.workflowProvisionMode,
           propertyCount: setup.properties?.length || 0,
           emailOk: (setup.emails || []).filter((e) => e.id).length,
-          workflowOk: (setup.workflows || []).filter((w) => w.status === "exists" || w.status === "created")
-            .length,
-          enabled: (setup.workflows || []).filter((w) => w.enabled).length,
+          workflowProvisioned: (setup.workflows || []).filter((w) =>
+            ["exists", "created", "starter_manual", "manual_ui_or_simple_automations"].includes(
+              String(w.status || ""),
+            ),
+          ).length,
+          workflowApiOk: (setup.workflows || []).filter((w) =>
+            ["exists", "created"].includes(String(w.status || "")),
+          ).length,
           notes: setup.notes || [],
         });
         const backfill = await m.runSafeHubSpotMappingBackfill({ limit: 25 });

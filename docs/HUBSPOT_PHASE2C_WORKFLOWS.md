@@ -1,24 +1,55 @@
-# HubSpot Phase 2C — Workflow Setup Guide
+# HubSpot Phase 2C — Starter-compatible setup
 
-IFCDC sets CRM properties asynchronously. **Emails and delays live in HubSpot Workflows** (Marketing Hub). Node never sends marketing campaign emails for these flows.
+IFCDC targets **HubSpot Starter** by default.
+
+| Layer | Starter (current) | Professional+ (optional) |
+|-------|-------------------|---------------------------|
+| Contacts / companies / deals sync | Yes | Yes |
+| Custom CRM properties | Yes (API) | Yes |
+| Marketing emails (6 IFCDC templates) | Yes (API) | Yes |
+| Forms | Use HubSpot UI forms if needed | Same |
+| Workflow enrollment automations | **HubSpot UI / Simple automation** (manual) | Workflows API `/automation/v4/flows` |
+| Backend property enrichment (`HUBSPOT_SYNC_WORKFLOWS`) | Yes — writes enrollment props only | Same |
+
+Node **never** sends marketing campaign emails. On Starter, email send/delay lives in HubSpot’s supported UI automations attached to the emails we create.
 
 ## Enable on Render (canonical only)
 
-On `ifcdc-barbers-backend696`:
-
 ```
 HUBSPOT_SYNC_ENABLED=1
+HUBSPOT_SYNC_COMPANIES=1
+HUBSPOT_SYNC_DEALS=1
 HUBSPOT_SYNC_WORKFLOWS=1
 ```
 
-Recommended with 2A/2B:
+`HUBSPOT_SYNC_WORKFLOWS` means **sync workflow enrollment properties** to contacts/deals. It does **not** require the Professional Workflows API.
 
-```
-HUBSPOT_SYNC_COMPANIES=1
-HUBSPOT_SYNC_DEALS=1
-```
+## Private app scopes (Starter)
 
-## Custom properties to create in HubSpot
+- `crm.schemas.contacts.read` / `crm.schemas.contacts.write`
+- `crm.schemas.deals.read` / `crm.schemas.deals.write`
+- `crm.objects.contacts.read` / `crm.objects.contacts.write`
+- `crm.objects.deals.read` / `crm.objects.deals.write`
+- `crm.objects.companies.read` / `crm.objects.companies.write`
+- `content` (marketing email create/update)
+
+`automation` is **optional** and only useful on Professional+. Setup succeeds without it.
+
+## Professional-only blocker (exact)
+
+If the portal is Starter, these endpoints fail and setup **falls back** (does not fail):
+
+| Endpoint | Typical response | Requires |
+|----------|------------------|----------|
+| `GET /automation/v4/flows` | **403** `MISSING_SCOPES` / `automation` (often misleading) | Marketing Hub **Professional+** Workflows API |
+| `POST /automation/v4/flows` | **403** | same |
+| `GET /automation/v3/workflows` | **403** `EXTERNAL auth request is missing required 'workflows-access-public-api' scope.` | same |
+
+Live status exposes this under `phase2cSetup.professionalBlocker` + `subscriptionMode: "starter"`.
+
+**Compelling reason to upgrade to Professional:** only if you need API-managed workflow create/enable at scale. For IFCDC’s six emails, HubSpot UI automations on Starter are enough.
+
+## Custom properties
 
 ### Contact
 
@@ -26,14 +57,14 @@ HUBSPOT_SYNC_DEALS=1
 |---------------|------|---------|
 | `ifcdc_user_id` | Single-line text | Support / dedupe |
 | `ifcdc_lifecycle_stage` | Single-line text / dropdown | Welcome (`registered`) |
-| `ifcdc_registered_at` | DateTime | Welcome delay |
+| `ifcdc_registered_at` | DateTime | Welcome timing |
 | `ifcdc_date_of_birth` | Date | Birthday (also syncs HubSpot `date_of_birth` when present) |
 | `ifcdc_loyalty_points` | Number | Loyalty threshold emails |
 | `ifcdc_loyalty_lifetime_earned` | Number | Engagement |
 | `ifcdc_loyalty_completed_haircuts` | Number | VIP / rebook |
 | `ifcdc_loyalty_last_event` | Dropdown: `earned`, `redeemed`, `adjusted` | Loyalty notify |
 | `ifcdc_loyalty_last_reward` | Single-line text | Reward title/id |
-| `ifcdc_last_completed_at` | DateTime | Rebooking delay |
+| `ifcdc_last_completed_at` | DateTime | Rebooking timing |
 | `ifcdc_preferred_barber_id` | Single-line text | Personalization |
 | `ifcdc_rebook_eligible` | Single checkbox / text `true` | Rebook enrollment |
 
@@ -47,76 +78,61 @@ HUBSPOT_SYNC_DEALS=1
 | `ifcdc_loyalty_points_earned` | Number | Optional copy in review email |
 | `ifcdc_rebook_barber_id` | text | Rebook deep link |
 
-If a property is missing, IFCDC falls back to standard HubSpot fields and continues syncing (no booking/payment impact).
+## Starter fallback — create automations in HubSpot UI
 
-## HubSpot private app scopes required for automated setup
+Setup creates these marketing emails automatically (when `content` scope is present):
 
-In HubSpot → Settings → Integrations → Private Apps → IFCDC app, enable:
+1. `IFCDC Welcome`
+2. `IFCDC Appointment Confirmation`
+3. `IFCDC Review Request`
+4. `IFCDC Rebooking Reminder`
+5. `IFCDC Birthday`
+6. `IFCDC Loyalty Reward`
 
-- `crm.schemas.contacts.read` / `crm.schemas.contacts.write`
-- `crm.schemas.deals.read` / `crm.schemas.deals.write`
-- `crm.objects.contacts.read` / `crm.objects.contacts.write`
-- `crm.objects.deals.read` / `crm.objects.deals.write`
-- `crm.objects.companies.read` / `crm.objects.companies.write`
-- `automation` (Workflows API — **requires Marketing/Sales/Service Professional or Enterprise**)
-- `content` + `marketing-email` (to create/send the six IFCDC emails)
-
-After changing scopes, generate a **new** private app token, update `HUBSPOT_SERVICE_KEY` on canonical Render, and redeploy.
-
-If `POST /automation/v4/flows` still returns **403** with `automation` enabled, the portal likely lacks Workflows on its HubSpot plan tier. In that case create the six IFCDC workflows in the HubSpot UI and attach the already-created emails (`IFCDC Welcome`, `IFCDC Appointment Confirmation`, etc.).
-
-Check live diagnostics on:
-
-```bash
-curl -sS https://ifcdc-barbers-backend696.onrender.com/api/hubspot/status | jq .phase2cSetup
-```
-
-## Workflow recipes (create in HubSpot UI)
-
-Prefer the automated scaffold script (creates properties + disabled workflow shells):
-
-```bash
-HUBSPOT_SERVICE_KEY=… node --import ./loadBackendEnv.mjs scripts/hubspot-setup-phase2c-workflows.mjs
-HUBSPOT_SERVICE_KEY=… node --import ./loadBackendEnv.mjs scripts/hubspot-setup-phase2c-workflows.mjs --apply
-```
-
-Then attach Marketing email content in HubSpot and enable each workflow.
+Then in HubSpot UI (Starter-supported Simple automation / email tools), wire each:
 
 ### 1. Welcome email
-- **Enrollment:** Contact is created **OR** `ifcdc_lifecycle_stage` is known `registered`
-- **Filter:** email is known
-- **Actions:** Send welcome email; optional delay 5–15 minutes
-- **Backend source:** registration / Google / Apple signup contact sync
+- **Enrollment:** Contact created **OR** `ifcdc_lifecycle_stage` is `registered`
+- **Actions:** Send `IFCDC Welcome` (optional short delay)
 
 ### 2. Appointment confirmation
-- **Enrollment:** Deal property `ifcdc_appointment_status` is known `paid` **OR** `ifcdc_confirmation_ready` is known `true`
-- **Actions:** Send confirmation with deal `dealname`, `closedate`, `amount`
-- **Backend source:** PayPal finalize / web paid book deal sync
+- **Enrollment:** Deal `ifcdc_appointment_status` is `paid` **OR** `ifcdc_confirmation_ready` is `true`
+- **Actions:** Send `IFCDC Appointment Confirmation`
 
 ### 3. Review request
-- **Enrollment:** Deal `ifcdc_appointment_status` is known `completed` **OR** `ifcdc_review_requested` is known `true`
-- **Delay:** 2–24 hours (ops preference)
-- **Actions:** Email/SMS with review CTA (IFCDC review URL)
-- **Backend source:** appointment completion side effects
+- **Enrollment:** Deal `ifcdc_appointment_status` is `completed` **OR** `ifcdc_review_requested` is `true`
+- **Delay:** 2–24 hours
+- **Actions:** Send `IFCDC Review Request`
 
 ### 4. Rebooking reminder
-- **Enrollment:** Contact `ifcdc_last_completed_at` is known **OR** `ifcdc_rebook_eligible` is known `true`
-- **Delay:** N days (e.g. 21–28)
-- **Actions:** Rebook CTA; personalize with `ifcdc_preferred_barber_id` / `ifcdc_rebook_barber_id`
-- **Backend source:** same completion path as review
+- **Enrollment:** Contact `ifcdc_last_completed_at` known **OR** `ifcdc_rebook_eligible` is `true`
+- **Delay:** e.g. 21–28 days
+- **Actions:** Send `IFCDC Rebooking Reminder`
 
 ### 5. Birthday promotions
-- **Enrollment:** Contact birthday / `date_of_birth` / `ifcdc_date_of_birth` anniversary
-- **Actions:** Birthday offer email
-- **Backend source:** optional `PATCH /api/auth/profile` with `{ "dateOfBirth": "YYYY-MM-DD" }` then contact sync  
-  (Birthday is optional — not required at signup.)
+- **Enrollment:** Contact birthday / `date_of_birth` / `ifcdc_date_of_birth`
+- **Actions:** Send `IFCDC Birthday`
 
 ### 6. Loyalty reward notifications
-- **Enrollment options:**
-  - `ifcdc_loyalty_last_event` is known `earned` or `redeemed`
-  - **OR** `ifcdc_loyalty_points` is greater than or equal to reward thresholds (25 / 50 / 75 / …)
-- **Actions:** Congrats + redeem/book CTA
-- **Backend source:** completion → loyalty award → contact workflow refresh
+- **Enrollment:** `ifcdc_loyalty_last_event` is `earned`/`redeemed` **OR** points thresholds
+- **Actions:** Send `IFCDC Loyalty Reward`
+
+## Verify
+
+```bash
+curl -sS 'https://ifcdc-barbers-backend696.onrender.com/api/hubspot/status?refreshSetup=1'
+# then:
+curl -sS https://ifcdc-barbers-backend696.onrender.com/api/hubspot/status \
+  | jq '.phase2cSetup | {ok,subscriptionMode,workflowProvisionMode,propertyOk,emailOk,workflowOk,professionalBlocker}'
+```
+
+Expect on Starter:
+
+- `ok: true`
+- `subscriptionMode: "starter"`
+- `workflowProvisionMode: "starter_manual"`
+- `propertyOk` / `emailOk` complete
+- `professionalBlocker` documenting the Pro-only endpoints (informational)
 
 ## Isolation guarantees
 
@@ -124,10 +140,4 @@ Then attach Marketing email content in HubSpot and enable each workflow.
 - Feature-flagged: `HUBSPOT_SYNC_WORKFLOWS` off ⇒ no workflow custom props (Phase 1 contact fields still work).
 - Failures never block registration, booking, PayPal, loyalty, or completion.
 - Canonical Render service only.
-
-## Verify
-
-```bash
-curl -sS https://ifcdc-barbers-backend696.onrender.com/api/hubspot/status
-# expect workflowSyncEnabled: true after flag is set
-```
+- Starter setup **does not fail** when Workflows API returns 403.

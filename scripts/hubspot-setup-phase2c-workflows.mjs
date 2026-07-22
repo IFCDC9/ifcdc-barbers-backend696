@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * Phase 2C HubSpot setup CLI (uses HUBSPOT_SERVICE_KEY from env; never prints it).
+ * Phase 2C HubSpot setup CLI (Starter-compatible).
+ * Ensures CRM properties + marketing emails. Workflows API is optional (Pro+).
  *
  *   node --import ./loadBackendEnv.mjs scripts/hubspot-setup-phase2c-workflows.mjs
  *   node --import ./loadBackendEnv.mjs scripts/hubspot-setup-phase2c-workflows.mjs --apply
@@ -25,16 +26,20 @@ if (!String(process.env.HUBSPOT_SERVICE_KEY || "").trim()) {
 if (!APPLY) {
   console.log("\nDry-run mode: use --apply to create/update HubSpot objects.\n");
   console.log("Tip: production boot already runs ensurePhase2cHubSpotSetup automatically.\n");
+  console.log("Starter path: properties + marketing emails. Workflows API requires Professional+.\n");
   process.exit(0);
 }
 
-const summary = await ensurePhase2cHubSpotSetup({ enableWorkflows: ENABLE || true });
+const summary = await ensurePhase2cHubSpotSetup({ enableWorkflows: ENABLE });
 console.log(
   JSON.stringify(
     {
       ok: summary.ok,
       ranAt: summary.ranAt,
       portalId: summary.portalId || null,
+      subscriptionMode: summary.subscriptionMode || null,
+      workflowProvisionMode: summary.workflowProvisionMode || null,
+      professionalBlocker: summary.professionalBlocker || null,
       properties: summary.properties,
       emails: (summary.emails || []).map((e) => ({
         name: e.name,

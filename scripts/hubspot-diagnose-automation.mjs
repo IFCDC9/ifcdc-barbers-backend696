@@ -98,15 +98,19 @@ console.log(
         uiDomain: account.json?.uiDomain || null,
         message: account.ok ? null : account.json?.message || null,
       },
-      diagnosis:
-        v4.ok
-          ? "automation_api_ok"
-          : tokenInfo.ok && !scopes.includes("automation")
-            ? "live_token_missing_automation_scope"
-            : tokenInfo.ok && scopes.includes("automation")
-              ? "automation_scope_present_but_api_denied_portal_entitlement_or_feature"
-              : "unable_to_read_token_scopes_see_http_bodies",
-    },
+  diagnosis:
+    v4.ok
+      ? "automation_api_ok"
+      : String(v3.json?.message || "").includes("workflows-access-public-api")
+        ? "starter_or_missing_workflows_public_api_entitlement"
+        : tokenInfo.ok && !scopes.includes("automation")
+          ? "live_token_missing_automation_scope"
+          : tokenInfo.ok && scopes.includes("automation")
+            ? "automation_scope_present_but_api_denied_use_starter_fallback"
+            : "unable_to_read_token_scopes_see_http_bodies",
+  starterGuidance:
+    "On HubSpot Starter, skip Workflows API. Rely on CRM properties + marketing emails + HubSpot UI Simple automation. Upgrade to Professional only if API-managed workflows are required.",
+},
     null,
     2,
   ),
