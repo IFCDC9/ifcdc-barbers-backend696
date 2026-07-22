@@ -38,15 +38,13 @@ export async function ensureStylesTables() {
   await dbQuery(`
     DO $$
     BEGIN
-      IF NOT EXISTS (
-        SELECT 1
-        FROM pg_constraint
-        WHERE conname = 'styles_category_allowed'
-      ) THEN
-        ALTER TABLE styles
-          ADD CONSTRAINT styles_category_allowed
-          CHECK (category IN ('fades','tapers','waves','braids','beard work','kids cuts','designs','other'));
-      END IF;
+      ALTER TABLE styles DROP CONSTRAINT IF EXISTS styles_category_allowed;
+      ALTER TABLE styles
+        ADD CONSTRAINT styles_category_allowed
+        CHECK (category IN (
+          'haircuts','fades','lineups','beard','braids','locs','styling','color','nails','beauty',
+          'tapers','waves','beard work','kids cuts','designs','other'
+        ));
     END $$;
   `);
 
