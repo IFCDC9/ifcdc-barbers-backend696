@@ -3,28 +3,38 @@ import { buildClientUnavailability } from "./barberUnavailabilityReasons.js";
 
 const DEFAULT_INTERVAL = 30;
 const DEFAULT_TIMEZONE = process.env.SHOP_TIMEZONE || "America/New_York";
-export const PENDING_HOLD_MINUTES = Number(process.env.BOOKING_PENDING_HOLD_MINUTES || 30);
+/** Abandoned checkout hold — unpaid pending rows stop blocking after this many minutes. */
+export const PENDING_HOLD_MINUTES = Number(process.env.BOOKING_PENDING_HOLD_MINUTES || 15);
+
+const NON_BLOCKING_STATUSES = `'cancelled', 'completed', 'no_show', 'declined', 'failed', 'expired', 'deleted'`;
+const PAID_PAYMENT_STATUSES = `'paid', 'paid_full', 'paid_in_full', 'deposit_paid', 'captured'`;
 
 /**
  * SQL fragment — rows that actively occupy barber schedule slots.
- * Completed / cancelled / no-show / soft-deleted bookings never block.
- * Past paid appointments auto-release when service duration has elapsed.
+ * Completed / cancelled / declined / no-show / soft-deleted bookings never block.
+ * Past paid appointments auto-release when service duration has elapsed (barber TZ).
+ * Unpaid PayPal holds only block while within PENDING_HOLD_MINUTES.
  *
- * @param {string} [holdMinutesParam] e.g. "$4" — caller's interval bind for pending PayPal holds
+ * @param {string} [holdMinutesParam] e.g. "$4" — bind for pending hold minutes
+ * @param {string} [timezoneParam] e.g. "$6" — IANA TZ for interpreting date+time
  */
-export function slotBlockingWhereSql(holdMinutesParam = `'${PENDING_HOLD_MINUTES}'`) {
+export function slotBlockingWhereSql(
+  holdMinutesParam = `'${PENDING_HOLD_MINUTES}'`,
+  timezoneParam = `'${DEFAULT_TIMEZONE}'`,
+) {
+  const apptStart = `((date::timestamp + time) AT TIME ZONE ${timezoneParam})`;
   return `(
     deleted_at IS NULL
-    AND lower(coalesce(booking_status, '')) NOT IN ('cancelled', 'completed', 'no_show')
+    AND lower(coalesce(booking_status, '')) NOT IN (${NON_BLOCKING_STATUSES})
     AND (
       (
         lower(booking_status) IN ('confirmed', 'checked_in', 'in_progress')
         AND (
           is_paid_booking = true
-          OR lower(coalesce(payment_status, '')) IN ('paid', 'paid_full', 'paid_in_full', 'deposit_paid', 'captured')
+          OR lower(coalesce(payment_status, '')) IN (${PAID_PAYMENT_STATUSES})
         )
         AND (
-          (date::timestamp + time)
+          ${apptStart}
           + (COALESCE(NULLIF(service_duration_minutes, 0), 30) * interval '1 minute')
         ) > NOW()
       )
@@ -32,9 +42,9 @@ export function slotBlockingWhereSql(holdMinutesParam = `'${PENDING_HOLD_MINUTES
         lower(booking_status) IN ('pending', 'pending_payment')
         AND paypal_order_id IS NOT NULL
         AND coalesce(is_paid_booking, false) = false
-        AND lower(coalesce(payment_status, '')) NOT IN ('paid', 'paid_full', 'paid_in_full', 'deposit_paid', 'captured')
+        AND lower(coalesce(payment_status, '')) NOT IN (${PAID_PAYMENT_STATUSES})
         AND created_at > NOW() - (${holdMinutesParam}::text || ' minutes')::interval
-        AND (date::timestamp + time) >= NOW() - interval '5 minutes'
+        AND ${apptStart} >= NOW() - interval '5 minutes'
       )
     )
   )`;
@@ -187,6 +197,50 @@ function isInBreak(minutes, breaks, dow) {
   return false;
 }
 
+function addDaysYmd(ymd, days) {
+  const [y, m, d] = String(ymd).split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + Number(days)));
+  return dt.toISOString().slice(0, 10);
+}
+
+/** True if wall-clock minute is inside an open availability window (not off, not break). */
+function isOpenAtMinute(schedule, dateStr, minutes) {
+  const dow = dayOfWeekForDate(dateStr, schedule.timezone || DEFAULT_TIMEZONE);
+  if (dow == null) return false;
+  if ((schedule.blockedDates || []).includes(dateStr)) return false;
+  if (isInBreak(minutes, schedule.breaks || [], dow)) return false;
+  const windows = (schedule.availability || []).filter(
+    (row) => Number(row.day_of_week) === dow && !row.is_off,
+  );
+  for (const row of windows) {
+    const start = parseTimeToMinutes(row.start_time);
+    const end = parseTimeToMinutes(row.end_time);
+    if (start == null || end == null) continue;
+    if (end <= start) {
+      // Overnight window (e.g. 09:00 → 01:00)
+      if (minutes >= start || minutes < end) return true;
+    } else if (minutes >= start && minutes < end) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Service must fit entirely in open hours without crossing a break/closing/vacation gap.
+ */
+export function serviceDurationFitsSchedule(schedule, dateStr, startMin, durationMinutes) {
+  const duration = Math.max(1, Number(durationMinutes) || 30);
+  if (!Number.isFinite(startMin)) return false;
+  for (let offset = 0; offset < duration; offset += 1) {
+    const absolute = startMin + offset;
+    const m = ((absolute % (24 * 60)) + 24 * 60) % (24 * 60);
+    // Overnight schedules keep open-at checks on the appointment's calendar date.
+    if (!isOpenAtMinute(schedule, dateStr, m)) return false;
+  }
+  return true;
+}
+
 function generateWindowSlots(startMin, endMin, intervalMinutes) {
   const slots = [];
   const effectiveEnd = endMin <= startMin ? endMin + 24 * 60 : endMin;
@@ -194,6 +248,61 @@ function generateWindowSlots(startMin, endMin, intervalMinutes) {
     slots.push(m >= 24 * 60 ? m - 24 * 60 : m);
   }
   return slots;
+}
+
+/** Current HH:MM as minutes-from-midnight in an IANA timezone. */
+export function nowMinutesInTimezone(timezone = DEFAULT_TIMEZONE) {
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone || DEFAULT_TIMEZONE,
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(new Date());
+    const hour = Number(parts.find((p) => p.type === "hour")?.value);
+    const minute = Number(parts.find((p) => p.type === "minute")?.value);
+    if (!Number.isFinite(hour) || !Number.isFinite(minute)) return 0;
+    return hour * 60 + minute;
+  } catch {
+    const d = new Date();
+    return d.getHours() * 60 + d.getMinutes();
+  }
+}
+
+export function todayYmdInTimezone(timezone) {
+  try {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: timezone || DEFAULT_TIMEZONE,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+  } catch {
+    return new Date().toISOString().slice(0, 10);
+  }
+}
+
+/**
+ * Resolve mobile/web labels ("Today", "Tomorrow", weekday, YYYY-MM-DD) in barber TZ.
+ */
+export function resolveBookingDateLabelToYmd(label, timezone = DEFAULT_TIMEZONE) {
+  const t = String(label ?? "")
+    .trim()
+    .replace(/^["']|["']$/g, "");
+  if (!t) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t;
+  const tz = timezone || DEFAULT_TIMEZONE;
+  const today = todayYmdInTimezone(tz);
+  const low = t.toLowerCase();
+  if (low === "today") return today;
+  if (low === "tomorrow") return addDaysYmd(today, 1);
+  const days = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+  const want = days.indexOf(low);
+  if (want < 0) return null;
+  const cur = dayOfWeekForDate(today, tz);
+  if (cur == null) return null;
+  const add = (want - cur + 7) % 7;
+  return addDaysYmd(today, add);
 }
 
 /** Demo/testing schedule — 9:00 AM through 12:30 AM, all days. */
@@ -275,13 +384,15 @@ export function blockedSlotStartsForBooking(startMinutes, durationMinutes, inter
  * @returns {Promise<{ startMinutes: number, durationMinutes: number, timeLabel: string }[]>}
  */
 export async function loadBookingsForDate(barberId, dateStr, barberName = "", options = {}) {
-  const { excludeBookingId = null } = options || {};
+  const { excludeBookingId = null, timezone = DEFAULT_TIMEZONE } = options || {};
   const { coerceBarberIdForTable } = await import("./barberIdentity.cjs");
   const name = String(barberName || "").trim();
   const bookingBid = await coerceBarberIdForTable(dbQuery, "bookings", barberId, barberName);
   const exclude = excludeBookingId ? String(excludeBookingId) : null;
   const holdParam = "$4";
-  const blockingSql = slotBlockingWhereSql(holdParam);
+  const tzParam = "$6";
+  const blockingSql = slotBlockingWhereSql(holdParam, tzParam);
+  const tz = String(timezone || DEFAULT_TIMEZONE);
 
   const r =
     bookingBid != null
@@ -298,7 +409,7 @@ export async function loadBookingsForDate(barberId, dateStr, barberName = "", op
              )
              AND ${blockingSql}
            ORDER BY time`,
-          [bookingBid, dateStr, name, String(PENDING_HOLD_MINUTES), exclude],
+          [bookingBid, dateStr, name, String(PENDING_HOLD_MINUTES), exclude, tz],
         )
       : await dbQuery(
           `SELECT to_char(time, 'HH12:MI AM') AS slot,
@@ -309,9 +420,9 @@ export async function loadBookingsForDate(barberId, dateStr, barberName = "", op
              AND ($4::text IS NULL OR id::text <> $4::text)
              AND $2 <> ''
              AND lower(trim(barber_name)) = lower(trim($2))
-             AND ${slotBlockingWhereSql("$3")}
+             AND ${slotBlockingWhereSql("$3", "$5")}
            ORDER BY time`,
-          [dateStr, name, String(PENDING_HOLD_MINUTES), exclude],
+          [dateStr, name, String(PENDING_HOLD_MINUTES), exclude, tz],
         );
 
   return (r.rows || [])
@@ -399,11 +510,21 @@ export async function getAvailableSlotsForBarberDate(
 
   const existingBookings = await loadBookingsForDate(barberId, dateStr, barberName, {
     excludeBookingId,
+    timezone: schedule.timezone,
   });
-  const interval = schedule.intervalMinutes;
+  const today = todayYmdInTimezone(schedule.timezone);
+  const nowMin = nowMinutesInTimezone(schedule.timezone);
 
   const slots = minuteStarts.map((m) => {
     const time = minutesToSlotLabel(m);
+
+    if (dateStr === today && m < nowMin) {
+      return { time, available: false, reason: "past" };
+    }
+
+    if (!serviceDurationFitsSchedule(schedule, dateStr, m, requestedDuration)) {
+      return { time, available: false, reason: "unavailable" };
+    }
 
     for (const booking of existingBookings) {
       if (intervalsOverlap(m, requestedDuration, booking.startMinutes, booking.durationMinutes)) {
@@ -450,7 +571,10 @@ export async function getAvailableSlotsForBarberDate(
 export async function loadOccupiedSlotLabels(barberId, dateStr, barberName = "", options = {}) {
   const { excludeBookingId = null } = options || {};
   const schedule = await loadBarberSchedule(barberId, barberName);
-  const bookings = await loadBookingsForDate(barberId, dateStr, barberName, { excludeBookingId });
+  const bookings = await loadBookingsForDate(barberId, dateStr, barberName, {
+    excludeBookingId,
+    timezone: schedule.timezone,
+  });
   const interval = schedule.intervalMinutes;
   const labelSet = new Set();
 
@@ -529,8 +653,23 @@ export async function validateBookingSlot(
     return { ok: false, code: "outside_hours", message: "That time is not available for this barber." };
   }
 
+  const today = todayYmdInTimezone(schedule.timezone);
+  const nowMin = nowMinutesInTimezone(schedule.timezone);
+  if (dateStr === today && bookingMin < nowMin) {
+    return { ok: false, code: "past_time", message: "That time has already passed. Please choose a later time." };
+  }
+
+  if (!serviceDurationFitsSchedule(schedule, dateStr, bookingMin, requestedDuration)) {
+    return {
+      ok: false,
+      code: "duration_overflow",
+      message: "This service does not fit in the remaining open hours for that start time.",
+    };
+  }
+
   const existingBookings = await loadBookingsForDate(barberId, dateStr, barberName, {
     excludeBookingId,
+    timezone: schedule.timezone,
   });
 
   for (const booking of existingBookings) {
@@ -544,25 +683,6 @@ export async function validateBookingSlot(
   }
 
   return { ok: true, timeSql, durationMinutes: requestedDuration };
-}
-
-function todayYmdInTimezone(timezone) {
-  try {
-    return new Intl.DateTimeFormat("en-CA", {
-      timeZone: timezone || DEFAULT_TIMEZONE,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).format(new Date());
-  } catch {
-    return new Date().toISOString().slice(0, 10);
-  }
-}
-
-function addDaysYmd(ymd, days) {
-  const [y, m, d] = String(ymd).split("-").map(Number);
-  const dt = new Date(Date.UTC(y, m - 1, d + Number(days)));
-  return dt.toISOString().slice(0, 10);
 }
 
 function daysInclusive(fromYmd, toYmd) {

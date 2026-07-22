@@ -678,39 +678,38 @@ export default function BookingWizard() {
           </p>
           {slotsLoading ? <p className="ifcdc-page-hint">Loading times…</p> : null}
           {slotsError ? <p className="ifcdc-error-msg">{slotsError}</p> : null}
-          {!slotsLoading && !availableSlots.length ? (
+          {!slotsLoading && !availableSlots.filter((s) => s.available !== false).length ? (
             <p className={`ifcdc-page-hint${unavailabilityMessage ? " ifcdc-book-wizard__unavailable-msg" : ""}`}>
               {unavailabilityMessage || "No times for this date. Try another day."}
             </p>
           ) : null}
-          <ul className="ifcdc-book-wizard__list ifcdc-book-wizard__list--grid">
-            {availableSlots.map((slot) => {
-              const t = slot.time;
-              const available = slot.available !== false;
-              return (
-              <li key={t}>
-                <button
-                  type="button"
-                  disabled={!available}
-                  className={`ifcdc-book-wizard__pick${time === t ? " ifcdc-book-wizard__pick--on" : ""}${!available ? " ifcdc-book-wizard__pick--disabled" : ""}`}
-                  onClick={() => {
-                    if (!available) return;
-                    setTime(t);
-                    setStep(5);
-                    setError(null);
-                  }}
-                >
-                  {t}
-                  {!available ? (
-                    <span className="ifcdc-book-wizard__pick-tag">
-                      {slot.reason === "booked" ? "Booked" : "Unavailable"}
-                    </span>
-                  ) : null}
-                </button>
-              </li>
-            );
-            })}
-          </ul>
+          {!slotsLoading && availableSlots.some((s) => s.available !== false) ? (
+            <label className="ifcdc-book-wizard__time-select">
+              <span className="ifcdc-book-wizard__time-select-label">Select a Time</span>
+              <select
+                className="ifcdc-book-wizard__time-select-control"
+                value={time || ""}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  if (!next) return;
+                  setTime(next);
+                  setStep(5);
+                  setError(null);
+                }}
+              >
+                <option value="" disabled>
+                  Choose a time
+                </option>
+                {availableSlots
+                  .filter((slot) => slot.available !== false)
+                  .map((slot) => (
+                    <option key={slot.time} value={slot.time}>
+                      {slot.time}
+                    </option>
+                  ))}
+              </select>
+            </label>
+          ) : null}
           <button type="button" className="ifcdc-book-wizard__back" onClick={() => setStep(3)}>
             ← Change service
           </button>

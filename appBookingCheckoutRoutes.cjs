@@ -190,28 +190,10 @@ function ymd(d) {
   return `${y}-${mo}-${da}`;
 }
 
-/** Resolve mobile demo labels ("Today", "Tomorrow", weekday) to YYYY-MM-DD in local TZ. */
-function resolveDateLabelToYmd(label) {
-  const t = stripQuotes(label);
-  if (!t) return null;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t;
-  const now = new Date();
-  const base = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const low = t.toLowerCase();
-  if (low === "today") return ymd(base);
-  if (low === "tomorrow") {
-    const d = new Date(base);
-    d.setDate(d.getDate() + 1);
-    return ymd(d);
-  }
-  const days = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
-  const want = days.indexOf(low);
-  if (want < 0) return null;
-  const cur = base.getDay();
-  let add = (want - cur + 7) % 7;
-  const d = new Date(base);
-  d.setDate(d.getDate() + add);
-  return ymd(d);
+async function resolveDateLabelToYmd(label, timezone) {
+  const slotEngine = await loadSlotEngine();
+  const tz = timezone || process.env.SHOP_TIMEZONE || "America/New_York";
+  return slotEngine.resolveBookingDateLabelToYmd(stripQuotes(label), tz);
 }
 
 async function loadDb() {
@@ -290,28 +272,38 @@ async function resolveAvailableSlotsQuery(req) {
   const dateRaw = stripQuotes(req.query.date);
   const barberIdRaw = stripQuotes(req.query.barberId ?? req.query.barberUuid);
 
-  let dateStr = null;
-  if (dateRaw && /^\d{4}-\d{2}-\d{2}$/.test(dateRaw)) dateStr = dateRaw;
-  else if (dateLabel) dateStr = resolveDateLabelToYmd(dateLabel);
-
   const { dbQuery } = await loadDb();
   const barbersIdType = await getBarbersIdColumnTypeCached();
   const resolved = await resolveBarberIdentity(dbQuery, barberIdRaw || null, barberName);
   if (!resolved) {
-    return { dateStr, barberId: null, barberName, barberRow: null, resolved: null };
+    return { dateStr: null, barberId: null, barberName, barberRow: null, resolved: null };
   }
   const barberKey = resolved.barberRow?.id ?? resolved.barberUuid ?? resolved.barberDbId;
   if (!(await isBarberBookable(dbQuery, barberKey, { channel: "mobile" }))) {
-    return { dateStr, barberId: null, barberName, barberRow: null, resolved: null };
+    return { dateStr: null, barberId: null, barberName, barberRow: null, resolved: null };
   }
 
   const scheduleId = scheduleBarberIdFromResolved(resolved, barbersIdType);
+  const slotEngine = await loadSlotEngine();
+  let timezone = process.env.SHOP_TIMEZONE || "America/New_York";
+  try {
+    const schedule = await slotEngine.loadBarberSchedule(scheduleId, resolved.barberName);
+    timezone = schedule.timezone || timezone;
+  } catch {
+    /* keep shop default */
+  }
+
+  let dateStr = null;
+  if (dateRaw && /^\d{4}-\d{2}-\d{2}$/.test(dateRaw)) dateStr = dateRaw;
+  else if (dateLabel) dateStr = slotEngine.resolveBookingDateLabelToYmd(dateLabel, timezone);
+
   return {
     dateStr,
     barberId: scheduleId,
     barberName: resolved.barberName,
     barberRow: resolved.barberRow,
     resolved,
+    timezone,
   };
 }
 
@@ -418,7 +410,7 @@ router.get("/occupied-slots", async (req, res) => {
     if ((!barberName && !barberIdRaw) || !dateLabel) {
       return res.status(400).json({ ok: false, error: "query_required", message: "barberId or barberName and dateLabel required" });
     }
-    const dateStr = resolveDateLabelToYmd(dateLabel);
+    const dateStr = await resolveDateLabelToYmd(dateLabel);
     if (!dateStr) {
       return res.status(400).json({ ok: false, error: "bad_date_label", message: "Unrecognized dateLabel" });
     }
@@ -434,8 +426,16 @@ router.get("/occupied-slots", async (req, res) => {
     }
     const scheduleId = scheduleBarberIdFromResolved(resolved, barbersIdType);
     const slotEngine = await loadSlotEngine();
-    const times = await slotEngine.loadOccupiedSlotLabels(scheduleId, dateStr, resolved.barberName);
-    return res.json({ ok: true, times });
+    let dateResolved = dateStr;
+    try {
+      const schedule = await slotEngine.loadBarberSchedule(scheduleId, resolved.barberName);
+      dateResolved =
+        (await resolveDateLabelToYmd(dateLabel, schedule.timezone)) || dateStr;
+    } catch {
+      /* keep first pass */
+    }
+    const times = await slotEngine.loadOccupiedSlotLabels(scheduleId, dateResolved, resolved.barberName);
+    return res.json({ ok: true, times, date: dateResolved });
   } catch (e) {
     console.error("[app-bookings] occupied-slots:", e?.stack || e);
     const barberErr = bookingStartErrorResponse(res, e);
@@ -645,7 +645,15 @@ router.post("/start", async (req, res) => {
     const serviceSummary = summarizeBookingServices(serviceRows);
     const totalDurationMinutes = serviceSummary.totalDuration;
 
-    const dateStr = resolveDateLabelToYmd(dateLabel);
+    const slotEngine = await loadSlotEngine();
+    let barberTimezone = process.env.SHOP_TIMEZONE || "America/New_York";
+    try {
+      const schedule = await slotEngine.loadBarberSchedule(scheduleId, confirmedBarberName);
+      barberTimezone = schedule.timezone || barberTimezone;
+    } catch {
+      /* keep default */
+    }
+    const dateStr = await resolveDateLabelToYmd(dateLabel, barberTimezone);
     if (!dateStr) {
       return res.status(400).json({
         success: false,
@@ -654,7 +662,6 @@ router.post("/start", async (req, res) => {
       });
     }
 
-    const slotEngine = await loadSlotEngine();
     const slotCheck = await slotEngine.validateBookingSlot(
       scheduleId,
       dateStr,

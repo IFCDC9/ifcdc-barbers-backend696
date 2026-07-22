@@ -1,10 +1,11 @@
 /**
  * Release schedule slots held by abandoned checkout sessions.
+ * Default hold matches barberSlotEngine PENDING_HOLD_MINUTES (15).
  */
-const PENDING_HOLD_MINUTES = Number(process.env.BOOKING_PENDING_HOLD_MINUTES || 30);
+const PENDING_HOLD_MINUTES = Number(process.env.BOOKING_PENDING_HOLD_MINUTES || 15);
 
 async function expireStalePendingPaymentBookings(dbQuery) {
-  const hold = Math.max(1, Number(PENDING_HOLD_MINUTES) || 30);
+  const hold = Math.max(1, Number(PENDING_HOLD_MINUTES) || 15);
   try {
     const r = await dbQuery(
       `UPDATE bookings
@@ -19,7 +20,9 @@ async function expireStalePendingPaymentBookings(dbQuery) {
        WHERE deleted_at IS NULL
          AND lower(coalesce(booking_status, '')) IN ('pending', 'pending_payment')
          AND coalesce(is_paid_booking, false) = false
-         AND lower(coalesce(payment_status, '')) NOT IN ('paid', 'paid_full', 'deposit_paid')
+         AND lower(coalesce(payment_status, '')) NOT IN (
+           'paid', 'paid_full', 'paid_in_full', 'deposit_paid', 'captured'
+         )
          AND created_at < NOW() - ($1::text || ' minutes')::interval
        RETURNING id`,
       [String(hold)],

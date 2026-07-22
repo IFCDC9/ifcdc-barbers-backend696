@@ -27,7 +27,7 @@ import { reportConnectionFailure } from '../services/connectionAlerts';
 import { resolveMobilePayPalReturnUrl } from '../utils/paypalReturnUrl';
 import { subscribeScheduleUpdated } from '../services/scheduleEvents';
 import { useLiveSlotRefresh } from '../hooks/useLiveSlotRefresh';
-import AppointmentTimeSlotList from '../components/AppointmentTimeSlotList';
+import AppointmentTimeDropdown from '../components/AppointmentTimeDropdown';
 import BookingMonthCalendar from '../components/BookingMonthCalendar';
 import ServicePickerCard from '../components/ServicePickerCard';
 import ShareButton from '../components/ShareButton';
@@ -1048,17 +1048,19 @@ function BookingScreen() {
               <Text style={styles.errorText}>{slotsError}</Text>
             ) : null}
 
-            {!slotsLoading && !slotsError && !availableSlots.length ? (
+            {!slotsLoading && !slotsError && !availableSlots.filter((s) => s.available !== false).length ? (
               <Text style={[styles.emptyText, unavailabilityMessage && styles.unavailabilityText]}>
                 {unavailabilityMessage || t('booking.noTimes')}
               </Text>
             ) : null}
 
-            {!slotsLoading && availableSlots.length ? (
-              <AppointmentTimeSlotList
-                slots={availableSlots}
+            {!slotsLoading && availableSlots.some((s) => s.available !== false) ? (
+              <AppointmentTimeDropdown
                 value={time}
                 disabled={slotsLoading}
+                options={availableSlots
+                  .filter((slot) => slot.available !== false)
+                  .map((slot) => slot.time)}
                 onSelect={(slotTime) => setTime(slotTime)}
               />
             ) : null}

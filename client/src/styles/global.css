@@ -4591,6 +4591,47 @@ a.payments-page__cta {
   gap: 0.5rem;
 }
 
+.ifcdc-book-wizard__time-select {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin: 0 0 1rem;
+  max-width: 22rem;
+}
+
+.ifcdc-book-wizard__time-select-label {
+  color: var(--gold-soft, #f5c842);
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.ifcdc-book-wizard__time-select-control {
+  width: 100%;
+  appearance: none;
+  -webkit-appearance: none;
+  background: rgba(0, 0, 0, 0.45)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%23F5C842' d='M1 1l5 5 5-5'/%3E%3C/svg%3E")
+    no-repeat right 1rem center;
+  border: 1px solid rgba(212, 175, 55, 0.35);
+  border-radius: 10px;
+  color: var(--text, #fff);
+  font-size: 1rem;
+  font-weight: 600;
+  padding: 0.95rem 2.5rem 0.95rem 1rem;
+  cursor: pointer;
+}
+
+.ifcdc-book-wizard__time-select-control:focus {
+  outline: 2px solid rgba(212, 175, 55, 0.45);
+  outline-offset: 2px;
+}
+
+.ifcdc-book-wizard__time-select-control option {
+  background: #111;
+  color: #fff;
+}
+
 .ifcdc-book-wizard__pick {
   width: 100%;
   padding: 0.85rem 1rem;
