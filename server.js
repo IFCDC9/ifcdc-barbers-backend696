@@ -1221,6 +1221,21 @@ async function startServer() {
     );
   }, 5 * 60 * 1000);
 
+  // Release abandoned PayPal checkout slot holds
+  const runPendingBookingCleanup = async () => {
+    try {
+      const { expireStalePendingPaymentBookings } = require("./bookingCleanup.cjs");
+      const { dbQuery } = await import("./db.js");
+      await expireStalePendingPaymentBookings(dbQuery);
+    } catch (error) {
+      console.warn("[booking-cleanup] interval failed:", error?.message || error);
+    }
+  };
+  void runPendingBookingCleanup();
+  setInterval(() => {
+    void runPendingBookingCleanup();
+  }, 5 * 60 * 1000);
+
   void import("./socialPortfolioService.js")
     .then((m) => m.sendDueFollowupReminders())
     .then((r) => {

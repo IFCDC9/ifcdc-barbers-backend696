@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const { resolvePublicWebOrigin, CANONICAL_PUBLIC_ORIGIN } = require("./publicSiteConfig.cjs");
+const { resolvePublicWebOrigin, CANONICAL_PUBLIC_ORIGIN, resolvePayPalCheckoutReturnUrls } = require("./publicSiteConfig.cjs");
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -182,13 +182,7 @@ export async function getDeployInfoPayload() {
       customerEmailRequiredOnAppStart: paymentFixModulesLoaded,
       orphanedPaymentAdminAlert: paymentFixModulesLoaded,
       bookingEmailResend: Boolean(isDeliverableCustomerEmail),
-      paypalHttpsReturnUrlFix: Boolean(
-        commitMatchesExpected(active.full, active.short) ||
-          String(active.short || "").toLowerCase().startsWith(PAYPAL_HTTPS_RETURN_FIX_SHORT) ||
-          ["00a6c8c8", "2164edca", "184dd20c", "e777cf95", "5e8d47cd", "17390a73", "86ee356d"].includes(
-            String(active.short || "").toLowerCase(),
-          ),
-      ),
+      paypalHttpsReturnUrlFix: Boolean(resolvePayPalCheckoutReturnUrls),
     },
     phase1: {
       automatedProbe: "node scripts/verify-phase1-paypal-production.mjs",

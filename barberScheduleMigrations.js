@@ -121,8 +121,10 @@ export async function alignLegacyBarberFkColumns() {
         CREATE UNIQUE INDEX IF NOT EXISTS bookings_slot_unique_confirmed_paid
         ON bookings (barber_id, date, time)
         WHERE booking_status = 'confirmed'
-          AND is_paid_booking = true
-          AND payment_status IN ('paid', 'paid_full', 'deposit_paid');
+          AND (
+            is_paid_booking = true
+            OR lower(coalesce(payment_status, '')) IN ('paid', 'paid_full', 'paid_in_full', 'deposit_paid', 'captured')
+          );
       `);
     }
     if (tableName === "barber_fee_ledger") {

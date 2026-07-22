@@ -450,8 +450,11 @@ export default function BookingWizard() {
       window.location.href = started.approveUrl;
     } catch (e) {
       setError(e?.message || "Checkout failed. Please try again.");
-      setProcessingPayment(false);
       setPhaseLabel("");
+    } finally {
+      // Always clear unless we navigated away to PayPal (page unload). Prevents stuck "Processing…"
+      // when slot checks fail or start errors.
+      setProcessingPayment(false);
     }
   };
 

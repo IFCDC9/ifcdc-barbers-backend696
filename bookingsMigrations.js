@@ -65,11 +65,19 @@ export async function ensureBookingsTable() {
     UPDATE bookings SET total_amount = round((COALESCE(total_price, amount, 0) + COALESCE(platform_fee, 0))::numeric, 2)
     WHERE total_amount IS NULL;
   `);
-  await dbQuery(`UPDATE bookings SET is_paid_booking = false;`);
+  // NEVER blanket-reset is_paid_booking on boot — that wiped paid_in_full rows after every deploy
+  // and broke slot blocking / unique constraints. Only backfill missing true flags.
   await dbQuery(`
     UPDATE bookings SET is_paid_booking = true
-    WHERE payment_provider = 'paypal'
-      AND payment_status IN ('paid', 'paid_full', 'deposit_paid');
+    WHERE coalesce(is_paid_booking, false) = false
+      AND (
+        lower(coalesce(payment_status, '')) IN ('paid', 'paid_full', 'paid_in_full', 'deposit_paid', 'captured')
+        OR (
+          paypal_capture_id IS NOT NULL
+          AND coalesce(amount_paid, amount_charged, total_paid, 0) > 0
+          AND lower(coalesce(booking_status, '')) IN ('confirmed', 'completed', 'checked_in', 'in_progress')
+        )
+      );
   `);
   await dbQuery(`
     UPDATE bookings SET payment_status = 'paid_full'
@@ -127,14 +135,18 @@ export async function ensureBookingsTable() {
     $m$;
   `);
 
-  // Slot uniqueness: confirmed + paid-through-app (PayPal) only — pending / voice do not hold the slot.
+  // Slot uniqueness: confirmed + paid-through-app only — pending / voice do not hold the slot.
+  // Include paid_in_full (current settlement status). Recreate index if definition is stale.
   await dbQuery(`DROP INDEX IF EXISTS bookings_slot_unique_paid;`);
+  await dbQuery(`DROP INDEX IF EXISTS bookings_slot_unique_confirmed_paid;`);
   await dbQuery(`
-    CREATE UNIQUE INDEX IF NOT EXISTS bookings_slot_unique_confirmed_paid
+    CREATE UNIQUE INDEX bookings_slot_unique_confirmed_paid
     ON bookings (barber_id, date, time)
     WHERE booking_status = 'confirmed'
-      AND is_paid_booking = true
-      AND payment_status IN ('paid', 'paid_full', 'deposit_paid');
+      AND (
+        is_paid_booking = true
+        OR lower(coalesce(payment_status, '')) IN ('paid', 'paid_full', 'paid_in_full', 'deposit_paid', 'captured')
+      );
   `);
 
   await dbQuery(`CREATE INDEX IF NOT EXISTS bookings_created_at_idx ON bookings (created_at DESC);`);

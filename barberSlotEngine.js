@@ -19,8 +19,10 @@ export function slotBlockingWhereSql(holdMinutesParam = `'${PENDING_HOLD_MINUTES
     AND (
       (
         lower(booking_status) IN ('confirmed', 'checked_in', 'in_progress')
-        AND is_paid_booking = true
-        AND lower(coalesce(payment_status, '')) IN ('paid', 'paid_full', 'deposit_paid')
+        AND (
+          is_paid_booking = true
+          OR lower(coalesce(payment_status, '')) IN ('paid', 'paid_full', 'paid_in_full', 'deposit_paid', 'captured')
+        )
         AND (
           (date::timestamp + time)
           + (COALESCE(NULLIF(service_duration_minutes, 0), 30) * interval '1 minute')
@@ -30,7 +32,7 @@ export function slotBlockingWhereSql(holdMinutesParam = `'${PENDING_HOLD_MINUTES
         lower(booking_status) IN ('pending', 'pending_payment')
         AND paypal_order_id IS NOT NULL
         AND coalesce(is_paid_booking, false) = false
-        AND lower(coalesce(payment_status, '')) NOT IN ('paid', 'paid_full', 'deposit_paid')
+        AND lower(coalesce(payment_status, '')) NOT IN ('paid', 'paid_full', 'paid_in_full', 'deposit_paid', 'captured')
         AND created_at > NOW() - (${holdMinutesParam}::text || ' minutes')::interval
         AND (date::timestamp + time) >= NOW() - interval '5 minutes'
       )
