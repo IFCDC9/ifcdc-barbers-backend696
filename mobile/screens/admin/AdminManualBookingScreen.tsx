@@ -54,7 +54,7 @@ function AdminManualBookingScreenInner() {
   const [service, setService] = useState("Haircut");
   const [price, setPrice] = useState("35");
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [time, setTime] = useState("10:00");
+  const [time, setTime] = useState("10:00 AM");
   const [notes, setNotes] = useState("");
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
