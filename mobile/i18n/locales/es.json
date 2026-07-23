@@ -145,8 +145,6 @@
     "paymentCancelledBody": "Puedes intentarlo de nuevo cuando quieras.",
     "paymentFailedTitle": "Pago fallido",
     "paymentFailedNotConfirmed": "El pago falló — la cita no se confirmó.",
-    "paymentFailedTitle": "Pago fallido",
-    "paymentFailedNotConfirmed": "El pago falló — la cita no se confirmó.",
     "checkoutAlertTitle": "Pago",
     "phases": {
       "processingPayment": "Procesando pago…",
@@ -286,7 +284,8 @@
     "current": "Actualmente {{name}}",
     "saved": "Idioma actualizado.",
     "useDevice": "Usar idioma del dispositivo",
-    "deviceDetected": "Idioma del dispositivo: {{name}}"
+    "deviceDetected": "Idioma del dispositivo: {{name}}",
+    "select": "Idioma"
   },
   "aura": {
     "title": "AURA",

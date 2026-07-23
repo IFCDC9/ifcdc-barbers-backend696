@@ -1,24 +1,13 @@
 /**
  * IFCDC Barbers — i18n entry point.
  *
- * Boot sequence:
- *   1. i18next is initialized **synchronously** at module load with English
- *      (and Spanish bundled in) so first render never sees missing keys.
- *   2. `bootstrapI18n()` is called once from `App.tsx` and asynchronously
- *      promotes the language to:
- *        a. The user's previously-saved choice (AsyncStorage `@ifcdc/lang`).
- *        b. The device locale, if it maps to a supported language.
- *        c. Otherwise stays on the synchronous English default.
- *   3. Subsequent calls to `setLanguage(code)` persist + activate.
- *
- * Usage:
- *   import { useTranslation } from "react-i18next";
- *   const { t } = useTranslation();
- *   t("common.save"); // "Save" / "Guardar"
- *
- * To add a new language: see ./languages.ts.
+ * - Bundles en/es + V2 locales (fr, ht, pt, ar, zh-CN, ko, vi).
+ * - Fallback language is always English (never blank / raw keys).
+ * - MULTI_LANGUAGE_DROPDOWN_V2 gates which languages appear in the picker.
+ * - RTL applied only for Arabic.
  */
 
+import { I18nManager } from "react-native";
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -26,12 +15,19 @@ import * as Localization from "expo-localization";
 
 import en from "./locales/en.json";
 import es from "./locales/es.json";
+import fr from "./locales/fr.json";
+import ht from "./locales/ht.json";
+import pt from "./locales/pt.json";
+import ar from "./locales/ar.json";
+import zhCN from "./locales/zh-CN.json";
+import ko from "./locales/ko.json";
+import vi from "./locales/vi.json";
 import {
   DEFAULT_LANGUAGE,
   FALLBACK_LANGUAGE,
   isSupportedLanguage,
+  languageMeta,
   normalizeLocale,
-  SUPPORTED_LANGUAGES,
   type SupportedLanguageCode,
 } from "./languages";
 
@@ -40,16 +36,28 @@ const STORAGE_KEY = "@ifcdc/lang";
 const resources = {
   en: { translation: en },
   es: { translation: es },
+  fr: { translation: fr },
+  ht: { translation: ht },
+  pt: { translation: pt },
+  ar: { translation: ar },
+  "zh-CN": { translation: zhCN },
+  ko: { translation: ko },
+  vi: { translation: vi },
 } as const;
 
-/**
- * Synchronously initialize i18next with bundled resources. We do this at
- * module-load time so any component that reads `t(...)` during the very
- * first render receives English instead of a raw key string.
- *
- * Calling `init` multiple times is a no-op for i18next; the explicit guard
- * here keeps the intent obvious.
- */
+function applyRtl(code: SupportedLanguageCode) {
+  const wantRtl = languageMeta(code).rtl === true;
+  try {
+    if (I18nManager.isRTL !== wantRtl) {
+      I18nManager.allowRTL(wantRtl);
+      I18nManager.forceRTL(wantRtl);
+      // RN typically needs a reload for full RTL layout swap; preference is still saved.
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 let initialized = false;
 function initSync() {
   if (initialized) return;
@@ -58,8 +66,22 @@ function initSync() {
     resources,
     lng: DEFAULT_LANGUAGE,
     fallbackLng: FALLBACK_LANGUAGE,
+    supportedLngs: Object.keys(resources),
+    nonExplicitSupportedLngs: true,
     interpolation: { escapeValue: false },
     returnNull: false,
+    returnEmptyString: false,
+    parseMissingKeyHandler: (key) => {
+      // Never show raw keys — fall back to the key's last segment as last resort
+      // (English resource should already cover all keys).
+      try {
+        const enHit = i18n.getResource("en", "translation", key);
+        if (typeof enHit === "string" && enHit) return enHit;
+      } catch {
+        /* ignore */
+      }
+      return String(key).split(".").pop() || key;
+    },
     compatibilityJSON: "v4",
     react: { useSuspense: false },
   });
@@ -67,24 +89,20 @@ function initSync() {
 
 initSync();
 
-/**
- * Async bootstrap: promote the synchronously-defaulted English to the user's
- * stored choice or the device locale. Called once from `App.tsx`. Never
- * throws — failures fall back to whatever language is currently active.
- */
 export async function bootstrapI18n(): Promise<SupportedLanguageCode> {
   let target: SupportedLanguageCode = DEFAULT_LANGUAGE;
 
   try {
     const stored = await AsyncStorage.getItem(STORAGE_KEY);
-    if (stored && isSupportedLanguage(stored)) {
-      target = stored;
+    const fromStore = normalizeLocale(stored);
+    if (fromStore) {
+      target = fromStore;
     } else {
       const device = detectDeviceLanguage();
       if (device !== DEFAULT_LANGUAGE) target = device;
     }
   } catch {
-    /* ignore — keep English */
+    /* keep English */
   }
 
   if (target !== currentLanguage()) {
@@ -94,31 +112,30 @@ export async function bootstrapI18n(): Promise<SupportedLanguageCode> {
       /* ignore */
     }
   }
+  applyRtl(target);
   return target;
 }
 
-/** Currently active language code (synchronous). */
 export function currentLanguage(): SupportedLanguageCode {
   const code = String(i18n.language || DEFAULT_LANGUAGE);
-  return isSupportedLanguage(code) ? code : DEFAULT_LANGUAGE;
+  return normalizeLocale(code) || DEFAULT_LANGUAGE;
 }
 
-/** Persist + activate a new language. Safe to await; never throws. */
 export async function setLanguage(code: SupportedLanguageCode): Promise<void> {
   if (!isSupportedLanguage(code)) return;
   try {
     await AsyncStorage.setItem(STORAGE_KEY, code);
   } catch {
-    /* ignore — non-fatal */
+    /* ignore */
   }
   try {
     await i18n.changeLanguage(code);
   } catch {
     /* ignore */
   }
+  applyRtl(code);
 }
 
-/** Clears the user's saved choice and reverts to device default. */
 export async function resetToDeviceLanguage(): Promise<SupportedLanguageCode> {
   try {
     await AsyncStorage.removeItem(STORAGE_KEY);
@@ -131,10 +148,10 @@ export async function resetToDeviceLanguage(): Promise<SupportedLanguageCode> {
   } catch {
     /* ignore */
   }
+  applyRtl(deviceCode);
   return deviceCode;
 }
 
-/** Read the device's preferred language (without changing app state). */
 export function detectDeviceLanguage(): SupportedLanguageCode {
   try {
     const deviceLocales = Localization.getLocales();
@@ -150,6 +167,14 @@ export function detectDeviceLanguage(): SupportedLanguageCode {
   return DEFAULT_LANGUAGE;
 }
 
-export { SUPPORTED_LANGUAGES, isSupportedLanguage, DEFAULT_LANGUAGE };
-export type { SupportedLanguageCode };
+export {
+  ALL_LANGUAGES,
+  SUPPORTED_LANGUAGES,
+  getPickerLanguages,
+  isSupportedLanguage,
+  isPickerLanguage,
+  languageMeta,
+  DEFAULT_LANGUAGE,
+} from "./languages";
+export type { SupportedLanguageCode } from "./languages";
 export default i18n;

@@ -7,24 +7,26 @@ import GlowButton from "../../components/GlowButton";
 import LanguageDropdown from "../../components/LanguageDropdown";
 import { theme } from "../../constants/theme";
 import {
-  SUPPORTED_LANGUAGES,
+  getPickerLanguages,
+  languageMeta,
   currentLanguage,
   detectDeviceLanguage,
   resetToDeviceLanguage,
   setLanguage,
   type SupportedLanguageCode,
 } from "../../i18n";
+import { patchProfile } from "../../services/profileApi";
+import { useAuth } from "../../services/authContext";
 
 export default function LanguageSettingsScreen() {
   const { t, i18n } = useTranslation();
+  const { user, token } = useAuth();
   const [active, setActive] = useState<SupportedLanguageCode>(currentLanguage());
   const [busy, setBusy] = useState(false);
+  const [savedMsg, setSavedMsg] = useState("");
 
   React.useEffect(() => {
-    const onChanged = (lng: string) => {
-      const next = lng as SupportedLanguageCode;
-      setActive(currentLanguage() === next ? next : currentLanguage());
-    };
+    const onChanged = () => setActive(currentLanguage());
     i18n.on("languageChanged", onChanged);
     return () => {
       i18n.off("languageChanged", onChanged);
@@ -32,15 +34,28 @@ export default function LanguageSettingsScreen() {
   }, [i18n]);
 
   const deviceLang = useMemo(() => detectDeviceLanguage(), []);
-  const deviceMeta = SUPPORTED_LANGUAGES.find((l) => l.code === deviceLang);
-  const activeMeta = SUPPORTED_LANGUAGES.find((l) => l.code === active);
+  const deviceMeta = languageMeta(deviceLang);
+  const activeMeta = languageMeta(active);
+  const pickerCount = getPickerLanguages().length;
+
+  const persistServer = async (code: SupportedLanguageCode) => {
+    if (!token || !user) return;
+    try {
+      await patchProfile({ preferredLanguage: code, language: code });
+    } catch {
+      /* local preference still saved */
+    }
+  };
 
   const choose = async (code: SupportedLanguageCode) => {
     if (busy || code === active) return;
     setBusy(true);
+    setSavedMsg("");
     try {
       await setLanguage(code);
       setActive(code);
+      await persistServer(code);
+      setSavedMsg(t("language.saved"));
     } finally {
       setBusy(false);
     }
@@ -49,9 +64,12 @@ export default function LanguageSettingsScreen() {
   const useDevice = async () => {
     if (busy) return;
     setBusy(true);
+    setSavedMsg("");
     try {
       const next = await resetToDeviceLanguage();
       setActive(next);
+      await persistServer(next);
+      setSavedMsg(t("language.saved"));
     } finally {
       setBusy(false);
     }
@@ -77,11 +95,19 @@ export default function LanguageSettingsScreen() {
 
       <ProfileCard style={styles.listCard}>
         <LanguageDropdown
-          label={t("language.select", { defaultValue: "Select language" })}
+          label={t("language.title")}
           value={active}
           disabled={busy}
           onChange={choose}
+          hint={
+            pickerCount > 2
+              ? undefined
+              : t("language.chooseLanguageHint", {
+                  defaultValue: "You can change this later in Profile.",
+                })
+          }
         />
+        {savedMsg ? <Text style={styles.saved}>{savedMsg}</Text> : null}
       </ProfileCard>
 
       <ProfileCard style={styles.deviceCard}>
@@ -107,6 +133,7 @@ const styles = StyleSheet.create({
   },
   summaryText: { color: theme.colors.text, fontSize: 16, fontWeight: "700" },
   summaryHint: { color: theme.colors.textMuted, fontSize: 13, marginTop: 4 },
-  listCard: { paddingVertical: 18 },
+  listCard: { paddingVertical: 18, gap: 8 },
+  saved: { color: theme.colors.gold, fontSize: 13, marginTop: 8 },
   deviceCard: { marginBottom: 24 },
 });

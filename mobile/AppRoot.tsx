@@ -325,6 +325,14 @@ function MainShell() {
 
 export default function AppRoot() {
   console.log("[startup] AppRoot render");
+
+  React.useEffect(() => {
+    void import("./i18n")
+      .then((m) => m.bootstrapI18n())
+      .then((lang) => console.log("[startup] i18n bootstrapped:", lang))
+      .catch((e) => console.warn("[startup] i18n bootstrap failed:", e?.message || e));
+  }, []);
+
   return (
     <ProviderBoundary name="SafeAreaProvider">
       <SafeAreaProvider>

@@ -1,16 +1,18 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   Modal,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { useTranslation } from "react-i18next";
 import { theme } from "../constants/theme";
 import {
-  SUPPORTED_LANGUAGES,
+  getPickerLanguages,
+  languageMeta,
   type SupportedLanguageCode,
 } from "../i18n/languages";
 
@@ -23,7 +25,8 @@ type Props = {
 };
 
 /**
- * Scalable language picker — options come from SUPPORTED_LANGUAGES registry.
+ * Searchable Language dropdown — options from getPickerLanguages() (feature-flag aware).
+ * Shows English name + native name. No flags.
  */
 export default function LanguageDropdown({
   value,
@@ -34,16 +37,33 @@ export default function LanguageDropdown({
 }: Props) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
-  const selected = SUPPORTED_LANGUAGES.find((l) => l.code === value) ?? SUPPORTED_LANGUAGES[0];
+  const [query, setQuery] = useState("");
+  const options = getPickerLanguages();
+  const selected = languageMeta(value);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return options;
+    return options.filter(
+      (lang) =>
+        lang.englishName.toLowerCase().includes(q) ||
+        lang.nativeName.toLowerCase().includes(q) ||
+        lang.code.toLowerCase().includes(q),
+    );
+  }, [options, query]);
 
   return (
     <View style={styles.wrap}>
       {label ? <Text style={styles.label}>{label}</Text> : null}
       <Pressable
-        onPress={() => !disabled && setOpen(true)}
+        onPress={() => {
+          if (disabled) return;
+          setQuery("");
+          setOpen(true);
+        }}
         disabled={disabled}
         accessibilityRole="button"
-        accessibilityLabel={t("language.select", { defaultValue: "Select language" })}
+        accessibilityLabel={t("language.select", { defaultValue: "Language" })}
         style={({ pressed }) => [
           styles.trigger,
           disabled && styles.triggerDisabled,
@@ -51,9 +71,9 @@ export default function LanguageDropdown({
         ]}
       >
         <View style={{ flex: 1 }}>
-          <Text style={styles.triggerTitle}>{selected.nativeName}</Text>
+          <Text style={styles.triggerTitle}>{selected.englishName}</Text>
           <Text style={styles.triggerSub}>
-            {selected.englishName} · {selected.code.toUpperCase()}
+            {selected.nativeName} · {selected.code}
           </Text>
         </View>
         <Text style={styles.chevron}>▾</Text>
@@ -64,33 +84,45 @@ export default function LanguageDropdown({
         <Pressable style={styles.backdrop} onPress={() => setOpen(false)}>
           <Pressable style={styles.sheet} onPress={() => undefined}>
             <Text style={styles.sheetTitle}>
-              {t("language.select", { defaultValue: "Select language" })}
+              {t("language.title", { defaultValue: "Language" })}
             </Text>
-            <ScrollView style={{ maxHeight: 320 }}>
-              {SUPPORTED_LANGUAGES.map((lang) => {
-                const active = lang.code === value;
-                return (
-                  <Pressable
-                    key={lang.code}
-                    onPress={() => {
-                      onChange(lang.code);
-                      setOpen(false);
-                    }}
-                    style={({ pressed }) => [
-                      styles.option,
-                      active && styles.optionActive,
-                      pressed && styles.optionPressed,
-                    ]}
-                  >
-                    <Text style={[styles.optionTitle, active && styles.optionTitleActive]}>
-                      {lang.nativeName}
-                    </Text>
-                    <Text style={styles.optionSub}>
-                      {lang.englishName} · {lang.code.toUpperCase()}
-                    </Text>
-                  </Pressable>
-                );
-              })}
+            <TextInput
+              value={query}
+              onChangeText={setQuery}
+              placeholder={t("common.search", { defaultValue: "Search" })}
+              placeholderTextColor={theme.colors.textMuted}
+              autoCorrect={false}
+              autoCapitalize="none"
+              style={styles.search}
+              accessibilityLabel={t("common.search", { defaultValue: "Search" })}
+            />
+            <ScrollView style={{ maxHeight: 360 }} keyboardShouldPersistTaps="handled">
+              {filtered.length === 0 ? (
+                <Text style={styles.empty}>{t("common.notFound", { defaultValue: "No matches" })}</Text>
+              ) : (
+                filtered.map((lang) => {
+                  const active = lang.code === value;
+                  return (
+                    <Pressable
+                      key={lang.code}
+                      onPress={() => {
+                        onChange(lang.code);
+                        setOpen(false);
+                      }}
+                      style={({ pressed }) => [
+                        styles.option,
+                        active && styles.optionActive,
+                        pressed && styles.optionPressed,
+                      ]}
+                    >
+                      <Text style={[styles.optionTitle, active && styles.optionTitleActive]}>
+                        {lang.englishName}
+                      </Text>
+                      <Text style={styles.optionSub}>{lang.nativeName}</Text>
+                    </Pressable>
+                  );
+                })
+              )}
             </ScrollView>
           </Pressable>
         </Pressable>
@@ -146,6 +178,17 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 1,
   },
+  search: {
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.16)",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: theme.colors.text,
+    marginBottom: 10,
+    backgroundColor: "rgba(255,255,255,0.04)",
+  },
+  empty: { color: theme.colors.textMuted, padding: 12, textAlign: "center" },
   option: {
     paddingVertical: 12,
     paddingHorizontal: 8,

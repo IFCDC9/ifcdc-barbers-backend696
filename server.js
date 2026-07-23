@@ -51,6 +51,7 @@ import { createAdminShopsRouter } from "./adminShopsRoutes.js";
 import { createAdminHubSpotRouter } from "./adminHubspotRoutes.js";
 import { ensureAdminBarberManagementSchema } from "./adminBarberMigrations.js";
 import { ensureProviderTypeSchema } from "./providerTypeMigrations.js";
+import { ensurePreferredLanguageSchema } from "./preferredLanguageMigrations.js";
 import { ensureAppUsersBarberIdTypeAligned } from "./authDbMigrations.js";
 import { backfillOrphanBarberRegistrations } from "./signupProvisioningService.js";
 import { ensureAdminShopManagementSchema } from "./adminShopMigrations.js";
@@ -1134,6 +1135,9 @@ async function startServer() {
     await ensureBarberBusinessTables();
     await ensureAdminBarberManagementSchema();
     await ensureProviderTypeSchema();
+    await ensurePreferredLanguageSchema().catch((e) =>
+      console.warn("[boot] preferred_language:", e?.message || e),
+    );
     await ensureAdminShopManagementSchema();
     try {
       const aligned = await ensureAppUsersBarberIdTypeAligned();

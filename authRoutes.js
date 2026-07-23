@@ -237,10 +237,14 @@ export function createAuthRouter({ sendEmail }) {
         });
       }
 
-      const preferredLanguage = String(body.language || body.preferredLanguage || body.preferred_language || "en")
-        .trim()
-        .toLowerCase()
-        .slice(0, 8) || "en";
+      const { normalizePreferredLanguage, isMultiLanguageDropdownV2Enabled } = await import(
+        "./shared/multiLanguageFlag.js"
+      );
+      const preferredLanguage =
+        normalizePreferredLanguage(body.language || body.preferredLanguage || body.preferred_language || "en", {
+          allowV2: true,
+        }) || "en";
+      void isMultiLanguageDropdownV2Enabled;
 
       if (!name) return res.status(400).json({ error: "name_required", message: "Name is required" });
       if (!email) return res.status(400).json({ error: "email_required", message: "Email is required" });
@@ -572,6 +576,10 @@ export function createAuthRouter({ sendEmail }) {
         body.dateOfBirth != null || body.date_of_birth != null
           ? String(body.dateOfBirth ?? body.date_of_birth).trim().slice(0, 10)
           : null;
+      const preferredLanguageRaw =
+        body.preferredLanguage != null || body.preferred_language != null || body.language != null
+          ? String(body.preferredLanguage ?? body.preferred_language ?? body.language).trim()
+          : null;
 
       if (name !== null && !name) {
         return res.status(400).json({ ok: false, error: "name_required", message: "Name cannot be empty" });
@@ -582,6 +590,27 @@ export function createAuthRouter({ sendEmail }) {
           error: "date_of_birth_invalid",
           message: "dateOfBirth must be YYYY-MM-DD",
         });
+      }
+
+      let preferredLanguage = null;
+      if (preferredLanguageRaw != null && preferredLanguageRaw !== "") {
+        const { normalizePreferredLanguage, isMultiLanguageDropdownV2Enabled } = await import(
+          "./shared/multiLanguageFlag.js"
+        );
+        preferredLanguage = normalizePreferredLanguage(preferredLanguageRaw, {
+          allowV2: isMultiLanguageDropdownV2Enabled(),
+        });
+        // Always allow saving a previously-supported V2 code even if flag is off (no preference wipe).
+        if (!preferredLanguage) {
+          preferredLanguage = normalizePreferredLanguage(preferredLanguageRaw, { allowV2: true });
+        }
+        if (!preferredLanguage) {
+          return res.status(400).json({
+            ok: false,
+            error: "language_unsupported",
+            message: "Unsupported preferred language",
+          });
+        }
       }
 
       const sets = [];
@@ -603,13 +632,17 @@ export function createAuthRouter({ sendEmail }) {
         sets.push(`date_of_birth = $${i++}::date`);
         params.push(dateOfBirthRaw || null);
       }
+      if (preferredLanguage) {
+        sets.push(`preferred_language = $${i++}`);
+        params.push(preferredLanguage);
+      }
       if (!sets.length) {
         return res.status(400).json({ ok: false, error: "no_fields", message: "No profile fields to update" });
       }
       params.push(id);
       const updated = await dbQuery(
         `UPDATE app_users SET ${sets.join(", ")} WHERE id = $${i}::uuid
-         RETURNING id, name, email, phone, profile_image_url, date_of_birth, role, barber_id, business_id, created_at`,
+         RETURNING id, name, email, phone, profile_image_url, date_of_birth, role, barber_id, business_id, preferred_language, created_at`,
         params,
       );
       const user = updated.rows?.[0];

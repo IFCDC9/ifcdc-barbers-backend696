@@ -57,6 +57,7 @@ export function publicUserFromAppUser(user) {
     businessId: c.businessId,
     isOwner: c.isOwner,
     isSuperAdmin: c.isSuperAdmin,
+    preferredLanguage: user.preferred_language ?? user.preferredLanguage ?? "en",
     createdAt,
   };
 }

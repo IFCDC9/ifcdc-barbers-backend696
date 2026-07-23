@@ -89,6 +89,8 @@ export async function patchProfile(body: {
   name?: string;
   phone?: string;
   profileImageUrl?: string | null;
+  preferredLanguage?: string | null;
+  language?: string | null;
 }): Promise<AppUser> {
   const token = await getAuthToken();
   const res = await fetch(apiFullUrl("/api/auth/profile"), {

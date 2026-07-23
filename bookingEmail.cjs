@@ -129,35 +129,21 @@ function htmlToPlainText(html) {
     .trim();
 }
 
-/** Customer-facing labels only (admin copies stay English). */
+/** Customer-facing labels only (admin copies stay English). Falls back to English. */
 function bookingEmailLabels(language) {
-  const es = String(language || "")
-    .trim()
-    .toLowerCase()
-    .startsWith("es");
-  if (es) {
-    return {
-      subjectFull: "Confirmación de reserva — IFCDC Barbers",
-      subjectDeposit: "Confirmación de reserva (depósito) — IFCDC Barbers",
-      h2: "Reserva confirmada",
-      lblName: "Nombre",
-      lblBarber: "Barbero",
-      lblService: "Servicio",
-      lblServicePrice: "Precio del servicio",
-      lblServiceDuration: "Duración",
-      lblDate: "Fecha",
-      lblTime: "Hora",
-      lblDepositPaid: "Depósito pagado",
-      lblServiceTotal: "Total del servicio",
-      lblRemaining: "Saldo pendiente (normalmente el día de la cita)",
-      lblAmountPaid: "Monto pagado",
-      lblPaidInFull: "(pagado completo)",
-      lblTip: "Propina",
-      lblTotalCharged: "Total cobrado (PayPal)",
-      lblPayRef: "Referencia de pago",
-    };
-  }
-  return {
+  const raw = String(language || "").trim().replace(/_/g, "-");
+  const lower = raw.toLowerCase();
+  let code = "en";
+  if (lower.startsWith("es")) code = "es";
+  else if (lower.startsWith("fr")) code = "fr";
+  else if (lower.startsWith("ht") || lower.startsWith("cpf") || lower === "creole") code = "ht";
+  else if (lower.startsWith("pt")) code = "pt";
+  else if (lower.startsWith("ar")) code = "ar";
+  else if (lower.startsWith("zh")) code = "zh-CN";
+  else if (lower.startsWith("ko")) code = "ko";
+  else if (lower.startsWith("vi")) code = "vi";
+
+  const EN = {
     subjectFull: "Booking Confirmation - IFCDC Barbers",
     subjectDeposit: "Booking confirmed (deposit) — IFCDC Barbers",
     h2: "Booking Confirmed",
@@ -176,7 +162,181 @@ function bookingEmailLabels(language) {
     lblTip: "Tip",
     lblTotalCharged: "Total charged (PayPal)",
     lblPayRef: "Payment reference",
+    thanks: "Thank you for booking with IFCDC Barbers.",
   };
+
+  const TABLE = {
+    es: {
+      subjectFull: "Confirmación de reserva — IFCDC Barbers",
+      subjectDeposit: "Confirmación de reserva (depósito) — IFCDC Barbers",
+      h2: "Reserva confirmada",
+      lblName: "Nombre",
+      lblBarber: "Barbero",
+      lblService: "Servicio",
+      lblServicePrice: "Precio del servicio",
+      lblServiceDuration: "Duración",
+      lblDate: "Fecha",
+      lblTime: "Hora",
+      lblDepositPaid: "Depósito pagado",
+      lblServiceTotal: "Total del servicio",
+      lblRemaining: "Saldo pendiente (normalmente el día de la cita)",
+      lblAmountPaid: "Monto pagado",
+      lblPaidInFull: "(pagado completo)",
+      lblTip: "Propina",
+      lblTotalCharged: "Total cobrado (PayPal)",
+      lblPayRef: "Referencia de pago",
+      thanks: "Gracias por reservar con IFCDC Barbers.",
+    },
+    fr: {
+      subjectFull: "Confirmation de réservation — IFCDC Barbers",
+      subjectDeposit: "Réservation confirmée (acompte) — IFCDC Barbers",
+      h2: "Réservation confirmée",
+      lblName: "Nom",
+      lblBarber: "Barbier",
+      lblService: "Service",
+      lblServicePrice: "Prix du service",
+      lblServiceDuration: "Durée",
+      lblDate: "Date",
+      lblTime: "Heure",
+      lblDepositPaid: "Acompte payé",
+      lblServiceTotal: "Total du service",
+      lblRemaining: "Solde restant (généralement dû le jour du rendez-vous)",
+      lblAmountPaid: "Montant payé",
+      lblPaidInFull: "(payé intégralement)",
+      lblTip: "Pourboire",
+      lblTotalCharged: "Total facturé (PayPal)",
+      lblPayRef: "Référence de paiement",
+      thanks: "Merci d’avoir réservé avec IFCDC Barbers.",
+    },
+    ht: {
+      subjectFull: "Konfimasyon rezèvasyon — IFCDC Barbers",
+      subjectDeposit: "Rezèvasyon konfime (depo) — IFCDC Barbers",
+      h2: "Rezèvasyon konfime",
+      lblName: "Non",
+      lblBarber: "Kowafè",
+      lblService: "Sèvis",
+      lblServicePrice: "Pri sèvis",
+      lblServiceDuration: "Dire",
+      lblDate: "Dat",
+      lblTime: "Lè",
+      lblDepositPaid: "Depo peye",
+      lblServiceTotal: "Total sèvis",
+      lblRemaining: "Balans ki rete (anjeneral nan jou randevou a)",
+      lblAmountPaid: "Montan peye",
+      lblPaidInFull: "(peye nèt)",
+      lblTip: "Tip",
+      lblTotalCharged: "Total chaje (PayPal)",
+      lblPayRef: "Referans peman",
+      thanks: "Mèsi paske ou rezève ak IFCDC Barbers.",
+    },
+    pt: {
+      subjectFull: "Confirmação de reserva — IFCDC Barbers",
+      subjectDeposit: "Reserva confirmada (depósito) — IFCDC Barbers",
+      h2: "Reserva confirmada",
+      lblName: "Nome",
+      lblBarber: "Barbeiro",
+      lblService: "Serviço",
+      lblServicePrice: "Preço do serviço",
+      lblServiceDuration: "Duração",
+      lblDate: "Data",
+      lblTime: "Hora",
+      lblDepositPaid: "Depósito pago",
+      lblServiceTotal: "Total do serviço",
+      lblRemaining: "Saldo restante (normalmente no dia da consulta)",
+      lblAmountPaid: "Valor pago",
+      lblPaidInFull: "(pago integralmente)",
+      lblTip: "Gorjeta",
+      lblTotalCharged: "Total cobrado (PayPal)",
+      lblPayRef: "Referência de pagamento",
+      thanks: "Obrigado por reservar com a IFCDC Barbers.",
+    },
+    ar: {
+      subjectFull: "تأكيد الحجز — IFCDC Barbers",
+      subjectDeposit: "تم تأكيد الحجز (عربون) — IFCDC Barbers",
+      h2: "تم تأكيد الحجز",
+      lblName: "الاسم",
+      lblBarber: "الحلاق",
+      lblService: "الخدمة",
+      lblServicePrice: "سعر الخدمة",
+      lblServiceDuration: "المدة",
+      lblDate: "التاريخ",
+      lblTime: "الوقت",
+      lblDepositPaid: "العربون المدفوع",
+      lblServiceTotal: "إجمالي الخدمة",
+      lblRemaining: "الرصيد المتبقي (عادة في يوم الموعد)",
+      lblAmountPaid: "المبلغ المدفوع",
+      lblPaidInFull: "(مدفوع بالكامل)",
+      lblTip: "إكرامية",
+      lblTotalCharged: "الإجمالي المحصل (PayPal)",
+      lblPayRef: "مرجع الدفع",
+      thanks: "شكرًا لحجزك مع IFCDC Barbers.",
+    },
+    "zh-CN": {
+      subjectFull: "预约确认 — IFCDC Barbers",
+      subjectDeposit: "预约已确认（定金）— IFCDC Barbers",
+      h2: "预约已确认",
+      lblName: "姓名",
+      lblBarber: "理发师",
+      lblService: "服务",
+      lblServicePrice: "服务价格",
+      lblServiceDuration: "时长",
+      lblDate: "日期",
+      lblTime: "时间",
+      lblDepositPaid: "已付定金",
+      lblServiceTotal: "服务合计",
+      lblRemaining: "剩余应付（通常在预约当天支付）",
+      lblAmountPaid: "已付金额",
+      lblPaidInFull: "（已全额支付）",
+      lblTip: "小费",
+      lblTotalCharged: "PayPal 扣款总额",
+      lblPayRef: "付款参考号",
+      thanks: "感谢您通过 IFCDC Barbers 预约。",
+    },
+    ko: {
+      subjectFull: "예약 확인 — IFCDC Barbers",
+      subjectDeposit: "예약 확인(보증금) — IFCDC Barbers",
+      h2: "예약이 확인되었습니다",
+      lblName: "이름",
+      lblBarber: "바버",
+      lblService: "서비스",
+      lblServicePrice: "서비스 가격",
+      lblServiceDuration: "소요 시간",
+      lblDate: "날짜",
+      lblTime: "시간",
+      lblDepositPaid: "보증금 결제",
+      lblServiceTotal: "서비스 합계",
+      lblRemaining: "잔액(보통 방문 당일 결제)",
+      lblAmountPaid: "결제 금액",
+      lblPaidInFull: "(전액 결제)",
+      lblTip: "팁",
+      lblTotalCharged: "PayPal 청구 합계",
+      lblPayRef: "결제 참조",
+      thanks: "IFCDC Barbers로 예약해 주셔서 감사합니다.",
+    },
+    vi: {
+      subjectFull: "Xác nhận đặt lịch — IFCDC Barbers",
+      subjectDeposit: "Đã xác nhận đặt lịch (đặt cọc) — IFCDC Barbers",
+      h2: "Đã xác nhận đặt lịch",
+      lblName: "Tên",
+      lblBarber: "Thợ cắt tóc",
+      lblService: "Dịch vụ",
+      lblServicePrice: "Giá dịch vụ",
+      lblServiceDuration: "Thời lượng",
+      lblDate: "Ngày",
+      lblTime: "Giờ",
+      lblDepositPaid: "Đã thanh toán đặt cọc",
+      lblServiceTotal: "Tổng dịch vụ",
+      lblRemaining: "Số còn lại (thường thanh toán vào ngày hẹn)",
+      lblAmountPaid: "Số tiền đã trả",
+      lblPaidInFull: "(đã thanh toán đầy đủ)",
+      lblTip: "Tip",
+      lblTotalCharged: "Tổng đã trừ (PayPal)",
+      lblPayRef: "Mã thanh toán",
+      thanks: "Cảm ơn bạn đã đặt lịch với IFCDC Barbers.",
+    },
+  };
+
+  return { ...EN, ...(TABLE[code] || {}) };
 }
 
 function isEmailConfigured() {
@@ -255,7 +415,7 @@ function buildCustomerConfirmationEmail(p) {
   <p><strong>${labels.lblTotalCharged}: $${fmt(totalPaid)}</strong></p>
   ${bookingId ? `<p>Booking ID: <strong>${escapeHtml(bookingId)}</strong></p>` : ""}
   ${captureId ? `<p>${labels.lblPayRef}: ${escapeHtml(String(captureId))}</p>` : ""}
-  <p style="margin-top:20px;font-size:13px;color:#555;">Thank you for booking with IFCDC Barbers.</p>
+  <p style="margin-top:20px;font-size:13px;color:#555;">${escapeHtml(labels.thanks || "Thank you for booking with IFCDC Barbers.")}</p>
   ${publicWebFooterHtml()}
 </div>
   `.trim();

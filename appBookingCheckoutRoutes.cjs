@@ -1206,6 +1206,17 @@ async function sendPaidConfirmationForAppBooking({ fresh, row, captureId, settle
   }
   try {
     const view = bookingPaymentViewFromRow(fresh);
+    let language = "en";
+    try {
+      const { resolveCustomerLanguage } = await import("./customerLanguage.js");
+      language = await resolveCustomerLanguage({
+        userId: fresh.user_id || row.user_id || null,
+        customerEmail: toEmail,
+        explicitLanguage: fresh.preferred_language || null,
+      });
+    } catch {
+      language = "en";
+    }
     const mail = await sendBookingEmail({
       name: fresh.customer_name || row.customer_name || "Guest",
       email: toEmail,
@@ -1225,6 +1236,7 @@ async function sendPaidConfirmationForAppBooking({ fresh, row, captureId, settle
       balanceDue: 0,
       bookingId: fresh.id,
       bookingRow: fresh,
+      language,
     });
     emailSent = Boolean(mail?.success ?? mail?.messageId);
     console.log("[booking-email] SENT OK (app-bookings finalize)", {
