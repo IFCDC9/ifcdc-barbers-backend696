@@ -63,6 +63,21 @@ function normalizeTimeLabel(v) {
   return `${String(h).padStart(2, "0")}:${min}`;
 }
 
+/** Convert HH:MM (24h) or already-labeled time into slot-engine label ("1:00 PM"). */
+export function toSlotEngineTimeLabel(v) {
+  const raw = text(v);
+  if (/^\d{1,2}:\d{2}\s*(AM|PM)$/i.test(raw)) {
+    return raw.replace(/\s+/g, " ").toUpperCase().replace(/\s*(AM|PM)$/i, " $1");
+  }
+  const hh = normalizeTimeLabel(raw);
+  if (!hh) return null;
+  const [hStr, min] = hh.split(":");
+  let h = Number(hStr);
+  const ap = h >= 12 ? "PM" : "AM";
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${min} ${ap}`;
+}
+
 export function requireSuperAdminActor(req) {
   const user = req?.user || null;
   if (!user) return { ok: false, status: 401, message: "Authentication required" };
@@ -208,7 +223,8 @@ export async function createManualBypassBooking({
 
   const dateStr = ymd(body?.date || body?.dateLabel);
   const timeStr = normalizeTimeLabel(body?.time || body?.timeLabel);
-  if (!dateStr || !timeStr) {
+  const slotTimeLabel = toSlotEngineTimeLabel(body?.time || body?.timeLabel || timeStr);
+  if (!dateStr || !timeStr || !slotTimeLabel) {
     return { ok: false, status: 400, message: "Valid date (YYYY-MM-DD) and time are required" };
   }
 
@@ -258,7 +274,7 @@ export async function createManualBypassBooking({
   const reason = text(body?.reason || body?.bypassReason || body?.bypass_reason) || null;
 
   const { validateBookingSlot } = await import("./barberSlotEngine.js");
-  const slotCheck = await validateBookingSlot(barberKey, dateStr, timeStr, barberName, {
+  const slotCheck = await validateBookingSlot(barberKey, dateStr, slotTimeLabel, barberName, {
     durationMinutes: service.durationMinutes,
   });
   if (!slotCheck.ok) {

@@ -3,6 +3,7 @@ import {
   BYPASS_PAYMENT_TYPES,
   isBypassPaymentType,
   requireSuperAdminActor,
+  toSlotEngineTimeLabel,
 } from "../manualBypassBookingService.js";
 import { slotBlockingWhereSql } from "../barberSlotEngine.js";
 
@@ -13,6 +14,9 @@ assert.equal(isBypassPaymentType("paid_online"), true);
 assert.equal(isBypassPaymentType("full"), false);
 
 assert.equal(BYPASS_PAYMENT_TYPES.COMPLIMENTARY, "complimentary");
+assert.equal(toSlotEngineTimeLabel("10:00"), "10:00 AM");
+assert.equal(toSlotEngineTimeLabel("13:30"), "1:30 PM");
+assert.equal(toSlotEngineTimeLabel("1:00 PM"), "1:00 PM");
 
 const gateOk = requireSuperAdminActor({ user: { isSuperAdmin: true, email: "service@ifcdc.org" } });
 assert.equal(gateOk.ok, true);
