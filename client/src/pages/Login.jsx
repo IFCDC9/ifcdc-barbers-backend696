@@ -2,6 +2,10 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { login } from "../services/api.js";
 import { persistAuthSession } from "../lib/authHeaders.js";
+import LanguageDropdown from "../components/LanguageDropdown.jsx";
+import { DEFAULT_LANGUAGE, normalizeLocale } from "../lib/languages.js";
+
+const LANG_KEY = "ifcdc_preferred_language";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -11,6 +15,13 @@ export default function Login() {
   });
   const [status, setStatus] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [language, setLanguage] = useState(() => {
+    try {
+      return normalizeLocale(localStorage.getItem(LANG_KEY)) || DEFAULT_LANGUAGE;
+    } catch {
+      return DEFAULT_LANGUAGE;
+    }
+  });
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -90,6 +101,22 @@ export default function Login() {
               className="auth-input"
             />
           </div>
+
+          <LanguageDropdown
+            label="Language"
+            value={language}
+            disabled={submitting}
+            onChange={(code) => {
+              setLanguage(code);
+              try {
+                localStorage.setItem(LANG_KEY, code);
+                document.documentElement.lang = code;
+                document.documentElement.dir = code === "ar" ? "rtl" : "ltr";
+              } catch {
+                /* ignore */
+              }
+            }}
+          />
 
           <button type="submit" className="auth-btn" disabled={submitting}>
             {submitting ? "Signing in…" : "Sign In"}

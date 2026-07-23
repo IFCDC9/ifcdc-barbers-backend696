@@ -18,6 +18,8 @@ import { EXPO_GO_GOOGLE_PROMPT_OPTIONS } from "../auth/expoGooglePromptOptions";
 import { getGoogleIdTokenAuthConfig } from "../auth/googleAuthRequestConfig";
 import { exchangeGoogleIdToken } from "../auth/googleBackendLogin";
 import { exchangeAppleIdentityToken } from "../auth/appleBackendLogin";
+import LanguageDropdown from "../components/LanguageDropdown";
+import { currentLanguage, setLanguage, type SupportedLanguageCode } from "../i18n";
 import { loginWithEmailPassword } from "../auth/authSessionApi";
 import { userFacingApiError } from "../utils/userFacingApiError";
 import { UX } from "../utils/uxCopy";
@@ -34,6 +36,7 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
   const { signInWithToken } = useAuth();
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
+  const [lang, setLang] = React.useState<SupportedLanguageCode>(currentLanguage());
   const [busy, setBusy] = React.useState(false);
   const [appleAvailable, setAppleAvailable] = React.useState(false);
   const submittingRef = React.useRef(false);
@@ -256,6 +259,16 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
           placeholder={t("auth.password")}
           secureTextEntry
           editable={!busy}
+        />
+        <View style={{ height: 12 }} />
+        <LanguageDropdown
+          label={t("language.title")}
+          value={lang}
+          disabled={busy}
+          onChange={async (code) => {
+            setLang(code);
+            await setLanguage(code);
+          }}
         />
         <View style={{ height: 12 }} />
         <GlowButton label={t("auth.signInBtn")} onPress={login} disabled={busy} loading={busy} />
