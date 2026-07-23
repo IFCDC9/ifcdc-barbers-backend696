@@ -24,6 +24,13 @@ export type AdminBookingDetail = BookingRow & {
   style_title?: string | null;
   business_id?: number | null;
   is_paid_booking?: boolean;
+  appointment_notes?: string | null;
+  manual_bypass?: boolean | null;
+  bypass_payment_type?: string | null;
+  bypass_reason?: string | null;
+  bypass_created_by?: string | null;
+  bypass_created_by_email?: string | null;
+  bypass_created_at?: string | null;
 };
 
 function normalizeBooking(raw: Record<string, unknown>): AdminBookingDetail {

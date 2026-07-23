@@ -536,7 +536,8 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
               amount, service_price, total_price, deposit_amount, amount_paid, amount_charged, balance_due, remaining_balance,
               payment_type, payment_status, payment_method, payment_provider, paypal_order_id, paypal_capture_id,
               style_id, style_title, style_image_url, tip_amount, total_paid,
-              platform_fee, platform_fee_status, barber_payout_amount, total_amount, booking_status, is_paid_booking, created_at
+              platform_fee, platform_fee_status, barber_payout_amount, total_amount, booking_status, is_paid_booking, created_at,
+              manual_bypass, bypass_payment_type, bypass_reason, bypass_created_by_email, bypass_created_at, appointment_notes
        FROM bookings
        ${tenantWhere}
        ORDER BY created_at DESC
@@ -553,9 +554,11 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
               b.payment_type, b.payment_status, b.payment_method, b.payment_provider, b.paypal_order_id, b.paypal_capture_id,
               b.style_id, b.style_title, b.style_image_url, b.tip_amount, b.total_paid,
               b.platform_fee, b.platform_fee_status, b.barber_payout_amount, b.total_amount, b.booking_status, b.is_paid_booking,
-              b.notes, b.cancelled_at, b.cancelled_by, b.created_at,
+              b.notes, b.appointment_notes, b.cancelled_at, b.cancelled_by, b.created_at,
               b.deleted_at, b.deleted_by, b.delete_reason,
               b.paypal_refund_id, b.refund_amount, b.refunded_at, b.refund_reason,
+              b.manual_bypass, b.bypass_payment_type, b.bypass_reason, b.bypass_created_by,
+              b.bypass_created_by_email, b.bypass_created_at,
               biz.name AS shop_name
        FROM bookings b
        LEFT JOIN businesses biz ON biz.id = b.business_id`;
@@ -1363,6 +1366,18 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
         email: req.user?.email || null,
       };
       const previousStatus = String(booking.booking_status || "").toLowerCase();
+      const isBypassBooking = booking.manual_bypass === true;
+      const actorIsSuper =
+        req.user?.isSuperAdmin === true ||
+        req.user?.isOwner === true ||
+        String(req.user?.role || "").toLowerCase() === "super_admin";
+
+      if (isBypassBooking && (action === "cancel" || action === "refund") && !actorIsSuper) {
+        return res.status(403).json({
+          ok: false,
+          message: "Only Super Admin can cancel or refund Manual Bypass bookings.",
+        });
+      }
 
       if (action === "complete") {
         const completion = await markBookingCompletedIdempotent(dbQuery, {
@@ -1473,7 +1488,7 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
              payment_type = COALESCE(NULLIF(btrim(payment_type), ''), 'full'),
              total_paid = COALESCE(total_price, amount, 0) + COALESCE(tip_amount, 0)
            WHERE id = $1::uuid
-             AND payment_status IN ('pay_in_person', 'pending', 'pay_in_person_pending')${tenantSql}
+             AND payment_status IN ('pay_in_person', 'pending', 'pay_in_person_pending', 'pay_at_shop')${tenantSql}
            RETURNING id, booking_status, payment_status, amount_paid, remaining_balance`,
           scopeParams
         );
@@ -1854,7 +1869,15 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
               booking_status AS "bookingStatus",
               is_paid_booking AS "isPaidBooking",
               payment_method AS "paymentMethod",
+              manual_bypass AS "manualBypass",
+              bypass_payment_type AS "bypassPaymentType",
+              bypass_reason AS "bypassReason",
+              bypass_created_by_email AS "bypassCreatedByEmail",
+              bypass_created_at AS "bypassCreatedAt",
               CASE
+                WHEN lower(coalesce(bypass_payment_type, payment_status, '')) = 'complimentary' THEN 'complimentary'
+                WHEN lower(coalesce(bypass_payment_type, payment_status, '')) = 'staff_training' THEN 'staff_training'
+                WHEN lower(coalesce(bypass_payment_type, payment_status, '')) = 'pay_at_shop' THEN 'pay_at_shop'
                 WHEN payment_status IN ('paid', 'paid_full') THEN
                   CASE WHEN payment_provider = 'stripe' OR payment_method = 'card' THEN 'paid_card' ELSE 'paid_paypal' END
                 WHEN payment_status = 'deposit_paid' THEN 'deposit_paypal'
@@ -1893,28 +1916,56 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
       try {
         const ar = await dbQuery(
           `SELECT
-           COALESCE(SUM(platform_fee) FILTER (WHERE is_paid_booking = true), 0)::float8 AS platform_fees_collected,
-           COUNT(*) FILTER (WHERE is_paid_booking = true)::int AS paid_bookings,
+           COALESCE(SUM(platform_fee) FILTER (
+             WHERE is_paid_booking = true
+               AND lower(coalesce(bypass_payment_type,'')) NOT IN ('complimentary','staff_training')
+               AND lower(coalesce(payment_status,'')) NOT IN ('complimentary','staff_training')
+           ), 0)::float8 AS platform_fees_collected,
+           COUNT(*) FILTER (
+             WHERE is_paid_booking = true
+               AND lower(coalesce(bypass_payment_type,'')) NOT IN ('complimentary','staff_training')
+               AND lower(coalesce(payment_status,'')) NOT IN ('complimentary','staff_training')
+           )::int AS paid_bookings,
            COUNT(*) FILTER (WHERE booking_status = 'confirmed')::int AS confirmed_bookings,
            COUNT(*)::int AS all_bookings,
-           COALESCE(SUM(total_price) FILTER (WHERE is_paid_booking = true), 0)::float8 AS total_gross,
-           COALESCE(SUM(COALESCE(total_paid, amount_paid, 0)) FILTER (WHERE is_paid_booking = true), 0)::float8 AS total_collected,
-           COALESCE(SUM(
-             GREATEST(COALESCE(total_paid, amount_paid, total_price, 0) - COALESCE(platform_fee, 0), 0)
-           ) FILTER (WHERE is_paid_booking = true), 0)::float8 AS barber_earnings,
+           COALESCE(SUM(total_price) FILTER (
+             WHERE is_paid_booking = true
+               AND lower(coalesce(bypass_payment_type,'')) NOT IN ('complimentary','staff_training')
+               AND lower(coalesce(payment_status,'')) NOT IN ('complimentary','staff_training')
+           ), 0)::float8 AS total_gross,
            COALESCE(SUM(COALESCE(total_paid, amount_paid, 0)) FILTER (
              WHERE is_paid_booking = true
+               AND lower(coalesce(bypass_payment_type,'')) NOT IN ('complimentary','staff_training')
+               AND lower(coalesce(payment_status,'')) NOT IN ('complimentary','staff_training')
+           ), 0)::float8 AS total_collected,
+           COALESCE(SUM(
+             GREATEST(COALESCE(total_paid, amount_paid, total_price, 0) - COALESCE(platform_fee, 0), 0)
+           ) FILTER (
+             WHERE is_paid_booking = true
+               AND lower(coalesce(bypass_payment_type,'')) NOT IN ('complimentary','staff_training')
+               AND lower(coalesce(payment_status,'')) NOT IN ('complimentary','staff_training')
+           ), 0)::float8 AS barber_earnings,
+           COALESCE(SUM(COALESCE(total_paid, amount_paid, 0)) FILTER (
+             WHERE is_paid_booking = true
+               AND lower(coalesce(bypass_payment_type,'')) NOT IN ('complimentary','staff_training')
+               AND lower(coalesce(payment_status,'')) NOT IN ('complimentary','staff_training')
                AND created_at >= date_trunc('day', NOW() AT TIME ZONE 'America/New_York')
            ), 0)::float8 AS today_revenue,
-           COALESCE(AVG(total_price) FILTER (WHERE is_paid_booking = true), 0)::float8 AS avg_booking,
-           COALESCE(MAX(total_price) FILTER (WHERE is_paid_booking = true), 0)::float8 AS highest_payment,
+           COALESCE(AVG(total_price) FILTER (
+             WHERE is_paid_booking = true
+               AND lower(coalesce(bypass_payment_type,'')) NOT IN ('complimentary','staff_training')
+           ), 0)::float8 AS avg_booking,
+           COALESCE(MAX(total_price) FILTER (
+             WHERE is_paid_booking = true
+               AND lower(coalesce(bypass_payment_type,'')) NOT IN ('complimentary','staff_training')
+           ), 0)::float8 AS highest_payment,
            COALESCE(SUM(total_price) FILTER (
              WHERE payment_status IS NULL
-                OR payment_status NOT IN ('paid', 'paid_full', 'deposit_paid', 'balance_due', 'unpaid', 'failed')
+                OR payment_status NOT IN ('paid', 'paid_full', 'paid_in_full', 'deposit_paid', 'balance_due', 'unpaid', 'failed', 'complimentary', 'staff_training', 'pay_at_shop')
            ), 0)::float8 AS pending_in_person_amount,
            COUNT(*) FILTER (
              WHERE payment_status IS NULL
-                OR payment_status NOT IN ('paid', 'paid_full', 'deposit_paid', 'balance_due', 'unpaid', 'failed')
+                OR payment_status NOT IN ('paid', 'paid_full', 'paid_in_full', 'deposit_paid', 'balance_due', 'unpaid', 'failed', 'complimentary', 'staff_training', 'pay_at_shop')
            )::int AS pending_in_person_count,
            COALESCE(SUM(remaining_balance) FILTER (
              WHERE COALESCE(remaining_balance, 0) > 0.01
@@ -1923,7 +1974,27 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
            COUNT(*) FILTER (
              WHERE COALESCE(remaining_balance, 0) > 0.01
                 OR lower(coalesce(payment_status, '')) = 'balance_due'
-           )::int AS outstanding_count
+           )::int AS outstanding_count,
+           COALESCE(SUM(COALESCE(total_paid, amount_paid, 0)) FILTER (
+             WHERE is_paid_booking = true
+               AND (
+                 lower(coalesce(bypass_payment_type,'')) = 'paid_online'
+                 OR (coalesce(manual_bypass,false) = false AND is_paid_booking = true)
+               )
+               AND lower(coalesce(payment_status,'')) NOT IN ('complimentary','staff_training')
+           ), 0)::float8 AS online_paid_revenue,
+           COALESCE(SUM(total_price) FILTER (
+             WHERE lower(coalesce(payment_status,'')) = 'pay_at_shop'
+                OR lower(coalesce(bypass_payment_type,'')) = 'pay_at_shop'
+           ), 0)::float8 AS pay_at_shop_revenue,
+           COUNT(*) FILTER (
+             WHERE lower(coalesce(payment_status,'')) = 'complimentary'
+                OR lower(coalesce(bypass_payment_type,'')) = 'complimentary'
+           )::int AS complimentary_count,
+           COUNT(*) FILTER (
+             WHERE lower(coalesce(payment_status,'')) = 'staff_training'
+                OR lower(coalesce(bypass_payment_type,'')) = 'staff_training'
+           )::int AS staff_training_count
          FROM bookings
          ${tenantWhere}`,
           tenantParams,
@@ -1944,6 +2015,10 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
           pendingPaymentsCount: Number(a.pending_in_person_count) || 0,
           outstandingBalanceAmount: Number(a.outstanding_amount) || 0,
           outstandingBalanceCount: Number(a.outstanding_count) || 0,
+          onlinePaidRevenue: Number(a.online_paid_revenue) || 0,
+          payAtShopRevenue: Number(a.pay_at_shop_revenue) || 0,
+          complimentaryCount: Number(a.complimentary_count) || 0,
+          staffTrainingCount: Number(a.staff_training_count) || 0,
         };
       } catch (e) {
         console.warn("[booking] platform aggregate:", e?.message || e);
@@ -1987,6 +2062,12 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
         avgBooking: platformAgg.avgBooking,
         highestPayment: platformAgg.highestPayment,
         lastPaymentAt: rows[0]?.created_at || null,
+        onlinePaidRevenue: platformAgg.onlinePaidRevenue || 0,
+        payAtShopRevenue: platformAgg.payAtShopRevenue || 0,
+        complimentaryCount: platformAgg.complimentaryCount || 0,
+        staffTrainingCount: platformAgg.staffTrainingCount || 0,
+        complimentaryServices: platformAgg.complimentaryCount || 0,
+        staffTrainingBookings: platformAgg.staffTrainingCount || 0,
       });
     } catch (e) {
       console.error("[booking] admin stats failed:", e?.stack || e);

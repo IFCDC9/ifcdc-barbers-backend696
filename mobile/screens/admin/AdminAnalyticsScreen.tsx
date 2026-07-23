@@ -55,10 +55,22 @@ export default function AdminAnalyticsScreen() {
       {error ? <ScreenError message={error} /> : null}
       {stats ? (
         <>
+          <Text style={styles.section}>Revenue by payment type</Text>
+          <StatRow label="Online Paid Revenue" value={money(stats.onlinePaidRevenue ?? stats.totalRevenuePlatform)} />
+          <StatRow label="Pay at Shop Revenue" value={money(stats.payAtShopRevenue)} />
+          <StatRow
+            label="Complimentary Services"
+            value={String(stats.complimentaryCount ?? stats.complimentaryServices ?? 0)}
+          />
+          <StatRow
+            label="Staff / Training Bookings"
+            value={String(stats.staffTrainingCount ?? stats.staffTrainingBookings ?? 0)}
+          />
+          <Text style={styles.section}>Totals</Text>
           <StatRow label="Total bookings" value={String(stats.allBookingsCount ?? stats.totalBookings ?? 0)} />
           <StatRow label="Paid bookings" value={String(stats.paidBookingsCount ?? 0)} />
           <StatRow label="Confirmed" value={String(stats.confirmedBookingsCount ?? 0)} />
-          <StatRow label="Gross revenue" value={money(stats.totalRevenue)} />
+          <StatRow label="Platform revenue (excludes complimentary/staff)" value={money(stats.totalRevenuePlatform)} />
           <StatRow label="Average booking" value={money(stats.avgBooking)} />
           <StatRow label="Highest payment" value={money(stats.highestPayment)} />
           {stats.lastPaymentAt ? (

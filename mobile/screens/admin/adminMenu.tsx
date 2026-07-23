@@ -16,6 +16,13 @@ export type AdminMenuItem = {
 
 export const ADMIN_MENU: AdminMenuItem[] = [
   {
+    key: "manual_booking",
+    title: "Book for Client",
+    subtitle: "Super Admin bypass booking · all payment types",
+    icon: "✍️",
+    route: "AdminManualBooking",
+  },
+  {
     key: "bookings",
     title: "Bookings management",
     subtitle: "View and manage platform bookings",

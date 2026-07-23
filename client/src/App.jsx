@@ -16,6 +16,7 @@ import Register from "./pages/Register.jsx";
 import ForgotPassword from "./pages/ForgotPassword.jsx";
 import ResetPassword from "./pages/ResetPassword.jsx";
 import Admin from "./pages/Admin.jsx";
+import AdminManualBooking from "./pages/AdminManualBooking.jsx";
 import AdminGlobalBarbers from "./pages/AdminGlobalBarbers.jsx";
 import AdminContentModeration from "./pages/AdminContentModeration.jsx";
 import AdminLoyaltyRewards from "./pages/AdminLoyaltyRewards.jsx";
@@ -114,6 +115,14 @@ function AppShell() {
               element={
                 <RequireRole roles={["admin", "super_admin"]}>
                   <Admin />
+                </RequireRole>
+              }
+            />
+            <Route
+              path="/admin/manual-booking"
+              element={
+                <RequireRole roles={["admin", "super_admin"]}>
+                  <AdminManualBooking />
                 </RequireRole>
               }
             />

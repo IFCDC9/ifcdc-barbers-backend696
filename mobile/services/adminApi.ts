@@ -15,6 +15,12 @@ export type AdminStats = {
   avgBooking?: number;
   highestPayment?: number;
   lastPaymentAt?: string | null;
+  onlinePaidRevenue?: number;
+  payAtShopRevenue?: number;
+  complimentaryCount?: number;
+  complimentaryServices?: number;
+  staffTrainingCount?: number;
+  staffTrainingBookings?: number;
 };
 
 export type AdminBarberRow = {

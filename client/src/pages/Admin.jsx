@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { getStoredToken, getStoredUser } from "../lib/authHeaders.js";
+import { getStoredToken, getStoredUser, getAdminAuthHeaders } from "../lib/authHeaders.js";
 import { Navigate } from "react-router-dom";
 import {
   createBarberFormData,
@@ -11,6 +11,7 @@ import {
   markBookingPaid,
   getBarbers,
   getApiDisplayLabel,
+  getApiOrigin,
   mediaUrl,
   patchBarber,
   uploadBarberPhoto,
@@ -101,7 +102,10 @@ function formatPaymentStatusLabel(s) {
   if (s === "paid_paypal") return "Fully Paid";
   if (s === "deposit_paypal") return "Deposit paid";
   if (s === "pay_in_person") return "Pay in person";
-  return s ? String(s) : "—";
+  if (s === "pay_at_shop") return "Pay at Shop";
+  if (s === "complimentary") return "Complimentary";
+  if (s === "staff_training") return "Staff / Training";
+  return s ? String(s).replace(/_/g, " ") : "—";
 }
 
 /** DB `deposit_paid` or stats-mapped `deposit_paypal`. */
@@ -525,6 +529,34 @@ function AdminDashboard() {
     }
   };
 
+  const handleConvertBypassToPaid = async (b) => {
+    if (!b?.id) return;
+    if (!window.confirm("Mark this bypass booking as paid (payment received)?")) return;
+    setMarkingPaidId(String(b.id));
+    try {
+      const origin = getApiOrigin().replace(/\/$/, "");
+      const res = await fetch(`${origin}/api/admin/manual-bookings/${encodeURIComponent(b.id)}/convert-to-paid`, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          ...getAdminAuthHeaders(),
+        },
+        body: JSON.stringify({ mode: "mark_paid" }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.message || json.error || `Convert failed (${res.status})`);
+      const refreshed = await getAdminStats();
+      setStats(refreshed);
+      setStatsError(null);
+    } catch (err) {
+      console.error(err);
+      alert(err?.message || "Failed to convert bypass booking to paid");
+    } finally {
+      setMarkingPaidId(null);
+    }
+  };
+
   const handleAddBarber = async (e) => {
     e.preventDefault();
     const trimmed = name.trim();
@@ -633,6 +665,11 @@ function AdminDashboard() {
           API: <code style={{ color: "#d4af37" }}>{apiLabel}</code>
         </p>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 10, justifyContent: "center", marginBottom: 28 }}>
+          {(getStoredUser()?.isSuperAdmin === true || getStoredUser()?.isOwner === true || String(getStoredUser()?.role || "").toLowerCase() === "super_admin") ? (
+            <a href="/admin/manual-booking" style={{ ...goldButton, textDecoration: "none", display: "inline-block" }}>
+              Book for Client
+            </a>
+          ) : null}
           <a href="/admin/shops" style={{ ...goldButton, textDecoration: "none", display: "inline-block" }}>
             Shops / Locations
           </a>
@@ -664,6 +701,22 @@ function AdminDashboard() {
             ) : null}
 
             <div className="dashboard">
+              <div className="card">
+                <h3>Online Paid Revenue</h3>
+                <p>${Number(stats.onlinePaidRevenue ?? stats.totalRevenuePlatform ?? 0).toFixed(2)}</p>
+              </div>
+              <div className="card">
+                <h3>Pay at Shop Revenue</h3>
+                <p>${Number(stats.payAtShopRevenue ?? 0).toFixed(2)}</p>
+              </div>
+              <div className="card">
+                <h3>Complimentary Services</h3>
+                <p>{Number(stats.complimentaryCount ?? stats.complimentaryServices ?? 0)}</p>
+              </div>
+              <div className="card">
+                <h3>Staff / Training</h3>
+                <p>{Number(stats.staffTrainingCount ?? stats.staffTrainingBookings ?? 0)}</p>
+              </div>
               <div className="card">
                 <h3>Total Revenue (platform)</h3>
                 <p>${Number(stats.totalRevenuePlatform ?? stats.totalPlatformEarnings ?? 0).toFixed(2)}</p>
@@ -853,6 +906,13 @@ function AdminDashboard() {
                       const barberAmt = b.barberAmount ?? b.barberEarnings;
                       const platAmt = b.platformAmount ?? b.platformEarnings;
                       const showMarkPaid = isDepositPaidBooking(b);
+                      const bypassType = String(b.bypassPaymentType || b.paymentStatus || "").toLowerCase();
+                      const showConvertBypass =
+                        Boolean(b.manualBypass) &&
+                        ["complimentary", "pay_at_shop", "staff_training"].includes(bypassType) &&
+                        (getStoredUser()?.isSuperAdmin === true ||
+                          getStoredUser()?.isOwner === true ||
+                          String(getStoredUser()?.role || "").toLowerCase() === "super_admin");
                       const markBusy = Boolean(markingPaidId);
                       const thisMarkBusy = markingPaidId === String(b.id);
                       const rowBg =
@@ -860,9 +920,13 @@ function AdminDashboard() {
                           ? "rgba(180, 83, 9, 0.14)"
                           : b.paymentStatus === "paid_paypal"
                             ? "rgba(22, 101, 52, 0.12)"
-                            : "transparent";
+                            : b.paymentStatus === "complimentary" || b.paymentStatus === "staff_training"
+                              ? "rgba(59, 130, 246, 0.10)"
+                              : b.paymentStatus === "pay_at_shop"
+                                ? "rgba(234, 179, 8, 0.10)"
+                                : "transparent";
                       return (
-                      <tr key={b.id} style={{ backgroundColor: rowBg }}>
+                      <tr key={b.id} style={{ backgroundColor: rowBg }} title={b.bypassReason ? `Bypass: ${b.bypassReason}` : undefined}>
                         <td>{b.name}</td>
                         <td className="admin-money-table__email">{b.customerEmail || b.email || "—"}</td>
                         <td>{b.phone || "—"}</td>
@@ -890,6 +954,16 @@ function AdminDashboard() {
                               onClick={() => handleMarkFullyPaid(b)}
                             >
                               {thisMarkBusy ? "Updating…" : "Mark Fully Paid"}
+                            </button>
+                          ) : null}
+                          {showConvertBypass ? (
+                            <button
+                              type="button"
+                              className="mark-paid-btn mark-paid-btn--table"
+                              disabled={markBusy}
+                              onClick={() => handleConvertBypassToPaid(b)}
+                            >
+                              {thisMarkBusy ? "Updating…" : "Convert to Paid"}
                             </button>
                           ) : null}
                           <button type="button" className="admin-money-table__delete" onClick={() => deleteBooking(b.id)}>

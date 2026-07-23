@@ -34,9 +34,12 @@ export function canAccessAdminMenuKey(
 ): boolean {
   const role = resolveStaffRole(user, token);
   if (!role) return false;
+  if (key === "manual_booking") {
+    return role === "super_admin" || isSuperAdminUser(user, token);
+  }
   if (role === "super_admin") return true;
   if (role === "admin") {
-    return !["users"].includes(key);
+    return !["users", "manual_booking"].includes(key);
   }
   if (role === "shop_owner") {
     return ["bookings", "services", "barbers", "shop", "schedule"].includes(key);

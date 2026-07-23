@@ -8,12 +8,15 @@ export const PENDING_HOLD_MINUTES = Number(process.env.BOOKING_PENDING_HOLD_MINU
 
 const NON_BLOCKING_STATUSES = `'cancelled', 'completed', 'no_show', 'declined', 'failed', 'expired', 'deleted'`;
 const PAID_PAYMENT_STATUSES = `'paid', 'paid_full', 'paid_in_full', 'deposit_paid', 'captured'`;
+/** Confirmed bypass / in-person appointments that must occupy the calendar without is_paid_booking. */
+const CALENDAR_HOLD_PAYMENT_STATUSES = `'pay_at_shop', 'complimentary', 'staff_training', 'pay_in_person', 'pay_in_person_pending'`;
 
 /**
  * SQL fragment — rows that actively occupy barber schedule slots.
  * Completed / cancelled / declined / no-show / soft-deleted bookings never block.
  * Past paid appointments auto-release when service duration has elapsed (barber TZ).
  * Unpaid PayPal holds only block while within PENDING_HOLD_MINUTES.
+ * Super Admin bypass bookings (manual_bypass / pay_at_shop / complimentary / staff_training) block while confirmed.
  *
  * @param {string} [holdMinutesParam] e.g. "$4" — bind for pending hold minutes
  * @param {string} [timezoneParam] e.g. "$6" — IANA TZ for interpreting date+time
@@ -32,6 +35,8 @@ export function slotBlockingWhereSql(
         AND (
           is_paid_booking = true
           OR lower(coalesce(payment_status, '')) IN (${PAID_PAYMENT_STATUSES})
+          OR coalesce(manual_bypass, false) = true
+          OR lower(coalesce(payment_status, '')) IN (${CALENDAR_HOLD_PAYMENT_STATUSES})
         )
         AND (
           ${apptStart}

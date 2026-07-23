@@ -26,7 +26,9 @@ import {
   resendBookingConfirmation,
   type AdminBookingDetail,
 } from "../../services/adminBookingApi";
+import { convertManualBypassToPaid, cancelManualBypassBooking } from "../../services/manualBypassBookingApi";
 import { useAuth } from "../../services/authContext";
+import { isSuperAdminUser } from "../../utils/adminAccess";
 import { maskPhoneForDisplay } from "../../utils/redactPii";
 import {
   displayCustomerEmail,
@@ -93,6 +95,7 @@ export default function AdminBookingDetailScreen() {
   const [actionBusy, setActionBusy] = useState<"complete" | "cancel" | "resend" | null>(null);
 
   const canDestructive = canPerformBookingDestructiveOps(user, token);
+  const isSuperAdmin = isSuperAdminUser(user, token);
   const showRefund = useMemo(
     () => Boolean(booking && canDestructive && canShowRefundClientButton(booking)),
     [booking, canDestructive],
@@ -130,17 +133,22 @@ export default function AdminBookingDetailScreen() {
           setBusy(true);
           setActionBusy(action);
           try {
-            const result = await patchAdminBookingAction(bookingId, action);
-            if (result.booking) {
-              setBooking((prev) => ({
-                ...(prev || {}),
-                ...result.booking,
-                booking_status:
-                  (result.booking as { booking_status?: string }).booking_status ||
-                  (action === "complete" ? "completed" : prev?.booking_status),
-              }));
+            if (action === "cancel" && booking?.manual_bypass) {
+              await cancelManualBypassBooking(bookingId);
+              Alert.alert("Updated", "Bypass booking cancelled.");
+            } else {
+              const result = await patchAdminBookingAction(bookingId, action);
+              if (result.booking) {
+                setBooking((prev) => ({
+                  ...(prev || {}),
+                  ...result.booking,
+                  booking_status:
+                    (result.booking as { booking_status?: string }).booking_status ||
+                    (action === "complete" ? "completed" : prev?.booking_status),
+                }));
+              }
+              Alert.alert("Updated", result.message);
             }
-            Alert.alert("Updated", result.message);
             await load();
           } catch (e) {
             Alert.alert("Action failed", userFacingApiError(e));
@@ -278,6 +286,27 @@ export default function AdminBookingDetailScreen() {
     );
   }
 
+  const onConvertBypassPaid = () => {
+    Alert.alert("Mark paid", "Record payment received for this bypass booking?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Mark paid",
+        onPress: async () => {
+          setBusy(true);
+          try {
+            await convertManualBypassToPaid(bookingId, "mark_paid");
+            Alert.alert("Updated", "Booking marked paid.");
+            await load();
+          } catch (e) {
+            Alert.alert("Update failed", userFacingApiError(e));
+          } finally {
+            setBusy(false);
+          }
+        },
+      },
+    ]);
+  };
+
   const customerEmail = displayCustomerEmail(booking.customer_email);
   const appointmentWhen = formatBookingDateTime(booking.date, booking.time, booking.created_at);
   const notes =
@@ -383,6 +412,35 @@ export default function AdminBookingDetailScreen() {
         ) : null}
       </ProfileCard>
 
+      {booking.manual_bypass ? (
+        <ProfileCard style={styles.section}>
+          <Text style={styles.sectionTitle}>Manual Bypass Audit</Text>
+          <MetaRow
+            label="Payment type"
+            value={String(booking.bypass_payment_type || "—").replace(/_/g, " ")}
+          />
+          <MetaRow label="Created by" value={booking.bypass_created_by_email || "Super Admin"} />
+          <MetaRow
+            label="Created at"
+            value={
+              booking.bypass_created_at
+                ? formatCreatedAt(booking.bypass_created_at)
+                : formatCreatedAt(booking.created_at)
+            }
+          />
+          <MetaRow label="Barber" value={booking.barber_name || "—"} />
+          <MetaRow
+            label="Client"
+            value={displayCustomerName(booking.customer_name, booking.customer_email)}
+          />
+          <MetaRow label="Bypass reason" value={booking.bypass_reason || "—"} />
+          <MetaRow
+            label="Appointment notes"
+            value={booking.appointment_notes || booking.notes || "—"}
+          />
+        </ProfileCard>
+      ) : null}
+
       <ProfileCard style={styles.section}>
         <Text style={styles.sectionTitle}>Notes</Text>
         <MetaRow label="Details" value={notes} />
@@ -390,6 +448,17 @@ export default function AdminBookingDetailScreen() {
       </ProfileCard>
 
       <View style={styles.actions}>
+        {isSuperAdmin &&
+        booking.manual_bypass &&
+        ["complimentary", "pay_at_shop", "staff_training"].includes(
+          String(booking.bypass_payment_type || "").toLowerCase(),
+        ) ? (
+          <GlowButton
+            label="Convert to Paid"
+            onPress={onConvertBypassPaid}
+            disabled={busy}
+          />
+        ) : null}
         <GlowButton
           label="Mark complete"
           onPress={() =>
@@ -419,15 +488,17 @@ export default function AdminBookingDetailScreen() {
             fullWidth={false}
           />
         </View>
-        <GlowButton
-          label="Cancel booking"
-          variant="secondary"
-          size="compact"
-          onPress={() =>
-            runAction("Cancel booking", "Cancel this appointment? The record stays in admin history.", "cancel")
-          }
-          disabled={busy}
-        />
+        {(isSuperAdmin || !booking.manual_bypass) ? (
+          <GlowButton
+            label="Cancel booking"
+            variant="secondary"
+            size="compact"
+            onPress={() =>
+              runAction("Cancel booking", "Cancel this appointment? The record stays in admin history.", "cancel")
+            }
+            disabled={busy}
+          />
+        ) : null}
 
         {canDestructive ? (
           <View style={styles.destructiveRow}>

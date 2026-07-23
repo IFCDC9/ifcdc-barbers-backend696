@@ -2,6 +2,7 @@ import React from "react";
 import { createStackNavigator } from "@react-navigation/stack";
 import AdminRouteGuard from "../components/AdminRouteGuard";
 import AdminHomeScreen from "../screens/admin/AdminHomeScreen";
+import AdminManualBookingScreen from "../screens/admin/AdminManualBookingScreen";
 import AdminBookingsScreen from "../screens/admin/AdminBookingsScreen";
 import AdminBookingDetailScreen from "../screens/admin/AdminBookingDetailScreen";
 import BookingDetailScreen from "../screens/profile/BookingDetailScreen";
@@ -46,6 +47,7 @@ import type { PaymentStackParamList } from "./paymentStackTypes";
 
 export type AdminStackParamList = {
   AdminHome: undefined;
+  AdminManualBooking: undefined;
   AdminBookings: { barberId?: string; barberName?: string } | undefined;
   AdminBookingDetail: { bookingId: string };
   BookingDetail: { bookingId: string };
@@ -91,6 +93,13 @@ function AdminStackInner() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="AdminHome" component={AdminHomeScreen} />
+      <Stack.Screen name="AdminManualBooking">
+        {() => (
+          <SuperAdminRouteGuard>
+            <AdminManualBookingScreen />
+          </SuperAdminRouteGuard>
+        )}
+      </Stack.Screen>
       <Stack.Screen name="AdminBookings" component={AdminBookingsScreen} />
       <Stack.Screen name="AdminBookingDetail" component={AdminBookingDetailScreen} />
       <Stack.Screen name="BookingDetail" component={BookingDetailScreen} />

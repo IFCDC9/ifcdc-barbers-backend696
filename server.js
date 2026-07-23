@@ -35,6 +35,8 @@ import { mountBarberOnboardingRoutes } from "./barberOnboardingRoutes.js";
 import { mountOnboardingBusinessRoutes } from "./onboardingBusinessRoutes.js";
 import { handleBarberAvailableSlotsGet } from "./barberAvailableSlotsRoute.js";
 import { createBookingsRouter, insertAuraVoiceBookingRow } from "./bookingsRoutes.js";
+import { createManualBypassBookingRouter } from "./manualBypassBookingRoutes.js";
+import { ensureManualBypassBookingColumns } from "./manualBypassBookingMigrations.js";
 import { createBookingsAdminGuard } from "./bookingsAdminGuard.js";
 import { createAdminUsersRouter } from "./adminUsersRoutes.js";
 import { createAdminBarbersRouter } from "./adminBarbersRoutes.js";
@@ -657,6 +659,13 @@ const bookingsRouter = createBookingsRouter({
   requireAdmin: requireBookingsAdmin,
 });
 app.use(bookingsRouter);
+app.use(
+  "/api/admin/manual-bookings",
+  createManualBypassBookingRouter({
+    sendBookingEmail: require("./bookingEmail.cjs").sendBookingEmail,
+  }),
+);
+console.log("[boot] mounted /api/admin/manual-bookings (Super Admin bypass mode)");
 
 const adminUsersRouter = createAdminUsersRouter({ sendEmail });
 app.use(adminUsersRouter);
@@ -1146,6 +1155,9 @@ async function startServer() {
   }
   try {
     await ensureBookingsTable();
+    await ensureManualBypassBookingColumns(dbQuery).catch((e) =>
+      console.warn("[boot] manual bypass columns:", e?.message || e),
+    );
     await ensureSecurityAuditTable();
     await ensureSecurityTenantColumns();
     await ensureBookingStatusHistoryTable();
