@@ -15,7 +15,7 @@ import { ensureManualBypassBookingColumns } from "./manualBypassBookingMigration
 import { dbQuery } from "./db.js";
 
 function requireSuperAdminJwt(req, res, next) {
-  const token = extractBearerToken(req);
+  const token = extractBearerToken(req.headers?.authorization || req.get?.("authorization"));
   if (!token) {
     return res.status(401).json({ ok: false, message: "Missing Bearer token" });
   }
