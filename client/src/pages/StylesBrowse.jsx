@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { getBarbers, getStylesAll } from "../services/api.js";
 import StyleCoverImage from "../components/StyleCoverImage.jsx";
 
 const STORAGE_KEY = "ifcdc_selected_booking_style";
 
 export default function StylesBrowse() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [barbers, setBarbers] = useState([]);
   const [styles, setStyles] = useState([]);
@@ -75,9 +77,11 @@ export default function StylesBrowse() {
 
   return (
     <div className="ifcdc-styles-browse">
-      <h1 className="ifcdc-page-title">Choose a style</h1>
+      <h1 className="ifcdc-page-title">
+        {t("web.stylesPage.title", { defaultValue: "Styles" })}
+      </h1>
       <p className="ifcdc-page-lead">
-        Pick your cut — price is set per style. One tap takes you to date, time, and secure payment.
+        {t("web.stylesPage.subtitle", { defaultValue: "Browse the style gallery." })}
       </p>
       {error ? (
         <p className="ifcdc-error-msg" role="alert">
@@ -86,7 +90,9 @@ export default function StylesBrowse() {
       ) : null}
 
       {!sortedStyles.length && !error ? (
-        <p className="ifcdc-page-hint">No styles are published yet. Check back soon.</p>
+        <p className="ifcdc-page-hint">
+          {t("web.stylesPage.empty", { defaultValue: "No styles available." })}
+        </p>
       ) : (
         <ul className="ifcdc-styles-browse__grid">
           {sortedStyles.map((s) => {

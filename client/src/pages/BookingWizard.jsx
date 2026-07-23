@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { usePayPalScriptReducer } from "@paypal/react-paypal-js";
 import {
   fetchAvailableSlots,
@@ -77,6 +78,7 @@ function readUser() {
 
 
 export default function BookingWizard() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [{ isResolved: isPayPalResolved }] = usePayPalScriptReducer();
@@ -446,10 +448,10 @@ export default function BookingWizard() {
         }),
       );
 
-      setPhaseLabel("Redirecting to PayPal…");
+      setPhaseLabel(t("web.bookingWizard.redirectingPaypal", { defaultValue: "Redirecting to PayPal…" }));
       window.location.href = started.approveUrl;
     } catch (e) {
-      setError(e?.message || "Checkout failed. Please try again.");
+      setError(e?.message || t("web.bookingWizard.checkoutFailed", { defaultValue: "Checkout failed. Please try again." }));
       setPhaseLabel("");
     } finally {
       // Always clear unless we navigated away to PayPal (page unload). Prevents stuck "Processing…"
@@ -479,8 +481,14 @@ export default function BookingWizard() {
   if (step === 6 && successPayload) {
     return (
       <div className="ifcdc-book-wizard ifcdc-book-wizard--success">
-        <h1 className="ifcdc-page-title">Booking confirmed</h1>
-        <p className="ifcdc-page-lead">Payment received — your appointment is saved.</p>
+        <h1 className="ifcdc-page-title">
+          {t("web.confirmationPage.title", { defaultValue: "Booking confirmed" })}
+        </h1>
+        <p className="ifcdc-page-lead">
+          {t("web.confirmationPage.body", {
+            defaultValue: "You're all set. A confirmation email is on the way.",
+          })}
+        </p>
         <div className="ifcdc-book-wizard__summary">
           <p>
             <strong>Booking ID:</strong> {successPayload.bookingId}
@@ -506,10 +514,10 @@ export default function BookingWizard() {
           )}
         </div>
         <button type="button" className="ifcdc-book-wizard__cta" onClick={() => navigate("/")}>
-          Back to Home
+          {t("web.confirmationPage.backHome", { defaultValue: "Back to home" })}
         </button>
         <button type="button" className="ifcdc-book-wizard__cta ifcdc-book-wizard__cta--ghost" onClick={resetFlow}>
-          Book another
+          {t("web.bookingWizard.bookAnother", { defaultValue: "Book another" })}
         </button>
       </div>
     );
@@ -517,9 +525,14 @@ export default function BookingWizard() {
 
   return (
     <div className="ifcdc-book-wizard">
-      <h1 className="ifcdc-page-title">Book appointment</h1>
+      <h1 className="ifcdc-page-title">
+        {t("web.bookingWizard.title", { defaultValue: "Book Appointment" })}
+      </h1>
       <p className="ifcdc-page-lead">
-        Step {step} of 5 — secure PayPal checkout with instant confirmation.
+        {t("web.bookingWizard.stepOf", {
+          step,
+          defaultValue: `Step ${step} of 5 — secure PayPal checkout with instant confirmation.`,
+        })}
       </p>
 
       <div className="ifcdc-book-wizard__steps" aria-hidden>
@@ -537,7 +550,9 @@ export default function BookingWizard() {
 
       {step === 1 ? (
         <section className="ifcdc-book-wizard__panel">
-          <h2 className="ifcdc-book-wizard__heading">Choose your provider</h2>
+          <h2 className="ifcdc-book-wizard__heading">
+            {t("web.bookingWizard.selectBarber", { defaultValue: "Select a barber" })}
+          </h2>
           <ProviderTypeDropdown
             label="Filter by provider type"
             includeAll
@@ -549,7 +564,11 @@ export default function BookingWizard() {
             }}
           />
           <div style={{ height: 12 }} />
-          {barbersLoading ? <p className="ifcdc-page-hint">Loading providers…</p> : null}
+          {barbersLoading ? (
+            <p className="ifcdc-page-hint">
+              {t("web.bookingWizard.loading", { defaultValue: "Loading…" })}
+            </p>
+          ) : null}
           {barbersError ? <p className="ifcdc-error-msg">{barbersError}</p> : null}
           <ul className="ifcdc-book-wizard__list">
             {barbers.map((b) => (
@@ -576,7 +595,9 @@ export default function BookingWizard() {
 
       {step === 2 ? (
         <section className="ifcdc-book-wizard__panel">
-          <h2 className="ifcdc-book-wizard__heading">Pick a date</h2>
+          <h2 className="ifcdc-book-wizard__heading">
+            {t("web.bookingWizard.selectDate", { defaultValue: "Select a date" })}
+          </h2>
           <p className="ifcdc-page-hint">Barber: {barber?.name}</p>
           <BookingMonthCalendar
             barberId={barber?.id}
@@ -590,19 +611,25 @@ export default function BookingWizard() {
             }}
           />
           <button type="button" className="ifcdc-book-wizard__back" onClick={() => setStep(1)}>
-            ← Change barber
+            ← {t("web.bookingWizard.back", { defaultValue: "Back" })}
           </button>
         </section>
       ) : null}
 
       {step === 3 ? (
         <section className="ifcdc-book-wizard__panel">
-          <h2 className="ifcdc-book-wizard__heading">Choose services</h2>
+          <h2 className="ifcdc-book-wizard__heading">
+            {t("web.bookingWizard.selectService", { defaultValue: "Select a service" })}
+          </h2>
           <p className="ifcdc-page-hint">
             {barber?.name} · {date} · select one or more
             {servicesUsingFallback ? " · offline menu" : ""}
           </p>
-          {servicesLoading ? <p className="ifcdc-page-hint">Loading services…</p> : null}
+          {servicesLoading ? (
+            <p className="ifcdc-page-hint">
+              {t("web.bookingWizard.loading", { defaultValue: "Loading…" })}
+            </p>
+          ) : null}
           <ul className="ifcdc-book-wizard__services">
             {services.map((s) => {
               const selected = selectedServices.some((x) => String(x.id) === String(s.id));
@@ -662,30 +689,41 @@ export default function BookingWizard() {
               setError(null);
             }}
           >
-            Continue
+            {t("web.bookingWizard.continue", { defaultValue: "Continue" })}
           </button>
           <button type="button" className="ifcdc-book-wizard__back" onClick={() => setStep(2)}>
-            ← Change date
+            ← {t("web.bookingWizard.back", { defaultValue: "Back" })}
           </button>
         </section>
       ) : null}
 
       {step === 4 ? (
         <section className="ifcdc-book-wizard__panel">
-          <h2 className="ifcdc-book-wizard__heading">Select a time</h2>
+          <h2 className="ifcdc-book-wizard__heading">
+            {t("web.bookingWizard.selectTime", { defaultValue: "Select a time" })}
+          </h2>
           <p className="ifcdc-page-hint">
             {barber?.name} · {date} · {selectedServices.map((s) => s.name).join(", ")} · {cartTotalDuration} min
           </p>
-          {slotsLoading ? <p className="ifcdc-page-hint">Loading times…</p> : null}
+          {slotsLoading ? (
+            <p className="ifcdc-page-hint">
+              {t("web.bookingWizard.loading", { defaultValue: "Loading…" })}
+            </p>
+          ) : null}
           {slotsError ? <p className="ifcdc-error-msg">{slotsError}</p> : null}
           {!slotsLoading && !availableSlots.filter((s) => s.available !== false).length ? (
             <p className={`ifcdc-page-hint${unavailabilityMessage ? " ifcdc-book-wizard__unavailable-msg" : ""}`}>
-              {unavailabilityMessage || "No times for this date. Try another day."}
+              {unavailabilityMessage ||
+                t("web.bookingWizard.noTimes", {
+                  defaultValue: "No available times for this date.",
+                })}
             </p>
           ) : null}
           {!slotsLoading && availableSlots.some((s) => s.available !== false) ? (
             <label className="ifcdc-book-wizard__time-select">
-              <span className="ifcdc-book-wizard__time-select-label">Select a Time</span>
+              <span className="ifcdc-book-wizard__time-select-label">
+                {t("web.bookingWizard.selectTime", { defaultValue: "Select a time" })}
+              </span>
               <select
                 className="ifcdc-book-wizard__time-select-control"
                 value={time || ""}
@@ -698,7 +736,7 @@ export default function BookingWizard() {
                 }}
               >
                 <option value="" disabled>
-                  Choose a time
+                  {t("web.bookingWizard.selectTime", { defaultValue: "Select a time" })}
                 </option>
                 {availableSlots
                   .filter((slot) => slot.available !== false)
@@ -711,7 +749,7 @@ export default function BookingWizard() {
             </label>
           ) : null}
           <button type="button" className="ifcdc-book-wizard__back" onClick={() => setStep(3)}>
-            ← Change service
+            ← {t("web.bookingWizard.back", { defaultValue: "Back" })}
           </button>
         </section>
       ) : null}
@@ -728,7 +766,7 @@ export default function BookingWizard() {
 
           {user?.email && availableRewards.length ? (
             <div className="ifcdc-checkout__section">
-              <h3>Available rewards</h3>
+            <h3>{t("web.bookingWizard.rewardLabel", { defaultValue: "Apply reward" })}</h3>
               <label className="ifcdc-checkout__reward">
                 <input
                   type="radio"
@@ -768,7 +806,7 @@ export default function BookingWizard() {
           ) : null}
 
           <div className="ifcdc-checkout__section">
-            <h3>Apply promo code</h3>
+            <h3>{t("web.bookingWizard.promoLabel", { defaultValue: "Promo code" })}</h3>
             <div className="ifcdc-checkout__promo">
               <input
                 type="text"
@@ -777,7 +815,7 @@ export default function BookingWizard() {
                   setPromoCode(event.target.value);
                   setPromoMessage("");
                 }}
-                placeholder="Promo code"
+                placeholder={t("web.bookingWizard.promoLabel", { defaultValue: "Promo code" })}
                 autoCapitalize="characters"
               />
               <button type="button" onClick={applyPromoCode}>Apply</button>
@@ -786,7 +824,7 @@ export default function BookingWizard() {
           </div>
 
           <div className="ifcdc-checkout__section">
-            <h3>Add a tip</h3>
+            <h3>{t("web.bookingWizard.tipLabel", { defaultValue: "Tip (optional)" })}</h3>
             <div className="ifcdc-checkout__tips">
               {[0, 15, 20, 25].map((percent) => {
                 const amount = Math.round(cartTotalPrice * percent) / 100;
@@ -815,8 +853,8 @@ export default function BookingWizard() {
             </div>
           </div>
 
-          <div className="ifcdc-checkout__summary" aria-label="Booking summary">
-            <h3>Booking summary</h3>
+          <div className="ifcdc-checkout__summary" aria-label={t("web.bookingWizard.summary", { defaultValue: "Summary" })}>
+            <h3>{t("web.bookingWizard.summary", { defaultValue: "Summary" })}</h3>
             <div><span>Service</span><strong>{selectedServices.map((s) => s.name).join(", ")}</strong></div>
             <div><span>Barber</span><strong>{barber?.name}</strong></div>
             <div><span>Date</span><strong>{date}</strong></div>
@@ -829,7 +867,7 @@ export default function BookingWizard() {
 
           {!user?.email ? (
             <label className="ifcdc-label" htmlFor="bk-guest-email">
-              Email for confirmation
+              {t("web.bookingWizard.guestEmail", { defaultValue: "Email for confirmation" })}
               <input
                 id="bk-guest-email"
                 type="email"
@@ -852,8 +890,8 @@ export default function BookingWizard() {
             >
               <span className="ifcdc-checkout__method-icon" aria-hidden="true">💳</span>
               <span>
-                <strong>Pay with Debit or Credit Card</strong>
-                <small>Visa, Mastercard, American Express, Discover, and other supported cards.</small>
+                <strong>{t("web.bookingWizard.payWithCard", { defaultValue: "Pay with Debit or Credit Card" })}</strong>
+                <small>{t("web.bookingWizard.cardBrands", { defaultValue: "Visa, Mastercard, American Express, Discover, and other supported cards." })}</small>
               </span>
               <span className="ifcdc-checkout__radio" aria-hidden="true">{paymentMethod === "card" ? "●" : "○"}</span>
             </button>
@@ -864,8 +902,8 @@ export default function BookingWizard() {
             >
               <span className="ifcdc-checkout__method-icon" aria-hidden="true">🅿️</span>
               <span>
-                <strong>Pay with PayPal</strong>
-                <small>Sign in with your PayPal account if you prefer.</small>
+                <strong>{t("web.bookingWizard.payWithPaypal", { defaultValue: "Pay with PayPal" })}</strong>
+                <small>{t("web.bookingWizard.paypalSignInHint", { defaultValue: "Sign in with your PayPal account if you prefer." })}</small>
               </span>
               <span className="ifcdc-checkout__radio" aria-hidden="true">{paymentMethod === "paypal" ? "●" : "○"}</span>
             </button>
@@ -877,8 +915,8 @@ export default function BookingWizard() {
               >
                 <span className="ifcdc-checkout__method-icon" aria-hidden="true">⏳</span>
                 <span>
-                  <strong>Pay Later</strong>
-                  <small>Choose an eligible PayPal Pay Later offer.</small>
+                  <strong>{t("web.bookingWizard.payLater", { defaultValue: "Pay Later" })}</strong>
+                  <small>{t("web.bookingWizard.payLaterHint", { defaultValue: "Choose an eligible PayPal Pay Later offer." })}</small>
                 </span>
                 <span className="ifcdc-checkout__radio" aria-hidden="true">{paymentMethod === "paylater" ? "●" : "○"}</span>
               </button>
@@ -886,7 +924,7 @@ export default function BookingWizard() {
           </div>
 
           <p className="ifcdc-checkout__card-note">
-            No PayPal account required. Pay securely with your debit or credit card.
+            {t("web.bookingWizard.cardNoAccount", { defaultValue: "No PayPal account required. Pay securely with your debit or credit card." })}
           </p>
 
           <button
@@ -896,20 +934,21 @@ export default function BookingWizard() {
             onClick={() => void onConfirmPayAndBook()}
           >
             {processingPayment
-              ? "Processing…"
+              ? t("web.bookingWizard.processing", { defaultValue: "Processing…" })
               : paymentMethod === "card"
-                ? `Continue with Card · $${pricing.total.toFixed(2)}`
+                ? t("web.bookingWizard.continueCard", { amount: pricing.total.toFixed(2), defaultValue: `Continue with Card · $${pricing.total.toFixed(2)}` })
                 : paymentMethod === "paylater"
-                  ? `Continue with Pay Later · $${pricing.total.toFixed(2)}`
-                  : `Continue with PayPal · $${pricing.total.toFixed(2)}`}
+                  ? t("web.bookingWizard.continuePayLater", { amount: pricing.total.toFixed(2), defaultValue: `Continue with Pay Later · $${pricing.total.toFixed(2)}` })
+                  : `${t("web.bookingWizard.payWithPaypal", { defaultValue: "Pay with PayPal" })} · $${pricing.total.toFixed(2)}`}
           </button>
-          <p className="ifcdc-checkout__powered">IFCDC Barbers checkout · Securely powered by PayPal</p>
+          <p className="ifcdc-checkout__powered">{t("web.bookingWizard.poweredByPaypal", { defaultValue: "IFCDC Barbers checkout · Securely powered by PayPal" })}</p>
           <button type="button" className="ifcdc-book-wizard__back" onClick={() => setStep(4)} disabled={processingPayment}>
-            ← Change time
+            ← {t("web.bookingWizard.back", { defaultValue: "Back" })}
           </button>
           {!user ? (
             <p className="ifcdc-page-hint">
-              Have an account? <Link to="/login">Sign in</Link>
+              {t("web.authPage.haveAccount", { defaultValue: "Already have an account?" })}{" "}
+              <Link to="/login">{t("web.authPage.signInLink", { defaultValue: "Sign in" })}</Link>
             </p>
           ) : null}
         </section>

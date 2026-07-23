@@ -1,9 +1,11 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { fetchReviewableBookings } from "../services/socialPortfolioApi.js";
 import { hasWebSession } from "../lib/appSession.js";
 
 export default function RateMePage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const signedIn = hasWebSession();
   const [rows, setRows] = useState([]);
@@ -40,10 +42,12 @@ export default function RateMePage() {
   if (!signedIn) {
     return (
       <div className="ifcdc-profile">
-        <h1 className="ifcdc-page-title">Rate Me</h1>
+        <h1 className="ifcdc-page-title">
+          {t("web.reviewsPage.rateMeTitle", { defaultValue: "Rate Me" })}
+        </h1>
         <p className="ifcdc-page-lead">Sign in to leave reviews after completed visits.</p>
         <Link to="/login" className="ifcdc-book-wizard__cta">
-          Sign in
+          {t("web.nav.signIn", { defaultValue: "Sign in" })}
         </Link>
       </div>
     );
@@ -52,21 +56,27 @@ export default function RateMePage() {
   return (
     <div className="ifcdc-profile">
       <button type="button" className="ifcdc-book-wizard__back" onClick={() => navigate("/profile")}>
-        ← Profile
+        ← {t("web.nav.profile", { defaultValue: "Profile" })}
       </button>
-      <h1 className="ifcdc-page-title">Rate Me</h1>
+      <h1 className="ifcdc-page-title">
+        {t("web.reviewsPage.rateMeTitle", { defaultValue: "Rate Me" })}
+      </h1>
       <p className="ifcdc-page-lead">Verified reviews appear on your barber&apos;s public profile.</p>
-      {loading ? <p className="ifcdc-page-hint">Loading…</p> : null}
+      {loading ? (
+        <p className="ifcdc-page-hint">{t("web.common.loading", { defaultValue: "Loading…" })}</p>
+      ) : null}
       {error ? (
         <div className="ifcdc-error-msg">
           <p>{error}</p>
           <button type="button" className="ifcdc-book-wizard__cta ifcdc-book-wizard__cta--ghost" onClick={() => void load()}>
-            Try again
+            {t("web.common.retry", { defaultValue: "Retry" })}
           </button>
         </div>
       ) : null}
       {!loading && !rows.length && !error ? (
-        <p className="ifcdc-page-hint">No completed visits waiting for a review.</p>
+        <p className="ifcdc-page-hint">
+          {t("web.reviewsPage.empty", { defaultValue: "No reviews to show." })}
+        </p>
       ) : null}
       <ul className="ifcdc-book-wizard__list">
         {rows.map((b) => (
@@ -80,7 +90,7 @@ export default function RateMePage() {
               className="ifcdc-book-wizard__cta ifcdc-book-wizard__cta--ghost"
               style={{ display: "inline-block", marginTop: 8 }}
             >
-              Leave a review
+              {t("web.reviewsPage.title", { defaultValue: "Leave a review" })}
             </Link>
           </li>
         ))}

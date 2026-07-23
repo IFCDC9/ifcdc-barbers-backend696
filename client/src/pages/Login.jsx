@@ -1,14 +1,15 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { login } from "../services/api.js";
 import { persistAuthSession } from "../lib/authHeaders.js";
 import LanguageDropdown from "../components/LanguageDropdown.jsx";
 import { DEFAULT_LANGUAGE, normalizeLocale } from "../lib/languages.js";
-
-const LANG_KEY = "ifcdc_preferred_language";
+import { LANG_STORAGE_KEY, setAppLanguage } from "../i18n/index.js";
 
 export default function Login() {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const [form, setForm] = useState({
     email: "",
     password: "",
@@ -17,7 +18,7 @@ export default function Login() {
   const [submitting, setSubmitting] = useState(false);
   const [language, setLanguage] = useState(() => {
     try {
-      return normalizeLocale(localStorage.getItem(LANG_KEY)) || DEFAULT_LANGUAGE;
+      return normalizeLocale(localStorage.getItem(LANG_STORAGE_KEY)) || DEFAULT_LANGUAGE;
     } catch {
       return DEFAULT_LANGUAGE;
     }
@@ -29,8 +30,20 @@ export default function Login() {
 
   const handleLogin = async () => {
     try {
+      let preservedLang = language;
+      try {
+        preservedLang =
+          localStorage.getItem(LANG_STORAGE_KEY) || language || DEFAULT_LANGUAGE;
+      } catch {
+        /* ignore */
+      }
       localStorage.clear();
       sessionStorage.clear();
+      try {
+        localStorage.setItem(LANG_STORAGE_KEY, preservedLang);
+      } catch {
+        /* ignore */
+      }
       setStatus(null);
       setSubmitting(true);
       const data = await login(form.email, form.password);
@@ -38,6 +51,13 @@ export default function Login() {
       const authed = data.success === true || (data.ok === true && data.token);
       if (authed && data.token && data.user) {
         persistAuthSession({ token: data.token, user: data.user });
+        const profileLang = normalizeLocale(
+          data.user.preferredLanguage || data.user.preferred_language || preservedLang,
+        );
+        if (profileLang) {
+          await setAppLanguage(profileLang);
+          setLanguage(profileLang);
+        }
         const role = data?.user?.role;
         navigate(
           role === "super_admin" || role === "admin"
@@ -48,11 +68,13 @@ export default function Login() {
           { replace: true },
         );
       } else {
-        setStatus("Invalid login");
+        setStatus(t("web.authPage.invalidLogin", { defaultValue: "Invalid login" }));
       }
     } catch (err) {
       console.error("LOGIN ERROR:", err);
-      setStatus(err?.message || "Server error");
+      setStatus(
+        err?.message || t("web.authPage.serverError", { defaultValue: "Server error" }),
+      );
     } finally {
       setSubmitting(false);
     }
@@ -67,8 +89,12 @@ export default function Login() {
     <div className="auth-shell">
       <div className="auth-card">
         <div className="auth-brand">
-          <h1 className="auth-title">Welcome Back</h1>
-          <p className="auth-subtext">Sign in to access your dashboard</p>
+          <h1 className="auth-title">
+            {t("web.authPage.welcomeBack", { defaultValue: "Welcome Back" })}
+          </h1>
+          <p className="auth-subtext">
+            {t("web.authPage.signInSub", { defaultValue: "Sign in to access your dashboard" })}
+          </p>
         </div>
 
         <form onSubmit={handleSubmit} className="auth-form">
@@ -80,7 +106,7 @@ export default function Login() {
               name="email"
               type="email"
               autoComplete="email"
-              placeholder="Email"
+              placeholder={t("web.authPage.email", { defaultValue: "Email" })}
               value={form.email}
               onChange={handleChange}
               className="auth-input"
@@ -95,7 +121,7 @@ export default function Login() {
               name="password"
               type="password"
               autoComplete="current-password"
-              placeholder="Password"
+              placeholder={t("web.authPage.password", { defaultValue: "Password" })}
               value={form.password}
               onChange={handleChange}
               className="auth-input"
@@ -103,23 +129,18 @@ export default function Login() {
           </div>
 
           <LanguageDropdown
-            label="Language"
             value={language}
             disabled={submitting}
             onChange={(code) => {
               setLanguage(code);
-              try {
-                localStorage.setItem(LANG_KEY, code);
-                document.documentElement.lang = code;
-                document.documentElement.dir = code === "ar" ? "rtl" : "ltr";
-              } catch {
-                /* ignore */
-              }
+              void setAppLanguage(code);
             }}
           />
 
           <button type="submit" className="auth-btn" disabled={submitting}>
-            {submitting ? "Signing in…" : "Sign In"}
+            {submitting
+              ? t("web.authPage.signingIn", { defaultValue: "Signing in…" })
+              : t("web.authPage.signIn", { defaultValue: "Sign In" })}
           </button>
         </form>
 
@@ -127,12 +148,12 @@ export default function Login() {
 
         <div className="auth-links">
           <Link to="/forgot-password" className="auth-link">
-            Forgot Password?
+            {t("web.authPage.forgot", { defaultValue: "Forgot Password?" })}
           </Link>
           <div>
-            Don&apos;t have an account?{" "}
+            {t("web.authPage.noAccount", { defaultValue: "Don't have an account?" })}{" "}
             <Link to="/register" className="auth-link">
-              Register
+              {t("web.authPage.register", { defaultValue: "Register" })}
             </Link>
           </div>
         </div>

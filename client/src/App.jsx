@@ -39,9 +39,35 @@ import SignupBusiness from "./pages/SignupBusiness.jsx";
 import BarberOnboarding from "./pages/BarberOnboarding.jsx";
 import Messages from "./pages/Messages.jsx";
 import NotFound from "./pages/NotFound.jsx";
+import { useTranslation } from "react-i18next";
+import { getPickerLanguages } from "./lib/languages.js";
+import { currentAppLanguage, setAppLanguage } from "./i18n/index.js";
 
 /** Legacy booking page — kept for reference; wizard is production path. */
 import Booking from "./pages/Booking.jsx";
+
+function HeaderLanguageSelect() {
+  const { t, i18n } = useTranslation();
+  const options = getPickerLanguages();
+  const value = currentAppLanguage() || i18n.language || "en";
+  return (
+    <label className="app-header__lang">
+      <span className="sr-only">{t("web.language.label", { defaultValue: "Language" })}</span>
+      <select
+        className="app-header__lang-select"
+        value={value}
+        aria-label={t("web.language.label", { defaultValue: "Language" })}
+        onChange={(e) => void setAppLanguage(e.target.value)}
+      >
+        {options.map((lang) => (
+          <option key={lang.code} value={lang.code}>
+            {lang.nativeName}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
 
 function AppShell() {
   return (
@@ -59,7 +85,10 @@ function AppShell() {
         aria-hidden
       />
       <div className="app-header" style={{ color: IFCDC_GOLD, borderBottomColor: "rgba(255, 215, 0, 0.35)" }}>
-        IFCDC
+        <span className="app-header__brand" aria-hidden>
+          IFCDC
+        </span>
+        <HeaderLanguageSelect />
       </div>
 
       <div className="app-content">

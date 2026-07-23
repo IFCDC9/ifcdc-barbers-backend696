@@ -1,4 +1,5 @@
 import { NavLink, useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { clearAuthSession } from "../lib/authHeaders.js";
 
 const NAV_ICONS = {
@@ -53,6 +54,7 @@ const NAV_ICONS = {
 /** Mobile-parity tab bar: Home · Book · AURA · Profile · Shop/Admin */
 export default function AppNav({ variant = "bottom" }) {
   const navigate = useNavigate();
+  const { t } = useTranslation();
 
   let user = null;
   try {
@@ -67,13 +69,19 @@ export default function AppNav({ variant = "bottom" }) {
     role === "barber" || role === "shop_owner" || canSeePlatformAdmin;
 
   const tabs = [
-    { to: "/", icon: NAV_ICONS.home, label: "Home", end: true },
-    { to: "/booking", icon: NAV_ICONS.book, label: "Book" },
-    { to: "/aura", icon: NAV_ICONS.aura, label: "AURA" },
-    { to: "/profile", icon: NAV_ICONS.profile, label: "Profile" },
-    ...(canSeeShopSettings ? [{ to: "/barber-settings", icon: NAV_ICONS.shop, label: "Shop" }] : []),
-    ...(canSeePlatformAdmin ? [{ to: "/admin", icon: NAV_ICONS.admin, label: "Admin" }] : []),
-    ...(!isLoggedIn ? [{ to: "/login", icon: NAV_ICONS.signin, label: "Sign in" }] : []),
+    { to: "/", icon: NAV_ICONS.home, label: t("web.nav.home", { defaultValue: "Home" }), end: true },
+    { to: "/booking", icon: NAV_ICONS.book, label: t("web.nav.book", { defaultValue: "Book" }) },
+    { to: "/aura", icon: NAV_ICONS.aura, label: t("web.nav.aura", { defaultValue: "AURA" }) },
+    { to: "/profile", icon: NAV_ICONS.profile, label: t("web.nav.profile", { defaultValue: "Profile" }) },
+    ...(canSeeShopSettings
+      ? [{ to: "/barber-settings", icon: NAV_ICONS.shop, label: t("web.nav.shop", { defaultValue: "Shop" }) }]
+      : []),
+    ...(canSeePlatformAdmin
+      ? [{ to: "/admin", icon: NAV_ICONS.admin, label: t("web.nav.admin", { defaultValue: "Admin" }) }]
+      : []),
+    ...(!isLoggedIn
+      ? [{ to: "/login", icon: NAV_ICONS.signin, label: t("web.nav.signIn", { defaultValue: "Sign in" }) }]
+      : []),
   ];
 
   const navClass =
@@ -83,8 +91,10 @@ export default function AppNav({ variant = "bottom" }) {
         ? "ifcdc-nav ifcdc-nav--top"
         : "ifcdc-bottom-nav ifcdc-main-nav ifcdc-bottom-nav--portaled";
 
+  const logoutLabel = t("web.nav.logout", { defaultValue: "Log out" });
+
   return (
-    <nav className={navClass} aria-label="Main navigation">
+    <nav className={navClass} aria-label={t("web.nav.mainAria", { defaultValue: "Main navigation" })}>
       {tabs.map(({ to, label, icon, end }) => (
         <NavLink
           key={to}
@@ -110,12 +120,12 @@ export default function AppNav({ variant = "bottom" }) {
             clearAuthSession();
             navigate("/", { replace: true });
           }}
-          aria-label="Logout"
+          aria-label={logoutLabel}
         >
           <span className="ifcdc-bottom-nav__glyph ifcdc-bottom-nav__glyph--svg" aria-hidden>
             {NAV_ICONS.logout}
           </span>
-          <span className="ifcdc-bottom-nav__text">Logout</span>
+          <span className="ifcdc-bottom-nav__text">{logoutLabel}</span>
         </button>
       ) : null}
     </nav>

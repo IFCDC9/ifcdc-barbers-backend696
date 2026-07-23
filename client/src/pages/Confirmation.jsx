@@ -1,14 +1,22 @@
 import React from "react";
+import { useTranslation } from "react-i18next";
 import { Page, PageHeader } from "../components/ui/Page.jsx";
 import { Card } from "../components/ui/Card.jsx";
 import { theme } from "../components/ui/theme.js";
 
 /** Shown after successful PayPal capture + booking save. */
 export default function Confirmation({ navigate, barberName = "", date = "", time = "", orderId = "" }) {
+  const { t } = useTranslation();
+
   return (
     <Page>
       <section>
-        <PageHeader title="Payment successful" subtitle="Your booking is confirmed." />
+        <PageHeader
+          title={t("web.confirmationPage.title", { defaultValue: "Booking confirmed" })}
+          subtitle={t("web.confirmationPage.body", {
+            defaultValue: "You're all set. A confirmation email is on the way.",
+          })}
+        />
         <Card>
           <div style={styles.row}>
             <span style={styles.label}>Barber</span>
@@ -28,7 +36,7 @@ export default function Confirmation({ navigate, barberName = "", date = "", tim
           ) : null}
           <div style={{ marginTop: 18 }}>
             <button type="button" style={styles.backHomeBtn} onClick={() => navigate?.("/")}>
-              Back to home
+              {t("web.confirmationPage.backHome", { defaultValue: "Back to home" })}
             </button>
           </div>
         </Card>

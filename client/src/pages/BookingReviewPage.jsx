@@ -1,5 +1,6 @@
 import React from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { Page, PageHeader } from "../components/ui/Page.jsx";
 import { Card } from "../components/ui/Card.jsx";
 import { theme } from "../components/ui/theme.js";
@@ -36,6 +37,7 @@ function Stars({ value, onChange }) {
 }
 
 export default function BookingReviewPage() {
+  const { t } = useTranslation();
   const { bookingId } = useParams();
   const navigate = useNavigate();
   const [loading, setLoading] = React.useState(true);
@@ -76,7 +78,7 @@ export default function BookingReviewPage() {
     try {
       if (editMode && status?.reviewId) {
         await updateCustomerReview(status.reviewId, { rating, comment: comment.trim() });
-        alert("Review updated.");
+        alert(t("web.reviewsPage.update", { defaultValue: "Update review" }));
         navigate("/profile");
         return;
       }
@@ -89,7 +91,7 @@ export default function BookingReviewPage() {
           caption: comment.trim() || undefined,
         });
       }
-      alert("Thank you — your review has been submitted.");
+      alert(t("web.reviewsPage.thanks", { defaultValue: "Thank you for your review." }));
       navigate("/profile");
     } catch (err) {
       setError(err?.message || "Could not submit review");
@@ -99,11 +101,11 @@ export default function BookingReviewPage() {
   };
 
   const onDelete = async () => {
-    if (!status?.reviewId || !window.confirm("Delete your review?")) return;
+    if (!status?.reviewId || !window.confirm(t("web.reviewsPage.delete", { defaultValue: "Delete review" }) + "?")) return;
     setBusy(true);
     try {
       await deleteCustomerReview(status.reviewId);
-      alert("Review deleted.");
+      alert(t("web.reviewsPage.delete", { defaultValue: "Delete review" }));
       navigate("/profile");
     } catch (err) {
       setError(err?.message || "Could not delete review");
@@ -115,7 +117,9 @@ export default function BookingReviewPage() {
   if (loading) {
     return (
       <Page>
-        <p style={{ color: theme.colors.muted }}>Loading…</p>
+        <p style={{ color: theme.colors.muted }}>
+          {t("web.common.loading", { defaultValue: "Loading…" })}
+        </p>
       </Page>
     );
   }
@@ -124,7 +128,7 @@ export default function BookingReviewPage() {
     return (
       <Page>
         <PageHeader title="Review unavailable" subtitle={status?.reason || "This appointment cannot be reviewed."} />
-        <Link to="/profile">Back to profile</Link>
+        <Link to="/profile">{t("web.common.back", { defaultValue: "Back" })}</Link>
       </Page>
     );
   }
@@ -132,13 +136,15 @@ export default function BookingReviewPage() {
   return (
     <Page>
       <PageHeader
-        title={editMode ? "Edit your review" : "Rate your visit"}
+        title={t("web.reviewsPage.title", { defaultValue: "Leave a review" })}
         subtitle="Only verified clients with completed appointments can leave reviews."
       />
       <Card>
         <form onSubmit={onSubmit} style={{ display: "grid", gap: 16 }}>
           <div>
-            <label style={{ display: "block", marginBottom: 8, color: theme.colors.muted }}>Your rating</label>
+            <label style={{ display: "block", marginBottom: 8, color: theme.colors.muted }}>
+              {t("web.reviewsPage.stars", { defaultValue: "Rating" })}
+            </label>
             <Stars value={rating} onChange={setRating} />
           </div>
           <div>
@@ -148,7 +154,9 @@ export default function BookingReviewPage() {
               onChange={(e) => setComment(e.target.value)}
               rows={5}
               style={{ width: "100%", padding: 12, borderRadius: 8, border: `1px solid ${theme.colors.border}` }}
-              placeholder="Tell others about your experience…"
+              placeholder={t("web.reviewsPage.commentPlaceholder", {
+                defaultValue: "Share your experience…",
+              })}
             />
           </div>
           {!editMode ? (
@@ -179,11 +187,15 @@ export default function BookingReviewPage() {
           ) : null}
           {error ? <p style={{ color: "#f87171" }}>{error}</p> : null}
           <button type="submit" disabled={busy} className="ifcdc-book-wizard__cta">
-            {busy ? "Saving…" : editMode ? "Save changes" : "Submit review"}
+            {busy
+              ? t("web.common.loading", { defaultValue: "Loading…" })
+              : editMode
+                ? t("web.reviewsPage.update", { defaultValue: "Update review" })
+                : t("web.reviewsPage.submit", { defaultValue: "Submit review" })}
           </button>
           {editMode && status?.canDelete ? (
             <button type="button" disabled={busy} className="ifcdc-book-wizard__cta ifcdc-book-wizard__cta--ghost" onClick={() => void onDelete()}>
-              Delete review
+              {t("web.reviewsPage.delete", { defaultValue: "Delete review" })}
             </button>
           ) : null}
         </form>

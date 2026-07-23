@@ -1,13 +1,16 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { validatePasswordStrength } from "../lib/passwordPolicy.js";
 import { validateSignupPhone } from "../lib/phoneValidation.js";
 import { register } from "../services/api.js";
 import LanguageDropdown from "../components/LanguageDropdown.jsx";
 import ProviderTypeDropdown from "../components/ProviderTypeDropdown.jsx";
-import { DEFAULT_LANGUAGE } from "../lib/languages.js";
+import { DEFAULT_LANGUAGE, normalizeLocale } from "../lib/languages.js";
+import { LANG_STORAGE_KEY, setAppLanguage, currentAppLanguage } from "../i18n/index.js";
 
 export default function Register() {
+  const { t } = useTranslation();
   const [form, setForm] = useState({
     name: "",
     email: "",
@@ -19,7 +22,13 @@ export default function Register() {
     city: "",
     state: "",
   });
-  const [language, setLanguage] = useState(DEFAULT_LANGUAGE);
+  const [language, setLanguage] = useState(() => {
+    try {
+      return normalizeLocale(localStorage.getItem(LANG_STORAGE_KEY)) || currentAppLanguage() || DEFAULT_LANGUAGE;
+    } catch {
+      return DEFAULT_LANGUAGE;
+    }
+  });
   const [status, setStatus] = useState(null);
   const [tone, setTone] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -67,6 +76,7 @@ export default function Register() {
         role,
         providerType: !isCustomer ? form.accountSelection : undefined,
         language,
+        preferredLanguage: language,
         phone: phoneCheck.display,
         shopName: form.shopName.trim(),
         businessName: form.shopName.trim(),
@@ -74,6 +84,7 @@ export default function Register() {
         city: form.city.trim(),
         state: form.state.trim(),
       });
+      await setAppLanguage(language);
       setStatus("Account created! You can sign in.");
       setTone("success");
     } catch (err) {
@@ -89,17 +100,23 @@ export default function Register() {
     <div className="auth-shell">
       <div className="auth-card">
         <div className="auth-brand">
-          <h1 className="auth-title">Create Account</h1>
-          <p className="auth-subtext">Join IFCDC Barbers and manage your appointments</p>
+          <h1 className="auth-title">
+            {t("web.authPage.createAccount", { defaultValue: "Create account" })}
+          </h1>
+          <p className="auth-subtext">
+            {t("web.authPage.joinCommunity", { defaultValue: "Join the IFCDC community." })}
+          </p>
         </div>
 
         <form onSubmit={handleSubmit} className="auth-form">
           <LanguageDropdown
-            label="Language"
-            hint="Used for app text and notifications."
+            hint={t("web.authPage.languageHint", { defaultValue: "You can change this later in Profile." })}
             value={language}
             disabled={submitting}
-            onChange={setLanguage}
+            onChange={(code) => {
+              setLanguage(code);
+              void setAppLanguage(code);
+            }}
           />
 
           <div className="auth-field">
@@ -110,7 +127,7 @@ export default function Register() {
               name="name"
               type="text"
               autoComplete="name"
-              placeholder="Name"
+              placeholder={t("web.authPage.firstName", { defaultValue: "Name" })}
               value={form.name}
               onChange={handleChange}
               className="auth-input"
@@ -139,7 +156,7 @@ export default function Register() {
               name="phone"
               type="tel"
               autoComplete="tel"
-              placeholder="Phone number"
+              placeholder={t("web.authPage.phone", { defaultValue: "Phone" })}
               value={form.phone}
               onChange={handleChange}
               className="auth-input"
@@ -216,7 +233,7 @@ export default function Register() {
               name="email"
               type="email"
               autoComplete="email"
-              placeholder="Email"
+              placeholder={t("web.authPage.email", { defaultValue: "Email" })}
               value={form.email}
               onChange={handleChange}
               className="auth-input"
@@ -232,7 +249,7 @@ export default function Register() {
               name="password"
               type="password"
               autoComplete="new-password"
-              placeholder="Password"
+              placeholder={t("web.authPage.password", { defaultValue: "Password" })}
               value={form.password}
               onChange={handleChange}
               className="auth-input"
@@ -246,18 +263,21 @@ export default function Register() {
           <label className="auth-subtext" style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 8 }}>
             <input type="checkbox" checked={acceptedTerms} onChange={(e) => setAcceptedTerms(e.target.checked)} />
             <span>
-              I agree to the <Link to="/terms">Terms</Link>
+              I agree to the <Link to="/terms">{t("web.footer.terms", { defaultValue: "Terms" })}</Link>
             </span>
           </label>
           <label className="auth-subtext" style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 12 }}>
             <input type="checkbox" checked={acceptedPrivacy} onChange={(e) => setAcceptedPrivacy(e.target.checked)} />
             <span>
-              I agree to the <Link to="/privacy">Privacy Policy</Link>
+              I agree to the{" "}
+              <Link to="/privacy">{t("web.footer.privacy", { defaultValue: "Privacy Policy" })}</Link>
             </span>
           </label>
 
           <button type="submit" disabled={submitting} className="auth-btn">
-            {submitting ? "Creating…" : "Create Account"}
+            {submitting
+              ? t("web.common.loading", { defaultValue: "Loading…" })
+              : t("web.authPage.createAccountBtn", { defaultValue: "Create account" })}
           </button>
         </form>
 
@@ -267,9 +287,9 @@ export default function Register() {
 
         <div className="auth-links">
           <div>
-            Already have an account?{" "}
+            {t("web.authPage.haveAccount", { defaultValue: "Already have an account?" })}{" "}
             <Link to="/login" className="auth-link">
-              Sign In
+              {t("web.authPage.signInLink", { defaultValue: "Sign in" })}
             </Link>
           </div>
         </div>

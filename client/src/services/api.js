@@ -115,9 +115,13 @@ export async function register({
   address,
   city,
   state,
+  language,
+  preferredLanguage,
+  providerType,
 }) {
   const origin = getApiOrigin();
   const resolvedRole = accountType || role;
+  const lang = preferredLanguage || language;
   const payload = {
     name,
     email,
@@ -130,6 +134,8 @@ export async function register({
     address,
     city,
     state,
+    ...(providerType ? { providerType } : {}),
+    ...(lang ? { language: lang, preferredLanguage: lang } : {}),
   };
   let res = await fetch(`${origin}/api/auth/register`, {
     method: "POST",

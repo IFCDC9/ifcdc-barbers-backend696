@@ -1,5 +1,6 @@
 import React from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { Page, PageHeader } from "../components/ui/Page.jsx";
 import { Card } from "../components/ui/Card.jsx";
 import { theme } from "../components/ui/theme.js";
@@ -27,6 +28,7 @@ function staffCanSeeEditMenus(user) {
 }
 
 export default function StyleDiscoverPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const user = getStoredUser();
   const showStaffChrome = staffCanSeeEditMenus(user);
@@ -168,11 +170,13 @@ export default function StyleDiscoverPage() {
   return (
     <Page>
       <PageHeader
-        title="Discover haircuts"
-        subtitle="Browse real client results by style before you book"
+        title={t("web.discoverPage.title", { defaultValue: "Discover" })}
+        subtitle={t("web.discoverPage.subtitle", {
+          defaultValue: "Explore styles from IFCDC barbers.",
+        })}
         right={
           <Link to="/booking" style={{ color: theme.colors.text, fontWeight: 700 }}>
-            Book
+            {t("web.nav.book", { defaultValue: "Book" })}
           </Link>
         }
       />
@@ -197,7 +201,7 @@ export default function StyleDiscoverPage() {
           onClick={() => setActiveCategory("")}
           style={chipStyle(!activeCategory)}
         >
-          All Styles
+          {t("web.discoverPage.allCategories", { defaultValue: "All" })}
         </button>
         {categories.map((cat) => (
           <button
@@ -220,7 +224,11 @@ export default function StyleDiscoverPage() {
         onChange={onReplaceFile}
       />
 
-      {loading ? <p style={{ marginTop: 16, color: theme.colors.muted }}>Loading…</p> : null}
+      {loading ? (
+        <p style={{ marginTop: 16, color: theme.colors.muted }}>
+          {t("web.discoverPage.loading", { defaultValue: "Loading styles…" })}
+        </p>
+      ) : null}
       {error ? <p style={{ marginTop: 16, color: theme.colors.danger }}>{error}</p> : null}
 
       <div
@@ -351,9 +359,7 @@ export default function StyleDiscoverPage() {
 
       {!loading && !photos.length ? (
         <p style={{ marginTop: 16, color: theme.colors.muted }}>
-          {activeCategory
-            ? "No published photos in this style yet. Try All Styles or another category."
-            : "No published Discover photos yet."}
+          {t("web.discoverPage.empty", { defaultValue: "No styles found." })}
         </p>
       ) : null}
 

@@ -1,21 +1,28 @@
 import React, { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { getPickerLanguages } from "../lib/languages.js";
+import { setAppLanguage, currentAppLanguage } from "../i18n/index.js";
 
 /**
- * Searchable Language dropdown — English name + native name, no flags.
- * Options gated by VITE_MULTI_LANGUAGE_DROPDOWN_V2.
+ * Searchable Language dropdown — updates i18n immediately (no re-login).
+ * Shows English name + native name. No flags.
  */
 export default function LanguageDropdown({
   value,
   onChange,
   disabled = false,
-  label = "Language",
+  label,
   hint,
   id = "language-select",
 }) {
+  const { t, i18n } = useTranslation();
   const options = getPickerLanguages();
   const [query, setQuery] = useState("");
-  const selected = options.find((l) => l.code === value) || options[0] || { code: "en", nativeName: "English", englishName: "English" };
+  const controlled = value != null;
+  const activeCode = controlled ? value : currentAppLanguage();
+  const selected =
+    options.find((l) => l.code === activeCode) ||
+    options[0] || { code: "en", nativeName: "English", englishName: "English", rtl: false };
 
   const filtered = useMemo(() => {
     const q = String(query || "").trim().toLowerCase();
@@ -28,22 +35,27 @@ export default function LanguageDropdown({
     );
   }, [options, query]);
 
-  const dir = selected?.rtl ? "rtl" : "ltr";
+  const apply = async (code) => {
+    await setAppLanguage(code);
+    if (typeof onChange === "function") onChange(code);
+  };
 
   return (
-    <label style={{ display: "grid", gap: 6, width: "100%" }} dir={dir}>
-      {label ? (
-        <span style={{ fontSize: 12, color: "#d4af37", fontWeight: 800, letterSpacing: 0.6 }}>
-          {label}
-        </span>
-      ) : null}
+    <label
+      style={{ display: "grid", gap: 6, width: "100%" }}
+      dir={selected?.rtl ? "rtl" : "ltr"}
+      className="ifcdc-language-dropdown"
+    >
+      <span style={{ fontSize: 12, color: "#d4af37", fontWeight: 800, letterSpacing: 0.6 }}>
+        {label || t("web.language.label", { defaultValue: "Language" })}
+      </span>
       <input
         type="search"
         value={query}
         disabled={disabled}
         onChange={(e) => setQuery(e.target.value)}
-        placeholder="Search languages…"
-        aria-label="Search languages"
+        placeholder={t("web.language.search", { defaultValue: "Search languages…" })}
+        aria-label={t("web.language.search", { defaultValue: "Search languages…" })}
         style={{
           width: "100%",
           boxSizing: "border-box",
@@ -56,10 +68,10 @@ export default function LanguageDropdown({
       />
       <select
         id={id}
-        value={value}
+        value={selected.code}
         disabled={disabled}
-        onChange={(e) => onChange(e.target.value)}
-        size={Math.min(8, Math.max(4, filtered.length))}
+        onChange={(e) => void apply(e.target.value)}
+        size={Math.min(9, Math.max(4, filtered.length))}
         style={{
           width: "100%",
           padding: "10px 12px",
@@ -74,13 +86,19 @@ export default function LanguageDropdown({
       >
         {filtered.map((lang) => (
           <option key={lang.code} value={lang.code}>
-            {lang.englishName} — {lang.nativeName}
+            {lang.nativeName} ({lang.englishName})
           </option>
         ))}
       </select>
       {hint ? <span style={{ fontSize: 12, color: "rgba(255,255,255,0.55)" }}>{hint}</span> : null}
       <span style={{ fontSize: 11, color: "rgba(255,255,255,0.45)" }}>
-        Selected: {selected.englishName} ({selected.nativeName})
+        {t("web.language.selected", {
+          name: `${selected.englishName} — ${selected.nativeName}`,
+          defaultValue: `Selected: ${selected.englishName}`,
+        })}
+      </span>
+      <span className="sr-only" aria-live="polite">
+        {i18n.language}
       </span>
     </label>
   );

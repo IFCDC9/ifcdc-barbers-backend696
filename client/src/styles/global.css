@@ -107,7 +107,8 @@ main {
   min-height: 52px;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
+  gap: 0.75rem;
   padding: max(0.65rem, var(--safe-top)) 1rem 0.65rem;
   box-sizing: border-box;
   font-family: var(--font-display);
@@ -119,6 +120,31 @@ main {
   background: linear-gradient(180deg, rgba(8, 8, 10, 0.85) 0%, rgba(0, 0, 0, 0.55) 100%);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
+}
+
+.app-header__brand {
+  flex: 1;
+  text-align: center;
+  letter-spacing: 0.22em;
+}
+
+.app-header__lang {
+  flex: 0 0 auto;
+  letter-spacing: normal;
+  text-transform: none;
+  font-weight: 600;
+}
+
+.app-header__lang-select {
+  max-width: 140px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(212, 175, 55, 0.35);
+  background: rgba(0, 0, 0, 0.45);
+  color: #f5f5f5;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
 }
 
 .app-footer {
@@ -5132,4 +5158,39 @@ a.payments-page__cta {
   width: 100%;
   max-width: none;
   box-shadow: none;
+}
+
+
+/* —— i18n / RTL —— */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+html[dir="rtl"] .ifcdc-bottom-nav,
+html[dir="rtl"] .ifcdc-nav {
+  direction: rtl;
+}
+
+html[dir="rtl"] .app-header {
+  flex-direction: row-reverse;
+}
+
+.ifcdc-rtl .quick-actions,
+.ifcdc-rtl .home-feature-grid__row,
+.ifcdc-rtl .ifcdc-book-wizard__steps {
+  flex-direction: row-reverse;
+}
+
+.ifcdc-rtl .ifcdc-checkout__summary > div,
+.ifcdc-rtl .ifcdc-checkout__method {
+  flex-direction: row-reverse;
+  text-align: right;
 }

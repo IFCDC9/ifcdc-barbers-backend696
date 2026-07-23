@@ -1,3 +1,4 @@
+import "./i18n/index.js";
 import ReactDOM from "react-dom/client";
 import { PayPalScriptProvider } from "@paypal/react-paypal-js";
 import App from "./App.jsx";

@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { getBarbers } from "../services/api.js";
 import StyleCoverImage from "../components/StyleCoverImage.jsx";
+import LanguageDropdown from "../components/LanguageDropdown.jsx";
 import { formatNanpUsDisplay, nanpDialString } from "../lib/formatNanp.js";
 import { useAuraContactPhone } from "../lib/useAuraContactPhone.js";
 import {
@@ -107,6 +109,7 @@ function nextSuggestedAppointment(userCoords, barber, now = new Date()) {
 }
 
 export default function Home() {
+  const { t } = useTranslation();
   const [barbers, setBarbers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [userCoords, setUserCoords] = useState(null);
@@ -127,7 +130,11 @@ export default function Home() {
 
   const requestLocation = useCallback(async () => {
     if (typeof navigator === "undefined" || !navigator.geolocation) {
-      setLocError("Geolocation is not available on this device/browser.");
+      setLocError(
+        t("web.homePage.geoUnavailable", {
+          defaultValue: "Geolocation is not available on this device/browser.",
+        }),
+      );
       return null;
     }
     setLocating(true);
@@ -147,15 +154,19 @@ export default function Home() {
         setUserCoords(coords);
         return coords;
       }
-      setLocError("Could not read your coordinates.");
+      setLocError(
+        t("web.homePage.geoCoords", { defaultValue: "Could not read your coordinates." }),
+      );
       return null;
     } catch (e) {
-      setLocError(e?.message || "Could not get location.");
+      setLocError(
+        e?.message || t("web.homePage.geoFailed", { defaultValue: "Could not get location." }),
+      );
       return null;
     } finally {
       setLocating(false);
     }
-  }, []);
+  }, [t]);
 
   const roster = useMemo(() => (Array.isArray(barbers) ? barbers : []).filter((b) => isLiveBarberId(b?.id)), [barbers]);
 
@@ -221,13 +232,17 @@ export default function Home() {
   return (
     <div className="home-landing">
       <section className="app-marketing-hero" aria-labelledby="app-marketing-title">
-        <p className="ifcdc-hero-brand">IFCDC BARBERS APP</p>
+        <p className="ifcdc-hero-brand">
+          {t("web.homePage.brandApp", { defaultValue: "IFCDC BARBERS APP" })}
+        </p>
         <h1 id="app-marketing-title" className="app-marketing-hero__title">
-          Book. Pay. Confirmed.
+          {t("web.homePage.marketingTitle", { defaultValue: "Book. Pay. Confirmed." })}
         </h1>
         <p className="app-marketing-hero__sub">
-          The official IFCDC Barbers platform — secure PayPal checkout, instant booking confirmation,
-          and professional scheduling for customers, barbers, and shop owners.
+          {t("web.homePage.marketingSub", {
+            defaultValue:
+              "The official IFCDC Barbers platform — secure PayPal checkout, instant booking confirmation, and professional scheduling for customers, barbers, and shop owners.",
+          })}
         </p>
         <div className="app-marketing-hero__actions">
           <a
@@ -235,56 +250,74 @@ export default function Home() {
             className="app-marketing-hero__btn app-marketing-hero__btn--gold"
             rel="noopener noreferrer"
           >
-            {APP_DOWNLOAD_CTA.label}
+            {t("web.homePage.getTheApp", { defaultValue: APP_DOWNLOAD_CTA.label || "Get the App" })}
           </a>
           <Link to="/booking" className="app-marketing-hero__btn app-marketing-hero__btn--outline">
-            Book on the Web
+            {t("web.homePage.bookOnWeb", { defaultValue: "Book on the Web" })}
           </Link>
           <Link to="/login" className="app-marketing-hero__btn app-marketing-hero__btn--outline">
-            Sign In
+            {t("web.homePage.signIn", { defaultValue: "Sign In" })}
           </Link>
         </div>
+        <div className="app-marketing-hero__lang" style={{ maxWidth: 320, margin: "1rem auto 0" }}>
+          <LanguageDropdown />
+        </div>
         <div className="app-marketing-hero__owner">
-          <span>Barber or shop owner?</span>
+          <span>{t("web.homePage.ownerPrompt", { defaultValue: "Barber or shop owner?" })}</span>
           <a href={`mailto:${PUBLIC_CONTACT_EMAIL}?subject=IFCDC%20shop%20onboarding`}>
-            Request access
+            {t("web.homePage.requestAccess", { defaultValue: "Request access" })}
           </a>
         </div>
-        <nav className="app-marketing-hero__legal" aria-label="Legal">
-          <Link to={PUBLIC_LEGAL.privacy}>Privacy Policy</Link>
-          <Link to={PUBLIC_LEGAL.terms}>Terms</Link>
+        <nav
+          className="app-marketing-hero__legal"
+          aria-label={t("web.homePage.legalNav", { defaultValue: "Legal" })}
+        >
+          <Link to={PUBLIC_LEGAL.privacy}>
+            {t("web.footer.privacy", { defaultValue: "Privacy Policy" })}
+          </Link>
+          <Link to={PUBLIC_LEGAL.terms}>{t("web.footer.terms", { defaultValue: "Terms" })}</Link>
           <a href={`mailto:${PUBLIC_CONTACT_EMAIL}`}>{PUBLIC_CONTACT_EMAIL}</a>
         </nav>
       </section>
 
       <section className="home-hero" aria-labelledby="home-hero-title">
-        <p className="ifcdc-hero-brand">IFCDC BARBERS</p>
+        <p className="ifcdc-hero-brand">
+          {t("web.homePage.brandBarbers", { defaultValue: "IFCDC BARBERS" })}
+        </p>
         <h1 id="home-hero-title" className="home-hero__title">
-          Precision cuts. Elevated experience.
+          {t("web.homePage.heroTitleAlt", { defaultValue: "Precision cuts. Elevated experience." })}
         </h1>
         <p className="home-hero__sub">
-          Matte black. Liquid gold. Book your chair and walk out sharp — every time.
+          {t("web.homePage.heroSubtitleAlt", {
+            defaultValue: "Matte black. Liquid gold. Book your chair and walk out sharp — every time.",
+          })}
         </p>
         <Link to="/booking" className="home-hero__btn">
-          Book appointment
+          {t("web.homePage.bookAppointment", { defaultValue: "Book appointment" })}
         </Link>
       </section>
 
       <section className="smart-home glass-panel" aria-label="Smart shortcuts">
         <div className="aura-panel">
           <div className="aura-glow" aria-hidden />
-          <h2 className="aura-panel__title">AURA</h2>
-          <p className="aura-panel__lead">What do you need today?</p>
-          <p className="aura-panel__hint">Tap the floating AURA button to ask anything — or use the shortcuts below.</p>
+          <h2 className="aura-panel__title">{t("web.nav.aura", { defaultValue: "AURA" })}</h2>
+          <p className="aura-panel__lead">
+            {t("web.homePage.auraLead", { defaultValue: "What do you need today?" })}
+          </p>
+          <p className="aura-panel__hint">
+            {t("web.homePage.auraHint", {
+              defaultValue: "Tap the floating AURA button to ask anything — or use the shortcuts below.",
+            })}
+          </p>
           {auraPhoneTel ? (
             <div className="aura-panel__call-block">
               <p className="aura-panel__call-text">
                 <a href={`tel:${auraPhoneTel}`} className="aura-panel__call-link">
-                  Call AURA
+                  {t("web.homePage.callAura", { defaultValue: "Call AURA" })}
                 </a>
                 {" · "}
                 <a href={`sms:${auraPhoneTel}`} className="aura-panel__call-link">
-                  Text AURA
+                  {t("web.homePage.textAura", { defaultValue: "Text AURA" })}
                 </a>
               </p>
               {auraPhoneDisplay ? (
@@ -298,7 +331,7 @@ export default function Home() {
 
         <div className="quick-actions">
           <button type="button" className="smart-home__btn smart-home__btn--primary" onClick={() => navigate("/booking")}>
-            Book Now
+            {t("web.homePage.bookNow", { defaultValue: "Book Now" })}
           </button>
           <button
             type="button"
@@ -309,37 +342,55 @@ export default function Home() {
             }}
             disabled={locating}
           >
-            {locating ? "Locating…" : "Nearest Barber"}
+            {locating
+              ? t("web.homePage.locating", { defaultValue: "Locating…" })
+              : t("web.homePage.nearestBarber", { defaultValue: "Nearest Barber" })}
           </button>
           <button type="button" className="smart-home__btn" onClick={openNow} disabled={locating}>
-            {locating ? "Locating…" : "Open Now"}
+            {locating
+              ? t("web.homePage.locating", { defaultValue: "Locating…" })
+              : t("web.homePage.openNowBtn", { defaultValue: "Open Now" })}
           </button>
         </div>
 
         <div className="smart-suggestion">
           {!loading && roster.length === 0 ? (
-            <p className="smart-suggestion__empty">No live roster yet — add barbers from Admin.</p>
+            <p className="smart-suggestion__empty">
+              {t("web.homePage.noRoster", { defaultValue: "No live roster yet — add barbers from Admin." })}
+            </p>
           ) : !suggestion ? (
-            <p className="smart-suggestion__empty">Loading suggestion…</p>
+            <p className="smart-suggestion__empty">
+              {t("web.homePage.loadingSuggestion", { defaultValue: "Loading suggestion…" })}
+            </p>
           ) : (
             <div
               className="barber-card best"
-              aria-label={`Best match: ${suggestion.barber?.name || "Barber"}`}
+              aria-label={`${t("web.homePage.bestMatch", { defaultValue: "Best Match" })}: ${suggestion.barber?.name || "Barber"}`}
             >
-              <h3>🔥 Best Match</h3>
+              <h3>🔥 {t("web.homePage.bestMatch", { defaultValue: "Best Match" })}</h3>
               <p>
                 {userCoords &&
                 suggestion.miles != null &&
                 suggestion.driveMin != null &&
                 Number.isFinite(suggestion.barber?.distanceKm) &&
                 suggestion.barber.distanceKm !== Number.POSITIVE_INFINITY
-                  ? `${suggestion.miles.toFixed(1)} miles • ${suggestion.driveMin} min away`
+                  ? t("web.homePage.milesAwayDetail", {
+                      miles: suggestion.miles.toFixed(1),
+                      minutes: suggestion.driveMin,
+                      defaultValue: `${suggestion.miles.toFixed(1)} miles • ${suggestion.driveMin} min away`,
+                    })
                   : userCoords
-                    ? "Save a shop street address in Admin for map directions. Miles and drive time appear when coordinates exist (optional)."
-                    : "Turn on location to sort by distance when barbers have coordinates on file."}
+                    ? t("web.homePage.needAddress", {
+                        defaultValue:
+                          "Save a shop street address in Admin for map directions. Miles and drive time appear when coordinates exist (optional).",
+                      })
+                    : t("web.homePage.turnOnLocation", {
+                        defaultValue:
+                          "Turn on location to sort by distance when barbers have coordinates on file.",
+                      })}
               </p>
               <p>
-                Next Slot:{" "}
+                {t("web.homePage.nextSlot", { defaultValue: "Next Slot:" })}{" "}
                 <time dateTime={`${suggestion.slot.date}T${suggestion.slot.time}`}>
                   {new Date(`${suggestion.slot.date}T${suggestion.slot.time}:00`).toLocaleTimeString(undefined, {
                     hour: "numeric",
@@ -349,7 +400,7 @@ export default function Home() {
                 {suggestion.slot.date !== ymd(new Date()) ? ` (${suggestion.slot.date})` : ""}
               </p>
               <button type="button" className="smart-home__btn smart-home__btn--primary" onClick={bookInstant}>
-                Book Now
+                {t("web.homePage.bookNow", { defaultValue: "Book Now" })}
               </button>
             </div>
           )}
@@ -364,31 +415,49 @@ export default function Home() {
 
       <section className="home-feature-grid" aria-labelledby="features-heading">
         <h2 id="features-heading" className="home-section__title">
-          Why IFCDC
+          {t("web.homePage.featuresTitle", { defaultValue: "Why IFCDC" })}
         </h2>
         <div className="home-feature-grid__row">
           <article className="glass-panel home-feature-card">
-            <h3 className="home-feature-card__h">Craft</h3>
-            <p className="home-feature-card__p">Lineups, fades, and finishes executed with discipline.</p>
+            <h3 className="home-feature-card__h">
+              {t("web.homePage.featureCraft", { defaultValue: "Craft" })}
+            </h3>
+            <p className="home-feature-card__p">
+              {t("web.homePage.featureCraftBody", {
+                defaultValue: "Lineups, fades, and finishes executed with discipline.",
+              })}
+            </p>
           </article>
           <article className="glass-panel home-feature-card">
-            <h3 className="home-feature-card__h">Culture</h3>
-            <p className="home-feature-card__p">A premium chair experience built on respect and consistency.</p>
+            <h3 className="home-feature-card__h">
+              {t("web.homePage.featureCulture", { defaultValue: "Culture" })}
+            </h3>
+            <p className="home-feature-card__p">
+              {t("web.homePage.featureCultureBody", {
+                defaultValue: "A premium chair experience built on respect and consistency.",
+              })}
+            </p>
           </article>
           <article className="glass-panel home-feature-card">
-            <h3 className="home-feature-card__h">Convenience</h3>
-            <p className="home-feature-card__p">Book online, pay securely, confirmation straight to your inbox.</p>
+            <h3 className="home-feature-card__h">
+              {t("web.homePage.featureConvenience", { defaultValue: "Convenience" })}
+            </h3>
+            <p className="home-feature-card__p">
+              {t("web.homePage.featureConvenienceBody", {
+                defaultValue: "Book online, pay securely, confirmation straight to your inbox.",
+              })}
+            </p>
           </article>
         </div>
       </section>
 
       <section className="home-featured" aria-labelledby="featured-heading">
         <h2 id="featured-heading" className="home-section__title">
-          Featured barbers
+          {t("web.homePage.featuredBarbers", { defaultValue: "Featured barbers" })}
         </h2>
         {loading ? (
           <p className="home-featured__loading" role="status">
-            Loading…
+            {t("web.common.loading", { defaultValue: "Loading…" })}
           </p>
         ) : (
           <div
@@ -397,7 +466,11 @@ export default function Home() {
             }
           >
             {barbers.length === 0 ? (
-              <p className="home-featured__empty">No roster yet — add barbers from Admin.</p>
+              <p className="home-featured__empty">
+                {t("web.homePage.noRosterFeatured", {
+                  defaultValue: "No roster yet — add barbers from Admin.",
+                })}
+              </p>
             ) : (
               barbers.slice(0, 4).map((b) => (
                 <article key={b.id} className="home-featured__card">
@@ -426,11 +499,13 @@ export default function Home() {
 
       <section className="home-cta" aria-labelledby="cta-heading">
         <h2 id="cta-heading" className="home-cta__visually-hidden">
-          Book
+          {t("web.nav.book", { defaultValue: "Book" })}
         </h2>
-        <p className="home-cta__text">Ready when you are.</p>
+        <p className="home-cta__text">
+          {t("web.homePage.readyWhen", { defaultValue: "Ready when you are." })}
+        </p>
         <Link to="/booking" className="home-cta__btn">
-          Reserve your time
+          {t("web.homePage.reserveTime", { defaultValue: "Reserve your time" })}
         </Link>
       </section>
 

@@ -1,5 +1,6 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { fetchMyLoyalty } from "../services/loyaltyApi.js";
 import { hasWebSession } from "../lib/appSession.js";
 
@@ -16,7 +17,7 @@ const EMPTY = {
   transactions: [],
 };
 
-function RewardCard({ reward, locked = false }) {
+function RewardCard({ reward, locked = false, lockedLabel, checkoutHint }) {
   return (
     <li className="ifcdc-book-wizard__summary" style={{ marginBottom: 10 }}>
       <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
@@ -26,7 +27,7 @@ function RewardCard({ reward, locked = false }) {
           {reward.description ? <div style={{ opacity: 0.78, marginTop: 4 }}>{reward.description}</div> : null}
           {!locked ? (
             <div style={{ color: "#d4af37", fontSize: 12, marginTop: 6 }}>
-              Choose during booking checkout
+              {checkoutHint || "Choose during booking checkout"}
             </div>
           ) : null}
         </div>
@@ -37,6 +38,7 @@ function RewardCard({ reward, locked = false }) {
 }
 
 export default function RewardsPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const signedIn = hasWebSession();
   const [data, setData] = useState(EMPTY);
@@ -66,9 +68,13 @@ export default function RewardsPage() {
   if (!signedIn) {
     return (
       <div className="ifcdc-profile">
-        <h1 className="ifcdc-page-title">⭐ Loyalty Rewards</h1>
+        <h1 className="ifcdc-page-title">
+          ⭐ {t("web.rewardsPage.title", { defaultValue: "Rewards" })}
+        </h1>
         <p className="ifcdc-page-lead">Sign in to earn and use rewards.</p>
-        <Link to="/login" className="ifcdc-book-wizard__cta">Sign in</Link>
+        <Link to="/login" className="ifcdc-book-wizard__cta">
+          {t("web.nav.signIn", { defaultValue: "Sign in" })}
+        </Link>
       </div>
     );
   }
@@ -76,16 +82,20 @@ export default function RewardsPage() {
   return (
     <div className="ifcdc-profile">
       <button type="button" className="ifcdc-book-wizard__back" onClick={() => navigate("/profile")}>
-        ← Profile
+        ← {t("web.nav.profile", { defaultValue: "Profile" })}
       </button>
-      <h1 className="ifcdc-page-title">⭐ Loyalty Rewards</h1>
+      <h1 className="ifcdc-page-title">
+        ⭐ {t("web.rewardsPage.title", { defaultValue: "Rewards" })}
+      </h1>
       <p className="ifcdc-page-lead">Earn points only after paid appointments are completed.</p>
-      {loading ? <p className="ifcdc-page-hint">Loading…</p> : null}
+      {loading ? (
+        <p className="ifcdc-page-hint">{t("web.common.loading", { defaultValue: "Loading…" })}</p>
+      ) : null}
       {error ? (
         <div className="ifcdc-error-msg">
           <p>{error}</p>
           <button type="button" className="ifcdc-book-wizard__cta ifcdc-book-wizard__cta--ghost" onClick={() => void load()}>
-            Try again
+            {t("web.common.retry", { defaultValue: "Retry" })}
           </button>
         </div>
       ) : null}
@@ -93,7 +103,9 @@ export default function RewardsPage() {
         <>
           <section className="ifcdc-book-wizard__summary" style={{ textAlign: "center", marginBottom: 20 }}>
             <div style={{ opacity: 0.75, fontWeight: 700 }}>Current Points</div>
-            <div style={{ fontSize: 46, fontWeight: 900, color: "#FFD700" }}>{data.points}</div>
+            <div style={{ fontSize: 46, fontWeight: 900, color: "#FFD700" }}>
+              {t("web.rewardsPage.points", { count: data.points, defaultValue: `${data.points} points` })}
+            </div>
             <div style={{ fontWeight: 800 }}>Completed Haircuts: {data.completedHaircuts}</div>
             <div style={{ height: 10, borderRadius: 99, background: "rgba(255,255,255,.1)", overflow: "hidden", margin: "14px 0" }}>
               <div style={{ width: `${data.progressPercent}%`, height: "100%", background: "#d4af37" }} />
@@ -111,15 +123,30 @@ export default function RewardsPage() {
             )}
           </section>
 
-          <h2 className="ifcdc-book-wizard__heading">Available Rewards</h2>
-          {!data.availableRewards.length ? <p className="ifcdc-page-hint">Keep booking — your next reward is getting closer.</p> : null}
+          <h2 className="ifcdc-book-wizard__heading">
+            {t("web.rewardsPage.available", { defaultValue: "Available rewards" })}
+          </h2>
+          {!data.availableRewards.length ? (
+            <p className="ifcdc-page-hint">
+              {t("web.rewardsPage.empty", { defaultValue: "No rewards available yet." })}
+            </p>
+          ) : null}
           <ul className="ifcdc-book-wizard__list">
-            {data.availableRewards.map((reward) => <RewardCard key={reward.id} reward={reward} />)}
+            {data.availableRewards.map((reward) => (
+              <RewardCard key={reward.id} reward={reward} />
+            ))}
           </ul>
 
           <h2 className="ifcdc-book-wizard__heading">Upcoming Rewards</h2>
           <ul className="ifcdc-book-wizard__list">
-            {data.upcomingRewards.map((reward) => <RewardCard key={reward.id} reward={reward} locked />)}
+            {data.upcomingRewards.map((reward) => (
+              <RewardCard
+                key={reward.id}
+                reward={reward}
+                locked
+                lockedLabel={t("web.rewardsPage.locked", { defaultValue: "Locked" })}
+              />
+            ))}
           </ul>
 
           <h2 className="ifcdc-book-wizard__heading">Reserved Rewards</h2>
