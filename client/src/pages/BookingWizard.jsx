@@ -325,6 +325,14 @@ export default function BookingWizard() {
       navigate(`/reset-password?token=${encodeURIComponent(token)}`, { replace: true });
       return;
     }
+    // Prevent React remount / double-invoke from capturing twice with the same token.
+    const guardKey = `ifcdc_finalize_${token}`;
+    try {
+      if (sessionStorage.getItem(guardKey) === "1") return;
+      sessionStorage.setItem(guardKey, "1");
+    } catch {
+      /* ignore */
+    }
     let cancelled = false;
     setProcessingPayment(true);
     setPhaseLabel("Confirming your booking…");
@@ -346,10 +354,22 @@ export default function BookingWizard() {
         });
         setStep(6);
         sessionStorage.removeItem(CHECKOUT_STORAGE);
+        try {
+          sessionStorage.removeItem(guardKey);
+        } catch {
+          /* ignore */
+        }
         setSearchParams({}, { replace: true });
       } catch (e) {
+        try {
+          sessionStorage.removeItem(guardKey);
+        } catch {
+          /* ignore */
+        }
         if (!cancelled) {
-          setError(e?.message || "Payment could not be confirmed.");
+          const detail = e?.details?.paypalDetail;
+          const debug = detail?.debug_id ? ` (debug_id: ${detail.debug_id})` : "";
+          setError((e?.message || "Payment could not be confirmed.") + debug);
           setSearchParams({}, { replace: true });
         }
       } finally {
@@ -419,6 +439,12 @@ export default function BookingWizard() {
         typeof barber?.id === "string" && barber.id.includes("-") ? barber.id : undefined;
 
       setPhaseLabel("Creating secure checkout…");
+      // Drop any stale checkout session before creating a fresh PayPal order.
+      try {
+        sessionStorage.removeItem(CHECKOUT_STORAGE);
+      } catch {
+        /* ignore */
+      }
       const started = await startAppBookingCheckout({
         barberName: barber.name,
         barberId: barber.id,

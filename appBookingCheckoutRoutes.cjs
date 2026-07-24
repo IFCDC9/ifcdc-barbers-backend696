@@ -46,7 +46,7 @@ const {
   normalizePayPalEnvValue,
   getPayPalSecret,
 } = require("./paypalEnv.cjs");
-const { captureOrGetCompletedPayPalOrder, getPayPalOrder } = require("./paypalOrderCaptureHelpers.cjs");
+const { captureOrGetCompletedPayPalOrder, getPayPalOrder, parsePayPalSdkError } = require("./paypalOrderCaptureHelpers.cjs");
 const { sendOrphanedPaymentAdminAlert } = require("./orphanedPaymentAlert.cjs");
 const { refundCapturedBookingOrAlert } = require("./orphanPaymentRefund.cjs");
 const { bookingDateToYmd } = require("./bookingDateYmd.cjs");
@@ -82,44 +82,29 @@ function round2(n) {
 }
 
 function formatPayPalFailure(err) {
-  if (err == null) return { message: "Unknown PayPal error", code: "paypal_error", httpStatus: 502, body: null };
-  const raw = err instanceof Error ? err.message : String(err);
-  const fromSdk = Number(err?.statusCode ?? err?.status ?? 0) || null;
-  try {
-    const j = JSON.parse(raw);
-    const paypalCode = j.error || j.name;
-    const desc = j.error_description || j.message || j.details?.[0]?.description || raw;
-    if (paypalCode === "invalid_client") {
-      return {
-        code: "invalid_client",
-        message:
-          "PayPal rejected client credentials (invalid_client). Use PAYPAL_CLIENT_ID + PAYPAL_CLIENT_SECRET from the SAME app.",
-        httpStatus: fromSdk && fromSdk >= 400 ? fromSdk : 401,
-        body: j,
-      };
-    }
+  if (err == null) return { message: "Unknown PayPal error", code: "paypal_error", httpStatus: 502, body: null, debugId: null, details: [] };
+  const parsed = err.paypalParsed || parsePayPalSdkError(err);
+  if (parsed.name === "invalid_client" || String(parsed.body?.error || "") === "invalid_client") {
     return {
-      code: paypalCode || "paypal_error",
-      message: String(desc),
-      httpStatus: fromSdk && fromSdk >= 400 ? fromSdk : 502,
-      body: j,
-    };
-  } catch {
-    if (/invalid_client/i.test(raw)) {
-      return {
-        code: "invalid_client",
-        message: "PayPal invalid_client: client ID and secret must match PAYPAL_ENV (sandbox vs live).",
-        httpStatus: fromSdk && fromSdk >= 400 ? fromSdk : 401,
-        body: { raw: raw.slice(0, 2000) },
-      };
-    }
-    return {
-      code: err?.code || "paypal_error",
-      message: raw,
-      httpStatus: fromSdk && fromSdk >= 400 ? fromSdk : 502,
-      body: { raw: raw.slice(0, 2000) },
+      code: "invalid_client",
+      message:
+        "PayPal rejected client credentials (invalid_client). Use PAYPAL_CLIENT_ID + PAYPAL_CLIENT_SECRET from the SAME app.",
+      httpStatus: parsed.httpStatus >= 400 ? parsed.httpStatus : 401,
+      body: parsed.body,
+      debugId: parsed.debugId,
+      details: parsed.details,
     };
   }
+  const issue = parsed.issues?.[0];
+  const detailDesc = parsed.details?.[0]?.description;
+  return {
+    code: issue || parsed.name || "paypal_error",
+    message: String(detailDesc || parsed.message || "PayPal checkout failed"),
+    httpStatus: parsed.httpStatus >= 400 ? parsed.httpStatus : 502,
+    body: parsed.body,
+    debugId: parsed.debugId,
+    details: parsed.details,
+  };
 }
 
 function extractPayPalErrorFull(err) {
@@ -129,6 +114,8 @@ function extractPayPalErrorFull(err) {
     message: formatted.message,
     httpStatus: formatted.httpStatus,
     statusCode: err?.statusCode ?? err?.status ?? null,
+    debugId: formatted.debugId,
+    details: formatted.details,
     body: formatted.body,
     stack: err instanceof Error ? err.stack : undefined,
   };
@@ -219,10 +206,23 @@ router.get("/health", async (_req, res) => {
     } else {
       console.log("[paypal] OAuth OK —", paypal.environment, "token generation succeeded");
     }
+    // Never expose access tokens in health responses.
+    const safeOauth = paypal.oauth
+      ? {
+          ok: Boolean(paypal.oauth.ok),
+          mode: paypal.oauth.mode || null,
+          status: paypal.oauth.status || null,
+          error: paypal.oauth.error || null,
+          message: paypal.oauth.message || null,
+        }
+      : null;
     res.json({
       ok: Boolean(paypal.alignment?.ok),
       service: "ifcdc-barbers-backend696",
-      paypal,
+      paypal: {
+        ...paypal,
+        oauth: safeOauth,
+      },
     });
   } catch (e) {
     console.error("[paypal] health diagnostics failed:", e?.message || e);
@@ -1137,7 +1137,12 @@ router.post("/start", async (req, res) => {
         success: false,
         error: f.code || "start_failed",
         message: f.message || `PayPal checkout failed (${f.code || "paypal_error"}).`,
-        paypalDetail: f.body || e?.paypalDetail || null,
+        paypalDetail: {
+          name: f.body?.name || f.code,
+          message: f.message,
+          details: f.details || [],
+          debug_id: f.debugId || null,
+        },
         paypal: getPayPalEnvironmentMeta(),
       });
     }
@@ -1785,6 +1790,10 @@ router.post("/finalize", async (req, res) => {
       paypalOrderId: orderID,
       code: f.code,
       message: f.message,
+      httpStatus: f.httpStatus,
+      debugId: f.debugId,
+      details: f.details,
+      body: f.body,
     });
 
     if (orderID) {
@@ -1807,7 +1816,7 @@ router.post("/finalize", async (req, res) => {
             customerEmail: found.rows?.[0]?.customer_email,
             reason: "finalize_exception_after_capture",
             capturedUsd: extractPayPalCapturedUsd(order),
-            extra: { error: f.message },
+            extra: { error: f.message, debugId: f.debugId },
           });
           if (found.rows?.[0]?.id && captureId) {
             return res.status(200).json({
@@ -1833,11 +1842,22 @@ router.post("/finalize", async (req, res) => {
     }
 
     const status = Number(f.httpStatus) >= 400 && Number(f.httpStatus) < 600 ? f.httpStatus : 502;
+    const userMessage =
+      f.code === "ORDER_NOT_APPROVED"
+        ? "PayPal payment was not completed. Please try again and finish checkout in PayPal."
+        : f.message;
     return res.status(status).json({
       verified: false,
       error: f.code || "finalize_failed",
-      message: f.message,
+      message: userMessage,
       paypalOrderId: orderID || null,
+      paypalDetail: {
+        name: f.body?.name || f.code,
+        message: f.message,
+        details: f.details || [],
+        debug_id: f.debugId || null,
+      },
+      paypal: getPayPalEnvironmentMeta(),
     });
   }
 });

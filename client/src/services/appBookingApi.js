@@ -222,8 +222,9 @@ function isRetryableFinalizeError(err) {
   const status = Number(err?.status);
   if (status >= 502 && status <= 504) return true;
   if (err?.name === "AbortError") return true;
-  const code = String(err?.code || "").toLowerCase();
-  return code === "finalize_failed" || code === "network" || status === 0;
+  const code = String(err?.code || "").toUpperCase();
+  if (code.includes("UNPROCESSABLE") || code === "ORDER_NOT_APPROVED" || status === 422) return false;
+  return code === "FINALIZE_FAILED" || code === "NETWORK" || status === 0;
 }
 
 async function finalizeOnce(orderID) {

@@ -9,17 +9,26 @@ export function formatCheckoutError(err: unknown): string {
       error?: string;
       message?: string;
       paypal?: { environment?: string };
+      paypalDetail?: {
+        name?: string;
+        message?: string;
+        debug_id?: string | null;
+        details?: Array<{ issue?: string; description?: string }>;
+      };
     };
   };
   const parts: string[] = [];
-  const msg = String(e?.message || e || "").trim();
+  const detail = e?.details?.paypalDetail;
+  const issue = detail?.details?.[0]?.issue;
+  const desc = detail?.details?.[0]?.description || detail?.message;
+  const msg = String(desc || e?.details?.message || e?.message || e || "").trim();
   if (msg) parts.push(msg);
-  if (e?.code && e.code !== msg) parts.push(`Code: ${e.code}`);
+  const code = issue || e?.code;
+  if (code && code !== msg) parts.push(`Code: ${code}`);
   if (e?.status != null) parts.push(`HTTP ${e.status}`);
+  if (detail?.debug_id) parts.push(`PayPal debug_id: ${detail.debug_id}`);
   const paypalEnv = e?.details?.paypal?.environment;
   if (paypalEnv) parts.push(`PayPal env: ${paypalEnv}`);
-  const apiMsg = e?.details?.message;
-  if (apiMsg && apiMsg !== msg) parts.push(String(apiMsg));
   if (parts.length) return parts.join("\n");
   return "Payment system unavailable. Please try again.";
 }
