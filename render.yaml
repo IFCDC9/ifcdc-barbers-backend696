@@ -73,6 +73,9 @@ services:
         sync: false
       - key: HUBSPOT_HQ_ANALYTICS
         sync: false
+      # Customer multilingual (emails + preferred_language). Safe with website i18n rollout.
+      - key: MULTI_LANGUAGE_DROPDOWN_V2
+        value: "1"
 
   # AURA / Twilio voice + chat API — same Node backend as backend696 (repo root), NOT client/
   # Twilio webhooks: set PUBLIC_BASE_URL to this service URL (e.g. https://aura-backend.onrender.com)
@@ -146,3 +149,6 @@ services:
         value: production
       - key: VITE_PLATFORM_FEE
         value: "0.99"
+      # Public website language dropdown (9 languages). Rebuild required to bake into Vite bundle.
+      - key: VITE_MULTI_LANGUAGE_DROPDOWN_V2
+        value: "1"
