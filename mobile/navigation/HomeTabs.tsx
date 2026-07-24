@@ -43,11 +43,13 @@ import { createBottomTabNavigator, BottomTabBar } from "@react-navigation/bottom
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useTranslation } from "react-i18next";
 import { useAuth } from "../services/authContext";
 import { LazyScreen } from "../components/LazyScreen";
 import IFCDCFooter from "../components/IFCDCFooter";
 import { IFCDC_FOOTER_HEIGHT } from "../constants/profileLayout";
 import { palette, shadow, tabBar, typography } from "../constants/theme";
+import { enterAdminLanguageMode, exitAdminLanguageMode } from "../i18n";
 
 const Tab = createBottomTabNavigator();
 
@@ -111,6 +113,7 @@ function logTabFocus(name: string) {
 
 export default function HomeTabs() {
   const insets = useSafeAreaInsets();
+  const { t } = useTranslation();
   const tabIconsHeight = 60;
   const tabBarHeight = tabIconsHeight + IFCDC_FOOTER_HEIGHT + Math.max(insets.bottom, 8);
 
@@ -134,6 +137,7 @@ export default function HomeTabs() {
     console.log("[nav] HomeTabs mounted", { isPlatformAdmin, hasStaffDashboard, platform: Platform.OS });
   }, [isPlatformAdmin, hasStaffDashboard]);
 
+  // Re-render tab labels when language changes (useTranslation).
   return (
     <View style={{ flex: 1 }}>
       {approvalPending && !isPlatformAdmin ? (
@@ -171,33 +175,44 @@ export default function HomeTabs() {
       <Tab.Screen
         name="Home"
         component={HomeTabScreen}
-        options={{ tabBarLabel: "Home", tabBarIcon: tabIcon("home") }}
+        options={{ tabBarLabel: t("tabs.home"), tabBarIcon: tabIcon("home") }}
         listeners={{ focus: () => logTabFocus("Home") }}
       />
       <Tab.Screen
         name="Book"
         component={BookTabScreen}
-        options={{ tabBarLabel: "Book", tabBarIcon: tabIcon("calendar") }}
+        options={{ tabBarLabel: t("tabs.book"), tabBarIcon: tabIcon("calendar") }}
         listeners={{ focus: () => logTabFocus("Book") }}
       />
       <Tab.Screen
         name="AURA"
         component={AuraTabScreen}
-        options={{ tabBarLabel: "AURA", tabBarIcon: tabIcon("sparkles") }}
+        options={{ tabBarLabel: t("tabs.aura"), tabBarIcon: tabIcon("sparkles") }}
         listeners={{ focus: () => logTabFocus("AURA") }}
       />
       <Tab.Screen
         name="Profile"
         component={ProfileTabScreen}
-        options={{ tabBarLabel: "Profile", tabBarIcon: tabIcon("person") }}
+        options={{ tabBarLabel: t("tabs.profile"), tabBarIcon: tabIcon("person") }}
         listeners={{ focus: () => logTabFocus("Profile") }}
       />
       {hasStaffDashboard ? (
         <Tab.Screen
           name="Admin"
           component={AdminTabScreen}
-          options={{ tabBarLabel: isPlatformAdmin ? "Admin" : "Manage", tabBarIcon: tabIcon("shield-checkmark") }}
-          listeners={{ focus: () => logTabFocus("Admin") }}
+          options={{
+            tabBarLabel: isPlatformAdmin ? "Admin" : "Manage",
+            tabBarIcon: tabIcon("shield-checkmark"),
+          }}
+          listeners={{
+            focus: () => {
+              logTabFocus("Admin");
+              void enterAdminLanguageMode();
+            },
+            blur: () => {
+              void exitAdminLanguageMode();
+            },
+          }}
         />
       ) : null}
     </Tab.Navigator>

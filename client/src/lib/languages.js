@@ -22,16 +22,19 @@ const V2 = ALL_LANGUAGES.map((l) => l.code);
 
 export function isMultiLanguageDropdownV2Enabled() {
   try {
-    const v = String(import.meta.env?.VITE_MULTI_LANGUAGE_DROPDOWN_V2 || "").trim().toLowerCase();
-    return v === "1" || v === "true" || v === "yes" || v === "on";
+    const raw = String(import.meta.env?.VITE_MULTI_LANGUAGE_DROPDOWN_V2 || "").trim().toLowerCase();
+    // V2 is production-live: default ON unless explicitly disabled.
+    if (!raw) return true;
+    if (raw === "0" || raw === "false" || raw === "no" || raw === "off") return false;
+    return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
   } catch {
-    return false;
+    return true;
   }
 }
 
+/** All customer languages — Registration / Profile / Settings / website chrome. */
 export function getPickerLanguages() {
-  const allowed = new Set(isMultiLanguageDropdownV2Enabled() ? V2 : PHASE1);
-  return ALL_LANGUAGES.filter((l) => allowed.has(l.code));
+  return ALL_LANGUAGES.filter((l) => V2.includes(l.code));
 }
 
 /** Back-compat — prefer getPickerLanguages(). */

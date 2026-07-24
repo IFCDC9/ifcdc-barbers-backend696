@@ -7,6 +7,7 @@ import GlowButton from "../../components/GlowButton";
 import LanguageDropdown from "../../components/LanguageDropdown";
 import { theme } from "../../constants/theme";
 import {
+  ALL_LANGUAGES,
   getPickerLanguages,
   languageMeta,
   currentLanguage,
@@ -20,7 +21,7 @@ import { useAuth } from "../../services/authContext";
 
 export default function LanguageSettingsScreen() {
   const { t, i18n } = useTranslation();
-  const { user, token } = useAuth();
+  const { user, token, refresh } = useAuth();
   const [active, setActive] = useState<SupportedLanguageCode>(currentLanguage());
   const [busy, setBusy] = useState(false);
   const [savedMsg, setSavedMsg] = useState("");
@@ -36,12 +37,13 @@ export default function LanguageSettingsScreen() {
   const deviceLang = useMemo(() => detectDeviceLanguage(), []);
   const deviceMeta = languageMeta(deviceLang);
   const activeMeta = languageMeta(active);
-  const pickerCount = getPickerLanguages().length;
+  const pickerLangs = getPickerLanguages();
 
   const persistServer = async (code: SupportedLanguageCode) => {
     if (!token || !user) return;
     try {
       await patchProfile({ preferredLanguage: code, language: code });
+      await refresh();
     } catch {
       /* local preference still saved */
     }
@@ -91,6 +93,12 @@ export default function LanguageSettingsScreen() {
             {t("language.deviceDetected", { name: deviceMeta.nativeName })}
           </Text>
         ) : null}
+        <Text style={styles.summaryHint}>
+          {t("language.supportedCount", {
+            defaultValue: "{{count}} languages available",
+            count: pickerLangs.length || ALL_LANGUAGES.length,
+          })}
+        </Text>
       </ProfileCard>
 
       <ProfileCard style={styles.listCard}>
@@ -99,13 +107,9 @@ export default function LanguageSettingsScreen() {
           value={active}
           disabled={busy}
           onChange={choose}
-          hint={
-            pickerCount > 2
-              ? undefined
-              : t("language.chooseLanguageHint", {
-                  defaultValue: "You can change this later in Profile.",
-                })
-          }
+          hint={t("language.chooseLanguageHint", {
+            defaultValue: "Applies across the app immediately. You can change this anytime.",
+          })}
         />
         {savedMsg ? <Text style={styles.saved}>{savedMsg}</Text> : null}
       </ProfileCard>

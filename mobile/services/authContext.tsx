@@ -6,6 +6,7 @@ import { getAuthToken, setAuthToken, subscribeAuthToken } from "./authService";
 import { refreshAuthSession } from "./sessionApi";
 import { isSuperAdminUser } from "../utils/adminAccess";
 import { hasStaffDashboardAccess, resolveStaffRole } from "../utils/staffDashboardAccess";
+import { applyPreferredLanguageFromUser } from "../i18n";
 
 export type SessionKind = "owner" | "default";
 
@@ -49,6 +50,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setToken(t);
     setUser(u);
     setSessionKind(tokenToSessionKind(t));
+    const preferred =
+      u?.preferredLanguage ?? (u as { preferred_language?: string } | null)?.preferred_language ?? null;
+    if (preferred) {
+      void applyPreferredLanguageFromUser(preferred);
+    }
   }, []);
 
   const refresh = React.useCallback(async () => {

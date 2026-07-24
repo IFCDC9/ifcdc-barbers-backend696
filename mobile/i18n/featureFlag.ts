@@ -1,11 +1,27 @@
-/** Client-side MULTI_LANGUAGE_DROPDOWN_V2 gate (Expo public env). Default OFF. */
+import Constants from "expo-constants";
+
+/** Client-side MULTI_LANGUAGE_DROPDOWN_V2 gate (Expo public env + app extra). */
 export function isMultiLanguageDropdownV2Enabled(): boolean {
-  const raw =
+  const fromProcess =
     (typeof process !== "undefined" && process.env?.EXPO_PUBLIC_MULTI_LANGUAGE_DROPDOWN_V2) ||
     (typeof process !== "undefined" && process.env?.MULTI_LANGUAGE_DROPDOWN_V2) ||
     "";
-  const v = String(raw).trim().toLowerCase();
-  return v === "1" || v === "true" || v === "yes" || v === "on";
+
+  const extra = (Constants.expoConfig?.extra ?? Constants.manifest?.extra ?? {}) as Record<
+    string,
+    unknown
+  >;
+  const fromExtra =
+    extra.multiLanguageDropdownV2 ??
+    extra.MULTI_LANGUAGE_DROPDOWN_V2 ??
+    extra.EXPO_PUBLIC_MULTI_LANGUAGE_DROPDOWN_V2 ??
+    "";
+
+  const raw = String(fromProcess || fromExtra || "").trim().toLowerCase();
+  // V2 is production-live: default ON unless explicitly disabled.
+  if (!raw) return true;
+  if (raw === "0" || raw === "false" || raw === "no" || raw === "off") return false;
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
 }
 
 export const MULTI_LANGUAGE_CODES = [

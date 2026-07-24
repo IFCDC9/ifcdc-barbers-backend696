@@ -13,6 +13,9 @@ export type AppUser = {
   isSuperAdmin?: boolean;
   businessId?: number | null;
   barberId?: number | null;
+  preferredLanguage?: string | null;
+  preferred_language?: string | null;
+  language?: string | null;
 };
 
 export type BookingRow = {

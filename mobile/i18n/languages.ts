@@ -1,12 +1,11 @@
 /**
  * IFCDC Barbers — supported languages registry.
  *
- * Flag OFF → picker shows English + Spanish only.
- * MULTI_LANGUAGE_DROPDOWN_V2 ON → all nine customer languages.
+ * Customer Language dropdown always lists all nine supported languages.
+ * MULTI_LANGUAGE_DROPDOWN_V2 remains available for backend/email feature gates.
  */
 
 import {
-  isMultiLanguageDropdownV2Enabled,
   MULTI_LANGUAGE_CODES,
   PHASE1_LANGUAGE_CODES,
   normalizePreferredLanguage as sharedNormalize,
@@ -45,10 +44,9 @@ export const ALL_LANGUAGES: readonly LanguageMeta[] = [
 export const DEFAULT_LANGUAGE: SupportedLanguageCode = "en";
 export const FALLBACK_LANGUAGE: SupportedLanguageCode = "en";
 
+/** All customer languages for Registration / Profile / Login / Settings. */
 export function getPickerLanguages(): readonly LanguageMeta[] {
-  const v2 = isMultiLanguageDropdownV2Enabled();
-  const allowed = new Set<string>(v2 ? MULTI_LANGUAGE_CODES : PHASE1_LANGUAGE_CODES);
-  return ALL_LANGUAGES.filter((l) => allowed.has(l.code));
+  return ALL_LANGUAGES.filter((l) => (MULTI_LANGUAGE_CODES as readonly string[]).includes(l.code));
 }
 
 /** Back-compat: phase-1 list used by older imports. Prefer getPickerLanguages(). */

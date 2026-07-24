@@ -14,6 +14,7 @@ import Colors from "../constants/Colors";
 import ThemedView from "../components/ThemedView";
 import { palette } from "../constants/theme";
 import { useAuth } from "../services/authContext";
+import { enterAdminLanguageMode, exitAdminLanguageMode } from "../i18n";
 
 const Tab = createBottomTabNavigator();
 
@@ -183,7 +184,15 @@ const Tabs = () => {
                 />
               ),
             }}
-            listeners={{ focus: () => logTab("Admin") }}
+            listeners={{
+              focus: () => {
+                logTab("Admin");
+                void enterAdminLanguageMode();
+              },
+              blur: () => {
+                void exitAdminLanguageMode();
+              },
+            }}
           />
         ) : null}
       </Tab.Navigator>

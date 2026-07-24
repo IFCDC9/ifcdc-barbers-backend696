@@ -17,6 +17,9 @@ export type JsonAuth = {
     createdAt?: string | null;
     businessId?: number | null;
     barberId?: number | null;
+    preferredLanguage?: string | null;
+    preferred_language?: string | null;
+    language?: string | null;
     approvalStatus?: string;
     limitedAccess?: boolean;
     message?: string;
