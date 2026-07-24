@@ -4,10 +4,9 @@
  * - Bundles en/es + V2 locales (fr, ht, pt, ar, zh-CN, ko, vi).
  * - Fallback language is always English (never blank / raw keys).
  * - MULTI_LANGUAGE_DROPDOWN_V2 gates which languages appear in the picker.
- * - RTL applied only for Arabic.
+ * - Native RTL layout only for Arabic via rtlLayout.ts (LTR otherwise).
  */
 
-import { I18nManager } from "react-native";
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -26,10 +25,14 @@ import {
   DEFAULT_LANGUAGE,
   FALLBACK_LANGUAGE,
   isSupportedLanguage,
-  languageMeta,
   normalizeLocale,
   type SupportedLanguageCode,
 } from "./languages";
+import {
+  applyLayoutDirectionForLanguage,
+  clearStickyRtlIfLtr,
+  forceNativeLtr,
+} from "./rtlLayout";
 
 const STORAGE_KEY = "@ifcdc/lang";
 const ADMIN_LANG_STORAGE_KEY = "@ifcdc/admin_lang";
@@ -46,23 +49,17 @@ const resources = {
   vi: { translation: vi },
 } as const;
 
-function applyRtl(code: SupportedLanguageCode) {
-  const wantRtl = languageMeta(code).rtl === true;
-  try {
-    if (I18nManager.isRTL !== wantRtl) {
-      I18nManager.allowRTL(wantRtl);
-      I18nManager.forceRTL(wantRtl);
-      // RN typically needs a reload for full RTL layout swap; preference is still saved.
-    }
-  } catch {
-    /* ignore */
-  }
+/** Apply (or clear) native RTL for the active language. */
+async function applyRtl(code: SupportedLanguageCode): Promise<void> {
+  await applyLayoutDirectionForLanguage(code);
 }
 
 let initialized = false;
 function initSync() {
   if (initialized) return;
   initialized = true;
+  // Default to LTR before any async language restore — prevents a mirrored first paint.
+  forceNativeLtr();
   void i18n.use(initReactI18next).init({
     resources,
     lng: DEFAULT_LANGUAGE,
@@ -73,8 +70,6 @@ function initSync() {
     returnNull: false,
     returnEmptyString: false,
     parseMissingKeyHandler: (key) => {
-      // Never show raw keys — fall back to the key's last segment as last resort
-      // (English resource should already cover all keys).
       try {
         const enHit = i18n.getResource("en", "translation", key);
         if (typeof enHit === "string" && enHit) return enHit;
@@ -113,7 +108,10 @@ export async function bootstrapI18n(): Promise<SupportedLanguageCode> {
       /* ignore */
     }
   }
-  applyRtl(target);
+
+  // Always clear sticky RTL when boot language is LTR (English, Spanish, etc.).
+  await clearStickyRtlIfLtr(target);
+  await applyRtl(target);
   return target;
 }
 
@@ -134,7 +132,7 @@ export async function setLanguage(code: SupportedLanguageCode): Promise<void> {
   } catch {
     /* ignore */
   }
-  applyRtl(code);
+  await applyRtl(code);
 }
 
 /**
@@ -179,7 +177,7 @@ export async function enterAdminLanguageMode(): Promise<SupportedLanguageCode> {
   } catch {
     /* ignore */
   }
-  applyRtl(adminCode);
+  await applyRtl(adminCode);
   return adminCode;
 }
 
@@ -191,7 +189,7 @@ export async function exitAdminLanguageMode(): Promise<SupportedLanguageCode> {
   } catch {
     /* ignore */
   }
-  applyRtl(customer);
+  await applyRtl(customer);
   return customer;
 }
 
@@ -208,7 +206,7 @@ export async function setAdminLanguage(code: SupportedLanguageCode): Promise<voi
   } catch {
     /* ignore */
   }
-  applyRtl(code);
+  await applyRtl(code);
 }
 
 export async function resetToDeviceLanguage(): Promise<SupportedLanguageCode> {
@@ -223,7 +221,7 @@ export async function resetToDeviceLanguage(): Promise<SupportedLanguageCode> {
   } catch {
     /* ignore */
   }
-  applyRtl(deviceCode);
+  await applyRtl(deviceCode);
   return deviceCode;
 }
 
@@ -253,4 +251,5 @@ export {
 } from "./languages";
 export type { SupportedLanguageCode } from "./languages";
 export { isMultiLanguageDropdownV2Enabled } from "./featureFlag";
+export { forceNativeLtr, isRtlLanguage } from "./rtlLayout";
 export default i18n;

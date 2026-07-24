@@ -19,7 +19,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.ifcdc.barbers",
-      "buildNumber": "71",
+      "buildNumber": "72",
       "usesAppleSignIn": true,
       "entitlements": {
         "com.apple.developer.applesignin": [
@@ -48,7 +48,7 @@
     },
     "android": {
       "package": "com.ifcdc.barbers",
-      "versionCode": 51,
+      "versionCode": 52,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#050505"
@@ -57,12 +57,20 @@
     },
     "plugins": [
       "expo-secure-store",
-      "expo-apple-authentication"
+      "expo-apple-authentication",
+      [
+        "expo-localization",
+        {
+          "supportsRTL": true
+        }
+      ]
     ],
     "extra": {
       "eas": {
         "projectId": "eeba0d04-6fc7-4359-8a07-f5c0545e6a47"
       },
+      "supportsRTL": true,
+      "forcesRTL": false,
       "multiLanguageDropdownV2": true,
       "EXPO_PUBLIC_MULTI_LANGUAGE_DROPDOWN_V2": "1"
     }

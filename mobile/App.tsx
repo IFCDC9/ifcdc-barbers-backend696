@@ -23,6 +23,7 @@
 
 import React from "react";
 import {
+  I18nManager,
   Platform,
   ScrollView,
   StyleSheet,
@@ -31,6 +32,16 @@ import {
 } from "react-native";
 
 const BUILD_LABEL = "BUILD 26";
+
+// CRITICAL: Lock native layout to LTR before any screen mounts.
+// Sticky I18nManager.forceRTL(true) from Arabic / device RTL was mirroring
+// the entire app (nav, calendar, forms) even when English was selected.
+try {
+  I18nManager.allowRTL(false);
+  I18nManager.forceRTL(false);
+} catch {
+  /* ignore */
+}
 
 if (__DEV__) console.log("[startup] ROOT START", {
   buildLabel: BUILD_LABEL,

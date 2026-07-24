@@ -24,7 +24,7 @@
         "title": "IFCDC Barbers",
         "subtitle": "Book cuts with style photos",
         "privacyPolicyUrl": "https://ifcdcbarbersapp.com/privacy",
-        "releaseNotes": "Version 1.1.9 (Build 71)\n\n• Nine-language customer experience (English, Spanish, French, Haitian Creole, Portuguese, Arabic, Chinese, Korean, Vietnamese)\n• Super Admin Manual Booking Bypass Mode for booking clients without payment restrictions\n• More reliable PayPal checkout capture and clearer payment errors\n• Profile language preference saves and applies across the app immediately\n• Stability and Admin tooling improvements for production release",
+        "releaseNotes": "Version 1.1.9 (Build 72)\n\n• Critical fix: restores Left-to-Right layout for English and all non-Arabic languages (resolves mirrored UI)\n• Nine-language customer experience\n• Super Admin Manual Booking Bypass Mode\n• More reliable PayPal checkout capture\n• Profile language preference saves and applies across the app",
         "screenshots": {
           "APP_IPAD_PRO_3GEN_129": [
             "store/apple/screenshot/en-US/APP_IPAD_PRO_3GEN_129/iPad Pro 13-inch (M4)-06_AURA.png",

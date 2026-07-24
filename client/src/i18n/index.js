@@ -41,9 +41,15 @@ const resources = {
 function applyDocumentLanguage(code) {
   try {
     const meta = ALL_LANGUAGES.find((l) => l.code === code) || ALL_LANGUAGES[0];
+    const wantRtl = Boolean(meta.rtl);
     document.documentElement.lang = code === "zh-CN" ? "zh-CN" : code;
-    document.documentElement.dir = meta.rtl ? "rtl" : "ltr";
-    document.body?.classList?.toggle("ifcdc-rtl", Boolean(meta.rtl));
+    // Always set explicitly — never leave a stale rtl dir from a prior Arabic session.
+    document.documentElement.setAttribute("dir", wantRtl ? "rtl" : "ltr");
+    if (wantRtl) {
+      document.body?.classList?.add("ifcdc-rtl");
+    } else {
+      document.body?.classList?.remove("ifcdc-rtl");
+    }
   } catch {
     /* ignore SSR / tests */
   }
