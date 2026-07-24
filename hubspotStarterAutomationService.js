@@ -245,6 +245,26 @@ export async function runStarterAutomationEmail(key, { to, name = null, force = 
     return { ok: true, skipped: true, reason: "already_sent_recently", automation: key };
   }
 
+  let subject = spec.subject;
+  let html = spec.html;
+  if (key === "loyalty" || key === "rebook") {
+    try {
+      const { customerEmailLabels, tLabel } = require("./customerEmailI18n.cjs");
+      const { resolveCustomerLanguage } = await import("./customerLanguage.js");
+      const lang = await resolveCustomerLanguage({ customerEmail: email });
+      const labels = customerEmailLabels(lang);
+      if (key === "loyalty") {
+        subject = tLabel(labels, "loyaltySubject");
+        html =
+          `<p>${tLabel(labels, "loyaltyBody")}</p>` +
+          `<p><a href="https://ifcdcbarbersapp.com">${tLabel(labels, "loyaltyOpen")}</a></p>` +
+          `<p>— IFCDC Barbers</p>`;
+      }
+    } catch {
+      /* keep English defaults */
+    }
+  }
+
   const hs = await tryHubSpotSingleSend({
     emailId: spec.emailId,
     to: email,
@@ -261,7 +281,7 @@ export async function runStarterAutomationEmail(key, { to, name = null, force = 
     return { ok: true, channel: "hubspot_singlesend", automation: key, hubspot: hs };
   }
 
-  const rs = await sendViaResend({ to: email, subject: spec.subject, html: spec.html });
+  const rs = await sendViaResend({ to: email, subject, html });
   if (rs.ok) {
     await recordAutomationEvent({
       key,

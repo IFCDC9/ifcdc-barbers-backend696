@@ -1475,6 +1475,7 @@ export async function notifyCustomerReviewPrompt(bookingRow) {
         bookingId,
         deepLinkApp,
         deepLinkWeb,
+        userId,
       }),
     );
     emailStatus = mail?.ok === false ? "failed" : customerEmail ? "sent" : "skipped";

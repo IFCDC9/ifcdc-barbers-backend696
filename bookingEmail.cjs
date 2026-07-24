@@ -750,6 +750,7 @@ async function sendBookingRefundEmail({
   refundId,
   reason,
   paymentStatus,
+  language,
 } = {}) {
   const to = String(email || "").trim();
   if (!to || /@ifcdc\.local$/i.test(to) || /^pending\+/i.test(to)) {
@@ -759,26 +760,29 @@ async function sendBookingRefundEmail({
     return { success: false, skipped: true, reason: "resend_not_configured" };
   }
 
+  const { customerEmailLabels, tLabel } = require("./customerEmailI18n.cjs");
+  const labels = customerEmailLabels(language);
   const fmt = (n) => (Number.isFinite(Number(n)) ? Number(n).toFixed(2) : "0.00");
+  const amount = fmt(refundAmount);
   const safeName = escapeHtml(name || "Guest");
   const safeService = escapeHtml(service || "Appointment");
   const safeDate = escapeHtml(date || "TBD");
   const safeTime = escapeHtml(time || "TBD");
   const safeBarber = barberName ? escapeHtml(barberName) : "";
   const statusLabel = String(paymentStatus || "refunded").replace(/_/g, " ").toUpperCase();
-  const subject = `[IFCDC] Refund processed — $${fmt(refundAmount)}`;
+  const subject = tLabel(labels, "refundSubject", { amount });
   const html = `
-<h2>Refund confirmation</h2>
-<p>Name: ${safeName}</p>
-${safeBarber ? `<p>Barber: ${safeBarber}</p>` : ""}
-<p>Service: ${safeService}</p>
-<p>Date: ${safeDate}</p>
-<p>Time: ${safeTime}</p>
-<p><strong>Status:</strong> ${escapeHtml(statusLabel)}</p>
-<p>Refund amount: $${fmt(refundAmount)}</p>
-${refundId ? `<p>PayPal refund ref: ${escapeHtml(String(refundId))}</p>` : ""}
-${reason ? `<p>Reason: ${escapeHtml(String(reason))}</p>` : ""}
-<p>Funds typically return to your PayPal or card within 3–10 business days.</p>
+<h2>${escapeHtml(tLabel(labels, "refundTitle"))}</h2>
+<p>${escapeHtml(tLabel(labels, "refundName"))}: ${safeName}</p>
+${safeBarber ? `<p>${escapeHtml(tLabel(labels, "refundBarber"))}: ${safeBarber}</p>` : ""}
+<p>${escapeHtml(tLabel(labels, "refundService"))}: ${safeService}</p>
+<p>${escapeHtml(tLabel(labels, "refundDate"))}: ${safeDate}</p>
+<p>${escapeHtml(tLabel(labels, "refundTime"))}: ${safeTime}</p>
+<p><strong>${escapeHtml(tLabel(labels, "refundStatus"))}:</strong> ${escapeHtml(statusLabel)}</p>
+<p>${escapeHtml(tLabel(labels, "refundAmount"))}: $${amount}</p>
+${refundId ? `<p>${escapeHtml(tLabel(labels, "refundRef"))}: ${escapeHtml(String(refundId))}</p>` : ""}
+${reason ? `<p>${escapeHtml(tLabel(labels, "refundReason"))}: ${escapeHtml(String(reason))}</p>` : ""}
+<p>${escapeHtml(tLabel(labels, "refundFunds"))}</p>
   `.trim();
 
   const adminHtml = `

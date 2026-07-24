@@ -11,8 +11,12 @@ export async function scanAndSendBookingReminders() {
   const { getResend, sendEmail } = require("./emailResend.cjs");
   if (!getResend()) return { sent: 0, skipped: "no_resend" };
 
+  const { customerEmailLabels, tLabel } = require("./customerEmailI18n.cjs");
+  const { resolveCustomerLanguage } = await import("./customerLanguage.js");
+
   const r = await dbQuery(
-    `SELECT id, customer_name, customer_email, barber_name, service, date::text AS date, to_char(time, 'HH24:MI') AS time
+    `SELECT id, customer_name, customer_email, barber_name, service, date::text AS date, to_char(time, 'HH24:MI') AS time,
+            user_id
      FROM bookings
      WHERE reminder_sent_at IS NULL
        AND status NOT IN ('cancelled', 'canceled')
@@ -29,18 +33,27 @@ export async function scanAndSendBookingReminders() {
     if (!to) continue;
     const name = String(row.customer_name || "there").trim();
     const when = `${row.date} ${row.time}`.trim();
-    const subj = "Reminder — appointment in ~30 minutes";
-    const html = `<p>Hi ${escapeHtml(name)},</p>
-<p>This is a friendly reminder: you have an appointment around <strong>${escapeHtml(when)}</strong>
-with <strong>${escapeHtml(String(row.barber_name || "your barber"))}</strong>
-(${escapeHtml(String(row.service || "service"))}).</p>
-<p>See you soon.</p>`;
+    const language = await resolveCustomerLanguage({
+      userId: row.user_id || null,
+      customerEmail: to,
+    });
+    const labels = customerEmailLabels(language);
+    const barber = String(row.barber_name || "your barber");
+    const service = String(row.service || "service");
+    const subj = tLabel(labels, "reminderSubject");
+    const html = `<p>${escapeHtml(tLabel(labels, "reminderHi", { name }))}</p>
+<p>${tLabel(labels, "reminderBody", {
+      when: escapeHtml(when),
+      barber: escapeHtml(barber),
+      service: escapeHtml(service),
+    })}</p>
+<p>${escapeHtml(tLabel(labels, "reminderSeeYou"))}</p>`;
     try {
       const out = await sendEmail({
         to,
         subject: subj,
         html,
-        text: `Hi ${name}. Reminder: appointment ~${when}.`,
+        text: tLabel(labels, "reminderText", { name, when }),
         label: "booking-reminder",
       });
       if (out?.error) throw new Error(out.error.message || "send failed");

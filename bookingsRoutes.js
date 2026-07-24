@@ -1072,7 +1072,17 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
               date: newDate,
               time: newTimeLabel,
               barberName: booking.barber_name || "",
-              language: undefined,
+              language: await (async () => {
+                try {
+                  const { resolveCustomerLanguage } = await import("./customerLanguage.js");
+                  return await resolveCustomerLanguage({
+                    userId: booking.user_id || null,
+                    customerEmail: email,
+                  });
+                } catch {
+                  return "en";
+                }
+              })(),
               ...bookingEmailPayloadFromRow(booking),
             });
             console.log(`[reschedule] confirmation email sent to ${email} for ${id.slice(0, 8)}`);

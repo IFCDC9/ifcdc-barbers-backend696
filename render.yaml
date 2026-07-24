@@ -120,6 +120,9 @@ services:
         sync: false
       - key: JWT_SECRET
         sync: false
+      # Same customer multilingual gate as backend696 (voice booking emails).
+      - key: MULTI_LANGUAGE_DROPDOWN_V2
+        value: "1"
 
   # 30-day follow-up push reminders run inside the web service (setInterval every 6h on boot).
   # Do NOT add a separate cron service unless you copy DATABASE_URL + push env vars to it in Render.

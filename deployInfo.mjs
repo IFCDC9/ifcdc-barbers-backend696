@@ -188,6 +188,31 @@ export async function getDeployInfoPayload() {
       orphanedPaymentAdminAlert: paymentFixModulesLoaded,
       bookingEmailResend: Boolean(isDeliverableCustomerEmail),
       paypalHttpsReturnUrlFix: Boolean(resolvePayPalCheckoutReturnUrls),
+      /** Customer multilingual emails + preferred_language V2 (env gate). */
+      multiLanguageDropdownV2: (() => {
+        try {
+          const { isMultiLanguageDropdownV2Enabled } = require("./shared/multiLanguageFlag.js");
+          return Boolean(isMultiLanguageDropdownV2Enabled());
+        } catch {
+          const v = String(process.env.MULTI_LANGUAGE_DROPDOWN_V2 || "")
+            .trim()
+            .toLowerCase();
+          return v === "1" || v === "true" || v === "yes" || v === "on";
+        }
+      })(),
+    },
+    multiLanguage: {
+      flag: "MULTI_LANGUAGE_DROPDOWN_V2",
+      enabled: (() => {
+        const v = String(process.env.MULTI_LANGUAGE_DROPDOWN_V2 || "")
+          .trim()
+          .toLowerCase();
+        return v === "1" || v === "true" || v === "yes" || v === "on";
+      })(),
+      codes: ["en", "es", "fr", "ht", "pt", "ar", "zh-CN", "ko", "vi"],
+      englishFallback: true,
+      frontendFlag: "VITE_MULTI_LANGUAGE_DROPDOWN_V2",
+      mobileFlag: "EXPO_PUBLIC_MULTI_LANGUAGE_DROPDOWN_V2",
     },
     phase1: {
       automatedProbe: "node scripts/verify-phase1-paypal-production.mjs",

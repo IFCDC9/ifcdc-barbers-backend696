@@ -103,11 +103,29 @@ async function emailCustomerReviewPrompt({
   bookingId,
   deepLinkWeb,
   deepLinkApp,
+  language,
+  userId,
 }) {
   try {
     const email = String(to || "").trim();
     if (!email.includes("@")) return { ok: false, reason: "no_customer_email" };
-    const subject = `Your appointment is complete — rate ${barberName || "your barber"}`;
+    const { customerEmailLabels, tLabel } = require("./customerEmailI18n.cjs");
+    let lang = language;
+    if (!lang) {
+      try {
+        const { resolveCustomerLanguage } = await import("./customerLanguage.js");
+        lang = await resolveCustomerLanguage({
+          userId: userId || null,
+          customerEmail: email,
+          explicitLanguage: language || null,
+        });
+      } catch {
+        lang = "en";
+      }
+    }
+    const labels = customerEmailLabels(lang);
+    const barber = barberName || "your barber";
+    const subject = tLabel(labels, "reviewSubject", { barber });
     const reviewUrl =
       deepLinkWeb ||
       `${WEB_URL}/profile/bookings/${encodeURIComponent(String(bookingId || ""))}/review`;
@@ -115,12 +133,12 @@ async function emailCustomerReviewPrompt({
     const html =
       `<div style="font-family:system-ui,sans-serif;line-height:1.5;color:#111">` +
       `<p style="margin:0 0 8px;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#b8860b;font-weight:700;">IFCDC Barbers</p>` +
-      `<h2 style="margin:0 0 12px;">How was your experience?</h2>` +
-      `<p>Hi ${escapeHtml(customerName || "there")},</p>` +
-      `<p>Your appointment is complete. How was your experience with <strong>${escapeHtml(barberName || "your provider")}</strong>? Tap below to leave a rating, review, and photos.</p>` +
-      `<p style="margin:20px 0;"><a href="${escapeHtml(reviewUrl)}" style="display:inline-block;background:#111;color:#FFD700;padding:12px 18px;border-radius:999px;text-decoration:none;font-weight:700;">Leave a review</a></p>` +
-      `<p style="color:#666;font-size:13px;">App link: <a href="${escapeHtml(appLink)}">${escapeHtml(appLink)}</a></p>` +
-      `<p style="color:#666;font-size:13px;">Only clients with completed appointments can leave reviews — one review per booking.</p>` +
+      `<h2 style="margin:0 0 12px;">${escapeHtml(tLabel(labels, "reviewTitle"))}</h2>` +
+      `<p>${escapeHtml(tLabel(labels, "reviewHi", { name: customerName || "there" }))}</p>` +
+      `<p>${tLabel(labels, "reviewBody", { barber: escapeHtml(barber) })}</p>` +
+      `<p style="margin:20px 0;"><a href="${escapeHtml(reviewUrl)}" style="display:inline-block;background:#111;color:#FFD700;padding:12px 18px;border-radius:999px;text-decoration:none;font-weight:700;">${escapeHtml(tLabel(labels, "reviewCta"))}</a></p>` +
+      `<p style="color:#666;font-size:13px;">${escapeHtml(tLabel(labels, "reviewAppLink"))} <a href="${escapeHtml(appLink)}">${escapeHtml(appLink)}</a></p>` +
+      `<p style="color:#666;font-size:13px;">${escapeHtml(tLabel(labels, "reviewNote"))}</p>` +
       `</div>`;
     return await sendEmail({ to: email, subject, html, label: "review_prompt_customer" });
   } catch (e) {
