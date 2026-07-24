@@ -94,5 +94,5 @@ if (token) {
   );
 }
 
-console.log("\nBookable filter (mobile): verification_status=approved, booking_hidden=false,");
-console.log("active barber role on linked app_users, shop mobile_app_access + approval, QA names excluded.\n");
+console.log("\nBookable filter (mobile/website): verification_status=approved, booking_hidden=false,");
+console.log("platform IFCDC house OR (approved shop + active barber user); verify/QA/demo excluded.\n");
