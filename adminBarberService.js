@@ -13,10 +13,10 @@ const require = createRequire(import.meta.url);
 const pushNotifier = require("./pushNotifier.cjs");
 const { isQaTestEmail, isQaTestLabel } = require("./barberBookingPolicy.cjs");
 
-/** `barbers.business_id` is TEXT in some DBs (e.g. legacy `default`); `businesses.id` is BIGINT. */
+/** `barbers.business_id` is TEXT in some DBs (e.g. legacy `default` / `0`); `businesses.id` is BIGINT. */
 export function barberBusinessIdSql(alias = "b") {
   return `CASE
-    WHEN ${alias}.business_id IS NOT NULL AND btrim(${alias}.business_id) ~ '^[0-9]+$' THEN btrim(${alias}.business_id)::bigint
+    WHEN ${alias}.business_id IS NOT NULL AND btrim(${alias}.business_id) ~ '^[1-9][0-9]*$' THEN btrim(${alias}.business_id)::bigint
     ELSE NULL
   END`;
 }

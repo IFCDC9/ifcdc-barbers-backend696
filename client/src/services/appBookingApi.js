@@ -7,6 +7,9 @@ import { enrichBookingServicesWithPublishedStyles } from "../lib/bookingServiceI
 import { getStoredToken } from "../lib/authHeaders.js";
 
 const BOOKING_FETCH_TIMEOUT_MS = 25_000;
+/** Render free/sleeping services often need >25s on first wake; barber list is the first booking call. */
+const BARBERS_FETCH_TIMEOUT_MS = 55_000;
+const BARBERS_FETCH_ATTEMPTS = 3;
 export const SERVICES_FETCH_TIMEOUT_MS = 12_000;
 const FINALIZE_RETRY_ATTEMPTS = 4;
 const FINALIZE_RETRY_BASE_MS = 1200;
@@ -120,36 +123,73 @@ export async function fetchBookingServices({ barberName, barberId }) {
 
 export async function pingBookingApi() {
   const primary = apiUrl("/api/app-bookings/health");
-  let res = await bookingFetch(primary, { method: "GET", headers: { Accept: "application/json" } });
-  if (res.status === 404) {
-    res = await bookingFetch(apiUrl("/api/health"), { method: "GET", headers: { Accept: "application/json" } });
+  try {
+    let res = await bookingFetch(primary, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      timeoutMs: BARBERS_FETCH_TIMEOUT_MS,
+    });
+    if (res.status === 404) {
+      res = await bookingFetch(apiUrl("/api/health"), {
+        method: "GET",
+        headers: { Accept: "application/json" },
+        timeoutMs: BARBERS_FETCH_TIMEOUT_MS,
+      });
+    }
+    const json = await parseJson(res);
+    return { ok: res.ok, status: res.status, url: res.url, body: json };
+  } catch {
+    return { ok: false, status: 0, url: primary, body: null };
   }
-  const json = await parseJson(res);
-  return { ok: res.ok, status: res.status, url: res.url, body: json };
+}
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
 }
 
 export async function fetchBarbersList(providerType) {
   const q = new URLSearchParams();
-  if (providerType) q.set("providerType", String(providerType));
-  const suffix = q.toString() ? `?${q.toString()}` : "";
-  const url = apiUrl(`/api/app-bookings/barbers${suffix}`);
-  let res;
-  try {
-    res = await bookingFetch(url, { headers: { Accept: "application/json" } });
-  } catch (e) {
-    const err = new Error(e?.name === "AbortError" ? "Request timed out" : e?.message || String(e));
-    err.status = e?.name === "AbortError" ? "timeout" : "network";
-    err.url = url;
-    throw err;
+  q.set("channel", "website");
+  if (providerType && !["all", "*"].includes(String(providerType).trim().toLowerCase())) {
+    q.set("providerType", String(providerType));
   }
-  const json = await parseJson(res);
-  if (!res.ok) {
-    const err = new Error(json.message || json.error || `HTTP ${res.status}`);
-    err.status = res.status;
-    err.url = url;
-    throw err;
+  const url = apiUrl(`/api/app-bookings/barbers?${q.toString()}`);
+
+  // Wake sleeping Render dynos before the real list call (best-effort).
+  await pingBookingApi();
+
+  let lastErr;
+  for (let attempt = 1; attempt <= BARBERS_FETCH_ATTEMPTS; attempt += 1) {
+    let res;
+    try {
+      res = await bookingFetch(url, {
+        headers: { Accept: "application/json" },
+        timeoutMs: BARBERS_FETCH_TIMEOUT_MS,
+      });
+    } catch (e) {
+      lastErr = new Error(e?.name === "AbortError" ? "Request timed out" : e?.message || String(e));
+      lastErr.status = e?.name === "AbortError" ? "timeout" : "network";
+      lastErr.url = url;
+      if (attempt < BARBERS_FETCH_ATTEMPTS) {
+        await sleep(800 * attempt);
+        continue;
+      }
+      throw lastErr;
+    }
+    const json = await parseJson(res);
+    if (!res.ok) {
+      lastErr = new Error(json.message || json.error || `HTTP ${res.status}`);
+      lastErr.status = res.status;
+      lastErr.url = url;
+      if (res.status >= 500 && attempt < BARBERS_FETCH_ATTEMPTS) {
+        await sleep(800 * attempt);
+        continue;
+      }
+      throw lastErr;
+    }
+    return Array.isArray(json) ? json : Array.isArray(json.barbers) ? json.barbers : [];
   }
-  return Array.isArray(json) ? json : Array.isArray(json.barbers) ? json.barbers : [];
+  throw lastErr || new Error("Could not load providers.");
 }
 
 export async function fetchAvailableSlots({ barberName, barberId, dateLabel, durationMinutes }) {
@@ -212,10 +252,6 @@ export async function startAppBookingCheckout(payload) {
     throw err;
   }
   return json;
-}
-
-function sleep(ms) {
-  return new Promise((r) => setTimeout(r, ms));
 }
 
 function isRetryableFinalizeError(err) {

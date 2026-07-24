@@ -29,4 +29,6 @@ test("bookableBarberWhereSql requires approved active barber role", () => {
   assert.match(sql, /booking_hidden.*false/i);
   assert.match(sql, /role.*barber/i);
   assert.match(sql, /release test/);
+  // Legacy business_id "0" must not cast to businesses.id=0 (no such shop).
+  assert.match(sql, /\^\[1-9\]\[0-9\]\*/);
 });

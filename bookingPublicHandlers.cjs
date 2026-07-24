@@ -4,25 +4,6 @@
 const { fetchPublicBarberServices, stripQuotes } = require("./bookingServicesCatalog.cjs");
 const { bookableBarberWhereSql } = require("./barberBookingPolicy.cjs");
 
-const BARBER_BUSINESS_ID_SQL = `CASE
-  WHEN b.business_id IS NOT NULL AND btrim(b.business_id) ~ '^[0-9]+$' THEN btrim(b.business_id)::bigint
-  ELSE NULL
-END`;
-
-function shopChannelAccessSql(channel) {
-  const col = channel === "mobile" ? "mobile_app_access_enabled" : "website_access_enabled";
-  return `(
-    ${BARBER_BUSINESS_ID_SQL} IS NULL
-    OR EXISTS (
-      SELECT 1 FROM businesses biz
-      WHERE biz.id = ${BARBER_BUSINESS_ID_SQL}
-        AND COALESCE(biz.${col}, true) = true
-        AND lower(coalesce(biz.approval_status, 'approved')) = 'approved'
-        AND lower(coalesce(biz.account_status, 'active')) NOT IN ('suspended', 'disabled')
-    )
-  )`;
-}
-
 async function resolveBarberRowByName(dbQuery, barberName) {
   const br = await dbQuery(
     `SELECT id, name, business_id FROM barbers WHERE lower(trim(name)) = lower(trim($1)) ORDER BY id ASC LIMIT 1`,
@@ -65,12 +46,26 @@ async function handlePublicBarberServicesGet(req, res, dbQuery) {
   });
 }
 
+function resolvePublicBookingChannel(req) {
+  const raw = stripQuotes(req.query?.channel ?? req.query?.bookingChannel ?? "");
+  const ch = String(raw || "").trim().toLowerCase();
+  if (ch === "website" || ch === "web") return "website";
+  if (ch === "mobile" || ch === "app") return "mobile";
+  const origin = String(req.get?.("origin") || req.get?.("referer") || "").toLowerCase();
+  if (origin.includes("ifcdcbarbersapp.com") || origin.includes("ifcdc-barbers-frontend")) {
+    return "website";
+  }
+  return "mobile";
+}
+
 /**
- * GET /api/app-bookings/barbers — bookable barber list for mobile picker (Postgres only).
+ * GET /api/app-bookings/barbers — bookable barber list for mobile/website pickers (Postgres only).
  */
 async function handlePublicBarbersListGet(req, res, dbQuery) {
   const providerTypeRaw = stripQuotes(req.query?.providerType ?? req.query?.provider_type ?? "");
-  const providerType = providerTypeRaw ? String(providerTypeRaw).trim().toLowerCase() : "";
+  let providerType = providerTypeRaw ? String(providerTypeRaw).trim().toLowerCase() : "";
+  if (!providerType || providerType === "all" || providerType === "*") providerType = "";
+  const channel = resolvePublicBookingChannel(req);
   let rows = [];
   try {
     const r = await dbQuery(
@@ -81,11 +76,16 @@ async function handlePublicBarbersListGet(req, res, dbQuery) {
         COALESCE(NULLIF(trim(p.profile_image_url), ''), NULLIF(trim(b.profile_image), '')) AS photo,
         COALESCE(b.provider_type, 'barber') AS provider_type
       FROM barbers b
-      LEFT JOIN barber_profiles p
-        ON p.id::text = b.id::text
-        OR lower(trim(p.name)) = lower(trim(b.name))
+      LEFT JOIN LATERAL (
+        SELECT bp.name, bp.profile_image_url
+        FROM barber_profiles bp
+        WHERE bp.id::text = b.id::text
+           OR (b.name IS NOT NULL AND lower(trim(bp.name)) = lower(trim(b.name)))
+        ORDER BY CASE WHEN bp.id::text = b.id::text THEN 0 ELSE 1 END
+        LIMIT 1
+      ) p ON true
       WHERE COALESCE(NULLIF(trim(p.name), ''), NULLIF(trim(b.name), '')) IS NOT NULL
-        AND ${bookableBarberWhereSql({ channel: "mobile" })}
+        AND ${bookableBarberWhereSql({ channel })}
         ${providerType ? "AND lower(coalesce(b.provider_type, 'barber')) = lower($1)" : ""}
       ORDER BY lower(COALESCE(NULLIF(trim(p.name), ''), NULLIF(trim(b.name), ''))) ASC
       LIMIT 500
@@ -98,7 +98,7 @@ async function handlePublicBarbersListGet(req, res, dbQuery) {
       `SELECT b.id, b.name, b.profile_image AS photo
        FROM barbers b
        WHERE b.name IS NOT NULL AND trim(b.name) <> ''
-         AND ${bookableBarberWhereSql({ channel: "mobile" })}
+         AND ${bookableBarberWhereSql({ channel })}
        ORDER BY lower(trim(b.name)) ASC
        LIMIT 500`,
     );

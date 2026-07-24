@@ -480,42 +480,71 @@ export async function fetchOccupiedSlots({ barberName, dateLabel }) {
  */
 export async function fetchBarbersList(providerType) {
   logApiEnvOnce();
+  const BARBERS_FETCH_TIMEOUT_MS = 55_000;
+  const BARBERS_FETCH_ATTEMPTS = 3;
   const q = new URLSearchParams();
-  if (providerType) q.set("providerType", String(providerType));
-  const suffix = q.toString() ? `?${q.toString()}` : "";
-  const url = apiFullUrl(`/api/app-bookings/barbers${suffix}`);
+  q.set("channel", "mobile");
+  if (providerType && !["all", "*"].includes(String(providerType).trim().toLowerCase())) {
+    q.set("providerType", String(providerType));
+  }
+  const url = apiFullUrl(`/api/app-bookings/barbers?${q.toString()}`);
   console.log("BOOKING API:", url);
   console.log("[IFCDC] BARBERS GET:", url);
-  let res;
+
+  // Best-effort wake for sleeping Render dynos.
   try {
-    res = await bookingFetch(url, { headers: { Accept: "application/json" } });
-  } catch (e) {
-    const isTimeout = e instanceof Error && e.name === "AbortError";
-    const message = e instanceof Error ? e.message : String(e);
-    console.warn("BOOKING RESPONSE: network", { url, error: message, timeout: isTimeout });
-    const err = new Error(isTimeout ? "Request timed out" : `Network error: ${message}`);
-    err.status = isTimeout ? "timeout" : "network";
-    err.url = url;
-    throw err;
+    await bookingFetch(apiFullUrl("/api/health"), {
+      headers: { Accept: "application/json" },
+      timeoutMs: BARBERS_FETCH_TIMEOUT_MS,
+    });
+  } catch {
+    /* continue to real request */
   }
-  console.log("BOOKING RESPONSE:", res.status);
-  const json = await parseJson(res);
-  console.log(
-    "BOOKING DATA:",
-    Array.isArray(json)
-      ? `array(${json.length})`
-      : json && typeof json === "object"
-        ? Object.keys(json).join(",")
-        : String(json),
-  );
-  if (!res.ok) {
-    const err = new Error(json.message || json.error || `HTTP ${res.status}`);
-    err.status = res.status;
-    err.url = url;
-    throw err;
+
+  let lastErr;
+  for (let attempt = 1; attempt <= BARBERS_FETCH_ATTEMPTS; attempt += 1) {
+    let res;
+    try {
+      res = await bookingFetch(url, {
+        headers: { Accept: "application/json" },
+        timeoutMs: BARBERS_FETCH_TIMEOUT_MS,
+      });
+    } catch (e) {
+      const isTimeout = e instanceof Error && e.name === "AbortError";
+      const message = e instanceof Error ? e.message : String(e);
+      console.warn("BOOKING RESPONSE: network", { url, error: message, timeout: isTimeout, attempt });
+      lastErr = new Error(isTimeout ? "Request timed out" : `Network error: ${message}`);
+      lastErr.status = isTimeout ? "timeout" : "network";
+      lastErr.url = url;
+      if (attempt < BARBERS_FETCH_ATTEMPTS) {
+        await sleep(800 * attempt);
+        continue;
+      }
+      throw lastErr;
+    }
+    console.log("BOOKING RESPONSE:", res.status);
+    const json = await parseJson(res);
+    console.log(
+      "BOOKING DATA:",
+      Array.isArray(json)
+        ? `array(${json.length})`
+        : json && typeof json === "object"
+          ? Object.keys(json).join(",")
+          : String(json),
+    );
+    if (!res.ok) {
+      lastErr = new Error(json.message || json.error || `HTTP ${res.status}`);
+      lastErr.status = res.status;
+      lastErr.url = url;
+      if (res.status >= 500 && attempt < BARBERS_FETCH_ATTEMPTS) {
+        await sleep(800 * attempt);
+        continue;
+      }
+      throw lastErr;
+    }
+    return Array.isArray(json) ? json : Array.isArray(json.barbers) ? json.barbers : [];
   }
-  const list = Array.isArray(json) ? json : Array.isArray(json.barbers) ? json.barbers : [];
-  return list;
+  throw lastErr || new Error("Could not load providers.");
 }
 
 /** @deprecated Legacy path — use startAppBookingCheckout. */

@@ -592,7 +592,9 @@ export default function BookingWizard() {
           <div style={{ height: 12 }} />
           {barbersLoading ? (
             <p className="ifcdc-page-hint">
-              {t("web.bookingWizard.loading", { defaultValue: "Loading…" })}
+              {t("web.bookingWizard.loadingBarbers", {
+                defaultValue: "Loading barbers… If this is the first visit in a while, the server may take up to a minute to wake.",
+              })}
             </p>
           ) : null}
           {barbersError ? <p className="ifcdc-error-msg">{barbersError}</p> : null}

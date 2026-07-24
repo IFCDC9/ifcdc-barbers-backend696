@@ -1,8 +1,9 @@
 /**
  * Shared rules for which barbers appear on customer-facing booking screens.
  */
+/** Positive numeric shop ids only — legacy `0` / empty placeholders are treated as unassigned. */
 const BARBER_BUSINESS_ID_SQL = `CASE
-  WHEN b.business_id IS NOT NULL AND btrim(b.business_id) ~ '^[0-9]+$' THEN btrim(b.business_id)::bigint
+  WHEN b.business_id IS NOT NULL AND btrim(b.business_id) ~ '^[1-9][0-9]*$' THEN btrim(b.business_id)::bigint
   ELSE NULL
 END`;
 
