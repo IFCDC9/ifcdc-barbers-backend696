@@ -32,7 +32,7 @@ import {
 
 const BUILD_LABEL = "BUILD 26";
 
-console.log("[startup] ROOT START", {
+if (__DEV__) console.log("[startup] ROOT START", {
   buildLabel: BUILD_LABEL,
   platform: Platform.OS,
   version: String(Platform.Version),

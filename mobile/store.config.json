@@ -1,7 +1,7 @@
 {
   "configVersion": 0,
   "apple": {
-    "version": "1.1.8",
+    "version": "1.1.9",
     "copyright": "2026 IFCDC Barbers",
     "release": {
       "automaticRelease": true
@@ -24,7 +24,7 @@
         "title": "IFCDC Barbers",
         "subtitle": "Book cuts with style photos",
         "privacyPolicyUrl": "https://ifcdcbarbersapp.com/privacy",
-        "releaseNotes": "Version 1.1.8 (Build 64)\n\n• Redesigned Secure Checkout makes debit and credit card payment clear and prominent\n• Card checkout no longer requires a PayPal account when guest card checkout is offered\n• Separate card, PayPal, and eligible Pay Later choices\n• Full booking summary now shows service, barber, date, time, tip, discount, fee, and total\n• Apply loyalty rewards and configured promo codes before payment",
+        "releaseNotes": "Version 1.1.9 (Build 71)\n\n• Nine-language customer experience (English, Spanish, French, Haitian Creole, Portuguese, Arabic, Chinese, Korean, Vietnamese)\n• Super Admin Manual Booking Bypass Mode for booking clients without payment restrictions\n• More reliable PayPal checkout capture and clearer payment errors\n• Profile language preference saves and applies across the app immediately\n• Stability and Admin tooling improvements for production release",
         "screenshots": {
           "APP_IPAD_PRO_3GEN_129": [
             "store/apple/screenshot/en-US/APP_IPAD_PRO_3GEN_129/iPad Pro 13-inch (M4)-06_AURA.png",
@@ -86,7 +86,7 @@
       "demoUsername": "apple.review@ifcdcbarbersapp.com",
       "demoPassword": "IFCDC-Review2026!",
       "demoRequired": true,
-      "notes": "APP REVIEW NOTES — Build 64 (Version 1.1.8)\n\nReview Account:\nEmail: apple.review@ifcdcbarbersapp.com\nPassword: IFCDC-Review2026!\n\nWhat's new:\n• Secure Checkout now presents debit/credit card first and PayPal second\n• Customers may use PayPal guest card checkout without a PayPal account when PayPal offers it\n• Pay Later is shown only when PayPal determines the customer is eligible\n• Checkout shows service, barber, date, time, tip, discount, platform fee, and total before payment\n• Loyalty rewards and configured promo codes can be applied before payment\n\nCustomer booking flow:\nHome → Book → provider → service → date/time → choose reward/tip/payment method → PayPal LIVE secure checkout.\n\nPayment processing:\nPayPal remains the payment processor. Choosing Card requests PayPal's guest-card billing experience; choosing PayPal requests PayPal login. Funding availability is determined by PayPal.\n\nRewards:\nProfile → Rewards. Five points are awarded per paid, completed appointment. No points are awarded for cancelled, refunded, no-show, failed, or duplicate bookings.\n\nAURA:\nAURA is a text assistant for booking information and does not process payments.\n\nAccount Deletion:\nProfile → Delete Account → Type DELETE → Confirm\n\nBackend: https://ifcdc-barbers-backend696.onrender.com (live PayPal)\nBuild: Version 1.1.8 (Build 64)"
+      "notes": "APP REVIEW NOTES — Build 71 (Version 1.1.9)\n\nReview Account:\nEmail: apple.review@ifcdcbarbersapp.com\nPassword: IFCDC-Review2026!\n\nWhat's new:\n• Multilingual customer UI (9 languages) with Profile language preference\n• Super Admin Manual Booking Bypass Mode (Admin → Book for Client)\n• PayPal capture reliability improvements\n• Secure Checkout with card / PayPal / eligible Pay Later options\n• Loyalty rewards and promo codes before payment\n\nCustomer booking flow:\nHome → Book → provider → service → date/time → choose reward/tip/payment method → PayPal LIVE secure checkout.\n\nPayment processing:\nPayPal remains the payment processor. Choosing Card requests PayPal's guest-card billing experience; choosing PayPal requests PayPal login. Funding availability is determined by PayPal.\n\nRewards:\nProfile → Rewards. Five points are awarded per paid, completed appointment. No points are awarded for cancelled, refunded, no-show, failed, or duplicate bookings.\n\nLanguage:\nProfile → Language. Selection applies immediately and persists after relaunch.\n\nAURA:\nAURA is a text assistant for booking information and does not process payments.\n\nAccount Deletion:\nProfile → Delete Account → Type DELETE → Confirm\n\nBackend: https://ifcdc-barbers-backend696.onrender.com (live PayPal)\nBuild: Version 1.1.9 (Build 71)"
     }
   }
 }

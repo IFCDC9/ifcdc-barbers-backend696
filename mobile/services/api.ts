@@ -56,7 +56,7 @@ function parseApiErrorDetail(res: Response, body: Record<string, unknown>): stri
 async function apiFetchOnce(path: string, options: ApiFetchOptions = {}) {
   const url = path.startsWith("http") ? path : apiFullUrl(path);
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  console.log("[apiFetch]", options.method || "GET", url);
+  if (__DEV__) console.log("[apiFetch]", options.method || "GET", url);
   const headers = new Headers(options.headers || {});
 
   if (!headers.has("Content-Type") && options.body) {

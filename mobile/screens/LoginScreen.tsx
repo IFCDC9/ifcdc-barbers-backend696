@@ -97,7 +97,7 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
           setBusy(true);
           const responseData = await exchangeGoogleIdToken(BACKEND_URL, idToken, ac.signal);
           const wrapped = { data: responseData };
-          console.log("GOOGLE RESPONSE:", wrapped.data);
+          if (__DEV__) console.log("[auth] Google login response ok");
 
           if (responseData.token) {
             try {
