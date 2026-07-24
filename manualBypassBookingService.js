@@ -269,21 +269,34 @@ export async function createManualBypassBooking({
     body?.service || body?.serviceName,
     body?.price ?? body?.servicePrice,
   );
+  const durationOverride = Number(body?.durationMinutes ?? body?.duration_minutes ?? body?.duration);
+  if (Number.isFinite(durationOverride) && durationOverride > 0) {
+    service.durationMinutes = Math.max(1, Math.round(durationOverride));
+  }
 
   const notes = text(body?.notes || body?.appointmentNotes || body?.appointment_notes) || null;
   const reason = text(body?.reason || body?.bypassReason || body?.bypass_reason) || null;
 
-  const { validateBookingSlot } = await import("./barberSlotEngine.js");
-  const slotCheck = await validateBookingSlot(barberKey, dateStr, slotTimeLabel, barberName, {
-    durationMinutes: service.durationMinutes,
-  });
-  if (!slotCheck.ok) {
-    return {
-      ok: false,
-      status: 409,
-      code: slotCheck.code || "slot_unavailable",
-      message: slotCheck.message || "That time is not available.",
-    };
+  // Bypass Mode skips availability / booking-window restrictions unless Super Admin
+  // explicitly opts in via enforceAvailability / enforce_availability = true.
+  const enforceAvailability =
+    body?.enforceAvailability === true
+    || body?.enforce_availability === true
+    || String(body?.enforceAvailability || body?.enforce_availability || "").toLowerCase() === "true";
+
+  if (enforceAvailability) {
+    const { validateBookingSlot } = await import("./barberSlotEngine.js");
+    const slotCheck = await validateBookingSlot(barberKey, dateStr, slotTimeLabel, barberName, {
+      durationMinutes: service.durationMinutes,
+    });
+    if (!slotCheck.ok) {
+      return {
+        ok: false,
+        status: 409,
+        code: slotCheck.code || "slot_unavailable",
+        message: slotCheck.message || "That time is not available.",
+      };
+    }
   }
 
   let haircutPrice = service.price;
@@ -291,7 +304,9 @@ export async function createManualBypassBooking({
   let total = haircutPrice;
   let amountPaid = 0;
   let remaining = haircutPrice;
-  let paymentStatus = "unpaid";
+  let paymentStatus = "bypassed";
+  let paymentMethod = "admin";
+  let bookingSource = "super_admin";
   let bookingStatus = "confirmed";
   let isPaidBooking = false;
   let paymentProvider = "manual_bypass";
@@ -303,26 +318,30 @@ export async function createManualBypassBooking({
     amountPaid = 0;
     remaining = 0;
     platformFee = 0;
-    paymentStatus = "complimentary";
+    paymentStatus = "bypassed";
+    paymentMethod = "admin";
   } else if (bypassType === BYPASS_PAYMENT_TYPES.STAFF_TRAINING) {
     haircutPrice = 0;
     total = 0;
     amountPaid = 0;
     remaining = 0;
     platformFee = 0;
-    paymentStatus = "staff_training";
+    paymentStatus = "bypassed";
+    paymentMethod = "admin";
   } else if (bypassType === BYPASS_PAYMENT_TYPES.PAY_AT_SHOP) {
     platformFee = 0;
     total = haircutPrice;
     amountPaid = 0;
     remaining = haircutPrice;
-    paymentStatus = "pay_at_shop";
+    paymentStatus = "bypassed";
+    paymentMethod = "admin";
   } else if (bypassType === BYPASS_PAYMENT_TYPES.PAID_ONLINE) {
     platformFee = round2(BARBER_PLATFORM_FEE_USD);
     total = round2(haircutPrice + platformFee);
     amountPaid = 0;
     remaining = total;
     paymentStatus = "unpaid";
+    paymentMethod = "paypal";
     bookingStatus = "pending_payment";
     paymentProvider = "paypal";
     isPaidBooking = false;
@@ -352,24 +371,24 @@ export async function createManualBypassBooking({
        user_id, customer_name, customer_email, barber_name, barber_id, service,
        service_duration_minutes, date, time, amount,
        total_price, service_price, deposit_amount, amount_paid, remaining_balance, balance_due,
-       payment_type, payment_status, payment_provider, paypal_order_id, paypal_capture_id,
+       payment_type, payment_status, payment_method, payment_provider, paypal_order_id, paypal_capture_id,
        platform_fee, total_amount, booking_status, is_paid_booking,
        platform_fee_status, barber_payout_amount, barber_fee_billed, tip_amount, total_paid,
-       business_id, style_id, style_title,
+       business_id, style_id, style_title, booking_source,
        manual_bypass, bypass_payment_type, bypass_reason, bypass_created_by,
        bypass_created_by_email, bypass_created_at, appointment_notes
      ) VALUES (
        $1::uuid, $2, $3, $4, $5, $6,
        $7, $8::date, $9::time, $10,
        $11, $12, 0, $13, $14, $14,
-       $15, $16, $17, $18, $19,
-       $20, $21, $22, $23,
-       $24, $25, false, $26, $27,
-       $28, $29, $30,
-       true, $31, $32, $33::uuid,
-       $34, NOW(), $35
+       $15, $16, $17, $18, $19, $20,
+       $21, $22, $23, $24,
+       $25, $26, false, $27, $28,
+       $29, $30, $31, $32,
+       true, $33, $34, $35::uuid,
+       $36, NOW(), $37
      )
-     RETURNING id, booking_status, payment_status, total_price, total_amount, platform_fee,
+     RETURNING id, booking_status, payment_status, payment_method, booking_source, total_price, total_amount, platform_fee,
                is_paid_booking, customer_name, customer_email, barber_name, barber_id,
                service, date::text AS date, to_char(time,'HH24:MI') AS time,
                manual_bypass, bypass_payment_type, bypass_reason, bypass_created_by_email,
@@ -391,6 +410,7 @@ export async function createManualBypassBooking({
       remaining,
       paymentType,
       paymentStatus,
+      paymentMethod,
       paymentProvider,
       syntheticOrder,
       syntheticCapture,
@@ -405,6 +425,7 @@ export async function createManualBypassBooking({
       businessId != null && Number.isFinite(Number(businessId)) ? Number(businessId) : null,
       service.id,
       service.title,
+      bookingSource,
       bypassType,
       reason,
       actorId,

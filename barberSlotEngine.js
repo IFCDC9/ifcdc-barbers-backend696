@@ -633,14 +633,18 @@ export async function validateBookingSlot(
     return { ok: false, code: "blocked_date", message: personalized };
   }
 
+  let openSchedule = schedule;
   let allowedMinutes = buildScheduleSlotMinutes(schedule, dateStr);
   if (!allowedMinutes.length && !(schedule.availability || []).some((row) => !row.is_off)) {
-    const fallbackSchedule = {
+    // Empty availability falls back to demo hours for slot generation — duration
+    // checks must use the same schedule or every start time fails duration_overflow.
+    openSchedule = {
       ...demoFallbackSchedule(),
       blockedDates: schedule.blockedDates,
       blockedDateMeta: schedule.blockedDateMeta,
+      timezone: schedule.timezone || demoFallbackSchedule().timezone,
     };
-    allowedMinutes = buildScheduleSlotMinutes(fallbackSchedule, dateStr);
+    allowedMinutes = buildScheduleSlotMinutes(openSchedule, dateStr);
   }
   const bookingMin = parseTimeToMinutes(timeSql);
   if (bookingMin == null) return { ok: false, code: "bad_time", message: "Invalid time" };
@@ -664,7 +668,7 @@ export async function validateBookingSlot(
     return { ok: false, code: "past_time", message: "That time has already passed. Please choose a later time." };
   }
 
-  if (!serviceDurationFitsSchedule(schedule, dateStr, bookingMin, requestedDuration)) {
+  if (!serviceDurationFitsSchedule(openSchedule, dateStr, bookingMin, requestedDuration)) {
     return {
       ok: false,
       code: "duration_overflow",

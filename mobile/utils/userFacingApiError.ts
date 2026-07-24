@@ -36,25 +36,32 @@ export function userFacingApiError(e: unknown, fallback = DEFAULT): string {
     }
     return "Session expired. Sign in again.";
   }
-  if (msg.includes("500") || msg.includes("502") || msg.includes("503")) {
-    return `${UX.errorConnection} ${UX.errorRetry}`;
-  }
 
   const detail = msg.split(" — ").slice(1).join(" — ").trim();
   const candidate = sanitize(detail || msg);
-  if (candidate && candidate.length <= 140) {
+
+  // Prefer API message body for 4xx/5xx (including 500) so admin tools can diagnose.
+  if (candidate && candidate.length <= 280) {
     try {
-      const parsed = JSON.parse(candidate) as { message?: string; error?: string };
-      if (parsed.message) {
-        const cleaned = sanitize(parsed.message);
-        if (cleaned) return cleaned;
-      }
+      const parsed = JSON.parse(candidate) as { message?: string; error?: string; detail?: string; code?: string };
+      const parts = [parsed.message, parsed.detail, parsed.code ? `[${parsed.code}]` : ""]
+        .map((p) => sanitize(String(p || "")))
+        .filter(Boolean);
+      if (parts.length) return parts.join(" ").slice(0, 280);
       if (typeof parsed.error === "string") {
         const cleaned = sanitize(parsed.error);
         if (cleaned) return cleaned;
       }
     } catch {
-      if (!candidate.startsWith("http")) return candidate;
+      if (!candidate.startsWith("http")) {
+        // Drop transport noise like "500 Internal Server Error" prefixes when a body message exists.
+        const withoutStatus = candidate
+          .replace(/^\d{3}\s+[A-Za-z ]+\s*/i, "")
+          .replace(/^\[api\]\s*/i, "")
+          .trim();
+        if (withoutStatus) return withoutStatus.slice(0, 280);
+        return candidate.slice(0, 280);
+      }
     }
   }
 
@@ -66,13 +73,16 @@ export function userFacingApiError(e: unknown, fallback = DEFAULT): string {
         if (parsed.message) return sanitize(parsed.message);
         if (parsed.error === "user_not_found") return "Account not found. Sign out and sign in again.";
       } catch {
-        if (!detail404.startsWith("<") && detail404.length <= 140) return sanitize(detail404);
+        if (!detail404.startsWith("<") && detail404.length <= 280) return sanitize(detail404);
       }
     }
     return fallback;
   }
-  if (candidate && candidate.length <= 140 && !candidate.startsWith("http")) {
+  if (candidate && candidate.length <= 280 && !candidate.startsWith("http")) {
     return candidate;
+  }
+  if (msg.includes("500") || msg.includes("502") || msg.includes("503")) {
+    return `${UX.errorConnection} ${UX.errorRetry}`;
   }
   return fallback;
 }

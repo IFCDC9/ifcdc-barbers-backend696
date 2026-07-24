@@ -43,8 +43,12 @@ async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: nu
 
 function parseApiErrorDetail(res: Response, body: Record<string, unknown>): string {
   const message = String(body?.message || "").trim();
+  const detail = String(body?.detail || "").trim();
   const error = String(body?.error || "").trim();
-  if (message) return message;
+  const code = String(body?.code || "").trim();
+  if (message && detail && detail !== message) return `${message} (${detail})`;
+  if (message) return code && !message.includes(code) ? `${message} [${code}]` : message;
+  if (detail) return detail;
   if (error) return error;
   return `${res.status} ${res.statusText}`;
 }

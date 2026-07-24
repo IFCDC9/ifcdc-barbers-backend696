@@ -171,7 +171,13 @@ export function createManualBypassBookingRouter({ sendBookingEmail } = {}) {
       return res.status(201).json(result);
     } catch (e) {
       console.error("[manual-bypass] create failed:", e?.stack || e);
-      return res.status(500).json({ ok: false, message: "Could not create manual booking" });
+      const detail = String(e?.message || e || "unknown_error").slice(0, 500);
+      return res.status(500).json({
+        ok: false,
+        code: e?.code || "manual_bypass_create_failed",
+        message: "Could not create manual booking",
+        detail,
+      });
     }
   });
 

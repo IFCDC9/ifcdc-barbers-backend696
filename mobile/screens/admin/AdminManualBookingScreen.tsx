@@ -57,6 +57,7 @@ function AdminManualBookingScreenInner() {
   const [time, setTime] = useState("10:00 AM");
   const [notes, setNotes] = useState("");
   const [reason, setReason] = useState("");
+  const [enforceAvailability, setEnforceAvailability] = useState(false);
   const [busy, setBusy] = useState(false);
   const [loadingBarbers, setLoadingBarbers] = useState(true);
 
@@ -130,9 +131,13 @@ function AdminManualBookingScreenInner() {
         time,
         notes: notes.trim() || undefined,
         reason: reason.trim() || undefined,
+        enforceAvailability,
       });
       if (!result?.ok) {
-        throw new Error(result?.message || "Could not create booking");
+        const bits = [result?.message, result?.detail, result?.code ? `[${result.code}]` : ""]
+          .map((x) => String(x || "").trim())
+          .filter(Boolean);
+        throw new Error(bits.join(" ") || "Could not create booking");
       }
       const bookingId = result.booking?.id;
       const approveUrl = result.paypal?.approveUrl;
@@ -174,6 +179,7 @@ function AdminManualBookingScreenInner() {
     price,
     notes,
     reason,
+    enforceAvailability,
     navigation,
   ]);
 
@@ -329,6 +335,20 @@ function AdminManualBookingScreenInner() {
           onChangeText={setReason}
           multiline
         />
+
+        <Pressable
+          onPress={() => setEnforceAvailability((v) => !v)}
+          style={styles.optionWrap}
+        >
+          <ProfileCard style={[styles.option, enforceAvailability && styles.optionActive]}>
+            <Text style={styles.optionTitle}>
+              {enforceAvailability ? "Enforce availability: ON" : "Enforce availability: OFF"}
+            </Text>
+            <Text style={styles.optionSub}>
+              Off = Bypass Mode (book any time). On = respect the barber schedule.
+            </Text>
+          </ProfileCard>
+        </Pressable>
 
         <Pressable
           onPress={onSubmit}

@@ -19,6 +19,9 @@ export type ManualBookingPayload = {
   reason?: string;
   tipAmount?: number;
   sendEmail?: boolean;
+  /** When true, enforce barber schedule / availability. Default: false (full bypass). */
+  enforceAvailability?: boolean;
+  durationMinutes?: number;
 };
 
 async function readJson(res: Response) {
