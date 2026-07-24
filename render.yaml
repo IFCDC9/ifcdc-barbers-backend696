@@ -132,7 +132,8 @@ services:
     branch: main
     autoDeploy: true
     rootDir: client
-    buildCommand: npm install && npm run build
+    # Bake V2 flag into the Vite bundle so deploy works even before dashboard env sync.
+    buildCommand: npm install && VITE_MULTI_LANGUAGE_DROPDOWN_V2=1 npm run build
     staticPublishPath: ./dist
     routes:
       - type: rewrite
