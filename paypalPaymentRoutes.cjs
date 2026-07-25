@@ -176,6 +176,28 @@ async function probePayPalOAuthAndLog() {
 
 const router = express.Router();
 
+/**
+ * GET /api/paypal/client-id (also /api/payments/client-id)
+ * Public Client ID for the JS SDK. Safe to expose; never returns the secret.
+ * Website prefers VITE_PAYPAL_CLIENT_ID at build time and falls back to this route.
+ */
+router.get("/client-id", (_req, res) => {
+  const clientId = normalizePayPalEnvValue(process.env.PAYPAL_CLIENT_ID);
+  if (!clientId) {
+    return res.status(503).json({
+      ok: false,
+      error: "paypal_not_configured",
+      message: "PAYPAL_CLIENT_ID is not set on the server.",
+    });
+  }
+  res.set("Cache-Control", "public, max-age=300");
+  return res.json({
+    ok: true,
+    clientId,
+    environment: getPayPalEnvMode() === "live" ? "production" : "sandbox",
+  });
+});
+
 /** POST /api/payments/create-order — style-based: { styleId, barberId, paymentType?, tipPercent?, tipAmount? } — total computed server-side only */
 router.post("/create-order", async (req, res) => {
   try {
