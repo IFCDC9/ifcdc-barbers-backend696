@@ -34,6 +34,10 @@ const WEB_BASE = (
 
 /** Minimum deploy commits that include PayPal HTTPS return-url fix. */
 const PAYPAL_HTTPS_FIX_SHORTS = [
+  "0e1db7b0",
+  "79889812",
+  "084bd5a4",
+  "97576597",
   "c5d5407a",
   "00a6c8c8",
   "2164edca",
