@@ -2,10 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { HAIRCUT_CATEGORY_IDS, MAX_REVIEW_PHOTOS, BARBER_BADGE_DEFINITIONS } from "../socialPortfolioConstants.js";
 
-test("haircut categories include core fade and specialty styles", () => {
-  assert.ok(HAIRCUT_CATEGORY_IDS.has("skin_fade"));
-  assert.ok(HAIRCUT_CATEGORY_IDS.has("burst_fade"));
-  assert.ok(HAIRCUT_CATEGORY_IDS.has("hair_color"));
+test("haircut categories include core Discover taxonomy", () => {
+  assert.ok(HAIRCUT_CATEGORY_IDS.has("fades"));
+  assert.ok(HAIRCUT_CATEGORY_IDS.has("haircuts"));
+  assert.ok(HAIRCUT_CATEGORY_IDS.has("color"));
+  assert.equal(HAIRCUT_CATEGORY_IDS.has("skin_fade"), false, "legacy skin_fade aliases to fades");
 });
 
 test("review photo limit is capped at five", () => {
