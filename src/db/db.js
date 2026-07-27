@@ -21,9 +21,39 @@ function safeDecodeURIComponent(s) {
   }
 }
 
+/**
+ * Direct `db.<ref>.supabase.co` is often IPv6-only; Render has no IPv6 route (ENETUNREACH).
+ * Prefer Supabase transaction pooler (IPv4, port 6543) for production connectivity.
+ */
+function preferSupabaseTransactionPooler(raw) {
+  const s = String(raw || "").trim()
+  if (!s) return s
+  try {
+    const u = new URL(s)
+    const host = String(u.hostname || "").toLowerCase()
+    const m = host.match(/^db\.([a-z0-9]+)\.supabase\.co$/i)
+    if (!m) return s
+    const projectRef = m[1]
+    const poolerHost =
+      String(process.env.SUPABASE_POOLER_HOST || "").trim() ||
+      "aws-1-us-east-1.pooler.supabase.com"
+    const out = new URL(`postgresql://${poolerHost}:6543/postgres`)
+    out.username = `postgres.${projectRef}`
+    out.password = decodeURIComponent(u.password || "")
+    out.searchParams.set("sslmode", "require")
+    console.warn(
+      `[db] Rewrote direct Supabase host ${host}:5432 → transaction pooler ${poolerHost}:6543 (avoids IPv6 ENETUNREACH on Render)`
+    )
+    return out.toString()
+  } catch {
+    return s
+  }
+}
+
 /** Ensure Supabase URIs request TLS even if .env omitted sslmode. */
 function normalizeDatabaseUrl(raw) {
-  const s = String(raw || "").trim()
+  const preferred = preferSupabaseTransactionPooler(raw)
+  const s = String(preferred || "").trim()
   if (!s) return s
   try {
     const host = new URL(s).hostname.toLowerCase()
