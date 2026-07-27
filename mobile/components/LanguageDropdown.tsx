@@ -26,7 +26,7 @@ type Props = {
 
 /**
  * Searchable Language dropdown — options from getPickerLanguages() (feature-flag aware).
- * Shows English name + native name. No flags.
+ * Closes immediately on select, backdrop tap, or Android back (`onRequestClose`).
  */
 export default function LanguageDropdown({
   value,
@@ -52,6 +52,17 @@ export default function LanguageDropdown({
     );
   }, [options, query]);
 
+  const close = () => {
+    setOpen(false);
+    setQuery("");
+  };
+
+  const choose = (code: SupportedLanguageCode) => {
+    // Close first so the sheet dismisses even if onChange is async/slow.
+    close();
+    onChange(code);
+  };
+
   return (
     <View style={styles.wrap}>
       {label ? <Text style={styles.label}>{label}</Text> : null}
@@ -63,6 +74,7 @@ export default function LanguageDropdown({
         }}
         disabled={disabled}
         accessibilityRole="button"
+        accessibilityState={{ expanded: open, disabled }}
         accessibilityLabel={t("language.select", { defaultValue: "Language" })}
         style={({ pressed }) => [
           styles.trigger,
@@ -76,13 +88,24 @@ export default function LanguageDropdown({
             {selected.nativeName} · {selected.code}
           </Text>
         </View>
-        <Text style={styles.chevron}>▾</Text>
+        <Text style={styles.chevron}>{open ? "▴" : "▾"}</Text>
       </Pressable>
       {hint ? <Text style={styles.hint}>{hint}</Text> : null}
 
-      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
-        <Pressable style={styles.backdrop} onPress={() => setOpen(false)}>
-          <Pressable style={styles.sheet} onPress={() => undefined}>
+      <Modal
+        visible={open}
+        transparent
+        animationType="fade"
+        onRequestClose={close}
+      >
+        <View style={styles.backdrop}>
+          <Pressable
+            style={StyleSheet.absoluteFillObject}
+            onPress={close}
+            accessibilityRole="button"
+            accessibilityLabel={t("common.close", { defaultValue: "Close" })}
+          />
+          <View style={styles.sheet} accessibilityViewIsModal>
             <Text style={styles.sheetTitle}>
               {t("language.title", { defaultValue: "Language" })}
             </Text>
@@ -98,17 +121,18 @@ export default function LanguageDropdown({
             />
             <ScrollView style={{ maxHeight: 360 }} keyboardShouldPersistTaps="handled">
               {filtered.length === 0 ? (
-                <Text style={styles.empty}>{t("common.notFound", { defaultValue: "No matches" })}</Text>
+                <Text style={styles.empty}>
+                  {t("common.notFound", { defaultValue: "No matches" })}
+                </Text>
               ) : (
                 filtered.map((lang) => {
                   const active = lang.code === value;
                   return (
                     <Pressable
                       key={lang.code}
-                      onPress={() => {
-                        onChange(lang.code);
-                        setOpen(false);
-                      }}
+                      onPress={() => choose(lang.code)}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: active }}
                       style={({ pressed }) => [
                         styles.option,
                         active && styles.optionActive,
@@ -124,8 +148,8 @@ export default function LanguageDropdown({
                 })
               )}
             </ScrollView>
-          </Pressable>
-        </Pressable>
+          </View>
+        </View>
       </Modal>
     </View>
   );
@@ -169,6 +193,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(245,200,66,0.35)",
     padding: 16,
+    zIndex: 1,
   },
   sheetTitle: {
     color: theme.colors.gold,
