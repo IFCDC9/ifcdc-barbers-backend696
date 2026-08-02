@@ -222,7 +222,11 @@ async function updateArticle(dbQuery, id, payload, actor = {}) {
 
 function scoreArticle(article, q) {
   const hay = `${article.title} ${article.body} ${article.category} ${article.slug}`.toLowerCase();
-  const tokens = q.toLowerCase().split(/\s+/).filter((t) => t.length > 2);
+  const tokens = q
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((t) => t.length > 2);
   let score = 0;
   for (const t of tokens) {
     if (hay.includes(t)) score += 1;
@@ -301,14 +305,22 @@ async function answerKnowledgeQuestion(dbQuery, rawQuestion, { actor = "aura", u
   const approved = await listArticles(dbQuery, { status: "approved", includePrivate: false });
   const effective = approved.filter((a) => isEffective(a));
 
-  // Prefer category match then score.
+  // Prefer category match then score. Category alone is never enough — require
+  // real title/body token overlap so unrelated "policy" questions do not invent a match.
   const ranked = effective
-    .map((a) => ({ article: a, score: scoreArticle(a, question) + (a.category === category ? 3 : 0) }))
-    .filter((x) => x.score > 0)
-    .sort((a, b) => b.score - a.score);
+    .map((a) => {
+      const contentScore = scoreArticle(a, question);
+      return {
+        article: a,
+        contentScore,
+        score: contentScore + (a.category === category ? 2 : 0),
+      };
+    })
+    .filter((x) => x.contentScore >= 2)
+    .sort((a, b) => b.score - a.score || b.contentScore - a.contentScore);
 
   // Conflicting curated answers (near-tied scores) — escalate before guessing.
-  if (ranked.length >= 2 && ranked[0].score === ranked[1].score && ranked[0].score >= 2) {
+  if (ranked.length >= 2 && ranked[0].score === ranked[1].score && ranked[0].contentScore >= 2) {
     await logAuraAction(dbQuery, {
       actor,
       userId,
@@ -346,7 +358,7 @@ async function answerKnowledgeQuestion(dbQuery, rawQuestion, { actor = "aura", u
   let version = null;
   let articleId = null;
 
-  if (best && best.score >= 2) {
+  if (best && best.contentScore >= 2) {
     const a = best.article;
     articleId = a.id;
     version = a.version;

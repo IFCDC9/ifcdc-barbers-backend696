@@ -235,6 +235,31 @@ test("live services catalog answers pricing without inventing", async () => {
   assert.equal(out.source?.liveQueryKey, "services_catalog");
 });
 
+test("unrelated policy wording does not match cancellation article", async () => {
+  process.env.AURA_PHASE3_ENABLED = "1";
+  process.env.AURA_PHASE3_KNOWLEDGE = "1";
+  const { createArticle, answerKnowledgeQuestion } = require("../auraKnowledgeService.cjs");
+  const mem = createMemoryDb();
+  await createArticle(
+    mem.dbQuery,
+    {
+      title: "Cancellation policy",
+      body: "Please cancel at least 24 hours before your appointment.",
+      category: "policies",
+      status: "approved",
+      slug: "cancellation-policy",
+    },
+    { userId: null },
+  );
+  const out = await answerKnowledgeQuestion(
+    mem.dbQuery,
+    "What is the unpublished galactic loyalty moon policy?",
+  );
+  assert.equal(out.ok, false);
+  assert.equal(out.escalate, true);
+  assert.equal(out.reason, "missing_or_unapproved");
+});
+
 test("missing live data escalates instead of inventing", async () => {
   process.env.AURA_PHASE3_ENABLED = "1";
   process.env.AURA_PHASE3_KNOWLEDGE = "1";
@@ -254,26 +279,26 @@ test("conflicting approved articles escalate", async () => {
   await createArticle(
     mem.dbQuery,
     {
-      title: "Cancellation window A",
-      body: "Cancel 24 hours ahead.",
+      title: "Zenith window rule A",
+      body: "Zenith appointments require a 24 hour notice window.",
       category: "policies",
       status: "approved",
-      slug: "cancel-a",
+      slug: "zenith-window-a",
     },
     { userId: null },
   );
   await createArticle(
     mem.dbQuery,
     {
-      title: "Cancellation window B",
-      body: "Cancel 48 hours ahead.",
+      title: "Zenith window rule B",
+      body: "Zenith appointments require a 48 hour notice window.",
       category: "policies",
       status: "approved",
-      slug: "cancel-b",
+      slug: "zenith-window-b",
     },
     { userId: null },
   );
-  const out = await answerKnowledgeQuestion(mem.dbQuery, "What is the cancellation policy window?");
+  const out = await answerKnowledgeQuestion(mem.dbQuery, "What is the zenith notice window?");
   assert.equal(out.ok, false);
   assert.equal(out.reason, "conflicting_knowledge");
   assert.equal(out.escalate, true);
