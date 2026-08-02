@@ -98,6 +98,39 @@ function createMemoryDb() {
     if (s.includes("from styles")) {
       return { rows: [] };
     }
+    if (s.includes("from app_users")) {
+      return {
+        rows: [
+          {
+            id: params[0],
+            name: "Waitlist Test Customer",
+            email: `waitlist-test-${String(params[0]).slice(0, 8)}@pipeline-test.ifcdc.local`,
+          },
+        ],
+      };
+    }
+    if (s.includes("insert into bookings")) {
+      return {
+        rows: [
+          {
+            id: randomUUID(),
+            customer_name: params[0],
+            customer_email: params[1],
+            barber_id: params[2],
+            barber_name: params[3],
+            service: params[4],
+            date: params[5],
+            time: String(params[6]).slice(0, 5),
+            amount: params[7],
+            total_price: params[7],
+            payment_status: "unpaid",
+            booking_status: "confirmed",
+            is_paid_booking: false,
+            manual_bypass: false,
+          },
+        ],
+      };
+    }
     if (s.includes("insert into aura_action_logs")) {
       logs.push({
         action: params[2],
@@ -641,17 +674,21 @@ test("slot offer, decline, accept pending, race loses safely, no auto book/pay",
   });
   assert.equal(dupAccept.ok, false);
 
-  const bookingId = randomUUID();
   const claimed = await acceptSlotOffer(mem.dbQuery, {
     offerId: oB.offer.offerId,
     customerId: c2,
     validateSlotStillAvailable: alwaysAvailable,
     confirmBookingSummary: true,
-    bookingId,
   });
   assert.equal(claimed.ok, true, claimed.error || "claim failed");
   assert.equal(claimed.offer.status, "claimed");
   assert.equal(claimed.paymentTriggered, false);
+  assert.equal(claimed.paymentRequired, true);
+  assert.equal(claimed.paymentBypassed, false);
+  assert.equal(claimed.bookingCreated, true);
+  assert.ok(claimed.bookingId);
+  assert.equal(claimed.booking?.payment_status, "unpaid");
+  assert.equal(claimed.booking?.is_paid_booking, false);
 
   const lose = await acceptSlotOffer(mem.dbQuery, {
     offerId: oB.offer.offerId,

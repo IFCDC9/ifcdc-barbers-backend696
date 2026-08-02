@@ -765,8 +765,58 @@ async function declineSlotOffer(dbQuery, { offerId, customerId } = {}) {
 }
 
 /**
+ * Create unpaid booking from a claimed offer — preserves payment requirement (no bypass).
+ */
+async function createUnpaidBookingFromOffer(dbQuery, { offer, customerId, marker = "aura_waitlist_claim" } = {}) {
+  const user = await dbQuery(
+    `SELECT id, name, email FROM app_users WHERE id = $1::uuid LIMIT 1`,
+    [customerId],
+  );
+  const u = user.rows?.[0];
+  if (!u?.email) return { ok: false, error: "customer_email_required" };
+  const amount = offer.current_price != null && Number.isFinite(Number(offer.current_price))
+    ? Number(offer.current_price)
+    : null;
+  const notes = `AURA Phase 3B2 waitlist claim marker=${marker} offer=${offer.id}`;
+  const ins = await dbQuery(
+    `INSERT INTO bookings (
+       customer_name, customer_email, barber_id, barber_name, service,
+       date, time, amount, total_price, payment_status, booking_status, is_paid_booking,
+       notes, manual_bypass
+     ) VALUES (
+       $1, $2, $3::uuid, $4, $5,
+       $6::date, $7::time, $8, $8, 'unpaid', 'confirmed', false,
+       $9, false
+     )
+     RETURNING id, customer_name, customer_email, barber_id, barber_name, service,
+               date::text AS date, to_char(time, 'HH24:MI') AS time,
+               amount, total_price, payment_status, booking_status, is_paid_booking, manual_bypass`,
+    [
+      u.name || u.email,
+      u.email,
+      offer.barber_id || null,
+      offer.barber_name || null,
+      offer.service_name || null,
+      offer.slot_date,
+      offer.slot_time,
+      amount,
+      notes,
+    ],
+  );
+  const booking = ins.rows?.[0];
+  if (!booking?.id) return { ok: false, error: "booking_insert_failed" };
+  return {
+    ok: true,
+    booking,
+    paymentRequired: true,
+    paymentTriggered: false,
+    paymentBypassed: false,
+  };
+}
+
+/**
  * Atomic accept: only one customer/claim can win.
- * Does NOT create a booking yet — returns bookingSummaryPending confirmation requirement.
+ * With confirmBookingSummary, creates an unpaid booking (payment still required).
  */
 async function acceptSlotOffer(dbQuery, {
   offerId,
@@ -774,6 +824,7 @@ async function acceptSlotOffer(dbQuery, {
   validateSlotStillAvailable,
   confirmBookingSummary = false,
   bookingId = null,
+  bookingMarker = "aura_waitlist_claim",
 } = {}) {
   if (!slotRecoveryEnabled()) return { ok: false, error: "aura_phase3_slot_recovery_disabled" };
   await ensureAuraWaitlistTables(dbQuery);
@@ -789,8 +840,53 @@ async function acceptSlotOffer(dbQuery, {
   if (offer.status === "claimed") {
     return { ok: false, error: "already_claimed", offer: publicOffer(offer) };
   }
-  if (offer.status === "accepted_pending_booking" && confirmBookingSummary) {
-    if (!offer.claim_token) return { ok: false, error: "claim_token_missing" };
+
+  async function finalizeClaim(lockedOffer, claimToken) {
+    // Revalidate immediately before booking insert.
+    if (typeof validateSlotStillAvailable === "function") {
+      const slot = {
+        barberId: lockedOffer.barber_id,
+        barberName: lockedOffer.barber_name,
+        serviceName: lockedOffer.service_name,
+        slotDate: lockedOffer.slot_date,
+        slotTime: lockedOffer.slot_time,
+        currentPrice: lockedOffer.current_price,
+        location: lockedOffer.location,
+      };
+      const valid = await validateSlotStillAvailable(slot);
+      if (!valid?.ok) {
+        await dbQuery(
+          `UPDATE aura_slot_offers SET status='unavailable', updated_at=NOW() WHERE id=$1::uuid`,
+          [offerId],
+        );
+        await logAuraAction(dbQuery, {
+          actor: "aura",
+          userId: customerId,
+          action: "waitlist_offer_unavailable",
+          result: "revalidation_failed_at_confirm",
+          metadata: { offerId, reason: valid?.reason },
+        });
+        return {
+          ok: false,
+          error: "slot_unavailable",
+          message: "That slot is no longer available.",
+        };
+      }
+    }
+
+    let finalBookingId = bookingId;
+    let bookingRow = null;
+    if (!finalBookingId) {
+      const created = await createUnpaidBookingFromOffer(dbQuery, {
+        offer: lockedOffer,
+        customerId,
+        marker: bookingMarker,
+      });
+      if (!created.ok) return { ok: false, error: created.error || "booking_create_failed" };
+      finalBookingId = created.booking.id;
+      bookingRow = created.booking;
+    }
+
     const fulfilled = await dbQuery(
       `UPDATE aura_slot_offers SET
          status = 'claimed',
@@ -801,10 +897,13 @@ async function acceptSlotOffer(dbQuery, {
          AND status = 'accepted_pending_booking'
          AND claim_token = $4::uuid
        RETURNING *`,
-      [offerId, bookingId, customerId, offer.claim_token],
+      [offerId, finalBookingId, customerId, claimToken],
     );
     const done = fulfilled.rows?.[0];
-    if (!done) return { ok: false, error: "claim_finalize_failed" };
+    if (!done) {
+      // Rare race after booking insert — leave unpaid booking for admin cleanup via marker notes.
+      return { ok: false, error: "claim_finalize_failed", bookingId: finalBookingId };
+    }
     await dbQuery(
       `UPDATE aura_waitlist_requests SET status = 'fulfilled', updated_at = NOW()
        WHERE id = $1::uuid AND customer_id = $2::uuid`,
@@ -818,24 +917,46 @@ async function acceptSlotOffer(dbQuery, {
       actor: "customer",
       actorUserId: customerId,
     });
+    await recordRequestEvent(dbQuery, {
+      requestId: done.waitlist_request_id,
+      customerId,
+      eventType: "request_fulfilled",
+      snapshot: publicOffer(done),
+      actor: "customer",
+      actorUserId: customerId,
+    });
     await logAuraAction(dbQuery, {
       actor: "customer",
       userId: customerId,
       action: "waitlist_offer_claimed",
       result: "claimed",
-      bookingId,
-      metadata: { offerId, bookingId, paymentBypassed: false },
+      bookingId: finalBookingId,
+      metadata: {
+        offerId,
+        bookingId: finalBookingId,
+        paymentBypassed: false,
+        paymentRequired: true,
+        paymentStatus: bookingRow?.payment_status || "unpaid",
+      },
     });
     return {
       ok: true,
-      bookingCreated: Boolean(bookingId),
+      bookingCreated: true,
+      bookingId: finalBookingId,
+      booking: bookingRow,
       paymentTriggered: false,
+      paymentRequired: true,
+      paymentBypassed: false,
       autoBook: false,
       offer: publicOffer(done),
-      message: bookingId
-        ? "Slot claim recorded against the confirmed booking."
-        : "Claim reserved. Create the booking through the existing booking/payment flow.",
+      message:
+        "Appointment reserved from waitlist offer. Payment is still required through the existing checkout flow.",
     };
+  }
+
+  if (offer.status === "accepted_pending_booking" && confirmBookingSummary) {
+    if (!offer.claim_token) return { ok: false, error: "claim_token_missing" };
+    return finalizeClaim(offer, offer.claim_token);
   }
   if (offer.status !== "offered") {
     return { ok: false, error: "offer_not_actionable", status: offer.status };
@@ -949,6 +1070,7 @@ async function acceptSlotOffer(dbQuery, {
       pendingBookingConfirmation: true,
       bookingCreated: false,
       paymentTriggered: false,
+      paymentRequired: true,
       autoBook: false,
       offer: publicOffer(locked),
       bookingSummary: {
@@ -964,55 +1086,7 @@ async function acceptSlotOffer(dbQuery, {
     };
   }
 
-  // Final fulfillment mark only after explicit booking summary confirmation.
-  // Actual booking insert remains outside this module (existing booking/payment workflows).
-  const fulfilled = await dbQuery(
-    `UPDATE aura_slot_offers SET
-       status = 'claimed',
-       claimed_booking_id = $2::uuid,
-       updated_at = NOW()
-     WHERE id = $1::uuid
-       AND customer_id = $3::uuid
-       AND status = 'accepted_pending_booking'
-       AND claim_token = $4::uuid
-     RETURNING *`,
-    [offerId, bookingId, customerId, claimToken],
-  );
-  const done = fulfilled.rows?.[0];
-  if (!done) return { ok: false, error: "claim_finalize_failed" };
-
-  await dbQuery(
-    `UPDATE aura_waitlist_requests SET status = 'fulfilled', updated_at = NOW()
-     WHERE id = $1::uuid AND customer_id = $2::uuid`,
-    [done.waitlist_request_id, customerId],
-  );
-  await recordOfferEvent(dbQuery, {
-    offerId,
-    customerId,
-    eventType: "offer_claimed",
-    snapshot: publicOffer(done),
-    actor: "customer",
-    actorUserId: customerId,
-  });
-  await logAuraAction(dbQuery, {
-    actor: "customer",
-    userId: customerId,
-    action: "waitlist_offer_claimed",
-    result: "claimed",
-    bookingId,
-    metadata: { offerId, bookingId, paymentBypassed: false },
-  });
-
-  return {
-    ok: true,
-    bookingCreated: Boolean(bookingId),
-    paymentTriggered: false,
-    autoBook: false,
-    offer: publicOffer(done),
-    message: bookingId
-      ? "Slot claim recorded against the confirmed booking."
-      : "Claim reserved. Create the booking through the existing booking/payment flow.",
-  };
+  return finalizeClaim(locked, claimToken);
 }
 
 /**
