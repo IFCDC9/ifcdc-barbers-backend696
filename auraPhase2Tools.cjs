@@ -525,7 +525,7 @@ async function confirmBook(dbQuery, opts = {}) {
           total_price, service_duration_minutes, notes, booking_source
         ) VALUES (
           $1, $2, $3::uuid, $4, $5,
-          $6::date, $7::time, 0, 'unpaid', 'confirmed', false,
+          $6::date, $7::time, 0, 'pay_at_shop', 'confirmed', false,
           0, $8, $9, 'aura_tools'
         )
         RETURNING id, customer_name, customer_email, barber_name, service, barber_id, user_id,
@@ -560,7 +560,7 @@ async function confirmBook(dbQuery, opts = {}) {
             total_price, service_duration_minutes, notes
           ) VALUES (
             $1, $2, $3::uuid, $4, $5,
-            $6::date, $7::time, 0, 'unpaid', 'confirmed', false,
+            $6::date, $7::time, 0, 'pay_at_shop', 'confirmed', false,
             0, $8, $9
           )
           RETURNING id, customer_name, customer_email, barber_name, service, barber_id, user_id,
@@ -610,7 +610,7 @@ async function confirmBook(dbQuery, opts = {}) {
     ok: true,
     booking: bookingSummary(row),
     paymentCharged: false,
-    message: `Done. I reserved an unpaid hold for ${row.date} at ${row.time} (ref ${String(row.id).slice(0, 8)}). No payment was charged.`,
+    message: `Done. I reserved an unpaid hold (pay at shop) for ${row.date} at ${row.time} (ref ${String(row.id).slice(0, 8)}). No payment was charged.`,
   };
 }
 
