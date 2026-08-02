@@ -143,7 +143,7 @@ async function main() {
     );
     try {
       await reviewSubmission.addAppStoreVersionToReviewItems(version.id);
-      console.log("[asc] Added version 1.0 to review submission");
+      console.log(`[asc] Added version ${version.attributes.versionString} to review submission`);
     } catch (e) {
       const msg = String(e?.message || e);
       if (!msg.toLowerCase().includes("already")) {
@@ -157,7 +157,7 @@ async function main() {
     });
     console.log(`[asc] Created review submission ${reviewSubmission.id}`);
     await reviewSubmission.addAppStoreVersionToReviewItems(version.id);
-    console.log("[asc] Added version 1.0 to review submission");
+    console.log(`[asc] Added version ${version.attributes.versionString} to review submission`);
   }
 
   await reviewSubmission.submitForReviewAsync();
