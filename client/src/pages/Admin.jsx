@@ -679,6 +679,9 @@ function AdminDashboard() {
           <a href="/admin/loyalty" style={{ ...goldButton, textDecoration: "none", display: "inline-block", background: "#222", color: "#d4af37", border: "1px solid #d4af37" }}>
             Loyalty rewards
           </a>
+          <a href="/admin/aura-knowledge" style={{ ...goldButton, textDecoration: "none", display: "inline-block", background: "#222", color: "#d4af37", border: "1px solid #d4af37" }}>
+            AURA knowledge
+          </a>
         </div>
 
         {/* —— Money Dashboard (paid bookings + PayPal) —— */}

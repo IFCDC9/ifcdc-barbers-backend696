@@ -681,6 +681,19 @@ console.log("[boot] mounted /api/admin/manual-bookings (Super Admin bypass mode)
   console.log("[boot] mounted /api/aura/phase2 (disabled unless AURA_PHASE2_ENABLED=1)");
 }
 
+// AURA Phase 3 knowledge (feature-flagged; returns 404 when AURA_PHASE3_ENABLED is off)
+{
+  const { createAuraPhase3Router } = require("./auraKnowledgeRoutes.cjs");
+  app.use(
+    "/api/aura/phase3",
+    createAuraPhase3Router({
+      dbQuery,
+      requireAdmin: requireBookingsAdmin,
+    }),
+  );
+  console.log("[boot] mounted /api/aura/phase3 (disabled unless AURA_PHASE3_ENABLED=1)");
+}
+
 const adminUsersRouter = createAdminUsersRouter({ sendEmail });
 app.use(adminUsersRouter);
 app.use(createAdminBarbersRouter());
@@ -1065,10 +1078,36 @@ async function handleAuraChatRequest(req, res) {
       }
       if (kw.intent === "PRICING" || kw.intent === "HOURS" || kw.intent === "DIRECTIONS" || kw.intent === "SERVICES") {
         const action = kw.intent === "PRICING" || kw.intent === "SERVICES" ? "NAVIGATE_STYLES" : "NONE";
-        // Admin English mirror: re-run the same keyword intent in English so admins
-        // can read what the customer effectively saw.
+        let reply = kw.reply;
         let replyEn = kw.reply;
-        if (L !== "en") {
+        let knowledgeMeta = null;
+        try {
+          const { auraPhase3Flags } = require("./auraPhase3Flags.cjs");
+          const p3 = auraPhase3Flags();
+          if (p3.knowledge) {
+            const { answerKnowledgeQuestion } = require("./auraKnowledgeService.cjs");
+            const kn = await answerKnowledgeQuestion(dbQuery, lastUser, {
+              userId: req.user?.id || null,
+            });
+            if (kn?.ok && kn.answer) {
+              reply = kn.answer;
+              replyEn = kn.answer;
+              knowledgeMeta = {
+                confidence: kn.confidence,
+                source: kn.source,
+                version: kn.version,
+                escalate: false,
+              };
+            } else if (kn?.escalate) {
+              reply = kn.message || reply;
+              replyEn = reply;
+              knowledgeMeta = { escalate: true, reason: kn.reason || null };
+            }
+          }
+        } catch (e) {
+          console.warn("[aura/chat] phase3 knowledge:", e?.message || e);
+        }
+        if (!knowledgeMeta && L !== "en") {
           try {
             const kwEn = auraStructuredIntentFromKeywords(lastUser, "en");
             if (kwEn.matched && kwEn.reply) replyEn = kwEn.reply;
@@ -1076,7 +1115,13 @@ async function handleAuraChatRequest(req, res) {
             console.warn("[aura/chat] english mirror:", e?.message || e);
           }
         }
-        return res.json(auraChatJson(kw.reply, action, { ...meta, adminMessageEn: replyEn }));
+        return res.json(
+          auraChatJson(reply, action, {
+            ...meta,
+            adminMessageEn: replyEn,
+            knowledge: knowledgeMeta,
+          }),
+        );
       }
     }
 
@@ -1316,6 +1361,20 @@ async function startServer() {
     }
   } catch (e) {
     console.warn("[boot] AURA Phase 2 setup skipped:", e?.message || e);
+  }
+
+  // AURA Phase 3 knowledge schema (only when master flag is on — still no public answers until articles approved)
+  try {
+    const { isAuraPhase3Enabled } = require("./auraPhase3Flags.cjs");
+    if (isAuraPhase3Enabled()) {
+      const { ensureAuraKnowledgeTables } = require("./auraKnowledgeMigrations.cjs");
+      await ensureAuraKnowledgeTables(dbQuery);
+      console.log("[boot] AURA Phase 3 knowledge schema ensured");
+    } else {
+      console.log("[boot] AURA Phase 3 master flag off — knowledge schema not applied");
+    }
+  } catch (e) {
+    console.warn("[boot] AURA Phase 3 setup skipped:", e?.message || e);
   }
 
   try {
