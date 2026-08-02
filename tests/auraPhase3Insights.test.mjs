@@ -456,3 +456,49 @@ test("daily digest never sends when flag off; preview logs only when on", async 
   assert.equal(out.sent, false);
   assert.ok(logs.some((l) => l.action === "operational_insight_daily_digest_preview"));
 });
+
+test("controlled digest send requires confirm and blocks duplicates", async () => {
+  enableInsights({ digest: true, recommendations: false, dashboard: true });
+  const { sendControlledInsightsDailyDigest } = require("../auraOperationalInsightsService.cjs");
+  const { dbQuery, logs } = createLogDb();
+  const fixtures = {
+    bookings: makeBookings(),
+    comparisonBookings: [],
+    waitlist: [],
+    logs: [],
+    waitlistConversion: { offers: 2, claimed: 1, conversionRatePercent: 50 },
+    languages: { languagesRequested: [] },
+    rewards: { eligibleRewardCount: 0 },
+    availableMinutes: null,
+  };
+
+  const denied = await sendControlledInsightsDailyDigest(dbQuery, {
+    to: "service@ifcdc.org",
+    periodStart: "2026-06-01",
+    periodEnd: "2026-06-28",
+    confirmControlledSend: false,
+    fixtures,
+  });
+  assert.equal(denied.sent, false);
+  assert.equal(denied.error, "confirm_controlled_send_required");
+
+  // Without real Resend in unit test, MAIL_FROM may exist from env — stub by temporarily clearing
+  const prevFrom = process.env.MAIL_FROM;
+  process.env.MAIL_FROM = "";
+  const noMail = await sendControlledInsightsDailyDigest(dbQuery, {
+    to: "service@ifcdc.org",
+    periodStart: "2026-06-01",
+    periodEnd: "2026-06-28",
+    confirmControlledSend: true,
+    fixtures,
+  });
+  assert.equal(noMail.sent, false);
+  assert.equal(noMail.error, "MAIL_FROM_missing");
+  if (prevFrom === undefined) delete process.env.MAIL_FROM;
+  else process.env.MAIL_FROM = prevFrom;
+
+  assert.equal(
+    logs.some((l) => l.action === "operational_insight_daily_digest_sent" && l.result === "sent"),
+    false,
+  );
+});

@@ -8,6 +8,7 @@ const { logAuraAction } = require("./auraActionLog.cjs");
 const {
   generateOperationalInsightsReport,
   previewInsightsDailyDigest,
+  sendControlledInsightsDailyDigest,
 } = require("./auraOperationalInsightsService.cjs");
 
 function assertInsightsSuperAdmin(req, res) {
@@ -107,6 +108,41 @@ function attachAuraOperationalInsightsRoutes(router, { dbQuery, requireAdmin } =
       return res.status(out.ok ? 200 : 404).json(out);
     } catch (e) {
       return res.status(500).json({ ok: false, error: e?.message || "digest_failed" });
+    }
+  });
+
+  /**
+   * One-time controlled digest send. Requires confirmControlledSend:true.
+   * Does NOT start recurring delivery. Recommendations stay separately gated.
+   */
+  router.post("/admin/insights/daily-digest/send-once", async (req, res) => {
+    try {
+      const flags = auraPhase3Flags();
+      if (!flags.operationalInsights) {
+        return res.status(404).json({ ok: false, error: "aura_phase3_operational_insights_disabled" });
+      }
+      if (!flags.insightsDailyDigest) {
+        return res.status(404).json({ ok: false, error: "aura_phase3_insights_daily_digest_disabled" });
+      }
+      if (!(await runMiddleware(requireAdmin, req, res))) return;
+      if (!assertInsightsSuperAdmin(req, res)) return;
+
+      const out = await sendControlledInsightsDailyDigest(dbQuery, {
+        to: req.body?.to || "service@ifcdc.org",
+        periodStart: req.body?.periodStart || null,
+        periodEnd: req.body?.periodEnd || null,
+        actorUserId: req.user?.id || null,
+        confirmControlledSend: req.body?.confirmControlledSend === true,
+      });
+      const status = out.ok ? 200 : out.error?.includes("disabled") ? 404 : 400;
+      return res.status(status).json({
+        ...out,
+        recurring: false,
+        automaticSend: false,
+        recommendationsEnabled: false,
+      });
+    } catch (e) {
+      return res.status(500).json({ ok: false, error: e?.message || "digest_send_failed" });
     }
   });
 }

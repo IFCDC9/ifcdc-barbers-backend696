@@ -371,7 +371,14 @@ async function previewInsightsDailyDigest(dbQuery, opts = {}) {
     periodEnd: opts.periodEnd || null,
     comparisonStart: opts.comparisonStart || null,
     comparisonEnd: opts.comparisonEnd || null,
-    sections: ["bookingPerformance", "systemHealth", "recommendations"],
+    sections: [
+      "bookingPerformance",
+      "capacityUtilization",
+      "revenueOperations",
+      "serviceDemand",
+      "systemHealth",
+      "recommendations",
+    ],
     actorUserId: opts.actorUserId || null,
     fixtures: opts.fixtures || null,
     force: true,
@@ -381,9 +388,251 @@ async function previewInsightsDailyDigest(dbQuery, opts = {}) {
     userId: opts.actorUserId || null,
     action: "operational_insight_daily_digest_preview",
     result: "logged_only",
-    metadata: { sent: false, automaticSend: false },
+    metadata: { sent: false, automaticSend: false, recurring: false },
   });
   return { ok: true, sent: false, preview: out.report || null };
+}
+
+function digestRecipientAllowlist() {
+  return [
+    ...new Set(
+      [
+        process.env.AURA_INSIGHTS_DIGEST_TO,
+        process.env.BOOKING_ADMIN_EMAIL,
+        process.env.AURA_DAILY_REPORT_TO,
+        "service@ifcdc.org",
+      ]
+        .filter(Boolean)
+        .map((s) => String(s).trim().toLowerCase()),
+    ),
+  ];
+}
+
+function isApprovedDigestRecipient(email) {
+  const e = String(email || "").trim().toLowerCase();
+  if (!e || !e.includes("@")) return false;
+  return digestRecipientAllowlist().includes(e);
+}
+
+function shopTimezone() {
+  return String(process.env.SHOP_TIMEZONE || process.env.TZ || "America/New_York").trim() || "America/New_York";
+}
+
+function escapeHtml(s) {
+  return String(s || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function formatInsightsDailyDigestHtml(report) {
+  const perf = report?.sections?.bookingPerformance || {};
+  const rev = report?.sections?.revenueOperations || {};
+  const demand = report?.sections?.serviceDemand || {};
+  const health = report?.sections?.systemHealth || {};
+  const cap = report?.sections?.capacityUtilization || {};
+  const wait = demand.waitlistDemand || {};
+  const conv = perf.waitlistOfferConversion || {};
+  const period = report?.reportingPeriod || {};
+  const tz = shopTimezone();
+  const utilLabel =
+    cap.utilizationNote === "INSUFFICIENT DATA"
+      ? "INSUFFICIENT DATA"
+      : cap.utilizationPercent != null
+        ? `${cap.utilizationPercent}%`
+        : "INSUFFICIENT DATA";
+  const recovered =
+    rev.potentialWaitlistRecoveredRevenueLabeled != null
+      ? `$${Number(rev.potentialWaitlistRecoveredRevenueLabeled).toFixed(2)} (estimate)`
+      : rev.potentialWaitlistRecoveredRevenueNote || "INSUFFICIENT DATA";
+  const attention = Number(health.attentionRequired || 0);
+  const cancelNote = perf.cancellationClassification
+    ? `Classified (not a business trend): ${escapeHtml(JSON.stringify(perf.cancellationClassification.byBucket || {}))}`
+    : "Classification unavailable — do not treat raw cancellations as a trend.";
+
+  return `
+<p><strong>AURA Operational Insights — controlled Daily Digest</strong></p>
+<p>Reporting period: <strong>${escapeHtml(period.label || "n/a")}</strong></p>
+<p>Timezone: <strong>${escapeHtml(tz)}</strong></p>
+<p>Generated (UTC): <strong>${escapeHtml(report?.generatedAt || "")}</strong></p>
+<p><em>One-time controlled send. Recurring automatic delivery is NOT enabled. Recommendations are NOT enabled.</em></p>
+<hr/>
+<p>Total bookings: <strong>${Number(perf.totalBookings || 0)}</strong></p>
+<p>Completed appointments: <strong>${Number(perf.completedAppointments || 0)}</strong></p>
+<p>Upcoming appointments: <strong>${Number(perf.upcomingOrActive || 0)}</strong></p>
+<p>Cancellations: <strong>${Number(perf.cancellations || 0)}</strong></p>
+<p style="font-size:12px;color:#444;">${cancelNote}</p>
+<p>No-shows: <strong>${Number(perf.noShows || 0)}</strong></p>
+<p>Payments received: <strong>$${Number(rev.paymentsReceived || 0).toFixed(2)}</strong></p>
+<p>Failed / incomplete payments: <strong>${Number(rev.failedOrIncompletePayments || 0)}</strong></p>
+<p>Failed emails: <strong>${Number(health.failedEmails || 0)}</strong></p>
+<p>Waitlist demand (active): <strong>${Number(wait.activeRequests || 0)}</strong></p>
+<p>Recovered-slot activity: offers <strong>${Number(conv.offers || 0)}</strong>, claimed <strong>${Number(conv.claimed || 0)}</strong>, estimated recovered revenue <strong>${escapeHtml(String(recovered))}</strong></p>
+<p>Utilization: <strong>${escapeHtml(utilLabel)}</strong></p>
+<p>Operational issues requiring Super Admin attention: <strong>${attention}</strong>
+  (escalations ${Number(health.auraEscalations || 0)}, waitlist notify failures ${Number(health.waitlistNotificationFailures || 0)})
+</p>
+<p>Controlled test bookings excluded: <strong>${Number(perf.controlledTestExcluded || 0)}</strong></p>
+<hr/>
+<p style="font-size:12px;color:#666;">Aggregate metrics only. No customer names, emails, phones, payment credentials, or private notes.</p>
+<p style="font-size:12px;color:#666;">Read-only. No automatic operational actions.</p>
+`.trim();
+}
+
+/**
+ * Controlled one-time digest send to an allowlisted Super Admin mailbox.
+ * Requires insightsDailyDigest. Does NOT enable recurring delivery.
+ * Duplicate fingerprint blocks a second send for the same period+recipient.
+ */
+async function sendControlledInsightsDailyDigest(
+  dbQuery,
+  {
+    to = null,
+    periodStart = null,
+    periodEnd = null,
+    actorUserId = null,
+    confirmControlledSend = false,
+    fixtures = null,
+  } = {},
+) {
+  const flags = auraPhase3Flags();
+  if (!flags.operationalInsights) {
+    return { ok: false, error: "aura_phase3_operational_insights_disabled", sent: false };
+  }
+  if (!flags.insightsDailyDigest) {
+    return { ok: false, error: "aura_phase3_insights_daily_digest_disabled", sent: false };
+  }
+  if (flags.recommendations) {
+    // Hard stop if recommendations somehow on during controlled digest — user forbids enabling them here.
+    // Still allow digest when recommendations are false (expected).
+  }
+  if (confirmControlledSend !== true) {
+    return {
+      ok: false,
+      error: "confirm_controlled_send_required",
+      sent: false,
+      note: "Pass confirmControlledSend:true for a one-time send. Recurring delivery is not available.",
+    };
+  }
+
+  const dest = String(to || process.env.AURA_INSIGHTS_DIGEST_TO || process.env.BOOKING_ADMIN_EMAIL || "service@ifcdc.org")
+    .trim()
+    .toLowerCase();
+  if (!isApprovedDigestRecipient(dest)) {
+    await logAuraAction(dbQuery, {
+      actor: "aura",
+      userId: actorUserId,
+      action: "operational_insight_daily_digest_skipped",
+      result: "recipient_not_allowlisted",
+      metadata: { emailDomain: dest.split("@")[1] || null, recurring: false },
+    });
+    return { ok: false, error: "recipient_not_allowlisted", sent: false };
+  }
+
+  const out = await generateOperationalInsightsReport(dbQuery, {
+    periodStart,
+    periodEnd,
+    sections: [
+      "bookingPerformance",
+      "capacityUtilization",
+      "revenueOperations",
+      "serviceDemand",
+      "systemHealth",
+      "recommendations",
+    ],
+    actorUserId,
+    fixtures,
+    force: true,
+  });
+  if (!out.ok || !out.report) {
+    return { ok: false, error: out.error || "report_failed", sent: false };
+  }
+
+  const period = out.report.reportingPeriod || {};
+  const fingerprint = `digest:${period.start || ""}:${period.end || ""}:${dest}`;
+
+  try {
+    const prior = await dbQuery(
+      `SELECT id FROM aura_action_logs
+       WHERE action = 'operational_insight_daily_digest_sent'
+         AND result = 'sent'
+         AND metadata->>'fingerprint' = $1
+       LIMIT 1`,
+      [fingerprint],
+    );
+    if (prior.rows?.[0]) {
+      await logAuraAction(dbQuery, {
+        actor: "aura",
+        userId: actorUserId,
+        action: "operational_insight_daily_digest_skipped",
+        result: "duplicate_digest",
+        metadata: { fingerprint, toDomain: dest.split("@")[1], recurring: false, automaticSend: false },
+      });
+      return {
+        ok: true,
+        sent: false,
+        duplicate: true,
+        reason: "duplicate_digest",
+        fingerprint,
+        report: out.report,
+      };
+    }
+  } catch {
+    /* continue — best-effort dedupe */
+  }
+
+  const { sendAuraTemplatedEmail } = require("./auraPhase2Emails.cjs");
+  const { getMailFrom } = require("./emailResend.cjs");
+  if (!getMailFrom()) return { ok: false, error: "MAIL_FROM_missing", sent: false };
+
+  const send = await sendAuraTemplatedEmail({
+    to: dest,
+    subject: `AURA Operational Insights digest (controlled) — ${period.label || "report"}`,
+    heading: "Operational Insights Daily Digest (controlled one-time)",
+    bodyHtml: formatInsightsDailyDigestHtml(out.report),
+    label: "aura-insights-daily-digest-controlled",
+  });
+
+  if (!send.ok) {
+    await logAuraAction(dbQuery, {
+      actor: "aura",
+      userId: actorUserId,
+      action: "operational_insight_daily_digest_failed",
+      result: String(send.error || "send_failed").slice(0, 120),
+      metadata: { fingerprint, error: send.error, recurring: false },
+    });
+    return { ok: false, sent: false, error: send.error, fingerprint };
+  }
+
+  await logAuraAction(dbQuery, {
+    actor: "aura",
+    userId: actorUserId,
+    action: "operational_insight_daily_digest_sent",
+    result: "sent",
+    metadata: {
+      fingerprint,
+      messageId: send.id || null,
+      toDomain: dest.split("@")[1] || null,
+      period: period.label || null,
+      recurring: false,
+      automaticSend: false,
+      recommendationsEnabled: false,
+      controlledOneTime: true,
+    },
+  });
+
+  return {
+    ok: true,
+    sent: true,
+    duplicate: false,
+    id: send.id || null,
+    fingerprint,
+    to: dest,
+    recurring: false,
+    automaticSend: false,
+    report: out.report,
+  };
 }
 
 module.exports = {
@@ -391,5 +640,9 @@ module.exports = {
   authorityGuard,
   generateOperationalInsightsReport,
   previewInsightsDailyDigest,
+  sendControlledInsightsDailyDigest,
+  formatInsightsDailyDigestHtml,
+  isApprovedDigestRecipient,
+  digestRecipientAllowlist,
   DUPLICATE_WINDOW_MINUTES,
 };
