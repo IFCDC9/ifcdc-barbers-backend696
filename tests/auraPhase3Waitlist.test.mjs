@@ -109,6 +109,24 @@ function createMemoryDb() {
         ],
       };
     }
+    if (s.includes("from aura_customer_preferences") && s.includes("communication_preference")) {
+      return { rows: [] };
+    }
+    if (s.includes("from aura_action_logs") && s.includes("metadata->>'offerid'")) {
+      const hit = logs.find(
+        (l) =>
+          l.action === "waitlist_notification_sent" &&
+          l.result === "sent" &&
+          String(l.metadata?.offerId || "") === String(params[0] || ""),
+      );
+      return { rows: hit ? [{ id: randomUUID() }] : [] };
+    }
+    if (s.includes("from aura_action_logs") && s.includes("waitlist_notification_sent") && s.includes("current_date")) {
+      const c = logs.filter(
+        (l) => l.userId === params[0] && l.action === "waitlist_notification_sent" && l.result === "sent",
+      ).length;
+      return { rows: [{ c }] };
+    }
     if (s.includes("insert into bookings")) {
       return {
         rows: [

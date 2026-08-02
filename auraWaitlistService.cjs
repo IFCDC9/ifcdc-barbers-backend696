@@ -137,10 +137,18 @@ async function recordOfferEvent(dbQuery, {
 }
 
 /**
- * Notification stub — never sends unless waitlistNotifications flag is on.
- * Even when on, local/default path only logs intent (no production flood).
+ * Notification path — gated by AURA_PHASE3_WAITLIST_NOTIFICATIONS.
+ * Email only (no SMS). Allowlisted recipients. Deduped per offer. Daily cap.
  */
 async function maybeNotifyWaitlist(dbQuery, { customerId, kind, payload } = {}) {
+  const {
+    sendWaitlistOfferEmail,
+    alertWaitlistNotifyFailure,
+    isApprovedWaitlistNotifyRecipient,
+    signWaitlistOfferAction,
+    resolveApiOrigin,
+  } = require("./auraWaitlistEmails.cjs");
+
   if (!notificationsEnabled()) {
     await logAuraAction(dbQuery, {
       actor: "aura",
@@ -151,10 +159,34 @@ async function maybeNotifyWaitlist(dbQuery, { customerId, kind, payload } = {}) 
     });
     return { ok: true, sent: false, reason: "notifications_disabled" };
   }
+
+  const offerId = payload?.offerId || payload?.id || null;
+  if (kind === "slot_offer" && offerId) {
+    const prior = await dbQuery(
+      `SELECT id FROM aura_action_logs
+       WHERE action = 'waitlist_notification_sent'
+         AND result = 'sent'
+         AND metadata->>'offerId' = $1
+       LIMIT 1`,
+      [String(offerId)],
+    );
+    if (prior.rows?.[0]) {
+      await logAuraAction(dbQuery, {
+        actor: "aura",
+        userId: customerId,
+        action: "waitlist_notification_skipped",
+        result: "duplicate_offer",
+        metadata: { kind, offerId },
+      });
+      return { ok: true, sent: false, reason: "duplicate_offer" };
+    }
+  }
+
   const today = await dbQuery(
     `SELECT COUNT(*)::int AS c FROM aura_action_logs
      WHERE user_id = $1::uuid
        AND action = 'waitlist_notification_sent'
+       AND result = 'sent'
        AND created_at::date = CURRENT_DATE`,
     [customerId],
   );
@@ -164,19 +196,146 @@ async function maybeNotifyWaitlist(dbQuery, { customerId, kind, payload } = {}) 
       userId: customerId,
       action: "waitlist_notification_skipped",
       result: "daily_cap",
-      metadata: { kind, cap: MAX_OFFERS_PER_CUSTOMER_PER_DAY },
+      metadata: { kind, cap: MAX_OFFERS_PER_CUSTOMER_PER_DAY, offerId },
     });
     return { ok: true, sent: false, reason: "daily_cap" };
   }
-  // Controlled path: log only (test recipients / no outbound mail until separately approved).
+
+  const user = await dbQuery(
+    `SELECT id, name, email FROM app_users WHERE id = $1::uuid LIMIT 1`,
+    [customerId],
+  );
+  const u = user.rows?.[0];
+  const email = String(u?.email || "").trim().toLowerCase();
+  if (!email) {
+    await logAuraAction(dbQuery, {
+      actor: "aura",
+      userId: customerId,
+      action: "waitlist_notification_skipped",
+      result: "missing_email",
+      metadata: { kind, offerId },
+    });
+    return { ok: true, sent: false, reason: "missing_email" };
+  }
+
+  try {
+    const pref = await dbQuery(
+      `SELECT preference_value FROM aura_customer_preferences
+       WHERE customer_id = $1::uuid
+         AND preference_type = 'communication_preference'
+         AND deleted_at IS NULL
+         AND consent_status = 'granted'
+       ORDER BY updated_at DESC
+       LIMIT 1`,
+      [customerId],
+    );
+    const rawPref = pref.rows?.[0]?.preference_value;
+    const prefObj =
+      typeof rawPref === "string"
+        ? (() => {
+            try {
+              return JSON.parse(rawPref);
+            } catch {
+              return {};
+            }
+          })()
+        : rawPref || {};
+    const channel = String(prefObj.channel || "").toLowerCase();
+    if (channel === "none" || channel === "sms" || channel === "push") {
+      await logAuraAction(dbQuery, {
+        actor: "aura",
+        userId: customerId,
+        action: "waitlist_notification_skipped",
+        result: "communication_preference",
+        metadata: { kind, offerId, channel },
+      });
+      return { ok: true, sent: false, reason: "communication_preference", channel };
+    }
+  } catch {
+    /* preferences unavailable — default to email */
+  }
+
+  if (!isApprovedWaitlistNotifyRecipient(email)) {
+    await logAuraAction(dbQuery, {
+      actor: "aura",
+      userId: customerId,
+      action: "waitlist_notification_skipped",
+      result: "recipient_not_allowlisted",
+      metadata: { kind, offerId, emailDomain: email.split("@")[1] || null },
+    });
+    return { ok: true, sent: false, reason: "recipient_not_allowlisted" };
+  }
+
+  const expiresAt = payload?.offerExpiresAt || new Date(Date.now() + 15 * 60 * 1000).toISOString();
+  const acceptToken = signWaitlistOfferAction({
+    offerId,
+    customerId,
+    action: "accept",
+    expiresAt,
+  });
+  const declineToken = signWaitlistOfferAction({
+    offerId,
+    customerId,
+    action: "decline",
+    expiresAt,
+  });
+  const api = resolveApiOrigin();
+  const acceptUrl = acceptToken
+    ? `${api}/api/aura/phase3/waitlist/offers/action?token=${encodeURIComponent(acceptToken)}`
+    : `${api}/api/aura/phase3/waitlist/offers/me`;
+  const declineUrl = declineToken
+    ? `${api}/api/aura/phase3/waitlist/offers/action?token=${encodeURIComponent(declineToken)}`
+    : `${api}/api/aura/phase3/waitlist/offers/me`;
+
+  const sent = await sendWaitlistOfferEmail({
+    to: email,
+    customerName: u?.name || "there",
+    offer: payload,
+    acceptUrl,
+    declineUrl,
+  });
+
+  if (!sent.ok) {
+    await logAuraAction(dbQuery, {
+      actor: "aura",
+      userId: customerId,
+      action: "waitlist_notification_failed",
+      result: String(sent.error || "send_failed").slice(0, 120),
+      metadata: { kind, offerId, error: sent.error },
+    });
+    await alertWaitlistNotifyFailure({
+      customerId,
+      offerId,
+      kind,
+      error: sent.error,
+      attentionRequired: true,
+    });
+    return { ok: false, sent: false, error: sent.error, retried: false };
+  }
+
   await logAuraAction(dbQuery, {
     actor: "aura",
     userId: customerId,
     action: "waitlist_notification_sent",
-    result: "logged_only",
-    metadata: { kind, payload, note: "outbound delivery not enabled in 3B2 local path" },
+    result: "sent",
+    metadata: {
+      kind,
+      offerId,
+      emailDomain: email.split("@")[1] || null,
+      messageId: sent.id || null,
+      channel: "email",
+      sms: false,
+    },
   });
-  return { ok: true, sent: false, loggedOnly: true };
+  if (offerId) {
+    await recordOfferEvent(dbQuery, {
+      offerId,
+      customerId,
+      eventType: "offer_notified",
+      snapshot: { channel: "email", messageId: sent.id || null },
+    });
+  }
+  return { ok: true, sent: true, id: sent.id || null, channel: "email" };
 }
 
 async function offerWaitlistConsent(dbQuery, { customerId, criteria } = {}) {

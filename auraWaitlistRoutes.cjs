@@ -178,6 +178,47 @@ function attachAuraWaitlistRoutes(router, { dbQuery, requireAuth, requireAdmin }
     }
   });
 
+  router.get("/waitlist/offers/action", async (req, res) => {
+    try {
+      if (!auraPhase3Flags().slotRecovery || !auraPhase3Flags().waitlistNotifications) {
+        return res.status(404).json({ ok: false, error: "aura_phase3_waitlist_action_disabled" });
+      }
+      const { verifyWaitlistOfferActionToken } = require("./auraWaitlistEmails.cjs");
+      const verified = verifyWaitlistOfferActionToken(req.query?.token);
+      if (!verified.ok) {
+        return res.status(401).json({ ok: false, error: verified.error || "invalid_token" });
+      }
+      const { offerId, customerId, action } = verified.payload;
+      if (action === "decline") {
+        const out = await declineSlotOffer(dbQuery, { offerId, customerId });
+        return res.status(out.ok ? 200 : 400).json({
+          ...out,
+          bookingCreated: false,
+          paymentTriggered: false,
+          message: out.ok
+            ? "Offer declined. No booking or payment was created."
+            : out.message || out.error,
+        });
+      }
+      // Accept via signed link only starts pending confirmation — never auto-books.
+      const out = await acceptSlotOffer(dbQuery, {
+        offerId,
+        customerId,
+        confirmBookingSummary: false,
+        validateSlotStillAvailable: async () => ({ ok: true }),
+      });
+      return res.status(out.ok ? 200 : 409).json({
+        ...out,
+        viaSignedLink: true,
+        message:
+          out.message ||
+          "Offer accepted pending booking summary confirmation. The slot is not booked yet.",
+      });
+    } catch (e) {
+      return res.status(500).json({ ok: false, error: e?.message || "action_failed" });
+    }
+  });
+
   router.get("/waitlist/offers/me", async (req, res) => {
     try {
       if (!auraPhase3Flags().slotRecovery) {

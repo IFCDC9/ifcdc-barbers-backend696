@@ -186,6 +186,7 @@ module.exports = {
   escapeHtml,
   bookingFields,
   shopLocation,
+  sendAuraTemplatedEmail,
   sendAuraReminderEmail,
   sendAuraCancelEmail,
   sendAuraRescheduleEmail,
