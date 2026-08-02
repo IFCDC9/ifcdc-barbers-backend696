@@ -91,7 +91,9 @@ async function sendAuraReminderEmail(payload, windowLabel) {
       ? "Appointment reminder — 24 hours"
       : windowLabel === "2h"
         ? "Appointment reminder — 2 hours"
-        : "Appointment reminder";
+        : windowLabel === "30m"
+          ? "Appointment reminder — 30 minutes"
+          : "Appointment reminder";
   return sendAuraTemplatedEmail({
     to: f.email,
     subject: `${heading} — IFCDC Barbers`,
@@ -172,10 +174,10 @@ async function sendAuraReviewFollowupEmail(payload = {}) {
     subject: "How was your visit? — IFCDC Barbers",
     heading: "Thanks for visiting IFCDC Barbers",
     bodyHtml: `<p>Hi ${escapeHtml(f.name)},</p>
-<p>We hope you loved your ${escapeHtml(f.service)}. When you have a moment, please rate your experience.</p>
+<p>We hope you loved your visit with <strong>${escapeHtml(f.barber)}</strong>. When you have a moment, please rate your experience.</p>
 <p><a href="${escapeHtml(rateUrl)}">Rate Me</a></p>
 ${rewards}
-${f.bookingId ? `<p>Booking reference: ${escapeHtml(f.bookingId)}</p>` : ""}`,
+${buildBookingDetailsHtml(f)}`,
     label: "aura-review-followup",
   });
 }

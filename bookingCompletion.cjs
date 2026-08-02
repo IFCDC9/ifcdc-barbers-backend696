@@ -107,18 +107,22 @@ async function runCompletionSideEffects({
     )
     .catch(() => {});
 
-  void import("./socialPortfolioService.js")
-    .then((m) =>
-      m.notifyCustomerReviewPrompt({
-        id: booking.id,
-        barber_id: booking.barber_id,
-        barber_name: booking.barber_name,
-        user_id: booking.user_id,
-        customer_email: booking.customer_email,
-        customer_name: booking.customer_name,
-        booking_status: "completed",
-      }),
-    )
+  // When Phase 2 review follow-up is on, AURA owns the Rate Me email — skip legacy prompt.
+  void import("./auraPhase2Flags.cjs")
+    .then((flagsMod) => {
+      if (flagsMod.auraPhase2Flags?.()?.reviewFollowup) return null;
+      return import("./socialPortfolioService.js").then((m) =>
+        m.notifyCustomerReviewPrompt({
+          id: booking.id,
+          barber_id: booking.barber_id,
+          barber_name: booking.barber_name,
+          user_id: booking.user_id,
+          customer_email: booking.customer_email,
+          customer_name: booking.customer_name,
+          booking_status: "completed",
+        }),
+      );
+    })
     .catch(() => {});
 
   let loyalty = null;

@@ -30,9 +30,20 @@ async function loadPhase2() {
 }
 
 /**
- * Send ~30-minute-before reminders for confirmed bookings (best-effort; idempotent via reminder_sent_at).
+ * Send ~30-minute-before reminders (best-effort; idempotent via reminder_sent_at).
+ * When Phase 2 reminders30m is enabled, uses AURA templates + action logging.
  */
 export async function scanAndSendBookingReminders() {
+  const phase2 = await loadPhase2();
+  if (phase2?.flags?.reminders30m) {
+    return scanWindow({
+      column: "reminder_sent_at",
+      windowLabel: "30m",
+      lowerMinutes: 32,
+      upperMinutes: 28,
+    });
+  }
+
   const { getResend, sendEmail } = require("./emailResend.cjs");
   if (!getResend()) return { sent: 0, skipped: "no_resend" };
 
@@ -44,8 +55,8 @@ export async function scanAndSendBookingReminders() {
             user_id
      FROM bookings
      WHERE reminder_sent_at IS NULL
-       AND status NOT IN ('cancelled', 'canceled')
-       AND booking_status NOT IN ('cancelled', 'canceled', 'no_show')
+       AND COALESCE(status, '') NOT IN ('cancelled', 'canceled')
+       AND COALESCE(booking_status, '') NOT IN ('cancelled', 'canceled', 'no_show')
        AND (date + time) > NOW()
        AND (date + time) - INTERVAL '32 minutes' <= NOW()
        AND (date + time) - INTERVAL '28 minutes' >= NOW()
@@ -106,7 +117,7 @@ async function scanWindow({
 
   await log.ensureAuraReminderColumns(dbQuery);
 
-  const allowedColumns = new Set(["reminder_24h_sent_at", "reminder_2h_sent_at"]);
+  const allowedColumns = new Set(["reminder_24h_sent_at", "reminder_2h_sent_at", "reminder_sent_at"]);
   if (!allowedColumns.has(column)) {
     return { sent: 0, skipped: "invalid_column" };
   }
