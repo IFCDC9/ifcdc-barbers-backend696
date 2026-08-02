@@ -13,6 +13,7 @@ function isAuraPhase3Enabled() {
 
 function auraPhase3Flags() {
   const master = isAuraPhase3Enabled();
+  const operationalInsights = master && flagOn("AURA_PHASE3_OPERATIONAL_INSIGHTS");
   return {
     master,
     knowledge: master && flagOn("AURA_PHASE3_KNOWLEDGE"),
@@ -27,8 +28,17 @@ function auraPhase3Flags() {
     slotRecovery: master && flagOn("AURA_PHASE3_SLOT_RECOVERY"),
     /** Phase 3B2 — outbound waitlist notifications. Default OFF. Separate approval. */
     waitlistNotifications: master && flagOn("AURA_PHASE3_WAITLIST_NOTIFICATIONS"),
-    /** Deferred — Phase 3C */
-    operationalInsights: master && flagOn("AURA_PHASE3_OPERATIONAL_INSIGHTS"),
+    /**
+     * Phase 3C — operational intelligence master (read-only reports).
+     * Default OFF. Never grants automatic operational authority.
+     */
+    operationalInsights,
+    /** Phase 3C — Super Admin insights dashboard API. Requires operationalInsights. */
+    insightsDashboard: operationalInsights && flagOn("AURA_PHASE3_INSIGHTS_DASHBOARD"),
+    /** Phase 3C — optional daily digest (send still separately gated). Requires operationalInsights. */
+    insightsDailyDigest: operationalInsights && flagOn("AURA_PHASE3_INSIGHTS_DAILY_DIGEST"),
+    /** Phase 3C — explainable recommendations (never auto-apply). Requires operationalInsights. */
+    recommendations: operationalInsights && flagOn("AURA_PHASE3_RECOMMENDATIONS"),
   };
 }
 

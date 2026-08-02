@@ -14,6 +14,9 @@ const FLAG_KEYS = [
   "AURA_PHASE3_SLOT_RECOVERY",
   "AURA_PHASE3_WAITLIST_NOTIFICATIONS",
   "AURA_PHASE3_OPERATIONAL_INSIGHTS",
+  "AURA_PHASE3_INSIGHTS_DASHBOARD",
+  "AURA_PHASE3_INSIGHTS_DAILY_DIGEST",
+  "AURA_PHASE3_RECOMMENDATIONS",
 ];
 
 const saved = {};
@@ -45,6 +48,9 @@ test("Phase 3 flags default off", () => {
   assert.equal(f.slotRecovery, false);
   assert.equal(f.waitlistNotifications, false);
   assert.equal(f.operationalInsights, false);
+  assert.equal(f.insightsDashboard, false);
+  assert.equal(f.insightsDailyDigest, false);
+  assert.equal(f.recommendations, false);
 });
 
 test("Phase 3 subflags require master", () => {
@@ -54,6 +60,10 @@ test("Phase 3 subflags require master", () => {
   process.env.AURA_PHASE3_PREFERENCE_SUGGESTIONS = "1";
   process.env.AURA_PHASE3_SLOT_RECOVERY = "1";
   process.env.AURA_PHASE3_WAITLIST_NOTIFICATIONS = "1";
+  process.env.AURA_PHASE3_OPERATIONAL_INSIGHTS = "1";
+  process.env.AURA_PHASE3_INSIGHTS_DASHBOARD = "1";
+  process.env.AURA_PHASE3_INSIGHTS_DAILY_DIGEST = "1";
+  process.env.AURA_PHASE3_RECOMMENDATIONS = "1";
   const { auraPhase3Flags } = require("../auraPhase3Flags.cjs");
   assert.equal(auraPhase3Flags().knowledge, false);
   assert.equal(auraPhase3Flags().waitlist, false);
@@ -61,6 +71,10 @@ test("Phase 3 subflags require master", () => {
   assert.equal(auraPhase3Flags().preferenceSuggestions, false);
   assert.equal(auraPhase3Flags().slotRecovery, false);
   assert.equal(auraPhase3Flags().waitlistNotifications, false);
+  assert.equal(auraPhase3Flags().operationalInsights, false);
+  assert.equal(auraPhase3Flags().insightsDashboard, false);
+  assert.equal(auraPhase3Flags().insightsDailyDigest, false);
+  assert.equal(auraPhase3Flags().recommendations, false);
 
   process.env.AURA_PHASE3_ENABLED = "1";
   const on = auraPhase3Flags();
@@ -71,4 +85,8 @@ test("Phase 3 subflags require master", () => {
   assert.equal(on.preferenceSuggestions, true);
   assert.equal(on.slotRecovery, true);
   assert.equal(on.waitlistNotifications, true);
+  assert.equal(on.operationalInsights, true);
+  assert.equal(on.insightsDashboard, true);
+  assert.equal(on.insightsDailyDigest, true);
+  assert.equal(on.recommendations, true);
 });
