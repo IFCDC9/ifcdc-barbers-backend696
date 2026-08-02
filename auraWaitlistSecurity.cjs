@@ -291,5 +291,6 @@ module.exports = {
   buildWaitlistConsentPrompt,
   assertAuthorizedWaitlistCatalog,
   scoreWaitlistMatch,
+  asDateOnly,
   sanitizeCustomerText,
 };

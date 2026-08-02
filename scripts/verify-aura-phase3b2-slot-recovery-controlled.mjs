@@ -590,7 +590,7 @@ try {
       pass("duplicate_accept_rejected");
     } else fail("duplicate_accept_rejected", JSON.stringify(dup));
 
-    const raceSlot = { ...slot, slotTime: "14:00" };
+    const raceSlot = { ...slot, slotTime: "11:45" };
     await dbQuery(`UPDATE aura_waitlist_requests SET status='active', deleted_at=NULL WHERE id=$1::uuid`, [
       joinB.json.request.requestId,
     ]);

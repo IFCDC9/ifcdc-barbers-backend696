@@ -12,6 +12,7 @@ const {
   buildWaitlistConsentPrompt,
   assertAuthorizedWaitlistCatalog,
   scoreWaitlistMatch,
+  asDateOnly,
 } = require("./auraWaitlistSecurity.cjs");
 const { logAuraAction } = require("./auraActionLog.cjs");
 
@@ -59,6 +60,7 @@ function publicRequest(row) {
 
 function publicOffer(row) {
   if (!row) return null;
+  const slotDate = asDateOnly(row.slot_date) || row.slot_date;
   return {
     offerId: row.id,
     waitlistRequestId: row.waitlist_request_id,
@@ -67,7 +69,7 @@ function publicOffer(row) {
     barberName: row.barber_name,
     serviceId: row.service_id,
     serviceName: row.service_name,
-    slotDate: row.slot_date,
+    slotDate,
     slotTime: row.slot_time,
     currentPrice: row.current_price != null ? Number(row.current_price) : null,
     location: row.location,
@@ -78,7 +80,7 @@ function publicOffer(row) {
     matchReasons: row.match_reasons,
     message:
       row.status === "offered"
-        ? `Optional open slot: ${row.barber_name || "barber"} / ${row.service_name || "service"} on ${row.slot_date} at ${row.slot_time}${
+        ? `Optional open slot: ${row.barber_name || "barber"} / ${row.service_name || "service"} on ${slotDate} at ${row.slot_time}${
             row.current_price != null ? ` — $${Number(row.current_price).toFixed(2)}` : ""
           }${row.location ? ` at ${row.location}` : ""}. Expires ${row.offer_expires_at}. The slot is NOT booked until you confirm the full booking summary.`
         : null,
