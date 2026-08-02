@@ -12,7 +12,7 @@ Phase 2 booking, payment, email, reminder, reporting, website, and mobile workfl
 - Natural-language FAQ / info answers from approved + live sources
 - Source / confidence / timestamp logging to `aura_action_logs`
 - Escalation when missing, conflicting, unapproved, or unsafe
-- Deferred: preferences, waitlist, slot recovery, operational outreach
+- Deferred: preferences (see `docs/AURA_PHASE3B1.md`), waitlist, slot recovery, operational outreach
 
 ---
 

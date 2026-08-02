@@ -17,8 +17,11 @@ function auraPhase3Flags() {
     master,
     knowledge: master && flagOn("AURA_PHASE3_KNOWLEDGE"),
     conversation: master && flagOn("AURA_PHASE3_CONVERSATION"),
-    /** Deferred — Phase 3B */
+    /** Phase 3B1 — customer preferences (storage + consent). Default OFF. */
     customerPreferences: master && flagOn("AURA_PHASE3_CUSTOMER_PREFERENCES"),
+    /** Phase 3B1 — suggestion prompts only; never auto-book. Default OFF. */
+    preferenceSuggestions: master && flagOn("AURA_PHASE3_PREFERENCE_SUGGESTIONS"),
+    /** Deferred — Phase 3B2+ */
     waitlist: master && flagOn("AURA_PHASE3_WAITLIST"),
     slotRecovery: master && flagOn("AURA_PHASE3_SLOT_RECOVERY"),
     /** Deferred — Phase 3C */

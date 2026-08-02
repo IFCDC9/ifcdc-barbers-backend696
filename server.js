@@ -689,6 +689,7 @@ console.log("[boot] mounted /api/admin/manual-bookings (Super Admin bypass mode)
     createAuraPhase3Router({
       dbQuery,
       requireAdmin: requireBookingsAdmin,
+      requireAuth,
     }),
   );
   console.log("[boot] mounted /api/aura/phase3 (disabled unless AURA_PHASE3_ENABLED=1)");
@@ -1365,11 +1366,19 @@ async function startServer() {
 
   // AURA Phase 3 knowledge schema (only when master flag is on — still no public answers until articles approved)
   try {
-    const { isAuraPhase3Enabled } = require("./auraPhase3Flags.cjs");
+    const { isAuraPhase3Enabled, auraPhase3Flags } = require("./auraPhase3Flags.cjs");
     if (isAuraPhase3Enabled()) {
       const { ensureAuraKnowledgeTables } = require("./auraKnowledgeMigrations.cjs");
       await ensureAuraKnowledgeTables(dbQuery);
       console.log("[boot] AURA Phase 3 knowledge schema ensured");
+      const p3 = auraPhase3Flags();
+      if (p3.customerPreferences) {
+        const { ensureAuraPreferenceTables } = require("./auraPreferenceMigrations.cjs");
+        await ensureAuraPreferenceTables(dbQuery);
+        console.log("[boot] AURA Phase 3B1 preference schema ensured");
+      } else {
+        console.log("[boot] AURA Phase 3B1 preferences flag off — preference schema not applied");
+      }
     } else {
       console.log("[boot] AURA Phase 3 master flag off — knowledge schema not applied");
     }

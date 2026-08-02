@@ -15,7 +15,7 @@ const {
   CATEGORIES,
 } = require("./auraKnowledgeService.cjs");
 
-function createAuraPhase3Router({ dbQuery, requireAdmin } = {}) {
+function createAuraPhase3Router({ dbQuery, requireAdmin, requireAuth } = {}) {
   const router = express.Router();
 
   router.use((req, res, next) => {
@@ -30,9 +30,17 @@ function createAuraPhase3Router({ dbQuery, requireAdmin } = {}) {
       ok: true,
       phase: 3,
       flags: auraPhase3Flags(),
-      note: "Phase 3 defaults OFF. Knowledge is read-only until Super Admin approves articles.",
+      note:
+        "Phase 3 defaults OFF. Knowledge is read-only until Super Admin approves articles. Preferences (3B1) require separate flags and consent.",
     });
   });
+
+  try {
+    const { attachAuraPreferenceRoutes } = require("./auraPreferenceRoutes.cjs");
+    attachAuraPreferenceRoutes(router, { dbQuery, requireAdmin, requireAuth });
+  } catch (e) {
+    console.warn("[aura-phase3] preference routes skipped:", e?.message || e);
+  }
 
   router.post("/knowledge/ask", async (req, res) => {
     try {
