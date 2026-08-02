@@ -1252,6 +1252,18 @@ async function sendPaidConfirmationForAppBooking({ fresh, row, captureId, settle
       emailSent,
       messageId: mail?.messageId,
     });
+    // AURA Phase 2 barber notify on new paid booking — no-op when flags off.
+    try {
+      const { afterBookingCreated } = require("./auraPhase2Hooks.cjs");
+      const { dbQuery } = await loadDb();
+      void afterBookingCreated(dbQuery, {
+        ...fresh,
+        customer_email: toEmail,
+        total_paid: view.amountPaid,
+      }).catch((e) => console.warn("[aura-phase2] created hook:", e?.message || e));
+    } catch (auraErr) {
+      console.warn("[aura-phase2] created hook setup:", auraErr?.message || auraErr);
+    }
   } catch (mailErr) {
     emailError = mailErr?.message || String(mailErr);
     console.error("[booking-email] FAILED (app-bookings finalize):", emailError, {
@@ -1261,6 +1273,16 @@ async function sendPaidConfirmationForAppBooking({ fresh, row, captureId, settle
       customerEmail: toEmail,
       emailSent: false,
     });
+    try {
+      const { alertFailureBestEffort } = require("./auraPhase2Hooks.cjs");
+      const { dbQuery } = await loadDb();
+      void alertFailureBestEffort(dbQuery, "booking_confirmation_email_failed", {
+        bookingId: fresh.id,
+        error: emailError,
+      });
+    } catch {
+      /* ignore */
+    }
   }
   return { emailSent, emailError };
 }

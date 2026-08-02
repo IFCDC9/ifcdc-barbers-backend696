@@ -194,7 +194,7 @@ console.log(
 );
 
 const AURA_ASSISTANT_PROMPT =
-  "You are AURA, the intelligent text assistant for IFCDC Barbers. Help customers with shop hours, location, haircut services, booking appointments, pricing guidance, and appointment questions. Be concise, warm, and professional. Guide users to the Book tab to schedule. Never mention internal errors or API details.";
+  "You are AURA, the IFCDC Barbers digital receptionist. Help customers with shop hours, location, haircut services, booking appointments, pricing guidance, and appointment questions. Be concise, warm, and professional. Guide users to the Book tab to schedule. Never describe yourself as AI. Never mention internal errors or API details. Never issue refunds, change prices, delete records, or alter admin permissions — escalate those to Super Admin.";
 
 const AURA_FAILSAFE_REPLY =
   "AURA is temporarily reconnecting. Please try again in a moment.";
@@ -667,6 +667,19 @@ app.use(
   }),
 );
 console.log("[boot] mounted /api/admin/manual-bookings (Super Admin bypass mode)");
+
+// AURA Phase 2 ops (feature-flagged; returns 404 when AURA_PHASE2_ENABLED is off)
+{
+  const { createAuraPhase2Router } = require("./auraPhase2Routes.cjs");
+  app.use(
+    "/api/aura/phase2",
+    createAuraPhase2Router({
+      dbQuery,
+      requireAdmin: requireBookingsAdmin,
+    }),
+  );
+  console.log("[boot] mounted /api/aura/phase2 (disabled unless AURA_PHASE2_ENABLED=1)");
+}
 
 const adminUsersRouter = createAdminUsersRouter({ sendEmail });
 app.use(adminUsersRouter);
@@ -1263,6 +1276,39 @@ async function startServer() {
       .then((m) => m.sendDueFollowupReminders())
       .catch(() => {});
   }, 6 * 60 * 60 * 1000);
+
+  // AURA Phase 2 — additive schema + reminder scanners (only when master flag is on)
+  try {
+    const { isAuraPhase2Enabled, auraPhase2Flags } = require("./auraPhase2Flags.cjs");
+    if (isAuraPhase2Enabled()) {
+      const { ensureAuraActionLogTable, ensureAuraReminderColumns } = require("./auraActionLog.cjs");
+      await ensureAuraActionLogTable(dbQuery);
+      await ensureAuraReminderColumns(dbQuery);
+      console.log("[boot] AURA Phase 2 schema ensured (action logs + reminder columns)");
+      const flags = auraPhase2Flags();
+      if (flags.reminders24h || flags.reminders2h || flags.reminders30m) {
+        const runAuraReminders = async () => {
+          try {
+            const { scanAllEnabledBookingReminders } = await import("./bookingReminders.js");
+            const out = await scanAllEnabledBookingReminders();
+            console.log("[aura-reminders]", out);
+          } catch (e) {
+            console.warn("[aura-reminders] scan failed:", e?.message || e);
+          }
+        };
+        void runAuraReminders();
+        setInterval(() => {
+          void runAuraReminders();
+        }, 5 * 60 * 1000);
+        console.log("[boot] AURA Phase 2 reminder interval armed (5m)");
+      }
+    } else {
+      console.log("[boot] AURA Phase 2 master flag off — reminder scanners not started");
+    }
+  } catch (e) {
+    console.warn("[boot] AURA Phase 2 setup skipped:", e?.message || e);
+  }
+
   try {
     await ensureStylesTables();
     const seeded = await seedSampleStylesIfEmpty();

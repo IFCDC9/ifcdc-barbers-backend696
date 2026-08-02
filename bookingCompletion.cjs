@@ -216,6 +216,16 @@ async function runCompletionSideEffects({
       console.warn("[hubspot] completion deal enqueue failed:", hubspotErr?.message || hubspotErr),
     );
 
+  // AURA Phase 2 review follow-up (Rate Me + rewards) — no-op when flag off.
+  void import("./auraPhase2Hooks.cjs")
+    .then(async (m) => {
+      const { dbQuery } = await import("./db.js");
+      return m.afterBookingCompleted(dbQuery, booking, { loyalty });
+    })
+    .catch((auraErr) =>
+      console.warn("[aura-phase2] completion follow-up failed:", auraErr?.message || auraErr),
+    );
+
   return { reviewPrompt: true, loyalty };
 }
 

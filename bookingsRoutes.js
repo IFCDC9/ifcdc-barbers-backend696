@@ -808,6 +808,15 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
         data: { bookingId: id, reason: reason || null },
       });
 
+      // AURA Phase 2 cancel emails / barber notify — no-op when flags off.
+      void import("./auraPhase2Hooks.cjs")
+        .then((m) =>
+          m.afterBookingCancelled(dbQuery, booking, { reason: reason || null }),
+        )
+        .catch((auraErr) =>
+          console.warn("[aura-phase2] cancel hook failed:", auraErr?.message || auraErr),
+        );
+
       void import("./hubspotService.js")
         .then((m) => m.enqueueDealSyncById(id, { reason: "appointment_cancelled" }))
         .catch((hubspotErr) =>
@@ -1094,6 +1103,19 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
           }
         }
       }
+
+      // AURA Phase 2 barber notify — no-op when flags off.
+      void import("./auraPhase2Hooks.cjs")
+        .then((m) =>
+          m.afterBookingRescheduled(dbQuery, booking, {
+            fromLabel: oldLabel,
+            newDate,
+            newTime: newTimeLabel,
+          }),
+        )
+        .catch((auraErr) =>
+          console.warn("[aura-phase2] reschedule hook failed:", auraErr?.message || auraErr),
+        );
 
       return res.json({
         ok: true,
