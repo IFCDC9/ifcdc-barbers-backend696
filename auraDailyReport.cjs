@@ -80,7 +80,9 @@ async function gatherDailyReportStats(dbQuery, { dayYmd } = {}) {
        )::int AS no_shows,
        COUNT(*) FILTER (
          WHERE date > $1::date
-           AND lower(coalesce(booking_status,'')) NOT IN ('cancelled','canceled','no_show','noshow')
+           AND lower(coalesce(booking_status,'')) NOT IN (
+             'cancelled','canceled','no_show','noshow','completed'
+           )
            AND NOT ${testSql}
        )::int AS upcoming_after_day,
        COUNT(*) FILTER (
@@ -111,14 +113,14 @@ async function gatherDailyReportStats(dbQuery, { dayYmd } = {}) {
   let attentionItems = [];
 
   try {
+    // Count only failed outcomes — successful admin_alert "sent" rows are not failures.
     const logs = await dbQuery(
       `SELECT COUNT(*)::int AS c
        FROM aura_action_logs
        WHERE (created_at AT TIME ZONE $2)::date = $1::date
          AND (
            lower(coalesce(result,'')) LIKE '%fail%'
-           OR action LIKE '%failed%'
-           OR action = 'admin_alert'
+           OR lower(coalesce(action,'')) LIKE '%failed%'
          )`,
       [day, timezone],
     );
@@ -313,6 +315,42 @@ async function generateAuraDailyReport(dbQuery, opts = {}) {
   if (!to) return { ...preview, ok: false, error: "no_recipient", sent: false };
   if (!preview.mailFrom) return { ...preview, ok: false, error: "MAIL_FROM_missing", sent: false };
 
+  // Idempotent: one successful send per report day (shop timezone) unless forceResend.
+  if (!opts.forceResend) {
+    try {
+      const prior = await dbQuery(
+        `SELECT id, created_at
+         FROM aura_action_logs
+         WHERE action = 'daily_report_send'
+           AND result = 'sent'
+           AND coalesce(metadata->>'day','') = $1
+         ORDER BY created_at DESC
+         LIMIT 1`,
+        [stats.day],
+      );
+      if (prior.rows?.[0]) {
+        await logAuraAction(dbQuery, {
+          action: "daily_report_send",
+          result: "skipped_duplicate",
+          metadata: {
+            day: stats.day,
+            priorLogId: prior.rows[0].id,
+            priorSentAt: prior.rows[0].created_at,
+          },
+        }).catch(() => {});
+        return {
+          ...preview,
+          ok: true,
+          sent: false,
+          skippedDuplicate: true,
+          message: `Daily report for ${stats.day} already sent — duplicate blocked.`,
+        };
+      }
+    } catch (e) {
+      console.warn("[aura-daily-report] duplicate check failed:", e?.message || e);
+    }
+  }
+
   const out = await sendEmail({
     to,
     subject: `IFCDC Barbers daily report — ${stats.day}`,
@@ -324,7 +362,13 @@ async function generateAuraDailyReport(dbQuery, opts = {}) {
   await logAuraAction(dbQuery, {
     action: "daily_report_send",
     result: sent ? "sent" : "failed",
-    metadata: { day: stats.day, error: out?.error?.message || null },
+    metadata: {
+      day: stats.day,
+      timezone: stats.timezone,
+      to,
+      error: out?.error?.message || null,
+      controlledLiveSend: Boolean(opts.controlledLiveSend),
+    },
   }).catch(() => {});
 
   return {
