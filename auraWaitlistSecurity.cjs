@@ -197,6 +197,16 @@ async function assertAuthorizedWaitlistCatalog(dbQuery, criteria) {
  * Transparent ranking only — no hidden value/payment/protected-characteristic scoring.
  * Higher score = better match; FIFO on ties via created_at.
  */
+function asDateOnly(v) {
+  if (v == null || v === "") return null;
+  if (v instanceof Date && !Number.isNaN(v.getTime())) return v.toISOString().slice(0, 10);
+  const s = String(v).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  const d = new Date(s);
+  if (!Number.isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+  return null;
+}
+
 function scoreWaitlistMatch(request, slot) {
   let score = 0;
   const reasons = [];
@@ -226,29 +236,29 @@ function scoreWaitlistMatch(request, slot) {
     }
   }
 
-  const slotDate = String(slot.slotDate || "").slice(0, 10);
-  const preferred = request.preferred_date || request.preferredDate;
-  const from = request.date_from || request.dateFrom;
-  const to = request.date_to || request.dateTo;
-  const earliest = request.earliest_acceptable_date || request.earliestAcceptableDate;
+  const slotDate = asDateOnly(slot.slotDate);
+  const preferred = asDateOnly(request.preferred_date || request.preferredDate);
+  const from = asDateOnly(request.date_from || request.dateFrom);
+  const to = asDateOnly(request.date_to || request.dateTo);
+  const earliest = asDateOnly(request.earliest_acceptable_date || request.earliestAcceptableDate);
   if (preferred) {
-    if (slotDate === String(preferred).slice(0, 10)) {
+    if (slotDate === preferred) {
       score += 20;
       reasons.push("matching_date");
     } else {
       return { score: 0, reasons: ["date_mismatch"], eligible: false };
     }
   } else if (from || to) {
-    if (from && slotDate < String(from).slice(0, 10)) {
+    if (from && slotDate && slotDate < from) {
       return { score: 0, reasons: ["before_date_range"], eligible: false };
     }
-    if (to && slotDate > String(to).slice(0, 10)) {
+    if (to && slotDate && slotDate > to) {
       return { score: 0, reasons: ["after_date_range"], eligible: false };
     }
     score += 15;
     reasons.push("within_date_range");
   } else if (earliest) {
-    if (slotDate < String(earliest).slice(0, 10)) {
+    if (slotDate && slotDate < earliest) {
       return { score: 0, reasons: ["before_earliest_date"], eligible: false };
     }
     score += 10;

@@ -393,250 +393,254 @@ try {
   if (paymentsBefore < 0 || Number(paymentsAfterOffer.rows[0].n) === paymentsBefore) pass("offer_no_payment_record");
   else fail("offer_no_payment_record");
 
-  const offerRow = await dbQuery(`SELECT COUNT(*)::int AS n FROM aura_slot_offers WHERE id=$1::uuid`, [
-    offerA.offer.offerId,
-  ]);
-  if (Number(offerRow.rows[0].n) === 1) pass("offer_row_recorded");
-  else fail("offer_row_recorded");
-
-  const offerEvents = await dbQuery(
-    `SELECT event_type FROM aura_slot_offer_events WHERE offer_id=$1::uuid ORDER BY created_at`,
-    [offerA.offer.offerId],
-  );
-  if (offerEvents.rows.some((r) => r.event_type === "offer_created")) pass("offer_event_created");
-  else fail("offer_event_created", offerEvents.rows.map((r) => r.event_type).join(","));
-
-  const notifSkip = await dbQuery(
-    `SELECT result FROM aura_action_logs
-     WHERE action='waitlist_notification_skipped' AND user_id=$1::uuid
-     ORDER BY created_at DESC LIMIT 1`,
-    [c1.id],
-  );
-  if (notifSkip.rows[0]?.result === "notifications_disabled") pass("offer_notification_skipped");
-  else fail("offer_notification_skipped", JSON.stringify(notifSkip.rows[0]));
-
-  const offerBBlocked = await createSlotOffer(dbQuery, {
-    waitlistRequestId: joinB.json.request.requestId,
-    slot,
-    idempotencyKey: `${MARKER}-offer-b-same-slot`,
-    validateSlotStillAvailable: async () => ({ ok: true }),
-  });
-  if (offerBBlocked.ok === false && offerBBlocked.error === "slot_already_offered") {
-    pass("second_customer_same_slot_not_offered");
-  } else fail("second_customer_same_slot_not_offered", JSON.stringify(offerBBlocked));
-
-  // --- 5a. DECLINE path (separate slot) ---
-  const declineSlot = { ...slot, slotTime: "11:00" };
-  const offerDecline = await createSlotOffer(dbQuery, {
-    waitlistRequestId: joinB.json.request.requestId,
-    slot: declineSlot,
-    idempotencyKey: `${MARKER}-offer-decline`,
-    validateSlotStillAvailable: async () => ({ ok: true }),
-  });
-  if (offerDecline.ok) {
-    offerIds.push(offerDecline.offer.offerId);
-    const declined = await api(`/api/aura/phase3/waitlist/offers/${offerDecline.offer.offerId}/decline`, {
-      method: "POST",
-      token: c2.token,
-      body: {},
-    });
-    if (declined.status === 200 && declined.json?.bookingCreated === false) pass("decline_no_booking");
-    else fail("decline_no_booking", JSON.stringify(declined));
-    const payAfterDecline =
-      paymentsBefore < 0 ? null : await dbQuery(`SELECT COUNT(*)::int AS n FROM payments`);
-    if (paymentsBefore < 0 || Number(payAfterDecline.rows[0].n) === paymentsBefore) pass("decline_no_payment");
-    else fail("decline_no_payment");
-  } else fail("decline_offer_setup", JSON.stringify(offerDecline));
-
-  // --- 5b. EXPIRATION ---
-  const expireSlot = { ...slot, slotTime: "11:15" };
-  // Re-activate B if needed after decline (request should still be active)
-  const offerExp = await createSlotOffer(dbQuery, {
-    waitlistRequestId: joinB.json.request.requestId,
-    slot: expireSlot,
-    ttlMinutes: 0.01, // ~0.6s
-    idempotencyKey: `${MARKER}-offer-expire`,
-    validateSlotStillAvailable: async () => ({ ok: true }),
-  });
-  if (offerExp.ok) {
-    offerIds.push(offerExp.offer.offerId);
-    await dbQuery(
-      `UPDATE aura_slot_offers SET offer_expires_at = NOW() - INTERVAL '1 minute' WHERE id=$1::uuid`,
-      [offerExp.offer.offerId],
-    );
-    await new Promise((r) => setTimeout(r, 200));
-    const late = await api(`/api/aura/phase3/waitlist/offers/${offerExp.offer.offerId}/accept`, {
-      method: "POST",
-      token: c2.token,
-      body: { confirmBookingSummary: true },
-    });
-    if (late.status === 409 && late.json?.error === "offer_expired") pass("expired_offer_cannot_accept");
-    else fail("expired_offer_cannot_accept", JSON.stringify(late));
-    const reqAfterExp = await dbQuery(`SELECT status FROM aura_waitlist_requests WHERE id=$1::uuid`, [
-      joinB.json.request.requestId,
+  if (!offerA?.ok || !offerA.offer?.offerId) {
+    fail("offer_pipeline_blocked", JSON.stringify(offerA));
+  } else {
+    const offerRow = await dbQuery(`SELECT COUNT(*)::int AS n FROM aura_slot_offers WHERE id=$1::uuid`, [
+      offerA.offer.offerId,
     ]);
-    if (reqAfterExp.rows[0]?.status === "active") pass("waitlist_remains_active_after_offer_expire");
-    else fail("waitlist_remains_active_after_offer_expire", reqAfterExp.rows[0]?.status);
-  } else fail("expire_offer_setup", JSON.stringify(offerExp));
+    if (Number(offerRow.rows[0].n) === 1) pass("offer_row_recorded");
+    else fail("offer_row_recorded");
 
-  // --- 3. ACCEPTANCE (valid offer A) ---
-  const pending = await api(`/api/aura/phase3/waitlist/offers/${offerA.offer.offerId}/accept`, {
-    method: "POST",
-    token: c1.token,
-    body: { confirmBookingSummary: false },
-  });
-  if (pending.status === 200 && pending.json?.pendingBookingConfirmation === true && pending.json?.bookingCreated === false) {
-    pass("accept_pending_confirmation_no_booking_yet");
-  } else fail("accept_pending_confirmation_no_booking_yet", JSON.stringify(pending));
-
-  const confirmed = await api(`/api/aura/phase3/waitlist/offers/${offerA.offer.offerId}/accept`, {
-    method: "POST",
-    token: c1.token,
-    body: { confirmBookingSummary: true, slotStillAvailable: true },
-  });
-  if (
-    confirmed.status === 200 &&
-    confirmed.json?.ok &&
-    confirmed.json?.bookingCreated === true &&
-    confirmed.json?.paymentRequired === true &&
-    confirmed.json?.paymentBypassed === false &&
-    confirmed.json?.paymentTriggered === false
-  ) {
-    pass("accept_creates_unpaid_booking");
-    if (confirmed.json.bookingId) bookingIds.push(confirmed.json.bookingId);
-  } else fail("accept_creates_unpaid_booking", JSON.stringify(confirmed));
-
-  const booking = await dbQuery(
-    `SELECT id, customer_email, barber_name, service, date::text AS date,
-            to_char(time,'HH24:MI') AS time, total_price::float8 AS price,
-            payment_status, is_paid_booking, manual_bypass
-     FROM bookings WHERE id=$1::uuid`,
-    [confirmed.json?.bookingId],
-  );
-  const b = booking.rows?.[0];
-  if (
-    b &&
-    String(b.customer_email).toLowerCase() === String(c1.email).toLowerCase() &&
-    b.barber_name === barberRow.name &&
-    b.service === serviceName &&
-    String(b.date).slice(0, 10) === slotDate &&
-    String(b.time).startsWith("10:30") &&
-    Number(b.price) === 35 &&
-    b.payment_status === "unpaid" &&
-    b.is_paid_booking === false &&
-    b.manual_bypass === false
-  ) {
-    pass("accept_booking_fields_and_payment_required");
-  } else fail("accept_booking_fields_and_payment_required", JSON.stringify(b));
-
-  const fulfilledReq = await dbQuery(`SELECT status FROM aura_waitlist_requests WHERE id=$1::uuid`, [
-    joinA.json.request.requestId,
-  ]);
-  const fulfilledOffer = await dbQuery(
-    `SELECT status, claimed_booking_id FROM aura_slot_offers WHERE id=$1::uuid`,
-    [offerA.offer.offerId],
-  );
-  if (fulfilledReq.rows[0]?.status === "fulfilled" && fulfilledOffer.rows[0]?.status === "claimed") {
-    pass("request_and_offer_fulfilled");
-  } else fail("request_and_offer_fulfilled", JSON.stringify({ fulfilledReq: fulfilledReq.rows[0], fulfilledOffer: fulfilledOffer.rows[0] }));
-
-  const audits = await dbQuery(
-    `SELECT action FROM aura_action_logs WHERE user_id=$1::uuid AND action LIKE 'waitlist_%' ORDER BY created_at`,
-    [c1.id],
-  );
-  const acts = audits.rows.map((r) => r.action);
-  if (acts.includes("waitlist_offer_accepted") && acts.includes("waitlist_offer_claimed")) {
-    pass("aura_action_logs_accept_claim");
-  } else fail("aura_action_logs_accept_claim", acts.join(","));
-
-  const oev = await dbQuery(
-    `SELECT event_type FROM aura_slot_offer_events WHERE offer_id=$1::uuid ORDER BY created_at`,
-    [offerA.offer.offerId],
-  );
-  const otypes = oev.rows.map((r) => r.event_type);
-  if (otypes.includes("offer_accepted_pending_booking") && otypes.includes("offer_claimed")) {
-    pass("slot_offer_events_accept_claim");
-  } else fail("slot_offer_events_accept_claim", otypes.join(","));
-
-  const wev = await dbQuery(
-    `SELECT event_type FROM aura_waitlist_events WHERE request_id=$1::uuid ORDER BY created_at`,
-    [joinA.json.request.requestId],
-  );
-  if (wev.rows.some((r) => r.event_type === "request_fulfilled" || r.event_type === "offer_matched")) {
-    pass("waitlist_events_fulfillment");
-  } else fail("waitlist_events_fulfillment", wev.rows.map((r) => r.event_type).join(","));
-
-  // --- 4. CONCURRENCY / IDEMPOTENCY ---
-  const dup = await api(`/api/aura/phase3/waitlist/offers/${offerA.offer.offerId}/accept`, {
-    method: "POST",
-    token: c1.token,
-    body: { confirmBookingSummary: true },
-  });
-  if (dup.status === 409 && (dup.json?.error === "already_claimed" || dup.json?.error === "offer_not_actionable")) {
-    pass("duplicate_accept_rejected");
-  } else fail("duplicate_accept_rejected", JSON.stringify(dup));
-
-  // Two customers race on a fresh slot: offer only to winner of match (A fulfilled; use B)
-  const raceSlot = { ...slot, slotTime: "14:00" };
-  // Ensure B still active
-  await dbQuery(
-    `UPDATE aura_waitlist_requests SET status='active', deleted_at=NULL WHERE id=$1::uuid`,
-    [joinB.json.request.requestId],
-  );
-  const raceOffer = await createSlotOffer(dbQuery, {
-    waitlistRequestId: joinB.json.request.requestId,
-    slot: raceSlot,
-    idempotencyKey: `${MARKER}-race`,
-    validateSlotStillAvailable: async () => ({ ok: true }),
-  });
-  if (!raceOffer.ok) fail("race_offer_setup", JSON.stringify(raceOffer));
-  else {
-    offerIds.push(raceOffer.offer.offerId);
-    const [r1, r2] = await Promise.all([
-      api(`/api/aura/phase3/waitlist/offers/${raceOffer.offer.offerId}/accept`, {
-        method: "POST",
-        token: c2.token,
-        body: { confirmBookingSummary: true, slotStillAvailable: true },
-      }),
-      api(`/api/aura/phase3/waitlist/offers/${raceOffer.offer.offerId}/accept`, {
-        method: "POST",
-        token: c2.token,
-        body: { confirmBookingSummary: true, slotStillAvailable: true },
-      }),
-    ]);
-    const wins = [r1, r2].filter((r) => r.status === 200 && r.json?.ok && r.json?.bookingCreated);
-    const losses = [r1, r2].filter((r) => r.status === 409 || r.json?.ok === false);
-    if (wins.length === 1 && losses.length === 1) pass("concurrency_one_winner");
-    else fail("concurrency_one_winner", JSON.stringify({ r1: r1.json, r2: r2.json }));
-    if (wins[0]?.json?.bookingId) bookingIds.push(wins[0].json.bookingId);
-
-    const bookingCount = await dbQuery(
-      `SELECT COUNT(*)::int AS n FROM bookings
-       WHERE notes LIKE $1 AND to_char(time,'HH24:MI') LIKE '14:00%'`,
-      [`%${MARKER}%`],
+    const offerEvents = await dbQuery(
+      `SELECT event_type FROM aura_slot_offer_events WHERE offer_id=$1::uuid ORDER BY created_at`,
+      [offerA.offer.offerId],
     );
-    // may be 0 if notes marker only on waitlist claim path — count claimed bookings for offer
-    const claimedBookings = await dbQuery(
-      `SELECT COUNT(DISTINCT claimed_booking_id)::int AS n FROM aura_slot_offers WHERE id=$1::uuid AND claimed_booking_id IS NOT NULL`,
-      [raceOffer.offer.offerId],
-    );
-    if (Number(claimedBookings.rows[0].n) === 1) pass("concurrency_single_booking");
-    else fail("concurrency_single_booking", JSON.stringify({ bookingCount: bookingCount.rows[0], claimedBookings: claimedBookings.rows[0] }));
+    if (offerEvents.rows.some((r) => r.event_type === "offer_created")) pass("offer_event_created");
+    else fail("offer_event_created", offerEvents.rows.map((r) => r.event_type).join(","));
 
-    // Losing customer (c1) cannot take same physical slot while claimed/open
-    const loseOffer = await createSlotOffer(dbQuery, {
-      waitlistRequestId: joinA.json.request.requestId,
-      slot: raceSlot,
-      idempotencyKey: `${MARKER}-lose`,
+    const notifSkip = await dbQuery(
+      `SELECT result FROM aura_action_logs
+       WHERE action='waitlist_notification_skipped' AND user_id=$1::uuid
+       ORDER BY created_at DESC LIMIT 1`,
+      [c1.id],
+    );
+    if (notifSkip.rows[0]?.result === "notifications_disabled") pass("offer_notification_skipped");
+    else fail("offer_notification_skipped", JSON.stringify(notifSkip.rows[0]));
+
+    const offerBBlocked = await createSlotOffer(dbQuery, {
+      waitlistRequestId: joinB.json.request.requestId,
+      slot,
+      idempotencyKey: `${MARKER}-offer-b-same-slot`,
       validateSlotStillAvailable: async () => ({ ok: true }),
     });
-    // A is fulfilled so request_not_eligible expected OR slot_already_offered
+    if (offerBBlocked.ok === false && offerBBlocked.error === "slot_already_offered") {
+      pass("second_customer_same_slot_not_offered");
+    } else fail("second_customer_same_slot_not_offered", JSON.stringify(offerBBlocked));
+
+    // --- 5a. DECLINE path (separate slot) ---
+    const declineSlot = { ...slot, slotTime: "11:00" };
+    const offerDecline = await createSlotOffer(dbQuery, {
+      waitlistRequestId: joinB.json.request.requestId,
+      slot: declineSlot,
+      idempotencyKey: `${MARKER}-offer-decline`,
+      validateSlotStillAvailable: async () => ({ ok: true }),
+    });
+    if (offerDecline.ok) {
+      offerIds.push(offerDecline.offer.offerId);
+      const declined = await api(`/api/aura/phase3/waitlist/offers/${offerDecline.offer.offerId}/decline`, {
+        method: "POST",
+        token: c2.token,
+        body: {},
+      });
+      if (declined.status === 200 && declined.json?.bookingCreated === false) pass("decline_no_booking");
+      else fail("decline_no_booking", JSON.stringify(declined));
+      const payAfterDecline =
+        paymentsBefore < 0 ? null : await dbQuery(`SELECT COUNT(*)::int AS n FROM payments`);
+      if (paymentsBefore < 0 || Number(payAfterDecline.rows[0].n) === paymentsBefore) pass("decline_no_payment");
+      else fail("decline_no_payment");
+    } else fail("decline_offer_setup", JSON.stringify(offerDecline));
+
+    // --- 5b. EXPIRATION ---
+    const expireSlot = { ...slot, slotTime: "11:15" };
+    const offerExp = await createSlotOffer(dbQuery, {
+      waitlistRequestId: joinB.json.request.requestId,
+      slot: expireSlot,
+      ttlMinutes: 0.01,
+      idempotencyKey: `${MARKER}-offer-expire`,
+      validateSlotStillAvailable: async () => ({ ok: true }),
+    });
+    if (offerExp.ok) {
+      offerIds.push(offerExp.offer.offerId);
+      await dbQuery(
+        `UPDATE aura_slot_offers SET offer_expires_at = NOW() - INTERVAL '1 minute' WHERE id=$1::uuid`,
+        [offerExp.offer.offerId],
+      );
+      await new Promise((r) => setTimeout(r, 200));
+      const late = await api(`/api/aura/phase3/waitlist/offers/${offerExp.offer.offerId}/accept`, {
+        method: "POST",
+        token: c2.token,
+        body: { confirmBookingSummary: true },
+      });
+      if (late.status === 409 && late.json?.error === "offer_expired") pass("expired_offer_cannot_accept");
+      else fail("expired_offer_cannot_accept", JSON.stringify(late));
+      const reqAfterExp = await dbQuery(`SELECT status FROM aura_waitlist_requests WHERE id=$1::uuid`, [
+        joinB.json.request.requestId,
+      ]);
+      if (reqAfterExp.rows[0]?.status === "active") pass("waitlist_remains_active_after_offer_expire");
+      else fail("waitlist_remains_active_after_offer_expire", reqAfterExp.rows[0]?.status);
+    } else fail("expire_offer_setup", JSON.stringify(offerExp));
+
+    // --- 3. ACCEPTANCE (valid offer A) ---
+    const pending = await api(`/api/aura/phase3/waitlist/offers/${offerA.offer.offerId}/accept`, {
+      method: "POST",
+      token: c1.token,
+      body: { confirmBookingSummary: false },
+    });
     if (
-      loseOffer.ok === false &&
-      ["slot_already_offered", "request_not_eligible", "criteria_mismatch"].includes(loseOffer.error)
+      pending.status === 200 &&
+      pending.json?.pendingBookingConfirmation === true &&
+      pending.json?.bookingCreated === false
     ) {
-      pass("losing_customer_safe_unavailable", loseOffer.error);
-    } else fail("losing_customer_safe_unavailable", JSON.stringify(loseOffer));
+      pass("accept_pending_confirmation_no_booking_yet");
+    } else fail("accept_pending_confirmation_no_booking_yet", JSON.stringify(pending));
+
+    const confirmed = await api(`/api/aura/phase3/waitlist/offers/${offerA.offer.offerId}/accept`, {
+      method: "POST",
+      token: c1.token,
+      body: { confirmBookingSummary: true, slotStillAvailable: true },
+    });
+    if (
+      confirmed.status === 200 &&
+      confirmed.json?.ok &&
+      confirmed.json?.bookingCreated === true &&
+      confirmed.json?.paymentRequired === true &&
+      confirmed.json?.paymentBypassed === false &&
+      confirmed.json?.paymentTriggered === false
+    ) {
+      pass("accept_creates_unpaid_booking");
+      if (confirmed.json.bookingId) bookingIds.push(confirmed.json.bookingId);
+    } else fail("accept_creates_unpaid_booking", JSON.stringify(confirmed));
+
+    const booking = await dbQuery(
+      `SELECT id, customer_email, barber_name, service, date::text AS date,
+              to_char(time,'HH24:MI') AS time, total_price::float8 AS price,
+              payment_status, is_paid_booking, manual_bypass
+       FROM bookings WHERE id=$1::uuid`,
+      [confirmed.json?.bookingId],
+    );
+    const b = booking.rows?.[0];
+    if (
+      b &&
+      String(b.customer_email).toLowerCase() === String(c1.email).toLowerCase() &&
+      b.barber_name === barberRow.name &&
+      b.service === serviceName &&
+      String(b.date).slice(0, 10) === slotDate &&
+      String(b.time).startsWith("10:30") &&
+      Number(b.price) === 35 &&
+      b.payment_status === "unpaid" &&
+      b.is_paid_booking === false &&
+      b.manual_bypass === false
+    ) {
+      pass("accept_booking_fields_and_payment_required");
+    } else fail("accept_booking_fields_and_payment_required", JSON.stringify(b));
+
+    const fulfilledReq = await dbQuery(`SELECT status FROM aura_waitlist_requests WHERE id=$1::uuid`, [
+      joinA.json.request.requestId,
+    ]);
+    const fulfilledOffer = await dbQuery(
+      `SELECT status, claimed_booking_id FROM aura_slot_offers WHERE id=$1::uuid`,
+      [offerA.offer.offerId],
+    );
+    if (fulfilledReq.rows[0]?.status === "fulfilled" && fulfilledOffer.rows[0]?.status === "claimed") {
+      pass("request_and_offer_fulfilled");
+    } else {
+      fail(
+        "request_and_offer_fulfilled",
+        JSON.stringify({ fulfilledReq: fulfilledReq.rows[0], fulfilledOffer: fulfilledOffer.rows[0] }),
+      );
+    }
+
+    const audits = await dbQuery(
+      `SELECT action FROM aura_action_logs WHERE user_id=$1::uuid AND action LIKE 'waitlist_%' ORDER BY created_at`,
+      [c1.id],
+    );
+    const acts = audits.rows.map((r) => r.action);
+    if (acts.includes("waitlist_offer_accepted") && acts.includes("waitlist_offer_claimed")) {
+      pass("aura_action_logs_accept_claim");
+    } else fail("aura_action_logs_accept_claim", acts.join(","));
+
+    const oev = await dbQuery(
+      `SELECT event_type FROM aura_slot_offer_events WHERE offer_id=$1::uuid ORDER BY created_at`,
+      [offerA.offer.offerId],
+    );
+    const otypes = oev.rows.map((r) => r.event_type);
+    if (otypes.includes("offer_accepted_pending_booking") && otypes.includes("offer_claimed")) {
+      pass("slot_offer_events_accept_claim");
+    } else fail("slot_offer_events_accept_claim", otypes.join(","));
+
+    const wev = await dbQuery(
+      `SELECT event_type FROM aura_waitlist_events WHERE request_id=$1::uuid ORDER BY created_at`,
+      [joinA.json.request.requestId],
+    );
+    if (wev.rows.some((r) => r.event_type === "request_fulfilled" || r.event_type === "offer_matched")) {
+      pass("waitlist_events_fulfillment");
+    } else fail("waitlist_events_fulfillment", wev.rows.map((r) => r.event_type).join(","));
+
+    // --- 4. CONCURRENCY / IDEMPOTENCY ---
+    const dup = await api(`/api/aura/phase3/waitlist/offers/${offerA.offer.offerId}/accept`, {
+      method: "POST",
+      token: c1.token,
+      body: { confirmBookingSummary: true },
+    });
+    if (
+      dup.status === 409 &&
+      (dup.json?.error === "already_claimed" || dup.json?.error === "offer_not_actionable")
+    ) {
+      pass("duplicate_accept_rejected");
+    } else fail("duplicate_accept_rejected", JSON.stringify(dup));
+
+    const raceSlot = { ...slot, slotTime: "14:00" };
+    await dbQuery(`UPDATE aura_waitlist_requests SET status='active', deleted_at=NULL WHERE id=$1::uuid`, [
+      joinB.json.request.requestId,
+    ]);
+    const raceOffer = await createSlotOffer(dbQuery, {
+      waitlistRequestId: joinB.json.request.requestId,
+      slot: raceSlot,
+      idempotencyKey: `${MARKER}-race`,
+      validateSlotStillAvailable: async () => ({ ok: true }),
+    });
+    if (!raceOffer.ok) fail("race_offer_setup", JSON.stringify(raceOffer));
+    else {
+      offerIds.push(raceOffer.offer.offerId);
+      const [r1, r2] = await Promise.all([
+        api(`/api/aura/phase3/waitlist/offers/${raceOffer.offer.offerId}/accept`, {
+          method: "POST",
+          token: c2.token,
+          body: { confirmBookingSummary: true, slotStillAvailable: true },
+        }),
+        api(`/api/aura/phase3/waitlist/offers/${raceOffer.offer.offerId}/accept`, {
+          method: "POST",
+          token: c2.token,
+          body: { confirmBookingSummary: true, slotStillAvailable: true },
+        }),
+      ]);
+      const wins = [r1, r2].filter((r) => r.status === 200 && r.json?.ok && r.json?.bookingCreated);
+      const losses = [r1, r2].filter((r) => r.status === 409 || r.json?.ok === false);
+      if (wins.length === 1 && losses.length === 1) pass("concurrency_one_winner");
+      else fail("concurrency_one_winner", JSON.stringify({ r1: r1.json, r2: r2.json }));
+      if (wins[0]?.json?.bookingId) bookingIds.push(wins[0].json.bookingId);
+
+      const claimedBookings = await dbQuery(
+        `SELECT COUNT(DISTINCT claimed_booking_id)::int AS n FROM aura_slot_offers WHERE id=$1::uuid AND claimed_booking_id IS NOT NULL`,
+        [raceOffer.offer.offerId],
+      );
+      if (Number(claimedBookings.rows[0].n) === 1) pass("concurrency_single_booking");
+      else fail("concurrency_single_booking", JSON.stringify(claimedBookings.rows[0]));
+
+      const loseOffer = await createSlotOffer(dbQuery, {
+        waitlistRequestId: joinA.json.request.requestId,
+        slot: raceSlot,
+        idempotencyKey: `${MARKER}-lose`,
+        validateSlotStillAvailable: async () => ({ ok: true }),
+      });
+      if (
+        loseOffer.ok === false &&
+        ["slot_already_offered", "request_not_eligible", "criteria_mismatch"].includes(loseOffer.error)
+      ) {
+        pass("losing_customer_safe_unavailable", loseOffer.error);
+      } else fail("losing_customer_safe_unavailable", JSON.stringify(loseOffer));
+    }
   }
 
   // Safeguards: no notification sends
