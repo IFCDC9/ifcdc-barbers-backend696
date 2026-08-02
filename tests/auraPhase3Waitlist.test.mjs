@@ -33,6 +33,14 @@ function createMemoryDb() {
   const events = [];
   const offerEvents = [];
   const logs = [];
+  const barbers = [
+    { id: "3df86e72-8999-4633-bca7-2274b57b5b4f", name: "IFCDC Barbers" },
+    { id: randomUUID(), name: "Alex" },
+  ];
+  const services = [
+    { id: "svc-haircut", name: "Haircut" },
+    { id: "svc-beard", name: "Beard" },
+  ];
 
   function rowFromInsert(params) {
     return {
@@ -69,6 +77,25 @@ function createMemoryDb() {
   async function dbQuery(sql, params = []) {
     const s = String(sql).replace(/\s+/g, " ").trim().toLowerCase();
     if (s.includes("create table") || s.includes("create index") || s.includes("create unique index")) {
+      return { rows: [] };
+    }
+    if (s.includes("from barbers") && s.includes("id::text = $1")) {
+      const b = barbers.find((x) => String(x.id) === String(params[0]));
+      return { rows: b ? [b] : [] };
+    }
+    if (s.includes("from barbers") && s.includes("lower(btrim(name))")) {
+      const b = barbers.find((x) => x.name.toLowerCase() === String(params[0] || "").toLowerCase().trim());
+      return { rows: b ? [b] : [] };
+    }
+    if (s.includes("from barber_services") && s.includes("id::text = $1")) {
+      const svc = services.find((x) => String(x.id) === String(params[0]));
+      return { rows: svc ? [svc] : [] };
+    }
+    if (s.includes("from barber_services") && s.includes("lower(btrim(name))")) {
+      const svc = services.find((x) => x.name.toLowerCase() === String(params[0] || "").toLowerCase().trim());
+      return { rows: svc ? [svc] : [] };
+    }
+    if (s.includes("from styles")) {
       return { rows: [] };
     }
     if (s.includes("insert into aura_action_logs")) {
@@ -453,6 +480,30 @@ test("unauthorized content and expired requests excluded from matches", async ()
   });
   assert.equal(bad.ok, false);
 
+  const unknownBarber = await joinWaitlistWithConsent(mem.dbQuery, {
+    customerId,
+    consentGranted: true,
+    criteria: {
+      barberName: "Totally Fake Barber XYZ",
+      serviceName: "Haircut",
+      preferredDate: "2026-08-15",
+    },
+  });
+  assert.equal(unknownBarber.ok, false);
+  assert.equal(unknownBarber.error, "unauthorized_barber");
+
+  const unknownService = await joinWaitlistWithConsent(mem.dbQuery, {
+    customerId,
+    consentGranted: true,
+    criteria: {
+      barberName: "IFCDC Barbers",
+      serviceName: "Not A Real Service",
+      preferredDate: "2026-08-15",
+    },
+  });
+  assert.equal(unknownService.ok, false);
+  assert.equal(unknownService.error, "unauthorized_service");
+
   const active = await joinWaitlistWithConsent(mem.dbQuery, {
     customerId,
     consentGranted: true,
@@ -464,12 +515,12 @@ test("unauthorized content and expired requests excluded from matches", async ()
       timeRangeEnd: "12:00",
     },
   });
+  assert.equal(active.ok, true);
   const expired = await joinWaitlistWithConsent(mem.dbQuery, {
-    customerId,
+    customerId: randomUUID(),
     consentGranted: true,
     criteria: {
-      barberId: randomUUID(),
-      barberName: "Other Barber",
+      barberName: "Alex",
       serviceName: "Beard",
       preferredDate: "2026-08-16",
       timeRangeStart: "09:00",
@@ -477,6 +528,7 @@ test("unauthorized content and expired requests excluded from matches", async ()
       expiresAt: new Date(Date.now() - 60_000).toISOString(),
     },
   });
+  assert.equal(expired.ok, true);
   // force expired status
   mem.requests.get(expired.request.requestId).status = "expired";
 

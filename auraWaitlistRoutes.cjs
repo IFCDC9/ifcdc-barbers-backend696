@@ -25,6 +25,24 @@ function runMiddleware(mw, req, res) {
   });
 }
 
+/**
+ * Phase 3B2 admin endpoints require platform Super Admin (or ADMIN_SECRET key).
+ * Rejects shop_owner and non-super platform staff even if bookings admin guard passes.
+ */
+function assertWaitlistSuperAdmin(req, res) {
+  const via = String(req.bookingsAdminScope?.via || "");
+  if (via === "shop_owner" || req.bookingsAdminScope?.all !== true) {
+    res.status(403).json({ ok: false, error: "super_admin_required" });
+    return false;
+  }
+  if (via === "admin_key" || via === "platform_super") return true;
+  if (req.user?.isSuperAdmin === true || req.user?.isOwner === true) return true;
+  const role = String(req.user?.role || "").toLowerCase();
+  if (role === "super_admin") return true;
+  res.status(403).json({ ok: false, error: "super_admin_required" });
+  return false;
+}
+
 function attachAuraWaitlistRoutes(router, { dbQuery, requireAuth, requireAdmin } = {}) {
   router.get("/waitlist/status", (_req, res) => {
     const flags = auraPhase3Flags();
@@ -215,6 +233,7 @@ function attachAuraWaitlistRoutes(router, { dbQuery, requireAuth, requireAdmin }
         return res.status(404).json({ ok: false, error: "aura_phase3_slot_recovery_disabled" });
       }
       if (!(await runMiddleware(requireAdmin, req, res))) return;
+      if (!assertWaitlistSuperAdmin(req, res)) return;
       const out = await findWaitlistMatchesForSlot(dbQuery, req.body?.slot || req.body);
       return res.status(out.ok ? 200 : 400).json(out);
     } catch (e) {
@@ -228,6 +247,7 @@ function attachAuraWaitlistRoutes(router, { dbQuery, requireAuth, requireAdmin }
         return res.status(404).json({ ok: false, error: "aura_phase3_slot_recovery_disabled" });
       }
       if (!(await runMiddleware(requireAdmin, req, res))) return;
+      if (!assertWaitlistSuperAdmin(req, res)) return;
       const out = await createSlotOffer(dbQuery, {
         waitlistRequestId: req.body?.waitlistRequestId,
         slot: req.body?.slot || req.body,
@@ -244,6 +264,7 @@ function attachAuraWaitlistRoutes(router, { dbQuery, requireAuth, requireAdmin }
   router.post("/admin/waitlist/migrate", async (req, res) => {
     try {
       if (!(await runMiddleware(requireAdmin, req, res))) return;
+      if (!assertWaitlistSuperAdmin(req, res)) return;
       await ensureAuraWaitlistTables(dbQuery);
       return res.json({
         ok: true,

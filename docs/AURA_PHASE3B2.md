@@ -85,6 +85,8 @@ Only one open offer may exist for a given barber+date+time+service slot (no mult
 - Competing open offers for the same physical slot are `superseded`
 - Booking is **not** auto-created; claim requires explicit booking-summary confirmation and existing payment rules
 - Offer creation is idempotent via `idempotency_key`
+- Admin waitlist endpoints require Super Admin / `ADMIN_SECRET` (`assertWaitlistSuperAdmin`); shop_owner is rejected
+- Join/update validates barber and service against the live catalog (`unauthorized_barber` / `unauthorized_service`)
 
 ## 7. Notification controls
 

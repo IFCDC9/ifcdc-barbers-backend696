@@ -109,6 +109,91 @@ function buildWaitlistConsentPrompt(criteria) {
 }
 
 /**
+ * Reject unknown barbers/services against live catalog (does not invent qualifications).
+ */
+async function assertAuthorizedWaitlistCatalog(dbQuery, criteria) {
+  const out = { ...criteria };
+  if (!out.anyQualifiedBarber && !out.earliestAvailable) {
+    if (out.barberId) {
+      const r = await dbQuery(
+        `SELECT id::text AS id, name FROM barbers WHERE id::text = $1::text LIMIT 1`,
+        [out.barberId],
+      );
+      if (!r.rows?.[0]) return { ok: false, error: "unauthorized_barber" };
+      out.barberId = r.rows[0].id;
+      out.barberName = r.rows[0].name || out.barberName;
+    } else if (out.barberName) {
+      const r = await dbQuery(
+        `SELECT id::text AS id, name FROM barbers WHERE lower(btrim(name)) = lower(btrim($1)) LIMIT 1`,
+        [out.barberName],
+      );
+      if (!r.rows?.[0]) return { ok: false, error: "unauthorized_barber" };
+      out.barberId = r.rows[0].id;
+      out.barberName = r.rows[0].name;
+    }
+  }
+
+  if (out.serviceId || out.serviceName) {
+    let found = null;
+    if (out.serviceId) {
+      try {
+        const r = await dbQuery(
+          `SELECT id::text AS id, name FROM barber_services
+           WHERE id::text = $1::text AND COALESCE(is_active, true) = true
+           LIMIT 1`,
+          [out.serviceId],
+        );
+        found = r.rows?.[0] || null;
+      } catch {
+        found = null;
+      }
+      if (!found) {
+        try {
+          const r = await dbQuery(
+            `SELECT id::text AS id, title AS name FROM styles WHERE id::text = $1::text LIMIT 1`,
+            [out.serviceId],
+          );
+          found = r.rows?.[0] || null;
+        } catch {
+          found = null;
+        }
+      }
+    }
+    if (!found && out.serviceName) {
+      try {
+        const r = await dbQuery(
+          `SELECT id::text AS id, name FROM barber_services
+           WHERE lower(btrim(name)) = lower(btrim($1)) AND COALESCE(is_active, true) = true
+           LIMIT 1`,
+          [out.serviceName],
+        );
+        found = r.rows?.[0] || null;
+      } catch {
+        found = null;
+      }
+      if (!found) {
+        try {
+          const r = await dbQuery(
+            `SELECT id::text AS id, title AS name FROM styles
+             WHERE lower(btrim(title)) = lower(btrim($1))
+             LIMIT 1`,
+            [out.serviceName],
+          );
+          found = r.rows?.[0] || null;
+        } catch {
+          found = null;
+        }
+      }
+    }
+    if (!found) return { ok: false, error: "unauthorized_service" };
+    out.serviceId = found.id;
+    out.serviceName = found.name;
+  }
+
+  return { ok: true, value: out };
+}
+
+/**
  * Transparent ranking only — no hidden value/payment/protected-characteristic scoring.
  * Higher score = better match; FIFO on ties via created_at.
  */
@@ -194,6 +279,7 @@ module.exports = {
   detectUnsafeWaitlistText,
   normalizeWaitlistCriteria,
   buildWaitlistConsentPrompt,
+  assertAuthorizedWaitlistCatalog,
   scoreWaitlistMatch,
   sanitizeCustomerText,
 };

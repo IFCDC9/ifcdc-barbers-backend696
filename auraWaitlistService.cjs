@@ -10,6 +10,7 @@ const {
   DEFAULT_OFFER_TTL_MINUTES,
   normalizeWaitlistCriteria,
   buildWaitlistConsentPrompt,
+  assertAuthorizedWaitlistCatalog,
   scoreWaitlistMatch,
 } = require("./auraWaitlistSecurity.cjs");
 const { logAuraAction } = require("./auraActionLog.cjs");
@@ -277,8 +278,18 @@ async function joinWaitlistWithConsent(dbQuery, {
   const normalized = normalizeWaitlistCriteria(criteria || {});
   if (!normalized.ok) return { ok: false, error: normalized.error };
   await ensureAuraWaitlistTables(dbQuery);
+  const authorized = await assertAuthorizedWaitlistCatalog(dbQuery, normalized.value);
+  if (!authorized.ok) {
+    await logAuraAction(dbQuery, {
+      actor: "customer",
+      userId: customerId,
+      action: "waitlist_join_blocked",
+      result: authorized.error,
+    });
+    return { ok: false, error: authorized.error };
+  }
 
-  const v = normalized.value;
+  const v = authorized.value;
   // Duplicate active/paused prevention — merge by refreshing existing row.
   const existing = await dbQuery(
     `SELECT * FROM aura_waitlist_requests
@@ -418,7 +429,9 @@ async function updateWaitlistRequest(dbQuery, { requestId, customerId, criteria 
   if (!existing.ok) return existing;
   const normalized = normalizeWaitlistCriteria(criteria || {});
   if (!normalized.ok) return { ok: false, error: normalized.error };
-  const v = normalized.value;
+  const authorized = await assertAuthorizedWaitlistCatalog(dbQuery, normalized.value);
+  if (!authorized.ok) return { ok: false, error: authorized.error };
+  const v = authorized.value;
   const upd = await dbQuery(
     `UPDATE aura_waitlist_requests SET
        barber_id = $2::uuid,
