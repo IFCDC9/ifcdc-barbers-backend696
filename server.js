@@ -1302,6 +1302,15 @@ async function startServer() {
         }, 5 * 60 * 1000);
         console.log("[boot] AURA Phase 2 reminder interval armed (5m)");
       }
+
+      // Daily Super Admin report — armed only when send flag + hour/minute configured.
+      // Never catch-up-sends on boot/deploy.
+      try {
+        const { armAuraDailyReportScheduler } = require("./auraDailyReportScheduler.cjs");
+        armAuraDailyReportScheduler(dbQuery);
+      } catch (e) {
+        console.warn("[boot] AURA daily report scheduler skipped:", e?.message || e);
+      }
     } else {
       console.log("[boot] AURA Phase 2 master flag off — reminder scanners not started");
     }

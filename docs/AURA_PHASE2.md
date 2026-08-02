@@ -27,6 +27,9 @@ Feature-flagged expansion of AURA as the IFCDC Barbers digital receptionist.
 | `AURA_DAILY_REPORT_PREVIEW` | Allow report preview/dry-run | off |
 | `AURA_DAILY_REPORT_ENABLED` | **Send** daily digest (step 2) | off |
 | `AURA_DAILY_REPORT_TO` | Digest recipient | falls back to `BOOKING_ADMIN_EMAIL` |
+| `AURA_DAILY_REPORT_HOUR` | Local hour `0–23` to send (required for recurring) | unset |
+| `AURA_DAILY_REPORT_MINUTE` | Local minute `0–59` | `0` when hour set |
+| `SHOP_TIMEZONE` | Timezone for report day + send clock | `America/New_York` |
 
 ## Additive DB (auto-applied when master flag is on at boot)
 

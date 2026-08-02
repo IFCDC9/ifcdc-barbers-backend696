@@ -20,10 +20,18 @@ function createAuraPhase2Router({ dbQuery, requireAdmin } = {}) {
 
   router.get("/status", (req, res) => {
     const flags = auraPhase2Flags();
+    let dailyReportSchedule = null;
+    try {
+      const { getNextDailyReportRunAt } = require("./auraDailyReportScheduler.cjs");
+      dailyReportSchedule = getNextDailyReportRunAt();
+    } catch {
+      dailyReportSchedule = null;
+    }
     return res.json({
       ok: true,
       identity: auraReceptionistIdentity(),
       flags,
+      dailyReportSchedule,
       mailFromUnchanged: true,
       preferredFutureSender: "AURA <aura@aura.ifcdcbarbersapp.com>",
       note: "MAIL_FROM is not switched by Phase 2. Enable flags only after E2E approval.",
