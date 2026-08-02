@@ -14,6 +14,7 @@ const {
   deleteAllPreferences,
   withdrawConsent,
   buildPreferenceSuggestions,
+  respondToPreferenceSuggestion,
   assertPreferenceDoesNotOverride,
   adminListPreferences,
 } = require("./auraPreferenceService.cjs");
@@ -210,10 +211,32 @@ function attachAuraPreferenceRoutes(router, { dbQuery, requireAuth, requireAdmin
         return res.status(404).json({ ok: false, error: "aura_phase3_preference_suggestions_disabled" });
       }
       if (!(await runMiddleware(requireAuth, req, res))) return;
-      const out = await buildPreferenceSuggestions(dbQuery, { customerId: req.user?.id });
+      const out = await buildPreferenceSuggestions(dbQuery, {
+        customerId: req.user?.id,
+        force: req.query.force === "1",
+      });
       return res.status(out.ok ? 200 : 400).json(out);
     } catch (e) {
       return res.status(500).json({ ok: false, error: e?.message || "suggestions_failed" });
+    }
+  });
+
+  router.post("/preferences/suggestions/respond", async (req, res) => {
+    try {
+      if (!auraPhase3Flags().preferenceSuggestions) {
+        return res.status(404).json({ ok: false, error: "aura_phase3_preference_suggestions_disabled" });
+      }
+      if (!(await runMiddleware(requireAuth, req, res))) return;
+      const out = await respondToPreferenceSuggestion(dbQuery, {
+        customerId: req.user?.id,
+        suggestionId: req.body?.suggestionId || req.body?.id || null,
+        suggestionType: req.body?.suggestionType || req.body?.type || null,
+        decision: req.body?.decision || req.body?.response,
+        criteria: req.body?.criteria || null,
+      });
+      return res.status(out.ok ? 200 : 400).json(out);
+    } catch (e) {
+      return res.status(500).json({ ok: false, error: e?.message || "suggestion_respond_failed" });
     }
   });
 

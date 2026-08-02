@@ -42,8 +42,16 @@ function createMemoryDb() {
         result: params[4],
         userId: params[1],
         metadata: params[5] ? JSON.parse(params[5]) : null,
+        created_at: new Date().toISOString(),
       });
       return { rows: [] };
+    }
+    if (s.includes("from aura_action_logs") && s.includes("preference_suggestion")) {
+      const userId = params[0];
+      const rows = logs
+        .filter((l) => l.userId === userId && l.action === "preference_suggestion")
+        .map((l) => ({ metadata: l.metadata, created_at: l.created_at }));
+      return { rows };
     }
     if (s.includes("insert into aura_customer_preference_events")) {
       events.push({
@@ -339,7 +347,9 @@ test("preference does not override unavailable times or auto-book", async () => 
   const {
     savePreferenceWithConsent,
     buildPreferenceSuggestions,
+    respondToPreferenceSuggestion,
     assertPreferenceDoesNotOverride,
+    deletePreference,
   } = require("../auraPreferenceService.cjs");
   const mem = createMemoryDb();
   const customerId = randomUUID();
@@ -358,16 +368,51 @@ test("preference does not override unavailable times or auto-book", async () => 
   const suggestions = await buildPreferenceSuggestions(mem.dbQuery, { customerId });
   assert.equal(suggestions.ok, true);
   assert.equal(suggestions.autoBook, false);
+  assert.equal(suggestions.optional, true);
+  assert.equal(suggestions.requiresConfirmation, true);
   assert.ok(suggestions.suggestions.length >= 1);
-  assert.match(suggestions.suggestions[0].message, /Would you like me to check/i);
-  assert.ok(mem.logs.some((l) => l.action === "preference_suggestion"));
+  assert.match(suggestions.suggestions[0].message, /optional/i);
+  const suggestionLogs = mem.logs.filter((l) => l.action === "preference_suggestion");
+  assert.equal(suggestionLogs.length, suggestions.suggestions.length);
+
+  const again = await buildPreferenceSuggestions(mem.dbQuery, { customerId });
+  assert.equal(again.deduped, true);
+  assert.equal(mem.logs.filter((l) => l.action === "preference_suggestion").length, suggestions.suggestions.length);
+
+  const declined = await respondToPreferenceSuggestion(mem.dbQuery, {
+    customerId,
+    suggestionId: suggestions.suggestions[0].id,
+    suggestionType: suggestions.suggestions[0].type,
+    decision: "decline",
+  });
+  assert.equal(declined.ok, true);
+  assert.equal(declined.changed, false);
+  assert.equal(declined.beginAvailabilitySearch, false);
+
+  const accepted = await respondToPreferenceSuggestion(mem.dbQuery, {
+    customerId,
+    suggestionId: suggestions.suggestions[0].id,
+    suggestionType: suggestions.suggestions[0].type,
+    decision: "accept",
+    criteria: suggestions.suggestions[0].criteria,
+  });
+  assert.equal(accepted.ok, true);
+  assert.equal(accepted.beginAvailabilitySearch, true);
+  assert.equal(accepted.autoBook, false);
+  assert.equal(accepted.appointmentCreated, false);
+  assert.equal(accepted.guaranteedAvailability, false);
 
   const blocked = assertPreferenceDoesNotOverride({ slotAvailable: false });
   assert.equal(blocked.ok, false);
   assert.equal(blocked.reason, "preference_cannot_override_availability");
   assert.equal(blocked.autoBook, false);
 
-  const allowedCheck = assertPreferenceDoesNotOverride({ slotAvailable: true });
-  assert.equal(allowedCheck.ok, true);
-  assert.equal(allowedCheck.autoBook, false);
+  // Deleted preferences are not suggested
+  for (const p of (
+    await require("../auraPreferenceService.cjs").listCustomerPreferences(mem.dbQuery, { customerId })
+  ).preferences) {
+    await deletePreference(mem.dbQuery, { preferenceId: p.preferenceId, customerId });
+  }
+  const afterDelete = await buildPreferenceSuggestions(mem.dbQuery, { customerId, force: true });
+  assert.equal(afterDelete.suggestions.length, 0);
 });

@@ -436,61 +436,248 @@ async function withdrawConsent(dbQuery, { customerId, actor = "customer" } = {})
 
 /**
  * Suggestion text only — never books, charges, or contacts.
+ * Each suggestion is optional and requires explicit confirmation before any availability search.
  */
-async function buildPreferenceSuggestions(dbQuery, { customerId } = {}) {
+async function buildPreferenceSuggestions(dbQuery, { customerId, force = false } = {}) {
   if (!suggestionsEnabled()) {
     return { ok: false, error: "aura_phase3_preference_suggestions_disabled", suggestions: [] };
   }
   if (!customerId) return { ok: false, error: "customer_required" };
+  await ensureAuraPreferenceTables(dbQuery);
   const listed = await listCustomerPreferences(dbQuery, { customerId });
   if (!listed.ok) return listed;
+
+  // Active granted preferences only (soft-deleted / withdrawn excluded by list).
+  const prefs = (listed.preferences || []).filter((p) => p.consentStatus === "granted" && !p.deletedAt);
   const suggestions = [];
-  const prefs = listed.preferences || [];
   const days = prefs.find((p) => p.preferenceType === "preferred_days");
   const times = prefs.find((p) => p.preferenceType === "preferred_time_ranges");
   const barber = prefs.find((p) => p.preferenceType === "preferred_barber");
+  const services = prefs.find((p) => p.preferenceType === "preferred_services");
+  const language = prefs.find((p) => p.preferenceType === "preferred_language");
 
   if (days?.preferenceValue?.days?.length) {
     const d = days.preferenceValue.days.join(", ");
     suggestions.push({
+      id: `preferred_days:${d}`,
       type: "preferred_days",
-      message: `You usually prefer ${d}. Would you like me to check those days?`,
+      message: `You usually prefer ${d}. This is optional — would you like me to check those days?`,
+      optional: true,
+      requiresConfirmation: true,
       autoBook: false,
+      criteria: { days: days.preferenceValue.days },
     });
   }
   if (times?.preferenceValue?.ranges?.length) {
     const r = times.preferenceValue.ranges[0];
     suggestions.push({
+      id: `preferred_time_ranges:${r.start}-${r.end}`,
       type: "preferred_time_ranges",
-      message: `You usually prefer ${r.start}–${r.end}. Would you like me to check those times?`,
+      message: `You usually prefer ${r.start}–${r.end}. This is optional — would you like me to check those times?`,
+      optional: true,
+      requiresConfirmation: true,
       autoBook: false,
+      criteria: { ranges: times.preferenceValue.ranges },
     });
   }
   if (barber?.preferenceValue) {
     const name = barber.preferenceValue.barberName || "your preferred barber";
     suggestions.push({
+      id: `preferred_barber:${barber.preferenceValue.barberId || name}`,
       type: "preferred_barber",
-      message: `You usually prefer ${name}. Would you like me to check their availability?`,
+      message: `You usually prefer ${name}. This is optional — would you like me to check their availability?`,
+      optional: true,
+      requiresConfirmation: true,
       autoBook: false,
+      criteria: {
+        barberId: barber.preferenceValue.barberId || null,
+        barberName: barber.preferenceValue.barberName || null,
+      },
+    });
+  }
+  if (services?.preferenceValue?.services?.length) {
+    const svc = services.preferenceValue.services.join(", ");
+    suggestions.push({
+      id: `preferred_services:${svc}`,
+      type: "preferred_services",
+      message: `You usually prefer ${svc}. This is optional — would you like me to check availability for that?`,
+      optional: true,
+      requiresConfirmation: true,
+      autoBook: false,
+      criteria: { services: services.preferenceValue.services },
+    });
+  }
+  if (language?.preferenceValue?.language) {
+    suggestions.push({
+      id: `preferred_language:${language.preferenceValue.language}`,
+      type: "preferred_language",
+      message: `You usually prefer ${language.preferenceValue.language}. This is optional — would you like me to continue in that language?`,
+      optional: true,
+      requiresConfirmation: true,
+      autoBook: false,
+      criteria: { language: language.preferenceValue.language },
     });
   }
 
-  await logAuraAction(dbQuery, {
-    actor: "aura",
-    userId: customerId,
-    action: "preference_suggestion",
-    result: suggestions.length ? "suggested" : "none",
-    metadata: {
-      count: suggestions.length,
-      types: suggestions.map((s) => s.type),
-      overrides: preferencesCannotOverrideScheduling(),
-    },
-  });
+  // Deduplicate: skip re-logging identical suggestion sets within 10 minutes.
+  const fingerprint = suggestions
+    .map((s) => s.id)
+    .sort()
+    .join("|");
+  let logged = [];
+  if (suggestions.length && fingerprint) {
+    const recent = await dbQuery(
+      `SELECT metadata, created_at FROM aura_action_logs
+       WHERE user_id = $1::uuid
+         AND action = 'preference_suggestion'
+         AND created_at > NOW() - INTERVAL '10 minutes'
+       ORDER BY created_at DESC
+       LIMIT 40`,
+      [customerId],
+    );
+    const already = (recent.rows || []).some((r) => String(r.metadata?.fingerprint || "") === fingerprint);
+    if (!force && already) {
+      return {
+        ok: true,
+        suggestions,
+        autoBook: false,
+        optional: true,
+        requiresConfirmation: true,
+        deduped: true,
+        guaranteedAvailability: false,
+        overrides: preferencesCannotOverrideScheduling(),
+      };
+    }
+
+    // Exactly one aura_action_logs row per suggestion offered.
+    for (const s of suggestions) {
+      await logAuraAction(dbQuery, {
+        actor: "aura",
+        userId: customerId,
+        action: "preference_suggestion",
+        result: "suggested",
+        metadata: {
+          suggestionId: s.id,
+          type: s.type,
+          message: s.message,
+          optional: true,
+          requiresConfirmation: true,
+          autoBook: false,
+          fingerprint,
+          overrides: preferencesCannotOverrideScheduling(),
+        },
+      });
+      logged.push(s.id);
+    }
+  } else {
+    await logAuraAction(dbQuery, {
+      actor: "aura",
+      userId: customerId,
+      action: "preference_suggestion",
+      result: "none",
+      metadata: { count: 0, fingerprint: "" },
+    });
+  }
 
   return {
     ok: true,
     suggestions,
     autoBook: false,
+    optional: true,
+    requiresConfirmation: true,
+    deduped: false,
+    guaranteedAvailability: false,
+    loggedSuggestionIds: logged,
+    overrides: preferencesCannotOverrideScheduling(),
+  };
+}
+
+/**
+ * Customer responds to a suggestion. Decline = no change.
+ * Accept = begin availability search only (never books/charges/contacts).
+ */
+async function respondToPreferenceSuggestion(dbQuery, {
+  customerId,
+  suggestionId = null,
+  suggestionType = null,
+  decision,
+  criteria = null,
+} = {}) {
+  if (!suggestionsEnabled()) {
+    return { ok: false, error: "aura_phase3_preference_suggestions_disabled" };
+  }
+  if (!customerId) return { ok: false, error: "customer_required" };
+  const dec = String(decision || "").trim().toLowerCase();
+  if (dec !== "accept" && dec !== "decline") {
+    return { ok: false, error: "decision_must_be_accept_or_decline" };
+  }
+
+  const listed = await listCustomerPreferences(dbQuery, { customerId });
+  if (!listed.ok) return listed;
+  const ownedTypes = new Set(
+    (listed.preferences || [])
+      .filter((p) => p.consentStatus === "granted" && !p.deletedAt)
+      .map((p) => p.preferenceType),
+  );
+  if (suggestionType && !ownedTypes.has(suggestionType) && dec === "accept") {
+    return {
+      ok: false,
+      error: "preference_not_active",
+      message: "That preference is not active for your account (deleted or withdrawn preferences are not used).",
+    };
+  }
+
+  if (dec === "decline") {
+    await logAuraAction(dbQuery, {
+      actor: "customer",
+      userId: customerId,
+      action: "preference_suggestion_declined",
+      result: "declined",
+      metadata: { suggestionId, suggestionType, changed: false, autoBook: false },
+    });
+    return {
+      ok: true,
+      decision: "decline",
+      changed: false,
+      beginAvailabilitySearch: false,
+      autoBook: false,
+      message: "Okay — I won’t use that suggestion.",
+    };
+  }
+
+  const searchCriteria = criteria || {};
+  await logAuraAction(dbQuery, {
+    actor: "customer",
+    userId: customerId,
+    action: "preference_suggestion_accepted",
+    result: "availability_search_only",
+    metadata: {
+      suggestionId,
+      suggestionType,
+      searchCriteria,
+      beginAvailabilitySearch: true,
+      autoBook: false,
+      appointmentCreated: false,
+      paymentTriggered: false,
+      contactTriggered: false,
+      guaranteedAvailability: false,
+    },
+  });
+
+  return {
+    ok: true,
+    decision: "accept",
+    beginAvailabilitySearch: true,
+    autoBook: false,
+    appointmentCreated: false,
+    paymentTriggered: false,
+    cancellationTriggered: false,
+    rescheduleTriggered: false,
+    contactTriggered: false,
+    guaranteedAvailability: false,
+    searchCriteria,
+    message:
+      "I’ll check availability based on your preference. Times are not guaranteed until a slot is confirmed available and you approve a booking.",
     overrides: preferencesCannotOverrideScheduling(),
   };
 }
@@ -541,6 +728,7 @@ module.exports = {
   deleteAllPreferences,
   withdrawConsent,
   buildPreferenceSuggestions,
+  respondToPreferenceSuggestion,
   assertPreferenceDoesNotOverride,
   adminListPreferences,
   buildConsentPrompt,
