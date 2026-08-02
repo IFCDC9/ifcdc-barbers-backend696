@@ -479,42 +479,57 @@ async function confirmBook(dbQuery, opts = {}) {
     };
   }
 
+  const barberId = opts.barberId;
+  const date = String(opts.date || "").trim();
+  const time = String(opts.time || "").trim();
+  const customerEmail = normalizeEmail(opts.customerEmail);
+  let timeSql = time;
+  try {
+    const { slotLabelToSqlTime } = await import("./barberSlotEngine.js");
+    timeSql = slotLabelToSqlTime(time) || time;
+  } catch {
+    /* keep raw time */
+  }
+
+  // Idempotent check before slot re-validation so repeats do not look "taken".
+  if (barberId && date && timeSql && customerEmail) {
+    const existing = await dbQuery(
+      `SELECT id, customer_name, customer_email, barber_name, service, barber_id, user_id,
+              date::text AS date, to_char(time, 'HH12:MI AM') AS time,
+              booking_status, total_paid, amount_paid, total_price, payment_status, is_paid_booking
+       FROM bookings
+       WHERE barber_id = $1::uuid
+         AND date = $2::date
+         AND time = $3::time
+         AND lower(coalesce(customer_email,'')) = $4
+         AND COALESCE(booking_status,'') NOT IN ('cancelled','canceled')
+       ORDER BY id DESC
+       LIMIT 1`,
+      [barberId, date, timeSql, customerEmail],
+    );
+    if (existing.rows?.[0]) {
+      const row = existing.rows[0];
+      await logAuraAction(dbQuery, {
+        action: "create_booking",
+        bookingId: row.id,
+        result: "idempotent_existing",
+        metadata: { date, time },
+      });
+      return {
+        ok: true,
+        booking: bookingSummary(row),
+        idempotent: true,
+        paymentCharged: false,
+        message: `That unpaid hold already exists (ref ${String(row.id).slice(0, 8)}).`,
+      };
+    }
+  }
+
   const proposed = await proposeBook(dbQuery, opts);
   if (!proposed.ok || proposed.requiresConfirmation !== true) return proposed;
 
   const p = proposed.prefill;
-  const timeSql = p.timeSql || p.time;
-
-  // Idempotent: same customer + barber + slot already held → return existing once.
-  const existing = await dbQuery(
-    `SELECT id, customer_name, customer_email, barber_name, service, barber_id, user_id,
-            date::text AS date, to_char(time, 'HH12:MI AM') AS time,
-            booking_status, total_paid, amount_paid, total_price, payment_status, is_paid_booking
-     FROM bookings
-     WHERE barber_id = $1::uuid
-       AND date = $2::date
-       AND time = $3::time
-       AND lower(coalesce(customer_email,'')) = $4
-       AND COALESCE(booking_status,'') NOT IN ('cancelled','canceled')
-     ORDER BY id DESC
-     LIMIT 1`,
-    [p.barberId, p.date, timeSql, p.customerEmail],
-  );
-  if (existing.rows?.[0]) {
-    const row = existing.rows[0];
-    await logAuraAction(dbQuery, {
-      action: "create_booking",
-      bookingId: row.id,
-      result: "idempotent_existing",
-      metadata: { date: p.date, time: p.time },
-    });
-    return {
-      ok: true,
-      booking: bookingSummary(row),
-      idempotent: true,
-      message: `That unpaid hold already exists (ref ${String(row.id).slice(0, 8)}).`,
-    };
-  }
+  timeSql = p.timeSql || p.time;
 
   let inserted;
   try {
