@@ -9,7 +9,7 @@ async function resolveBarberEmail(dbQuery, barberId) {
   if (!id || typeof dbQuery !== "function") return null;
   try {
     const r = await dbQuery(
-      `SELECT COALESCE(u.email, b.email) AS email
+      `SELECT u.email AS email
        FROM barbers b
        LEFT JOIN app_users u ON u.id = b.user_id
        WHERE b.id::text = $1::text
