@@ -4,6 +4,7 @@
  * Read-only: no mutations of bookings/payments/schedules/preferences.
  */
 const { auraPhase3Flags } = require("./auraPhase3Flags.cjs");
+const { logAuraAction } = require("./auraActionLog.cjs");
 const {
   generateOperationalInsightsReport,
   previewInsightsDailyDigest,
@@ -59,6 +60,19 @@ function attachAuraOperationalInsightsRoutes(router, { dbQuery, requireAdmin } =
       if (!(await runMiddleware(requireAdmin, req, res))) return;
       if (!assertInsightsSuperAdmin(req, res)) return;
 
+      await logAuraAction(dbQuery, {
+        actor: "super_admin",
+        userId: req.user?.id || null,
+        action: "operational_insight_dashboard_access",
+        result: "ok",
+        metadata: {
+          via: req.bookingsAdminScope?.via || "unknown",
+          periodStart: req.body?.periodStart || req.body?.start || null,
+          periodEnd: req.body?.periodEnd || req.body?.end || null,
+          readOnly: true,
+        },
+      });
+
       const out = await generateOperationalInsightsReport(dbQuery, {
         periodStart: req.body?.periodStart || req.body?.start || null,
         periodEnd: req.body?.periodEnd || req.body?.end || null,
@@ -79,6 +93,9 @@ function attachAuraOperationalInsightsRoutes(router, { dbQuery, requireAdmin } =
       const flags = auraPhase3Flags();
       if (!flags.operationalInsights) {
         return res.status(404).json({ ok: false, error: "aura_phase3_operational_insights_disabled" });
+      }
+      if (!flags.insightsDailyDigest) {
+        return res.status(404).json({ ok: false, error: "aura_phase3_insights_daily_digest_disabled" });
       }
       if (!(await runMiddleware(requireAdmin, req, res))) return;
       if (!assertInsightsSuperAdmin(req, res)) return;

@@ -42,6 +42,24 @@ function revenueAmount(row) {
   return num(row.amount_paid ?? row.amountPaid ?? row.total_paid ?? row.totalPaid ?? 0);
 }
 
+function classifyCancellationBucket(row) {
+  const by = String(row.cancelled_by || row.cancelledBy || "").toLowerCase();
+  const reason = String(row.cancellation_reason || row.cancellationReason || "").toLowerCase();
+  const pay = paymentStatusOf(row);
+  if (/no[_ ]?show/.test(reason) || /no[_ ]?show/.test(by)) return "no_show_related";
+  if (/customer|client/.test(by) || /customer request|client request|requested by customer/.test(reason)) {
+    return "customer_request";
+  }
+  if (/admin|shop|barber|staff|owner|system|aura/.test(by) || /shop|admin|staff/.test(reason)) {
+    return "shop_or_admin";
+  }
+  if (/reschedul/.test(reason)) return "reschedule_related";
+  if (["unpaid", "pending_payment", "failed"].includes(pay) || /unpaid|timeout|expired|payment/.test(reason)) {
+    return "unpaid_or_payment_related";
+  }
+  return "unspecified";
+}
+
 /**
  * Pure booking-performance metrics from an in-memory booking list.
  */
@@ -62,12 +80,26 @@ function computeBookingPerformance(bookings = [], { periodStart, periodEnd } = {
   let upcoming = 0;
   let advanceHoursSum = 0;
   let advanceCount = 0;
+  const cancelBuckets = {
+    customer_request: 0,
+    unpaid_or_payment_related: 0,
+    shop_or_admin: 0,
+    no_show_related: 0,
+    reschedule_related: 0,
+    unspecified: 0,
+  };
+  const cancelByActor = new Map();
 
   for (const b of rows) {
     const st = statusOf(b);
     if (COMPLETED_STATUSES.has(st)) completed += 1;
-    else if (CANCEL_STATUSES.has(st)) cancellations += 1;
-    else if (NOSHOW_STATUSES.has(st)) noShows += 1;
+    else if (CANCEL_STATUSES.has(st)) {
+      cancellations += 1;
+      const bucket = classifyCancellationBucket(b);
+      cancelBuckets[bucket] = (cancelBuckets[bucket] || 0) + 1;
+      const actor = String(b.cancelled_by || b.cancelledBy || "unspecified").slice(0, 80) || "unspecified";
+      cancelByActor.set(actor, (cancelByActor.get(actor) || 0) + 1);
+    } else if (NOSHOW_STATUSES.has(st)) noShows += 1;
     else upcoming += 1;
     if (b.rescheduled_at || b.rescheduledAt || b.rescheduled_from_date || b.rescheduledFromDate) {
       reschedules += 1;
@@ -93,6 +125,20 @@ function computeBookingPerformance(bookings = [], { periodStart, periodEnd } = {
     controlledTestExcluded: excluded,
     averageAdvanceBookingHours:
       advanceCount > 0 ? Number((advanceHoursSum / advanceCount).toFixed(2)) : null,
+    cancellationClassification: {
+      total: cancellations,
+      byBucket: cancelBuckets,
+      byCancelledByAggregate: [...cancelByActor.entries()]
+        .map(([actor, count]) => ({ actor, count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 20),
+      treatedAsBusinessTrend: false,
+      explanation:
+        cancellations === 0
+          ? "No cancellations in period."
+          : `${cancellations} cancellation(s) classified by actor/reason/payment context. Raw totals must not be treated as a business trend without Super Admin review of this breakdown.`,
+      note: "Recommendations remain separately gated. Classification is informational only.",
+    },
     sources: ["bookings"],
   };
 }
@@ -297,7 +343,8 @@ async function gatherBookingRows(dbQuery, { start, end }) {
             b.booking_status, b.payment_status, b.service, b.barber_name, b.barber_id,
             b.customer_name, b.customer_email, b.notes,
             b.amount_paid, b.total_paid, b.refunded_at, b.created_at,
-            b.rescheduled_at, b.rescheduled_from_date, b.service_duration_minutes
+            b.rescheduled_at, b.rescheduled_from_date, b.service_duration_minutes,
+            b.cancelled_by, b.cancellation_reason
      FROM bookings b
      WHERE b.date BETWEEN $1::date AND $2::date
        AND (b.deleted_at IS NULL)
@@ -310,7 +357,8 @@ async function gatherBookingRows(dbQuery, { start, end }) {
               b.booking_status, b.payment_status, b.service, b.barber_name, b.barber_id,
               b.customer_name, b.customer_email, b.notes,
               b.amount_paid, b.total_paid, b.refunded_at, b.created_at,
-              b.rescheduled_at, b.rescheduled_from_date, b.service_duration_minutes
+              b.rescheduled_at, b.rescheduled_from_date, b.service_duration_minutes,
+              b.cancelled_by, b.cancellation_reason
        FROM bookings b
        WHERE b.date BETWEEN $1::date AND $2::date
        ORDER BY b.date ASC
@@ -462,6 +510,7 @@ module.exports = {
   computeSystemHealth,
   isRevenueEligible,
   revenueAmount,
+  classifyCancellationBucket,
   gatherBookingRows,
   gatherWaitlistRows,
   gatherWaitlistConversion,

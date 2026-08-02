@@ -72,21 +72,39 @@ function scrubInsightPii(value) {
   if (value == null) return value;
   if (Array.isArray(value)) return value.map(scrubInsightPii);
   if (typeof value !== "object") return value;
+  const PII_KEYS = new Set([
+    "email",
+    "customer_email",
+    "customeremail",
+    "phone",
+    "customer_phone",
+    "customerphone",
+    "password",
+    "password_hash",
+    "secret",
+    "token",
+    "access_token",
+    "refresh_token",
+    "card",
+    "card_number",
+    "paypal_capture_id",
+    "paypal_order_id",
+    "customer_name",
+    "customername",
+    "notes",
+    "private_notes",
+    "appointment_notes",
+  ]);
   const out = {};
   for (const [k, v] of Object.entries(value)) {
     const key = String(k).toLowerCase();
     if (
-      key.includes("email") ||
-      key.includes("phone") ||
-      key.includes("password") ||
-      key.includes("secret") ||
-      key.includes("token") ||
-      key.includes("card") ||
-      key.includes("paypal") ||
-      key === "customer_name" ||
-      key === "customername" ||
-      key === "notes" ||
-      key === "private_notes"
+      PII_KEYS.has(key) ||
+      key.endsWith("_email") ||
+      key.endsWith("_phone") ||
+      key.endsWith("_password") ||
+      key.endsWith("_secret") ||
+      key.endsWith("_token")
     ) {
       continue;
     }

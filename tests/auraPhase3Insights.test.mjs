@@ -285,6 +285,50 @@ test("insufficient data and conflicting data responses", () => {
   assert.equal(conflict.escalate, true);
 });
 
+test("cancellations are classified and not treated as a business trend", () => {
+  const { computeBookingPerformance } = require("../auraOperationalInsightsMetrics.cjs");
+  const bookings = [
+    {
+      date: "2026-06-10",
+      time: "10:00",
+      booking_status: "cancelled",
+      payment_status: "unpaid",
+      cancelled_by: "customer",
+      cancellation_reason: "customer request",
+      customer_name: "A",
+      customer_email: "a@example.com",
+    },
+    {
+      date: "2026-06-11",
+      time: "11:00",
+      booking_status: "cancelled",
+      payment_status: "paid",
+      cancelled_by: "admin",
+      cancellation_reason: "shop closed",
+      customer_name: "B",
+      customer_email: "b@example.com",
+    },
+    {
+      date: "2026-06-12",
+      time: "12:00",
+      booking_status: "completed",
+      payment_status: "paid",
+      amount_paid: 40,
+      customer_name: "C",
+      customer_email: "c@example.com",
+    },
+  ];
+  const perf = computeBookingPerformance(bookings, {
+    periodStart: "2026-06-01",
+    periodEnd: "2026-06-28",
+  });
+  assert.equal(perf.cancellations, 2);
+  assert.equal(perf.cancellationClassification.treatedAsBusinessTrend, false);
+  assert.equal(perf.cancellationClassification.byBucket.customer_request, 1);
+  assert.equal(perf.cancellationClassification.byBucket.shop_or_admin, 1);
+  assert.match(perf.cancellationClassification.explanation, /classified/i);
+});
+
 test("forbidden disciplinary recommendations are blocked", () => {
   const { assertRecommendationAllowed } = require("../auraOperationalInsightsSecurity.cjs");
   const bad = assertRecommendationAllowed({
