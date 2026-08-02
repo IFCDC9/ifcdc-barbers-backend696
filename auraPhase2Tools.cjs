@@ -184,17 +184,18 @@ async function confirmCancel(dbQuery, opts = {}) {
   if (!proposed.ok || proposed.requiresConfirmation !== true) return proposed;
 
   const id = proposed.booking.bookingId;
+  // Soft-cancel only — never refund, delete, or mutate payment/price fields.
   const upd = await dbQuery(
     `UPDATE bookings
      SET booking_status = 'cancelled',
-         is_paid_booking = false,
          cancelled_at = COALESCE(cancelled_at, NOW()),
          cancellation_reason = COALESCE($2, cancellation_reason)
      WHERE id = $1::uuid
        AND COALESCE(booking_status,'') NOT IN ('cancelled','canceled')
      RETURNING id, customer_name, customer_email, barber_name, service, barber_id, user_id,
                date::text AS date, to_char(time, 'HH12:MI AM') AS time,
-               booking_status, total_paid, amount_paid, total_price`,
+               booking_status, total_paid, amount_paid, total_price,
+               payment_status, is_paid_booking`,
     [id, String(opts.reason || "Cancelled via AURA").slice(0, 500)],
   );
   const row = upd.rows?.[0];
@@ -208,6 +209,7 @@ async function confirmCancel(dbQuery, opts = {}) {
     bookingId: id,
     userId: opts.userId || null,
     result: "cancelled",
+    metadata: { reason: String(opts.reason || "Cancelled via AURA").slice(0, 200) },
   });
 
   try {
@@ -372,6 +374,7 @@ async function confirmReschedule(dbQuery, opts = {}) {
     metadata: { fromLabel, to: `${newDate} ${row.time}` },
   });
 
+  // Hook owns the single customer reschedule email when AURA_PHASE2_RESCHEDULE_EMAIL is on.
   try {
     const { afterBookingRescheduled } = require("./auraPhase2Hooks.cjs");
     await afterBookingRescheduled(dbQuery, row, {
@@ -383,23 +386,6 @@ async function confirmReschedule(dbQuery, opts = {}) {
     console.warn("[aura-tools] reschedule hook failed:", e?.message || e);
   }
 
-  try {
-    const { sendAuraRescheduleEmail } = require("./auraPhase2Emails.cjs");
-    await sendAuraRescheduleEmail({
-      customerName: row.customer_name,
-      customerEmail: row.customer_email,
-      barberName: row.barber_name,
-      service: row.service,
-      date: row.date,
-      time: row.time,
-      price: row.total_paid ?? row.amount_paid ?? row.total_price,
-      bookingId: row.id,
-      fromLabel,
-    });
-  } catch (e) {
-    console.warn("[aura-tools] reschedule email failed:", e?.message || e);
-  }
-
   return {
     ok: true,
     booking: bookingSummary(row),
@@ -408,8 +394,8 @@ async function confirmReschedule(dbQuery, opts = {}) {
 }
 
 /**
- * Propose a new booking. Does not create payment or write a row until confirm —
- * confirmBook returns NAVIGATE_BOOK prefill so PayPal/checkout stays authoritative.
+ * Propose a new unpaid hold booking. Never charges PayPal / never invents captures.
+ * confirmBook writes one unpaid confirmed row so the slot is reserved.
  */
 async function proposeBook(dbQuery, opts = {}) {
   const denied = denySensitive("create_booking");
@@ -435,8 +421,9 @@ async function proposeBook(dbQuery, opts = {}) {
     };
   }
 
+  let timeSql = null;
   try {
-    const { validateBookingSlot } = await import("./barberSlotEngine.js");
+    const { validateBookingSlot, slotLabelToSqlTime } = await import("./barberSlotEngine.js");
     const slotCheck = await validateBookingSlot(barberId, date, time, barberName, {
       durationMinutes,
     });
@@ -447,6 +434,7 @@ async function proposeBook(dbQuery, opts = {}) {
         message: slotCheck.message || "That time is not available.",
       };
     }
+    timeSql = slotCheck.timeSql || slotLabelToSqlTime(time) || time;
   } catch (e) {
     return { ok: false, error: "slot_check_failed", message: e?.message || String(e) };
   }
@@ -456,6 +444,7 @@ async function proposeBook(dbQuery, opts = {}) {
     barberName,
     date,
     time,
+    timeSql,
     service,
     customerName,
     customerEmail,
@@ -465,7 +454,7 @@ async function proposeBook(dbQuery, opts = {}) {
   await logAuraAction(dbQuery, {
     action: "propose_book",
     result: "proposed",
-    metadata: { barberId, date, time },
+    metadata: { barberId, date, time, customerEmail },
   });
 
   return {
@@ -473,7 +462,7 @@ async function proposeBook(dbQuery, opts = {}) {
     requiresConfirmation: true,
     action: "create_booking",
     prefill,
-    message: `I can prepare ${service} with ${barberName || "your barber"} on ${date} at ${time} for ${customerName}. Reply confirm to open checkout — payment completes in Book so we never double-book or skip PayPal.`,
+    message: `I can reserve ${service} with ${barberName || "your barber"} on ${date} at ${time} for ${customerName}. Reply confirm — I will hold the unpaid slot only (no payment charged).`,
   };
 }
 
@@ -486,25 +475,142 @@ async function confirmBook(dbQuery, opts = {}) {
     return {
       ok: false,
       error: "confirmation_required",
-      message: "Say confirm to open booking checkout.",
+      message: "Say confirm to reserve this unpaid appointment slot.",
     };
   }
 
   const proposed = await proposeBook(dbQuery, opts);
   if (!proposed.ok || proposed.requiresConfirmation !== true) return proposed;
 
+  const p = proposed.prefill;
+  const timeSql = p.timeSql || p.time;
+
+  // Idempotent: same customer + barber + slot already held → return existing once.
+  const existing = await dbQuery(
+    `SELECT id, customer_name, customer_email, barber_name, service, barber_id, user_id,
+            date::text AS date, to_char(time, 'HH12:MI AM') AS time,
+            booking_status, total_paid, amount_paid, total_price, payment_status, is_paid_booking
+     FROM bookings
+     WHERE barber_id = $1::uuid
+       AND date = $2::date
+       AND time = $3::time
+       AND lower(coalesce(customer_email,'')) = $4
+       AND COALESCE(booking_status,'') NOT IN ('cancelled','canceled')
+     ORDER BY id DESC
+     LIMIT 1`,
+    [p.barberId, p.date, timeSql, p.customerEmail],
+  );
+  if (existing.rows?.[0]) {
+    const row = existing.rows[0];
+    await logAuraAction(dbQuery, {
+      action: "create_booking",
+      bookingId: row.id,
+      result: "idempotent_existing",
+      metadata: { date: p.date, time: p.time },
+    });
+    return {
+      ok: true,
+      booking: bookingSummary(row),
+      idempotent: true,
+      message: `That unpaid hold already exists (ref ${String(row.id).slice(0, 8)}).`,
+    };
+  }
+
+  let inserted;
+  try {
+    inserted = await dbQuery(
+      `INSERT INTO bookings (
+          customer_name, customer_email, barber_id, barber_name, service,
+          date, time, amount, payment_status, booking_status, is_paid_booking,
+          total_price, service_duration_minutes, notes, booking_source
+        ) VALUES (
+          $1, $2, $3::uuid, $4, $5,
+          $6::date, $7::time, 0, 'unpaid', 'confirmed', false,
+          0, $8, $9, 'aura_tools'
+        )
+        RETURNING id, customer_name, customer_email, barber_name, service, barber_id, user_id,
+                  date::text AS date, to_char(time, 'HH12:MI AM') AS time,
+                  booking_status, total_paid, amount_paid, total_price, payment_status, is_paid_booking`,
+      [
+        p.customerName,
+        p.customerEmail,
+        p.barberId,
+        p.barberName || "your barber",
+        p.service,
+        p.date,
+        timeSql,
+        p.durationMinutes || 30,
+        `AURA tools unpaid hold — no payment charged`,
+      ],
+    );
+  } catch (sqlErr) {
+    if (sqlErr?.code === "23505") {
+      return {
+        ok: false,
+        error: "slot_taken",
+        message: "That time was just booked — pick another slot.",
+      };
+    }
+    // booking_source column may be absent on older DBs — retry without it.
+    if (/booking_source/i.test(String(sqlErr?.message || ""))) {
+      inserted = await dbQuery(
+        `INSERT INTO bookings (
+            customer_name, customer_email, barber_id, barber_name, service,
+            date, time, amount, payment_status, booking_status, is_paid_booking,
+            total_price, service_duration_minutes, notes
+          ) VALUES (
+            $1, $2, $3::uuid, $4, $5,
+            $6::date, $7::time, 0, 'unpaid', 'confirmed', false,
+            0, $8, $9
+          )
+          RETURNING id, customer_name, customer_email, barber_name, service, barber_id, user_id,
+                    date::text AS date, to_char(time, 'HH12:MI AM') AS time,
+                    booking_status, total_paid, amount_paid, total_price, payment_status, is_paid_booking`,
+        [
+          p.customerName,
+          p.customerEmail,
+          p.barberId,
+          p.barberName || "your barber",
+          p.service,
+          p.date,
+          timeSql,
+          p.durationMinutes || 30,
+          `AURA tools unpaid hold — no payment charged`,
+        ],
+      );
+    } else {
+      throw sqlErr;
+    }
+  }
+
+  const row = inserted.rows?.[0];
+  if (!row) return { ok: false, error: "create_failed" };
+
   await logAuraAction(dbQuery, {
-    action: "confirm_book_navigate",
-    result: "navigate_book",
-    metadata: proposed.prefill,
+    action: "create_booking",
+    bookingId: row.id,
+    result: "created",
+    metadata: {
+      unpaidHold: true,
+      paymentCharged: false,
+      date: row.date,
+      time: row.time,
+      to: row.customer_email,
+    },
   });
+
+  try {
+    const { afterBookingCreated } = require("./auraPhase2Hooks.cjs");
+    await afterBookingCreated(dbQuery, row);
+  } catch (e) {
+    console.warn("[aura-tools] create hook failed:", e?.message || e);
+  }
 
   return {
     ok: true,
-    action: "NAVIGATE_BOOK",
-    prefill: proposed.prefill,
-    message:
-      "Confirmed. Opening Book so you can complete payment securely — I will not create a paid booking outside checkout.",
+    booking: bookingSummary(row),
+    paymentCharged: false,
+    message: `Done. I reserved an unpaid hold for ${row.date} at ${row.time} (ref ${String(row.id).slice(0, 8)}). No payment was charged.`,
   };
 }
 
