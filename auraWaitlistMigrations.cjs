@@ -52,15 +52,16 @@ async function ensureAuraWaitlistTables(dbQuery) {
     ON aura_waitlist_requests (status, expires_at)
     WHERE deleted_at IS NULL AND status = 'active'
   `);
+  // Expression index must use IMMUTABLE ops — avoid uuid::text casts.
   await dbQuery(`
     CREATE UNIQUE INDEX IF NOT EXISTS aura_waitlist_requests_active_dup_uniq
     ON aura_waitlist_requests (
       customer_id,
-      COALESCE(barber_id::text, ''),
+      COALESCE(barber_id, '00000000-0000-0000-0000-000000000000'::uuid),
       COALESCE(service_name, ''),
-      COALESCE(preferred_date::text, ''),
-      COALESCE(date_from::text, ''),
-      COALESCE(date_to::text, ''),
+      COALESCE(preferred_date, DATE '0001-01-01'),
+      COALESCE(date_from, DATE '0001-01-01'),
+      COALESCE(date_to, DATE '0001-01-01'),
       COALESCE(time_range_start, ''),
       COALESCE(time_range_end, ''),
       any_qualified_barber,
@@ -124,7 +125,7 @@ async function ensureAuraWaitlistTables(dbQuery) {
   await dbQuery(`
     CREATE UNIQUE INDEX IF NOT EXISTS aura_slot_offers_open_slot_uniq
     ON aura_slot_offers (
-      COALESCE(barber_id::text, ''),
+      COALESCE(barber_id, '00000000-0000-0000-0000-000000000000'::uuid),
       slot_date,
       slot_time,
       COALESCE(service_name, '')

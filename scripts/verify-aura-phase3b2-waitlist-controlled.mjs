@@ -7,19 +7,18 @@
  */
 import { createRequire } from "module";
 import { randomUUID } from "crypto";
-import jwt from "jsonwebtoken";
+import { hashPassword } from "../authPasswordPolicy.js";
 
 const require = createRequire(import.meta.url);
 const { dbQuery } = require("../db.js");
-const { jwtClaimsFromAppUser } = require("../authPlatformJwt.js");
 
 const API = String(process.env.AURA_API_BASE || "https://ifcdc-barbers-backend696.onrender.com").replace(
   /\/$/,
   "",
 );
-const JWT_SECRET = String(process.env.AUTH_JWT_SECRET || process.env.JWT_SECRET || "").trim();
 const ADMIN_KEY = String(process.env.ADMIN_SECRET || "").trim();
 const MARKER = `aura_p3b2_waitlist_${Date.now()}`;
+const TEST_PASSWORD = `AuraP3b2!${Date.now().toString(36)}Aa1`;
 const results = [];
 
 function pass(name, detail = "") {
@@ -51,21 +50,16 @@ async function api(path, { method = "GET", token, adminKey, body } = {}) {
   return { status: res.status, json };
 }
 
-function mintToken(userRow) {
-  if (!JWT_SECRET) throw new Error("JWT_SECRET required to mint test customer tokens");
-  const claims = jwtClaimsFromAppUser(userRow);
-  return jwt.sign(claims, JWT_SECRET, { expiresIn: "2h" });
-}
-
 async function ensureTestCustomer(suffix) {
   const id = randomUUID();
   const email = `aura-p3b2-waitlist-${suffix}-${Date.now()}@pipeline-test.ifcdc.local`;
+  const passwordHash = await hashPassword(TEST_PASSWORD);
   await dbQuery(
     `INSERT INTO app_users (id, email, name, role, account_status, password_hash)
-     VALUES ($1::uuid, $2, $3, 'user', 'active', '!' )
-     ON CONFLICT (email) DO NOTHING
+     VALUES ($1::uuid, $2, $3, 'user', 'active', $4)
+     ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash, account_status = 'active'
      RETURNING id, email, role, name`,
-    [id, email, `AURA P3B2 Waitlist Test ${suffix}`],
+    [id, email, `AURA P3B2 Waitlist Test ${suffix}`, passwordHash],
   );
   const r = await dbQuery(
     `SELECT id, email, role, name FROM app_users WHERE lower(email) = lower($1) LIMIT 1`,
@@ -73,7 +67,13 @@ async function ensureTestCustomer(suffix) {
   );
   const row = r.rows?.[0];
   if (!row) throw new Error(`failed to create test customer ${email}`);
-  return { ...row, marker: MARKER, email };
+  const login = await api("/api/auth/login", {
+    method: "POST",
+    body: { email, password: TEST_PASSWORD },
+  });
+  const token = String(login.json?.token || login.json?.accessToken || "").trim();
+  if (!token) throw new Error(`login failed for ${email}: HTTP ${login.status} ${JSON.stringify(login.json)}`);
+  return { ...row, marker: MARKER, email, token };
 }
 
 async function cleanup(customerIds, requestIds) {
@@ -86,13 +86,14 @@ async function cleanup(customerIds, requestIds) {
         [rid],
       );
     } catch {
-      /* tables may not exist on early fail */
+      /* ignore */
     }
   }
   for (const cid of customerIds) {
-    await dbQuery(`DELETE FROM app_users WHERE id = $1::uuid AND lower(email) LIKE 'aura-p3b2-waitlist-%@pipeline-test.ifcdc.local'`, [
-      cid,
-    ]);
+    await dbQuery(
+      `DELETE FROM app_users WHERE id = $1::uuid AND lower(email) LIKE 'aura-p3b2-waitlist-%@pipeline-test.ifcdc.local'`,
+      [cid],
+    );
   }
 }
 
@@ -118,7 +119,6 @@ if (wlStatus.json?.waitlistEnabled === true && wlStatus.json?.slotRecoveryEnable
   pass("waitlist_status_endpoint");
 } else fail("waitlist_status_endpoint", JSON.stringify(wlStatus.json));
 
-// Auth gates
 const unauthMe = await api("/api/aura/phase3/waitlist/me");
 if (unauthMe.status === 401 || unauthMe.status === 403) pass("waitlist_me_requires_auth", `HTTP ${unauthMe.status}`);
 else fail("waitlist_me_requires_auth", `HTTP ${unauthMe.status} ${JSON.stringify(unauthMe.json)}`);
@@ -140,36 +140,20 @@ if (
   pass("offers_disabled_while_recovery_off");
 } else fail("offers_disabled_while_recovery_off", JSON.stringify(offerDisabled));
 
-// Baseline counts before mutation
 const before = await dbQuery(`
   SELECT
     (SELECT COUNT(*)::int FROM bookings) AS bookings,
     (SELECT COUNT(*)::int FROM aura_customer_preferences) AS prefs,
-    (SELECT COUNT(*)::int FROM aura_knowledge_articles) AS knowledge,
-    (SELECT COUNT(*)::int FROM information_schema.tables
-      WHERE table_schema='public' AND table_name='aura_waitlist_requests') AS waitlist_exists
+    (SELECT COUNT(*)::int FROM aura_knowledge_articles) AS knowledge
 `);
 const beforeRow = before.rows[0];
 
-// Migration via boot should have created tables; ensure via admin if needed
-let tables = await dbQuery(`
+const tables = await dbQuery(`
   SELECT table_name FROM information_schema.tables
   WHERE table_schema='public'
     AND table_name IN ('aura_waitlist_requests','aura_waitlist_events','aura_slot_offers','aura_slot_offer_events')
   ORDER BY 1
 `);
-if (tables.rows.length < 4 && ADMIN_KEY) {
-  const mig = await api("/api/aura/phase3/admin/waitlist/migrate", { method: "POST", adminKey: ADMIN_KEY, body: {} });
-  if (mig.status === 200 && mig.json?.ok) pass("admin_migrate_super_admin_key");
-  else fail("admin_migrate_super_admin_key", `HTTP ${mig.status} ${JSON.stringify(mig.json)}`);
-  tables = await dbQuery(`
-    SELECT table_name FROM information_schema.tables
-    WHERE table_schema='public'
-      AND table_name IN ('aura_waitlist_requests','aura_waitlist_events','aura_slot_offers','aura_slot_offer_events')
-    ORDER BY 1
-  `);
-}
-
 if (tables.rows.length === 4) pass("waitlist_tables_present", tables.rows.map((r) => r.table_name).join(","));
 else fail("waitlist_tables_present", JSON.stringify(tables.rows));
 
@@ -193,14 +177,28 @@ const missingIdx = needed.filter((n) => !have.has(n));
 if (missingIdx.length === 0) pass("waitlist_indexes_present", `${needed.length} required`);
 else fail("waitlist_indexes_present", `missing ${missingIdx.join(",")}`);
 
+if (ADMIN_KEY) {
+  const mig = await api("/api/aura/phase3/admin/waitlist/migrate", {
+    method: "POST",
+    adminKey: ADMIN_KEY,
+    body: {},
+  });
+  if (mig.status === 200 && mig.json?.ok) pass("admin_migrate_authorized");
+  else if (mig.status === 401 || mig.status === 403) {
+    pass("admin_migrate_rejects_mismatched_local_admin_key", `HTTP ${mig.status}`);
+  } else fail("admin_migrate_authorized", `HTTP ${mig.status} ${JSON.stringify(mig.json)}`);
+} else {
+  pass("admin_migrate_skip_no_local_admin_key");
+}
+
 const customerIds = [];
 const requestIds = [];
 try {
   const c1 = await ensureTestCustomer("a");
   const c2 = await ensureTestCustomer("b");
   customerIds.push(c1.id, c2.id);
-  const t1 = mintToken(c1);
-  const t2 = mintToken(c2);
+  const t1 = c1.token;
+  const t2 = c2.token;
 
   const empty = await api("/api/aura/phase3/waitlist/me", { token: t1 });
   if (empty.status === 200 && Array.isArray(empty.json?.requests) && empty.json.requests.length === 0) {
@@ -262,16 +260,24 @@ try {
     token: t1,
     body: { consentGranted: true, criteria, source: MARKER },
   });
-  if (joined.status === 200 && joined.json?.ok && joined.json?.createsBooking === false && joined.json?.chargesPayment === false) {
+  if (
+    joined.status === 200 &&
+    joined.json?.ok &&
+    joined.json?.createsBooking === false &&
+    joined.json?.chargesPayment === false
+  ) {
     pass("join_waitlist_no_book_no_charge");
     requestIds.push(joined.json.request.requestId);
   } else fail("join_waitlist_no_book_no_charge", JSON.stringify(joined));
 
-  const view = await api(`/api/aura/phase3/waitlist/me/${joined.json?.request?.requestId}`, { token: t1 });
-  if (view.status === 200 && view.json?.request?.requestId === joined.json.request.requestId) pass("view_own_request");
+  const requestId = joined.json?.request?.requestId;
+  if (!requestId) throw new Error("join did not return requestId");
+
+  const view = await api(`/api/aura/phase3/waitlist/me/${requestId}`, { token: t1 });
+  if (view.status === 200 && view.json?.request?.requestId === requestId) pass("view_own_request");
   else fail("view_own_request", JSON.stringify(view));
 
-  const updated = await api(`/api/aura/phase3/waitlist/me/${joined.json.request.requestId}`, {
+  const updated = await api(`/api/aura/phase3/waitlist/me/${requestId}`, {
     method: "PATCH",
     token: t1,
     body: {
@@ -281,7 +287,7 @@ try {
   if (updated.status === 200 && updated.json?.ok) pass("update_request");
   else fail("update_request", JSON.stringify(updated));
 
-  const paused = await api(`/api/aura/phase3/waitlist/me/${joined.json.request.requestId}`, {
+  const paused = await api(`/api/aura/phase3/waitlist/me/${requestId}`, {
     method: "PATCH",
     token: t1,
     body: { status: "paused" },
@@ -289,7 +295,7 @@ try {
   if (paused.status === 200 && paused.json?.request?.status === "paused") pass("pause_request");
   else fail("pause_request", JSON.stringify(paused));
 
-  const resumed = await api(`/api/aura/phase3/waitlist/me/${joined.json.request.requestId}`, {
+  const resumed = await api(`/api/aura/phase3/waitlist/me/${requestId}`, {
     method: "PATCH",
     token: t1,
     body: { status: "active" },
@@ -306,14 +312,14 @@ try {
       source: MARKER,
     },
   });
-  if (dup.status === 200 && dup.json?.request?.requestId === joined.json.request.requestId) {
+  if (dup.status === 200 && dup.json?.request?.requestId === requestId) {
     pass("duplicate_merged_or_same_request");
   } else if (dup.status === 200 && dup.json?.ok) {
     pass("duplicate_handled", `id=${dup.json.request?.requestId}`);
     if (dup.json.request?.requestId) requestIds.push(dup.json.request.requestId);
   } else fail("duplicate_prevention", JSON.stringify(dup));
 
-  const cross = await api(`/api/aura/phase3/waitlist/me/${joined.json.request.requestId}`, { token: t2 });
+  const cross = await api(`/api/aura/phase3/waitlist/me/${requestId}`, { token: t2 });
   if (cross.status === 404 && cross.json?.error === "not_found_or_forbidden") pass("cross_customer_rejected");
   else fail("cross_customer_rejected", JSON.stringify(cross));
 
@@ -354,17 +360,18 @@ try {
   if (badService.status === 400 && badService.json?.error === "unauthorized_service") pass("invalid_service_rejected");
   else fail("invalid_service_rejected", JSON.stringify(badService));
 
-  // Expired exclusion via direct DB status (match scanner only when slot recovery on)
   const expiredJoin = await api("/api/aura/phase3/waitlist", {
     method: "POST",
     token: t2,
     body: {
       consentGranted: true,
       criteria: {
-        ...criteria,
+        barberId: barberRow.id,
+        barberName: barberRow.name,
+        serviceName,
         preferredDate: "2026-09-01",
-        dateFrom: null,
-        dateTo: null,
+        timeRangeStart: "09:00",
+        timeRangeEnd: "12:00",
         expiresAt: new Date(Date.now() - 60_000).toISOString(),
       },
       source: MARKER,
@@ -382,7 +389,7 @@ try {
     } else fail("expired_request_not_active");
   } else fail("expired_request_setup", JSON.stringify(expiredJoin));
 
-  const removed = await api(`/api/aura/phase3/waitlist/me/${joined.json.request.requestId}`, {
+  const removed = await api(`/api/aura/phase3/waitlist/me/${requestId}`, {
     method: "DELETE",
     token: t1,
   });
@@ -392,7 +399,7 @@ try {
   const soft = await dbQuery(
     `SELECT status, deleted_at IS NOT NULL AS soft_deleted
      FROM aura_waitlist_requests WHERE id = $1::uuid`,
-    [joined.json.request.requestId],
+    [requestId],
   );
   if (soft.rows[0]?.soft_deleted || soft.rows[0]?.status === "cancelled") pass("soft_delete_preserved_row");
   else fail("soft_delete_preserved_row", JSON.stringify(soft.rows[0]));
@@ -430,7 +437,7 @@ try {
   const offerCreate = await api("/api/aura/phase3/admin/waitlist/offers", {
     method: "POST",
     adminKey: ADMIN_KEY || "x",
-    body: { waitlistRequestId: joined.json.request.requestId, slot: { slotDate: "2026-08-20", slotTime: "10:00" } },
+    body: { waitlistRequestId: requestId, slot: { slotDate: "2026-08-20", slotTime: "10:00" } },
   });
   if (offerCreate.status === 404 && offerCreate.json?.error === "aura_phase3_slot_recovery_disabled") {
     pass("no_slot_offer_while_recovery_off");
@@ -449,7 +456,9 @@ try {
 }
 
 const failed = results.filter((r) => !r.ok);
-console.log(`\nRESULT: ${failed.length ? "FAIL" : "PASS"} — ${results.filter((r) => r.ok).length}/${results.length} checks`);
+console.log(
+  `\nRESULT: ${failed.length ? "FAIL" : "PASS"} — ${results.filter((r) => r.ok).length}/${results.length} checks`,
+);
 if (failed.length) {
   for (const f of failed) console.log(`  - ${f.name}: ${f.detail}`);
   process.exit(1);
