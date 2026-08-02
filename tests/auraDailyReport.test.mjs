@@ -31,6 +31,8 @@ test("formatDailyReportText includes required sections", () => {
   const { formatDailyReportText } = require("../auraDailyReport.cjs");
   const text = formatDailyReportText({
     day: "2026-08-01",
+    timezone: "America/New_York",
+    periodLabel: "2026-08-01 00:00–23:59 (America/New_York)",
     generatedAt: "2026-08-02T00:00:00.000Z",
     totalBookings: 3,
     completedAppointments: 1,
@@ -41,16 +43,20 @@ test("formatDailyReportText includes required sections", () => {
     failedEmails: 0,
     failedPayments: 0,
     schedulingConflicts: 0,
+    controlledTestBookingsExcluded: 2,
     itemsRequiringAttention: [],
   });
   assert.match(text, /Total bookings/);
   assert.match(text, /Completed/);
   assert.match(text, /Payments received: \$45\.50/);
+  assert.match(text, /Timezone: America\/New_York/);
+  assert.match(text, /Controlled test bookings excluded/);
   assert.match(text, /digital receptionist/);
 });
 
 test("generateAuraDailyReport dry-run never sends even if send flag on", async () => {
   process.env.AURA_PHASE2_ENABLED = "1";
+  process.env.AURA_DAILY_REPORT_PREVIEW = "1";
   process.env.AURA_DAILY_REPORT_ENABLED = "1";
   process.env.AURA_DAILY_REPORT_TO = "admin@example.com";
 
@@ -82,7 +88,7 @@ test("generateAuraDailyReport dry-run never sends even if send flag on", async (
   const out = await generateAuraDailyReport(fakeDb, { dryRun: true, dayYmd: "2026-08-01" });
   assert.equal(out.ok, true);
   assert.equal(out.dryRun, true);
-  assert.equal(out.sent, undefined);
+  assert.equal(out.sent, false);
   assert.equal(out.stats.totalBookings, 2);
   assert.equal(out.stats.completedAppointments, 1);
   assert.ok(out.text.includes("2026-08-01"));
