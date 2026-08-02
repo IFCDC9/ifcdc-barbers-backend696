@@ -220,13 +220,84 @@ async function updateArticle(dbQuery, id, payload, actor = {}) {
   return { ok: true, article };
 }
 
+const STOP_WORDS = new Set([
+  "the",
+  "and",
+  "for",
+  "are",
+  "but",
+  "not",
+  "you",
+  "all",
+  "can",
+  "had",
+  "her",
+  "was",
+  "one",
+  "our",
+  "out",
+  "day",
+  "get",
+  "has",
+  "him",
+  "his",
+  "how",
+  "man",
+  "new",
+  "now",
+  "old",
+  "see",
+  "two",
+  "way",
+  "who",
+  "boy",
+  "did",
+  "its",
+  "let",
+  "put",
+  "say",
+  "she",
+  "too",
+  "use",
+  "what",
+  "when",
+  "your",
+  "with",
+  "this",
+  "that",
+  "have",
+  "from",
+  "they",
+  "will",
+  "been",
+  "about",
+  "would",
+  "there",
+  "their",
+  "which",
+  "into",
+  "could",
+  "other",
+  "than",
+  "then",
+  "them",
+  "these",
+  "some",
+  "also",
+  "just",
+  "over",
+  "such",
+  "only",
+  "please",
+]);
+
 function scoreArticle(article, q) {
   const hay = `${article.title} ${article.body} ${article.category} ${article.slug}`.toLowerCase();
   const tokens = q
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, " ")
     .split(/\s+/)
-    .filter((t) => t.length > 2);
+    .filter((t) => t.length > 2 && !STOP_WORDS.has(t));
   let score = 0;
   for (const t of tokens) {
     if (hay.includes(t)) score += 1;
