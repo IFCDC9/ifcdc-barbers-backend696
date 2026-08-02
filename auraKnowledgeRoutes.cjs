@@ -31,7 +31,7 @@ function createAuraPhase3Router({ dbQuery, requireAdmin, requireAuth } = {}) {
       phase: 3,
       flags: auraPhase3Flags(),
       note:
-        "Phase 3 defaults OFF. Knowledge is read-only until Super Admin approves articles. Preferences (3B1) require separate flags and consent.",
+        "Phase 3 defaults OFF. Knowledge (3A), preferences (3B1), and waitlist/slot recovery (3B2) each require separate flags. Waitlist notifications require a further separate flag.",
     });
   });
 
@@ -40,6 +40,13 @@ function createAuraPhase3Router({ dbQuery, requireAdmin, requireAuth } = {}) {
     attachAuraPreferenceRoutes(router, { dbQuery, requireAdmin, requireAuth });
   } catch (e) {
     console.warn("[aura-phase3] preference routes skipped:", e?.message || e);
+  }
+
+  try {
+    const { attachAuraWaitlistRoutes } = require("./auraWaitlistRoutes.cjs");
+    attachAuraWaitlistRoutes(router, { dbQuery, requireAdmin, requireAuth });
+  } catch (e) {
+    console.warn("[aura-phase3] waitlist routes skipped:", e?.message || e);
   }
 
   router.post("/knowledge/ask", async (req, res) => {

@@ -33,7 +33,7 @@
     "test:security": "node tests/securityPolicy.test.mjs",
     "test:loyalty": "node tests/loyaltyEngine.test.mjs",
     "test:aura-phase2": "node --test tests/auraPhase2Flags.test.mjs tests/auraPhase2Tools.test.mjs tests/auraDailyReport.test.mjs tests/auraPhase2Reminders.test.mjs",
-    "test:aura-phase3": "node --test tests/auraPhase3Flags.test.mjs tests/auraPhase3Security.test.mjs tests/auraPhase3Knowledge.test.mjs tests/auraPhase3Preferences.test.mjs",
+    "test:aura-phase3": "node --test tests/auraPhase3Flags.test.mjs tests/auraPhase3Security.test.mjs tests/auraPhase3Knowledge.test.mjs tests/auraPhase3Preferences.test.mjs tests/auraPhase3Waitlist.test.mjs",
     "aura:daily-report": "node --import ./loadBackendEnv.mjs scripts/run-aura-daily-report.mjs",
     "test:hubspot": "node tests/hubspotPhase1.test.mjs && node tests/hubspotPhase2aCompanies.test.mjs && node tests/hubspotPhase2bDeals.test.mjs && node tests/hubspotPhase2cWorkflows.test.mjs && node tests/hubspotPhase2dAnalytics.test.mjs",
     "smoke:phase2": "node scripts/smoke-phase2-production.mjs",

@@ -21,9 +21,12 @@ function auraPhase3Flags() {
     customerPreferences: master && flagOn("AURA_PHASE3_CUSTOMER_PREFERENCES"),
     /** Phase 3B1 — suggestion prompts only; never auto-book. Default OFF. */
     preferenceSuggestions: master && flagOn("AURA_PHASE3_PREFERENCE_SUGGESTIONS"),
-    /** Deferred — Phase 3B2+ */
+    /** Phase 3B2 — waitlist requests. Default OFF. */
     waitlist: master && flagOn("AURA_PHASE3_WAITLIST"),
+    /** Phase 3B2 — open-slot recovery / offers. Default OFF. Requires waitlist. */
     slotRecovery: master && flagOn("AURA_PHASE3_SLOT_RECOVERY"),
+    /** Phase 3B2 — outbound waitlist notifications. Default OFF. Separate approval. */
+    waitlistNotifications: master && flagOn("AURA_PHASE3_WAITLIST_NOTIFICATIONS"),
     /** Deferred — Phase 3C */
     operationalInsights: master && flagOn("AURA_PHASE3_OPERATIONAL_INSIGHTS"),
   };

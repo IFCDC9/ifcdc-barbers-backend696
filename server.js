@@ -1379,6 +1379,13 @@ async function startServer() {
       } else {
         console.log("[boot] AURA Phase 3B1 preferences flag off — preference schema not applied");
       }
+      if (p3.waitlist) {
+        const { ensureAuraWaitlistTables } = require("./auraWaitlistMigrations.cjs");
+        await ensureAuraWaitlistTables(dbQuery);
+        console.log("[boot] AURA Phase 3B2 waitlist schema ensured");
+      } else {
+        console.log("[boot] AURA Phase 3B2 waitlist flag off — waitlist schema not applied");
+      }
     } else {
       console.log("[boot] AURA Phase 3 master flag off — knowledge schema not applied");
     }
