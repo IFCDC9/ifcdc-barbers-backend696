@@ -48,10 +48,17 @@ async function notifyBarberBookingEvent(dbQuery, booking, eventType) {
 
 async function alertSuperAdminFailure(dbQuery, kind, detail) {
   const out = await sendAuraAdminFailureAlert({ kind, detail });
+  const bookingId = detail?.bookingId || detail?.booking_id || null;
   await logAuraAction(dbQuery, {
     action: "admin_alert",
+    bookingId,
     result: out.ok ? "sent" : "failed",
-    metadata: { kind, error: out.error || null },
+    metadata: {
+      kind,
+      error: out.error || null,
+      bookingId: bookingId || null,
+      detail: detail && typeof detail === "object" ? { ...detail, customerEmail: undefined } : detail,
+    },
   });
   return out;
 }

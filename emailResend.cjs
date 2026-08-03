@@ -193,13 +193,14 @@ async function verifyResendApiKey() {
       bodyText.slice(0, 400);
     const looksLikeBadKey =
       res.status === 401 ||
+      res.status === 403 ||
       (res.status === 400 &&
-        /api key|invalid|unauthorized/i.test(`${detail} ${bodyText}`.toLowerCase()));
+        /api key|invalid|unauthorized|suspended/i.test(`${detail} ${bodyText}`.toLowerCase()));
     if (!res.ok && looksLikeBadKey) {
       console.error(
         "[email] Resend rejected RESEND_API_KEY — API will start but emails will fail until fixed.",
-        `HTTP ${res.status}. Create a new key at https://resend.com/api-keys → set RESEND_API_KEY in backend/.env (one line).`,
-        detail
+        `HTTP ${res.status}. Create a new key at https://resend.com/api-keys → set RESEND_API_KEY on Render backend696 (and local .env), one line, value starts with re_.`,
+        detail,
       );
       return;
     }

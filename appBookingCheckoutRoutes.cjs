@@ -1274,8 +1274,20 @@ async function sendPaidConfirmationForAppBooking({ fresh, row, captureId, settle
       emailSent: false,
     });
     try {
-      const { alertFailureBestEffort } = require("./auraPhase2Hooks.cjs");
+      const { logAuraAction } = require("./auraActionLog.cjs");
       const { dbQuery } = await loadDb();
+      await logAuraAction(dbQuery, {
+        actor: "system",
+        action: "booking_confirmation_email_failed",
+        bookingId: fresh.id,
+        result: "failed",
+        metadata: {
+          error: emailError,
+          captureId: captureId || null,
+          customerEmailDomain: toEmail.includes("@") ? toEmail.split("@")[1] : null,
+        },
+      });
+      const { alertFailureBestEffort } = require("./auraPhase2Hooks.cjs");
       void alertFailureBestEffort(dbQuery, "booking_confirmation_email_failed", {
         bookingId: fresh.id,
         error: emailError,
