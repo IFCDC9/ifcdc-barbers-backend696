@@ -87,6 +87,11 @@ try {
     bookingId: fresh.id,
     bookingRow: fresh,
   });
+  const { markPendingEmailSent } = require("../pendingEmailDelivery.cjs");
+  await markPendingEmailSent(dbQuery, {
+    bookingId: fresh.id,
+    messageId: mail?.messageId || null,
+  });
   await logAuraAction(dbQuery, {
     actor: "system",
     action: "booking_confirmation_resent",
@@ -102,13 +107,27 @@ try {
   process.exit(0);
 } catch (e) {
   const err = e?.message || String(e);
+  const {
+    enqueuePendingEmailDelivery,
+    KIND_BOOKING_CONFIRMATION,
+    STATUS_PENDING,
+  } = require("../pendingEmailDelivery.cjs");
+  await enqueuePendingEmailDelivery(dbQuery, {
+    kind: KIND_BOOKING_CONFIRMATION,
+    bookingId: fresh.id,
+    toEmail,
+    captureId: fresh.paypal_capture_id || null,
+    paypalOrderId: fresh.paypal_order_id || null,
+    lastError: err,
+    metadata: { source: "manual_resend_failed", paymentPreserved: true },
+  });
   await logAuraAction(dbQuery, {
     actor: "system",
     action: "booking_confirmation_resent",
     bookingId: fresh.id,
-    result: "failed",
-    metadata: { error: err, captureId: fresh.paypal_capture_id },
+    result: STATUS_PENDING,
+    metadata: { error: err, captureId: fresh.paypal_capture_id, status: STATUS_PENDING },
   });
-  console.error("[resend] FAILED:", err);
+  console.error("[resend] FAILED — left as pending_delivery:", err);
   process.exit(1);
 }

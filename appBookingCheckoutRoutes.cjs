@@ -1266,7 +1266,7 @@ async function sendPaidConfirmationForAppBooking({ fresh, row, captureId, settle
     }
   } catch (mailErr) {
     emailError = mailErr?.message || String(mailErr);
-    console.error("[booking-email] FAILED (app-bookings finalize):", emailError, {
+    console.error("[booking-email] FAILED (app-bookings finalize) — queued pending_delivery:", emailError, {
       paypalOrderId: row.paypal_order_id,
       captureId,
       bookingId: fresh.id,
@@ -1275,22 +1275,42 @@ async function sendPaidConfirmationForAppBooking({ fresh, row, captureId, settle
     });
     try {
       const { logAuraAction } = require("./auraActionLog.cjs");
+      const {
+        enqueuePendingEmailDelivery,
+        KIND_BOOKING_CONFIRMATION,
+        STATUS_PENDING,
+      } = require("./pendingEmailDelivery.cjs");
       const { dbQuery } = await loadDb();
+      const queued = await enqueuePendingEmailDelivery(dbQuery, {
+        kind: KIND_BOOKING_CONFIRMATION,
+        bookingId: fresh.id,
+        toEmail,
+        captureId: captureId || null,
+        paypalOrderId: row.paypal_order_id || null,
+        lastError: emailError,
+        metadata: {
+          paymentPreserved: true,
+          customerName: fresh.customer_name || row.customer_name || null,
+        },
+      });
       await logAuraAction(dbQuery, {
         actor: "system",
         action: "booking_confirmation_email_failed",
         bookingId: fresh.id,
-        result: "failed",
+        result: STATUS_PENDING,
         metadata: {
           error: emailError,
           captureId: captureId || null,
           customerEmailDomain: toEmail.includes("@") ? toEmail.split("@")[1] : null,
+          pendingDeliveryId: queued?.id || null,
+          status: STATUS_PENDING,
         },
       });
       const { alertFailureBestEffort } = require("./auraPhase2Hooks.cjs");
       void alertFailureBestEffort(dbQuery, "booking_confirmation_email_failed", {
         bookingId: fresh.id,
         error: emailError,
+        status: STATUS_PENDING,
       });
     } catch {
       /* ignore */

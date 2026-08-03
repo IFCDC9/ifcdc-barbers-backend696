@@ -1323,6 +1323,16 @@ async function startServer() {
       .catch(() => {});
   }, 6 * 60 * 60 * 1000);
 
+  // Pending email deliveries — preserve failed confirmation emails for retry (provider outages).
+  // Does not alter RESEND_* / MAIL_FROM or payment settlement.
+  try {
+    const { ensurePendingEmailDeliveryTable } = require("./pendingEmailDelivery.cjs");
+    await ensurePendingEmailDeliveryTable(dbQuery);
+    console.log("[boot] pending_email_deliveries schema ensured");
+  } catch (e) {
+    console.warn("[boot] pending_email_deliveries schema skipped:", e?.message || e);
+  }
+
   // AURA Phase 2 — additive schema + reminder scanners (only when master flag is on)
   try {
     const { isAuraPhase2Enabled, auraPhase2Flags } = require("./auraPhase2Flags.cjs");
