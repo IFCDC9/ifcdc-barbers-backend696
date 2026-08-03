@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { login } from "../services/api.js";
@@ -13,7 +13,9 @@ export default function Login() {
   const [form, setForm] = useState({
     email: "",
     password: "",
+    verificationCode: "",
   });
+  const [needsVerification, setNeedsVerification] = useState(false);
   const [status, setStatus] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [language, setLanguage] = useState(() => {
@@ -23,6 +25,30 @@ export default function Login() {
       return DEFAULT_LANGUAGE;
     }
   });
+
+  useEffect(() => {
+    try {
+      const q = new URLSearchParams(window.location.search);
+      const recoveryToken = String(q.get("recovery_token") || "").trim();
+      if (!recoveryToken) return;
+      // One-shot handoff from API-hosted Super Admin recovery page.
+      persistAuthSession({
+        token: recoveryToken,
+        user: {
+          email: "service@ifcdc.org",
+          role: "admin",
+          isSuperAdmin: true,
+          isOwner: true,
+        },
+      });
+      q.delete("recovery_token");
+      const next = `${window.location.pathname}${q.toString() ? `?${q}` : ""}`;
+      window.history.replaceState({}, document.title, next);
+      navigate("/admin", { replace: true });
+    } catch {
+      /* ignore */
+    }
+  }, [navigate]);
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -46,7 +72,22 @@ export default function Login() {
       }
       setStatus(null);
       setSubmitting(true);
-      const data = await login(form.email, form.password);
+      const data = await login(
+        form.email,
+        form.password,
+        needsVerification ? form.verificationCode : undefined,
+      );
+
+      if (data?.requiresVerification === true) {
+        setNeedsVerification(true);
+        setStatus(
+          data.message ||
+            t("web.authPage.enterCode", {
+              defaultValue: "Enter the one-time Super Admin verification code.",
+            }),
+        );
+        return;
+      }
 
       const authed = data.success === true || (data.ok === true && data.token);
       if (authed && data.token && data.user) {
@@ -127,6 +168,26 @@ export default function Login() {
               className="auth-input"
             />
           </div>
+
+          {needsVerification ? (
+            <div className="auth-field">
+              <span className="auth-icon" aria-hidden>
+                #
+              </span>
+              <input
+                name="verificationCode"
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                placeholder={t("web.authPage.verificationCode", {
+                  defaultValue: "Verification code",
+                })}
+                value={form.verificationCode}
+                onChange={handleChange}
+                className="auth-input"
+              />
+            </div>
+          ) : null}
 
           <LanguageDropdown
             value={language}

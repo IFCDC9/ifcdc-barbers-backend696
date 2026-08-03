@@ -36,6 +36,9 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
   const { signInWithToken } = useAuth();
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
+  const [verificationCode, setVerificationCode] = React.useState("");
+  const [needsVerification, setNeedsVerification] = React.useState(false);
+  const [verificationHint, setVerificationHint] = React.useState("");
   const [lang, setLang] = React.useState<SupportedLanguageCode>(currentLanguage());
   const [busy, setBusy] = React.useState(false);
   const [appleAvailable, setAppleAvailable] = React.useState(false);
@@ -186,17 +189,28 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
     submittingRef.current = true;
     try {
       setBusy(true);
-      const { token, json } = await loginWithEmailPassword(email.trim(), password);
-      const u = json?.user;
+      const result = await loginWithEmailPassword(
+        email.trim(),
+        password,
+        needsVerification ? verificationCode.trim() : undefined,
+      );
+      if (result.requiresVerification) {
+        setNeedsVerification(true);
+        setVerificationHint(
+          String(result.json?.message || "Enter the one-time Super Admin verification code."),
+        );
+        return;
+      }
+      const u = result.json?.user;
       console.log("[auth] client_login", {
         email: u?.email,
         role: u?.role,
         isOwner: u?.isOwner,
         isSuperAdmin: u?.isSuperAdmin,
-        redirect: json?.redirect,
+        redirect: result.json?.redirect,
       });
       try {
-        await signInWithToken(token);
+        await signInWithToken(result.token);
       } catch (saveErr) {
         Alert.alert("Session", userFacingApiError(saveErr));
       }
@@ -260,6 +274,21 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
           secureTextEntry
           editable={!busy}
         />
+        {needsVerification ? (
+          <>
+            <View style={{ height: 10 }} />
+            <Text style={styles.helper}>{verificationHint || "Enter verification code"}</Text>
+            <View style={{ height: 8 }} />
+            <IFCDCInput
+              value={verificationCode}
+              onChangeText={setVerificationCode}
+              placeholder="Verification code"
+              autoCapitalize="none"
+              keyboardType="number-pad"
+              editable={!busy}
+            />
+          </>
+        ) : null}
         <View style={{ height: 12 }} />
         <LanguageDropdown
           label={t("language.title")}

@@ -69,9 +69,11 @@ export async function deleteMyAccount() {
   return data;
 }
 
-export async function login(email, password) {
+export async function login(email, password, verificationCode) {
   const origin = getApiOrigin();
   const payload = { email, password };
+  const code = String(verificationCode || "").trim();
+  if (code) payload.verificationCode = code;
 
   // Prefer new auth endpoint; fallback to legacy /api/login for older servers.
   let res = await fetch(`${origin}/api/auth/login`, {

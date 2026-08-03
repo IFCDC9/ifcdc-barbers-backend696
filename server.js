@@ -414,6 +414,29 @@ app.post("/api/auth/refresh", (req, res, next) => {
 app.use("/api/auth", authRouter);
 console.log("[boot] mounted /api/auth", summarizeAuthRouterPaths(authRouter).join(" | ") || "(no routes on stack)");
 
+try {
+  const { renderSuperAdminRecoveryPage } = require("./superAdminRecoveryPage.cjs");
+  const { isOutageRecoveryEnabled } = require("./superAdminLoginChallenge.cjs");
+  app.get("/super-admin-recovery", (_req, res) => {
+    const frontendUrl =
+      process.env.FRONTEND_URL ||
+      process.env.PUBLIC_WEB_URL ||
+      "https://ifcdcbarbersapp.com";
+    res
+      .status(200)
+      .type("html")
+      .send(
+        renderSuperAdminRecoveryPage({
+          frontendUrl,
+          outageOn: isOutageRecoveryEnabled(),
+        }),
+      );
+  });
+  console.log("[boot] mounted GET /super-admin-recovery");
+} catch (e) {
+  console.warn("[boot] super-admin-recovery page skipped:", e?.message || e);
+}
+
 /** Mobile app bookings — must register before the 404 handler (and any future catch-alls). */
 app.get("/api/app-bookings/health", (_req, res) => {
   res.set("Cache-Control", "no-store");
@@ -1331,6 +1354,14 @@ async function startServer() {
     console.log("[boot] pending_email_deliveries schema ensured");
   } catch (e) {
     console.warn("[boot] pending_email_deliveries schema skipped:", e?.message || e);
+  }
+
+  try {
+    const { ensureSuperAdminLoginChallengeTable } = require("./superAdminLoginChallenge.cjs");
+    await ensureSuperAdminLoginChallengeTable(dbQuery);
+    console.log("[boot] super_admin_login_challenges schema ensured");
+  } catch (e) {
+    console.warn("[boot] super_admin_login_challenges schema skipped:", e?.message || e);
   }
 
   // AURA Phase 2 — additive schema + reminder scanners (only when master flag is on)

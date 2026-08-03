@@ -4,9 +4,33 @@
  * or payment settlement. Payment remains saved independently of email.
  */
 const KIND_BOOKING_CONFIRMATION = "booking_confirmation";
+const KIND_PAYMENT_CONFIRMATION = "payment_confirmation";
+const KIND_ADMIN_NOTIFICATION = "admin_notification";
 const STATUS_PENDING = "pending_delivery";
 const STATUS_SENT = "sent";
 const STATUS_CANCELLED = "cancelled";
+
+/** Only non-security transactional mail may be queued. Login/OTP codes must never be queued. */
+const ALLOWED_PENDING_KINDS = new Set([
+  KIND_BOOKING_CONFIRMATION,
+  KIND_PAYMENT_CONFIRMATION,
+  KIND_ADMIN_NOTIFICATION,
+]);
+
+const FORBIDDEN_PENDING_KIND_RE =
+  /(otp|login.?code|verif(?:ication)?.?code|auth.?code|magic.?link|password.?reset)/i;
+
+function assertQueueableEmailKind(kind) {
+  const k = String(kind || "").trim();
+  if (!k) return { ok: false, error: "kind_required" };
+  if (FORBIDDEN_PENDING_KIND_RE.test(k) || /otp|login|auth_challenge/i.test(k)) {
+    return { ok: false, error: "security_sensitive_email_not_queueable", kind: k };
+  }
+  if (!ALLOWED_PENDING_KINDS.has(k)) {
+    return { ok: false, error: "kind_not_allowed", kind: k };
+  }
+  return { ok: true, kind: k };
+}
 
 async function ensurePendingEmailDeliveryTable(dbQuery) {
   if (typeof dbQuery !== "function") return;
@@ -59,8 +83,12 @@ async function enqueuePendingEmailDelivery(
   } = {},
 ) {
   if (typeof dbQuery !== "function") return { ok: false, skipped: true };
-  const k = String(kind || KIND_BOOKING_CONFIRMATION).trim().slice(0, 80);
-  if (!k) return { ok: false, error: "kind_required" };
+  const kindCheck = assertQueueableEmailKind(kind);
+  if (!kindCheck.ok) {
+    console.warn("[pending-email] refused enqueue:", kindCheck.error, kindCheck.kind || kind);
+    return { ok: false, error: kindCheck.error };
+  }
+  const k = kindCheck.kind;
   try {
     await ensurePendingEmailDeliveryTable(dbQuery);
     if (bookingId) {
@@ -180,9 +208,13 @@ async function markPendingEmailSent(dbQuery, { id = null, bookingId = null, kind
 
 module.exports = {
   KIND_BOOKING_CONFIRMATION,
+  KIND_PAYMENT_CONFIRMATION,
+  KIND_ADMIN_NOTIFICATION,
   STATUS_PENDING,
   STATUS_SENT,
   STATUS_CANCELLED,
+  ALLOWED_PENDING_KINDS,
+  assertQueueableEmailKind,
   ensurePendingEmailDeliveryTable,
   enqueuePendingEmailDelivery,
   listPendingEmailDeliveries,

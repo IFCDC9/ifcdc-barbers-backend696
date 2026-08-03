@@ -78,6 +78,9 @@ export function mapAuthErrorToMessage(json: JsonAuth | null, status: number): st
   if (code === "invalid_password") return msg || "Wrong password.";
   if (code === "invalid_login") return msg || "Invalid email or password.";
   if (code === "missing_credentials") return msg || "Enter your email and password.";
+  if (code === "invalid_code" || code === "code_expired" || code === "code_already_used") {
+    return msg || "Invalid or expired verification code.";
+  }
 
   if (code === "forbidden_role") return msg || "That account type cannot be created here.";
   if (code === "invalid_role") return msg || "Choose a valid account type.";
@@ -187,10 +190,29 @@ export async function postAuthJson(
   return { json, status: res.status, raw, url };
 }
 
-export async function loginWithEmailPassword(email: string, password: string) {
-  const { json, status } = await postAuthJson("/api/auth/login", { email, password });
+export async function loginWithEmailPassword(
+  email: string,
+  password: string,
+  verificationCode?: string,
+) {
+  const body: Record<string, unknown> = { email, password };
+  const code = String(verificationCode || "").trim();
+  if (code) body.verificationCode = code;
+  const { json, status } = await postAuthJson("/api/auth/login", body);
+  if (json?.requiresVerification === true && status >= 200 && status < 300) {
+    return {
+      token: "",
+      json: json as JsonAuth & {
+        requiresVerification: true;
+        verificationDelivery?: string;
+        challengeId?: string;
+        expiresInSec?: number;
+      },
+      requiresVerification: true as const,
+    };
+  }
   if (loginResponseSucceeded(status, json)) {
-    return { token: String(json.token).trim(), json };
+    return { token: String(json.token).trim(), json, requiresVerification: false as const };
   }
   throw new Error(mapAuthErrorToMessage(json, status));
 }

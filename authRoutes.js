@@ -29,6 +29,14 @@ import {
 
 const require = createRequire(import.meta.url);
 const jwt = require("jsonwebtoken");
+const {
+  ensureSuperAdminLoginChallengeTable,
+  isOutageRecoveryEnabled,
+  isSuperAdminLoginStepUpEnabled,
+  issueSuperAdminLoginChallenge,
+  consumeSuperAdminLoginChallenge,
+} = require("./superAdminLoginChallenge.cjs");
+const { sendEmail: sendResendEmail } = require("./emailResend.cjs");
 
 /** @deprecated Use CANONICAL_SUPER_ADMIN_EMAIL from rolePolicy.js */
 export const ADMIN_EMAIL = CANONICAL_SUPER_ADMIN_EMAIL;
@@ -445,6 +453,11 @@ export function createAuthRouter({ sendEmail }) {
     try {
       const email = normalizeEmail(req.body?.email);
       const password = String(req.body?.password || "");
+      const verificationCode = String(
+        req.body?.verificationCode || req.body?.recoveryCode || req.body?.code || "",
+      )
+        .trim()
+        .replace(/\s+/g, "");
       if (!email || !password) {
         return res.status(400).json({ error: "missing_credentials", message: "Email and password required" });
       }
@@ -463,12 +476,139 @@ export function createAuthRouter({ sendEmail }) {
       }
       const passwordOk = await comparePassword(password, user.password_hash);
       if (!passwordOk) {
+        void writeSecurityAudit({
+          eventType: "login_failed",
+          actorEmail: email,
+          req,
+          metadata: { reason: "invalid_password" },
+        });
         return res.status(401).json({
           ok: false,
           success: false,
           error: "invalid_password",
           message: "Wrong password. Try again or use Forgot password.",
         });
+      }
+
+      const dbRole = String(user.role || "").trim().toLowerCase();
+      const isCanonicalSuperAdmin =
+        isSuperAdminEmail(email) && dbRole === "super_admin";
+
+      // Super Admin step-up (email OTP or outage recovery). Customers/other roles unchanged.
+      if (isCanonicalSuperAdmin && isSuperAdminLoginStepUpEnabled()) {
+        if (verificationCode) {
+          const consumed = await consumeSuperAdminLoginChallenge(dbQuery, {
+            email,
+            code: verificationCode,
+          });
+          if (!consumed.ok) {
+            void writeSecurityAudit({
+              eventType: "super_admin_login_challenge_failed",
+              actorUserId: user.id,
+              actorEmail: email,
+              req,
+              metadata: { error: consumed.error, outageRecovery: isOutageRecoveryEnabled() },
+            });
+            const msg =
+              consumed.error === "code_expired"
+                ? "That verification code expired. Request a new one."
+                : consumed.error === "code_already_used"
+                  ? "That verification code was already used. Request a new one."
+                  : "Invalid verification code.";
+            return res.status(401).json({
+              ok: false,
+              success: false,
+              error: consumed.error || "invalid_code",
+              message: msg,
+              requiresVerification: true,
+            });
+          }
+          void writeSecurityAudit({
+            eventType: "super_admin_login_challenge_verified",
+            actorUserId: user.id,
+            actorEmail: email,
+            req,
+            metadata: {
+              challengeId: consumed.challengeId,
+              outageRecovery: isOutageRecoveryEnabled(),
+              // Trusted-device feature does not exist yet — recorded for future use only.
+              trustedDeviceFeature: false,
+            },
+          });
+          // fall through to issue token
+        } else {
+          const issued = await issueSuperAdminLoginChallenge(dbQuery, {
+            userId: user.id,
+            email,
+            delivery: isOutageRecoveryEnabled() ? "outage_recovery" : "email",
+            metadata: { source: "login" },
+          });
+          if (!issued.ok) {
+            return res.status(500).json({
+              ok: false,
+              success: false,
+              error: "challenge_failed",
+              message: "Could not start Super Admin verification.",
+            });
+          }
+
+          let emailed = false;
+          let emailError = null;
+          if (!isOutageRecoveryEnabled()) {
+            try {
+              const mail = await sendResendEmail({
+                to: email,
+                subject: "IFCDC Super Admin verification code",
+                html: `<p>Your IFCDC Super Admin login code is:</p>
+<p style="font-size:28px;font-weight:700;letter-spacing:4px">${issued.code}</p>
+<p>This code expires in 10 minutes and can be used once. If you did not try to sign in, contact support.</p>`,
+                label: "super-admin-login-otp",
+              });
+              emailed = Boolean(mail?.data?.id || mail?.id || mail?.messageId) && !mail?.error;
+              if (mail?.error) {
+                emailError =
+                  typeof mail.error === "string"
+                    ? mail.error
+                    : mail.error?.message || JSON.stringify(mail.error);
+              }
+            } catch (e) {
+              emailError = e?.message || String(e);
+            }
+          } else {
+            emailError = "outage_recovery_mode";
+          }
+
+          // Never queue login OTPs for later delivery — security-sensitive, must be fresh.
+          void writeSecurityAudit({
+            eventType: "super_admin_login_challenge_issued",
+            actorUserId: user.id,
+            actorEmail: email,
+            req,
+            metadata: {
+              challengeId: issued.challengeId,
+              delivery: isOutageRecoveryEnabled() ? "outage_recovery" : emailed ? "email" : "email_failed",
+              emailError: emailError || null,
+              expiresInSec: issued.expiresInSec,
+              // plaintext code intentionally omitted
+            },
+          });
+
+          return res.status(200).json({
+            ok: true,
+            success: false,
+            requiresVerification: true,
+            verificationDelivery: isOutageRecoveryEnabled()
+              ? "outage_recovery"
+              : emailed
+                ? "email"
+                : "recovery_required",
+            challengeId: issued.challengeId,
+            expiresInSec: issued.expiresInSec,
+            message: isOutageRecoveryEnabled() || !emailed
+              ? "Enter the one-time Super Admin recovery code (email delivery unavailable)."
+              : "Enter the verification code sent to your Super Admin email.",
+          });
+        }
       }
 
       const claims = jwtClaimsFromAppUser(user);
@@ -487,7 +627,11 @@ export function createAuthRouter({ sendEmail }) {
         actorUserId: user.id,
         actorEmail: publicUser.email,
         req,
-        metadata: { role: publicUser.role, redirect },
+        metadata: {
+          role: publicUser.role,
+          redirect,
+          superAdminStepUp: isCanonicalSuperAdmin,
+        },
       });
       return res.json({
         ok: true,
@@ -500,6 +644,29 @@ export function createAuthRouter({ sendEmail }) {
       console.error("[auth] login error:", e);
       return res.status(500).json({ ok: false, success: false, error: "server_error", message: "Login failed" });
     }
+  });
+
+  /**
+   * Alias for Super Admin step-up completion.
+   * Same security rules as POST /login with verificationCode (service@ifcdc.org only).
+   */
+  router.post("/super-admin-recovery/verify", async (req, res) => {
+    req.body = {
+      email: req.body?.email,
+      password: req.body?.password,
+      verificationCode:
+        req.body?.verificationCode || req.body?.recoveryCode || req.body?.code || "",
+    };
+    // Delegate to the login handler stack by re-issuing through the same route logic:
+    // Express does not expose a clean internal call — invoke login by dispatching.
+    const loginLayer = router.stack.find(
+      (l) => l?.route?.path === "/login" && l.route?.methods?.post,
+    );
+    const loginHandler = loginLayer?.route?.stack?.[0]?.handle;
+    if (typeof loginHandler !== "function") {
+      return res.status(500).json({ ok: false, error: "server_error", message: "Login handler unavailable" });
+    }
+    return loginHandler(req, res);
   });
 
   router.get("/me", requireAuth, async (req, res) => {

@@ -52,7 +52,7 @@ async function alertSuperAdminFailure(dbQuery, kind, detail) {
   await logAuraAction(dbQuery, {
     action: "admin_alert",
     bookingId,
-    result: out.ok ? "sent" : "failed",
+    result: out.ok ? "sent" : "pending_delivery",
     metadata: {
       kind,
       error: out.error || null,
@@ -60,6 +60,31 @@ async function alertSuperAdminFailure(dbQuery, kind, detail) {
       detail: detail && typeof detail === "object" ? { ...detail, customerEmail: undefined } : detail,
     },
   });
+  if (!out.ok) {
+    try {
+      const {
+        enqueuePendingEmailDelivery,
+        KIND_ADMIN_NOTIFICATION,
+        STATUS_PENDING,
+      } = require("./pendingEmailDelivery.cjs");
+      await enqueuePendingEmailDelivery(dbQuery, {
+        kind: KIND_ADMIN_NOTIFICATION,
+        bookingId: bookingId || null,
+        toEmail:
+          process.env.BOOKING_ADMIN_EMAIL ||
+          process.env.AURA_DAILY_REPORT_TO ||
+          "service@ifcdc.org",
+        lastError: out.error || "admin_alert_send_failed",
+        metadata: {
+          alertKind: kind,
+          status: STATUS_PENDING,
+          // Do not store security OTPs here — admin operational alerts only.
+        },
+      });
+    } catch (e) {
+      console.warn("[aura-phase2] pending admin alert enqueue failed:", e?.message || e);
+    }
+  }
   return out;
 }
 
