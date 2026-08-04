@@ -13,6 +13,7 @@ import session from "express-session";
 import { mountProductionBarbersRoutes } from "./productionBarbersRoutes.js";
 import { mountProductionCms } from "./mountProductionCms.js";
 import { createAuthRouter, resolveAuthPayload } from "./authRoutes.js";
+import { isSuperAdminEmail } from "./rolePolicy.js";
 import {
   ensureUsersRoleColumn,
   ensureGoogleAuthSupport,
@@ -503,7 +504,30 @@ app.post("/api/sms/status", (req, res) => {
   void handleTwilioSmsStatusCallback(req.body || {}).catch((e) => {
     console.error("[api/sms/status] handler error:", e);
   });
+  void (async () => {
+    try {
+      const { enrichSmsStatusCallback } = require("./smsRoutes.cjs");
+      await enrichSmsStatusCallback(dbQuery, req.body || {});
+    } catch (e) {
+      console.warn("[api/sms/status] sms_message_log update:", e?.message || e);
+    }
+  })();
 });
+
+try {
+  const { createSmsRouter } = require("./smsRoutes.cjs");
+  app.use(
+    "/api/sms",
+    createSmsRouter({
+      dbQuery,
+      resolveAuthPayload,
+      isSuperAdminEmail,
+    }),
+  );
+  console.log("[boot] mounted /api/sms (verify, consent, inbound, admin history)");
+} catch (e) {
+  console.warn("[boot] /api/sms mount skipped:", e?.message || e);
+}
 
 app.use(
   session({
@@ -1362,6 +1386,16 @@ async function startServer() {
     console.log("[boot] super_admin_login_challenges schema ensured");
   } catch (e) {
     console.warn("[boot] super_admin_login_challenges schema skipped:", e?.message || e);
+  }
+
+  try {
+    const { ensureSmsSchema } = require("./smsMigrations.cjs");
+    await ensureSmsSchema(dbQuery);
+    const { smsFlags } = require("./smsFlags.cjs");
+    const { twilioConfigStatus } = require("./smsTwilioClient.cjs");
+    console.log("[boot] SMS schema ensured", { flags: smsFlags(), twilio: twilioConfigStatus() });
+  } catch (e) {
+    console.warn("[boot] SMS schema skipped:", e?.message || e);
   }
 
   // AURA Phase 2 — additive schema + reminder scanners (only when master flag is on)

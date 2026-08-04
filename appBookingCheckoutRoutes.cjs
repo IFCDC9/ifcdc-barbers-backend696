@@ -1761,6 +1761,19 @@ router.post("/finalize", async (req, res) => {
       settlement,
     });
 
+    // Best-effort booking SMS (gated; never affects payment settlement).
+    try {
+      const { notifyBookingSms } = require("./smsBookingNotify.cjs");
+      const { dbQuery: dq } = await loadDb();
+      void notifyBookingSms(dq, "booking_approved", {
+        ...fresh,
+        phone: fresh.phone || row.phone,
+        user_id: fresh.user_id || row.user_id,
+      }).catch((e) => console.warn("[app-bookings] SMS notify:", e?.message || e));
+    } catch (e) {
+      console.warn("[app-bookings] SMS notify setup:", e?.message || e);
+    }
+
     console.log("[app-bookings] finalize SUCCESS", {
       paypalOrderId: orderID,
       captureId,

@@ -75,9 +75,30 @@ export async function ensureNotificationPreferencesTable() {
         marketing BOOLEAN NOT NULL DEFAULT FALSE,
         email_booking_confirmations BOOLEAN NOT NULL DEFAULT TRUE,
         email_reminders BOOLEAN NOT NULL DEFAULT TRUE,
+        sms_opt_in BOOLEAN NOT NULL DEFAULT TRUE,
+        sms_booking_confirmations BOOLEAN NOT NULL DEFAULT TRUE,
+        sms_reminders BOOLEAN NOT NULL DEFAULT TRUE,
+        sms_cancellations BOOLEAN NOT NULL DEFAULT TRUE,
+        sms_payment_updates BOOLEAN NOT NULL DEFAULT TRUE,
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
     `);
+    // Additive columns for older DBs that already had the table.
+    await dbQuery(
+      `ALTER TABLE notification_preferences ADD COLUMN IF NOT EXISTS sms_opt_in BOOLEAN DEFAULT TRUE`,
+    );
+    await dbQuery(
+      `ALTER TABLE notification_preferences ADD COLUMN IF NOT EXISTS sms_booking_confirmations BOOLEAN DEFAULT TRUE`,
+    );
+    await dbQuery(
+      `ALTER TABLE notification_preferences ADD COLUMN IF NOT EXISTS sms_reminders BOOLEAN DEFAULT TRUE`,
+    );
+    await dbQuery(
+      `ALTER TABLE notification_preferences ADD COLUMN IF NOT EXISTS sms_cancellations BOOLEAN DEFAULT TRUE`,
+    );
+    await dbQuery(
+      `ALTER TABLE notification_preferences ADD COLUMN IF NOT EXISTS sms_payment_updates BOOLEAN DEFAULT TRUE`,
+    );
     prefsReady = true;
   } catch (e) {
     console.warn("[migrate] ensureNotificationPreferencesTable:", e?.message || e);

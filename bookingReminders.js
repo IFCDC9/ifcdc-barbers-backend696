@@ -127,7 +127,7 @@ async function scanWindow({
   const lim = Math.min(100, Math.max(1, Number(limit) || 25));
 
   const r = await dbQuery(
-    `SELECT id, customer_name, customer_email, barber_name, service,
+    `SELECT id, customer_name, customer_email, barber_name, service, phone,
             date::text AS date,
             to_char(time, 'HH12:MI AM') AS time_ampm,
             to_char(time, 'HH24:MI') AS time,
@@ -170,6 +170,14 @@ async function scanWindow({
         result: "sent",
         metadata: { to },
       });
+      try {
+        const { notifyBookingSms } = require("./smsBookingNotify.cjs");
+        void notifyBookingSms(dbQuery, "booking_reminder", row, {
+          occurrence: windowLabel,
+        }).catch(() => {});
+      } catch {
+        /* SMS optional */
+      }
       sent += 1;
     } catch (e) {
       console.warn(`[reminder-${windowLabel}] skip`, row.id, e?.message || e);

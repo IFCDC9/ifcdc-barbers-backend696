@@ -144,7 +144,9 @@ export function createNotificationRouter(deps = {}) {
       const r = await dbQuery(
         `SELECT user_id, push_enabled, booking_confirmations, reminders, cancellations,
                 reschedules, status_updates, admin_alerts, marketing,
-                email_booking_confirmations, email_reminders, updated_at
+                email_booking_confirmations, email_reminders,
+                sms_opt_in, sms_booking_confirmations, sms_reminders, sms_cancellations,
+                sms_payment_updates, updated_at
          FROM notification_preferences
          WHERE user_id = $1::uuid
          LIMIT 1`,
@@ -157,7 +159,9 @@ export function createNotificationRouter(deps = {}) {
            ON CONFLICT (user_id) DO NOTHING
            RETURNING user_id, push_enabled, booking_confirmations, reminders, cancellations,
                      reschedules, status_updates, admin_alerts, marketing,
-                     email_booking_confirmations, email_reminders, updated_at`,
+                     email_booking_confirmations, email_reminders,
+                     sms_opt_in, sms_booking_confirmations, sms_reminders, sms_cancellations,
+                     sms_payment_updates, updated_at`,
           [actor.userId],
         );
         prefs = ins.rows?.[0] || {
@@ -172,6 +176,11 @@ export function createNotificationRouter(deps = {}) {
           marketing: false,
           email_booking_confirmations: true,
           email_reminders: true,
+          sms_opt_in: true,
+          sms_booking_confirmations: true,
+          sms_reminders: true,
+          sms_cancellations: true,
+          sms_payment_updates: true,
         };
       }
       return res.json({ ok: true, preferences: prefs });
@@ -194,6 +203,11 @@ export function createNotificationRouter(deps = {}) {
     "marketing",
     "email_booking_confirmations",
     "email_reminders",
+    "sms_opt_in",
+    "sms_booking_confirmations",
+    "sms_reminders",
+    "sms_cancellations",
+    "sms_payment_updates",
   ];
 
   /**

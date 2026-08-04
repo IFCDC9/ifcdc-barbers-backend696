@@ -1,6 +1,7 @@
 /**
- * PayPal webhook → transactional email (payment captured).
+ * PayPal webhook → transactional email + optional SMS (payment events).
  * Uses Resend via sendResendWithRetry from emailResend.cjs.
+ * SMS is best-effort and gated by SMS_NOTIFICATIONS_ENABLED — never blocks webhook ACK.
  */
 const {
   getResend,
@@ -20,14 +21,35 @@ function getAdminEmail() {
   return String(process.env.BOOKING_ADMIN_EMAIL || "service@ifcdc.org").trim();
 }
 
+const SMS_PAYMENT_EVENTS = new Set([
+  "PAYMENT.CAPTURE.COMPLETED",
+  "PAYMENT.CAPTURE.DENIED",
+  "PAYMENT.CAPTURE.PENDING",
+  "PAYMENT.CAPTURE.REFUNDED",
+  "PAYMENT.CAPTURE.REVERSED",
+  "PAYMENT.CAPTURE.DECLINED",
+]);
+
 /**
  * @param {object} body — PayPal webhook JSON body
  */
 async function handlePaypalWebhookEvent(body) {
   const type = String(body?.event_type || "");
+
+  // Best-effort SMS for mapped payment events (idempotent). Never throws out.
+  if (SMS_PAYMENT_EVENTS.has(type) || /PAYMENT\.CAPTURE|REFUND|REVERSAL|CANCEL/i.test(type)) {
+    try {
+      const { dbQuery } = await import("./db.js");
+      const { notifyPaymentSmsFromPaypalWebhook } = require("./smsPaymentNotify.cjs");
+      await notifyPaymentSmsFromPaypalWebhook(dbQuery, body);
+    } catch (e) {
+      console.warn("[paypal] payment SMS notify skipped:", e?.message || e);
+    }
+  }
+
   if (type !== "PAYMENT.CAPTURE.COMPLETED") {
-    console.log("[paypal] webhook skipped (event_type):", type || "(missing)");
-    return { handled: false, reason: "not_capture_completed" };
+    console.log("[paypal] webhook email skipped (event_type):", type || "(missing)");
+    return { handled: SMS_PAYMENT_EVENTS.has(type), reason: type === "" ? "missing_type" : "not_capture_completed_email" };
   }
 
   try {
@@ -75,14 +97,18 @@ async function handlePaypalWebhookEvent(body) {
     payerEmail: payerEmail || "(none in payload)",
   });
 
-  await sendPaymentSuccessEmails({
-    captureId,
-    orderId,
-    amount,
-    currency,
-    payerEmail,
-    payerName,
-  });
+  try {
+    await sendPaymentSuccessEmails({
+      captureId,
+      orderId,
+      amount,
+      currency,
+      payerEmail,
+      payerName,
+    });
+  } catch (e) {
+    console.error("[paypal] payment email failed (non-fatal for SMS path):", e?.message || e);
+  }
 
   return { handled: true };
 }
