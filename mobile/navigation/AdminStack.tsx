@@ -30,6 +30,7 @@ import EditUserScreen from "../screens/admin/EditUserScreen";
 import ManageRolesScreen from "../screens/admin/ManageRolesScreen";
 import InviteUserScreen from "../screens/admin/InviteUserScreen";
 import AdminAccessAuditScreen from "../screens/admin/AdminAccessAuditScreen";
+import AdminSmsDeliveryScreen from "../screens/admin/AdminSmsDeliveryScreen";
 import ResetUserPasswordScreen from "../screens/admin/ResetUserPasswordScreen";
 import SuperAdminRouteGuard from "../components/SuperAdminRouteGuard";
 import EditBarberScheduleScreen from "../screens/schedule/EditBarberScheduleScreen";
@@ -65,6 +66,7 @@ export type AdminStackParamList = {
   PayoutBookingSummary: undefined;
   AdminAnalytics: undefined;
   AdminNotifications: undefined;
+  AdminSmsDelivery: undefined;
   PlatformNotifications: undefined;
   MobileNotificationSettings: undefined;
   AdminSchedule: undefined;
@@ -149,6 +151,13 @@ function AdminStackInner() {
         {() => (
           <SuperAdminRouteGuard>
             <AdminAccessAuditScreen />
+          </SuperAdminRouteGuard>
+        )}
+      </Stack.Screen>
+      <Stack.Screen name="AdminSmsDelivery">
+        {() => (
+          <SuperAdminRouteGuard>
+            <AdminSmsDeliveryScreen />
           </SuperAdminRouteGuard>
         )}
       </Stack.Screen>

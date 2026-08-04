@@ -72,6 +72,13 @@ export const ADMIN_MENU: AdminMenuItem[] = [
     route: "AdminNotifications",
   },
   {
+    key: "sms_delivery",
+    title: "SMS delivery",
+    subtitle: "Transactional SMS history · Super Admin",
+    icon: "💬",
+    route: "AdminSmsDelivery",
+  },
+  {
     key: "schedule",
     title: "Schedule controls",
     subtitle: "Availability and blocked dates",

@@ -37,6 +37,9 @@ export function canAccessAdminMenuKey(
   if (key === "manual_booking") {
     return role === "super_admin" || isSuperAdminUser(user, token);
   }
+  if (key === "sms_delivery") {
+    return role === "super_admin" || isSuperAdminUser(user, token);
+  }
   if (role === "super_admin") return true;
   if (role === "admin") {
     return !["users", "manual_booking"].includes(key);

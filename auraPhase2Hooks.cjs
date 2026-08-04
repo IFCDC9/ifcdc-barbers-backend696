@@ -14,9 +14,21 @@ function safeRequireNotify() {
 }
 
 async function afterBookingCancelled(dbQuery, booking, { reason } = {}) {
-  const flags = auraPhase2Flags();
-  if (!flags.master || !booking?.id) return { skipped: true };
   const results = {};
+  if (!booking?.id) return { skipped: true };
+
+  // SMS cancel — independent of AURA Phase 2 master; gated by SMS_NOTIFICATIONS_ENABLED.
+  try {
+    const { notifyBookingSms } = require("./smsBookingNotify.cjs");
+    results.sms = await notifyBookingSms(dbQuery, "booking_canceled", booking, {
+      occurrence: "cancel",
+    });
+  } catch (e) {
+    results.sms = { ok: false, error: e?.message || String(e) };
+  }
+
+  const flags = auraPhase2Flags();
+  if (!flags.master) return { ...results, skippedAura: true };
 
   try {
     const emails = safeRequireEmails();
@@ -52,9 +64,27 @@ async function afterBookingCancelled(dbQuery, booking, { reason } = {}) {
 }
 
 async function afterBookingRescheduled(dbQuery, booking, { fromLabel, newDate, newTime } = {}) {
-  const flags = auraPhase2Flags();
-  if (!flags.master || !booking?.id) return { skipped: true };
   const results = {};
+  if (!booking?.id) return { skipped: true };
+
+  try {
+    const { notifyBookingSms } = require("./smsBookingNotify.cjs");
+    results.sms = await notifyBookingSms(
+      dbQuery,
+      "booking_rescheduled",
+      {
+        ...booking,
+        date: newDate || booking.date,
+        time: newTime || booking.time,
+      },
+      { occurrence: `reschedule:${String(newDate || "")}:${String(newTime || "")}` },
+    );
+  } catch (e) {
+    results.sms = { ok: false, error: e?.message || String(e) };
+  }
+
+  const flags = auraPhase2Flags();
+  if (!flags.master) return { ...results, skippedAura: true };
 
   // Customer already gets confirmation via sendBookingEmail on the reschedule route.
   // Extra AURA-branded reschedule email only when AURA_PHASE2_RESCHEDULE_EMAIL=1.
@@ -103,9 +133,20 @@ async function afterBookingRescheduled(dbQuery, booking, { fromLabel, newDate, n
 }
 
 async function afterBookingCreated(dbQuery, booking) {
-  const flags = auraPhase2Flags();
-  if (!flags.master || !booking?.id) return { skipped: true };
   const results = {};
+  if (!booking?.id) return { skipped: true };
+
+  try {
+    const { notifyBookingSms } = require("./smsBookingNotify.cjs");
+    results.sms = await notifyBookingSms(dbQuery, "booking_created", booking, {
+      occurrence: "created",
+    });
+  } catch (e) {
+    results.sms = { ok: false, error: e?.message || String(e) };
+  }
+
+  const flags = auraPhase2Flags();
+  if (!flags.master) return { ...results, skippedAura: true };
 
   if (flags.barberNotify) {
     try {
@@ -125,6 +166,16 @@ async function afterBookingCreated(dbQuery, booking) {
 }
 
 async function afterBookingCompleted(dbQuery, booking, { loyalty } = {}) {
+  // SMS completed — always attempt (flag-gated inside notify); independent of review followup.
+  try {
+    const { notifyBookingSms } = require("./smsBookingNotify.cjs");
+    void notifyBookingSms(dbQuery, "booking_completed", booking, {
+      occurrence: "completed",
+    }).catch(() => {});
+  } catch {
+    /* non-fatal */
+  }
+
   const flags = auraPhase2Flags();
   if (!flags.reviewFollowup || !booking?.id) return { skipped: true };
 

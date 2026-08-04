@@ -680,7 +680,10 @@ function AdminDashboard() {
             Loyalty rewards
           </a>
           <a href="/admin/aura-knowledge" style={{ ...goldButton, textDecoration: "none", display: "inline-block", background: "#222", color: "#d4af37", border: "1px solid #d4af37" }}>
-            AURA knowledge
+            AURA Knowledge
+          </a>
+          <a href="/admin/sms-delivery" style={{ ...goldButton, textDecoration: "none", display: "inline-block", background: "#222", color: "#d4af37", border: "1px solid #d4af37" }}>
+            SMS delivery
           </a>
         </div>
 
