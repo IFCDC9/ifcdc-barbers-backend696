@@ -56,19 +56,54 @@ function getTwilioClient() {
 }
 
 function twilioConfigStatus() {
+  const accountSid = getTwilioAccountSid();
+  const authToken = getTwilioAuthToken();
+  const messagingSid = getTwilioMessagingServiceSid();
+  const verifySid = getTwilioVerifyServiceSid();
+  const phone = getTwilioPhoneNumber();
+  const superAdminPhone = stripOuterQuotes(
+    process.env.SUPER_ADMIN_SMS_PHONE || "",
+  ).replace(/\s/g, "");
+
   return {
     accountConfigured: isTwilioAccountConfigured(),
     messagingConfigured: isTwilioMessagingConfigured(),
     verifyConfigured: isTwilioVerifyConfigured(),
-    messagingServiceSidPrefix: (() => {
-      const s = getTwilioMessagingServiceSid();
-      return s ? `${s.slice(0, 4)}…` : null;
-    })(),
-    verifyServiceSidPrefix: (() => {
-      const s = getTwilioVerifyServiceSid();
-      return s ? `${s.slice(0, 4)}…` : null;
-    })(),
-    phoneNumberConfigured: Boolean(getTwilioPhoneNumber()),
+    /** Presence-only diagnostics — never return secret values */
+    env: {
+      TWILIO_ACCOUNT_SID: {
+        present: Boolean(accountSid),
+        looksValid: Boolean(accountSid && accountSid.startsWith("AC")),
+        prefix: accountSid ? `${accountSid.slice(0, 4)}…` : null,
+      },
+      TWILIO_AUTH_TOKEN: {
+        present: Boolean(authToken),
+        lengthOk: Boolean(authToken && authToken.length >= 16),
+      },
+      TWILIO_PHONE_NUMBER: {
+        present: Boolean(phone),
+        prefix: phone ? `${phone.slice(0, 3)}…` : null,
+      },
+      TWILIO_MESSAGING_SERVICE_SID: {
+        present: Boolean(messagingSid),
+        looksValid: Boolean(messagingSid && /^MG[0-9a-fA-F]{32}$/.test(messagingSid)),
+        prefix: messagingSid ? `${messagingSid.slice(0, 4)}…` : null,
+      },
+      TWILIO_VERIFY_SERVICE_SID: {
+        present: Boolean(verifySid),
+        looksValid: Boolean(verifySid && /^VA[0-9a-fA-F]{32}$/.test(verifySid)),
+        prefix: verifySid ? `${verifySid.slice(0, 4)}…` : null,
+      },
+      SUPER_ADMIN_SMS_PHONE: {
+        present: Boolean(superAdminPhone),
+        masked: superAdminPhone
+          ? `••••${superAdminPhone.replace(/\D/g, "").slice(-4)}`
+          : null,
+      },
+    },
+    messagingServiceSidPrefix: messagingSid ? `${messagingSid.slice(0, 4)}…` : null,
+    verifyServiceSidPrefix: verifySid ? `${verifySid.slice(0, 4)}…` : null,
+    phoneNumberConfigured: Boolean(phone),
   };
 }
 

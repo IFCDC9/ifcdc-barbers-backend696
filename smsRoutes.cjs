@@ -59,14 +59,23 @@ function createSmsRouter(deps = {}) {
   }
 
   router.get("/status", async (_req, res) => {
+    let schemaReady = false;
+    let schemaError = null;
     try {
       await ensureSmsSchema(dbQuery);
-    } catch {
-      /* ignore */
+      schemaReady = true;
+    } catch (e) {
+      schemaError = String(e?.message || e).slice(0, 160);
     }
     return res.json({
       ok: true,
       flags: smsFlags(),
+      schema: { ready: schemaReady, error: schemaError },
+      callbacks: {
+        statusUrl: "/api/sms/status",
+        inboundUrl: "/api/sms/inbound",
+        recommendedBase: "https://ifcdc-barbers-backend696.onrender.com",
+      },
       twilio: twilioConfigStatus(),
     });
   });
