@@ -1088,6 +1088,32 @@ export async function fetchAdminShopDetail(shopId) {
   return data;
 }
 
+export async function fetchAdminShopTelephony(shopId) {
+  const origin = getApiOrigin();
+  const res = await fetch(
+    `${origin}/api/admin/shops/${encodeURIComponent(String(shopId))}/telephony`,
+    { headers: { Accept: "application/json", ...getAdminAuthHeaders() } },
+  );
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.message || data?.error || `HTTP ${res.status}`);
+  return data;
+}
+
+export async function putAdminShopTelephony(shopId, body) {
+  const origin = getApiOrigin();
+  const res = await fetch(
+    `${origin}/api/admin/shops/${encodeURIComponent(String(shopId))}/telephony`,
+    {
+      method: "PUT",
+      headers: { Accept: "application/json", "Content-Type": "application/json", ...getAdminAuthHeaders() },
+      body: JSON.stringify(body || {}),
+    },
+  );
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.message || data?.error || `HTTP ${res.status}`);
+  return data;
+}
+
 export async function patchAdminShop(shopId, body) {
   const origin = getApiOrigin();
   const res = await fetch(`${origin}/api/admin/shops/${encodeURIComponent(String(shopId))}`, {

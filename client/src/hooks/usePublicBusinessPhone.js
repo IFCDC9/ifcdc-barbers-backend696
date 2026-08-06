@@ -11,6 +11,9 @@ export function usePublicBusinessPhone(opts = {}) {
   const [phone, setPhone] = useState(() => resolveDisplayBusinessPhone(""));
   const [auraPhone, setAuraPhone] = useState("");
   const [phoneSource, setPhoneSource] = useState("loading");
+  const [callButtonLabel, setCallButtonLabel] = useState("Call IFCDC Barbers App");
+  const [shopName, setShopName] = useState(null);
+  const [callTelHref, setCallTelHref] = useState("tel:+19895141064");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -29,15 +32,25 @@ export function usePublicBusinessPhone(opts = {}) {
           throw new Error(data?.error || data?.message || `HTTP ${res.status}`);
         }
         if (!cancelled) {
-          setPhone(resolveDisplayBusinessPhone(data?.phone));
-          setAuraPhone(data?.auraPhone != null ? String(data.auraPhone).trim() : "");
-          setPhoneSource(String(data?.phoneSource || (data?.phone ? "shop" : "platform_fallback")).trim() || "unknown");
+          setPhone(resolveDisplayBusinessPhone(data?.phone || data?.auraPhone || "+19895141064"));
+          setAuraPhone(
+            data?.auraPhone != null
+              ? String(data.auraPhone).trim()
+              : data?.platformSharedNumber || "+19895141064",
+          );
+          setPhoneSource(
+            String(data?.phoneSource || (data?.phone ? "shop" : "platform_fallback")).trim() || "unknown",
+          );
+          setCallButtonLabel(String(data?.callButtonLabel || "Call IFCDC Barbers App"));
+          setShopName(data?.shopName ? String(data.shopName) : null);
+          setCallTelHref(String(data?.callTelHref || "tel:+19895141064"));
         }
       })
       .catch((err) => {
         if (!cancelled) {
           setError(err?.message || "Could not load phone number");
-          setPhone(resolveDisplayBusinessPhone(""));
+          setPhone(resolveDisplayBusinessPhone("+19895141064"));
+          setAuraPhone("+19895141064");
           setPhoneSource("error");
         }
       })
@@ -50,5 +63,14 @@ export function usePublicBusinessPhone(opts = {}) {
     };
   }, [businessId]);
 
-  return { phone, auraPhone, phoneSource, loading, error };
+  return {
+    phone,
+    auraPhone,
+    phoneSource,
+    callButtonLabel,
+    shopName,
+    callTelHref,
+    loading,
+    error,
+  };
 }

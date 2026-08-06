@@ -189,6 +189,19 @@ async function createEscalation(dbQuery, row) {
       [row.callSid, String(row.reason || "").slice(0, 500)],
     );
   }
+  try {
+    const { emitFounderEvent } = require("./auraFounderNotify.cjs");
+    void emitFounderEvent(dbQuery, {
+      eventType: "customer_escalation",
+      customerName: row.callerName || null,
+      customerPhone: row.fromE164 || null,
+      actionRequired: true,
+      source: "aura_voice_escalation",
+      payload: { reason: row.reason, appointmentRef: row.appointmentRef || null },
+    });
+  } catch {
+    /* non-fatal */
+  }
   return ins.rows?.[0]?.id || null;
 }
 

@@ -7,16 +7,20 @@ function safeRows(r) {
   return Array.isArray(r?.rows) ? r.rows : [];
 }
 
-async function listActiveBarbers(dbQuery, { limit = 8 } = {}) {
+async function listActiveBarbers(dbQuery, { limit = 8, shopId = null } = {}) {
+  // Fail closed: never list another shop's barbers without shop context.
+  if (shopId == null || shopId === "" || !Number.isFinite(Number(shopId))) {
+    return [];
+  }
   try {
     const r = await dbQuery(
-      `SELECT id, name, status
+      `SELECT id, name
        FROM barbers
-       WHERE coalesce(lower(status),'active') IN ('active','approved','')
-          OR status IS NULL
+       WHERE business_id = $1::bigint
+         AND coalesce(booking_hidden, false) = false
        ORDER BY name ASC NULLS LAST
-       LIMIT $1`,
-      [Math.min(Math.max(Number(limit) || 8, 1), 20)],
+       LIMIT $2`,
+      [Number(shopId), Math.min(Math.max(Number(limit) || 8, 1), 20)],
     );
     return safeRows(r);
   } catch (e) {
@@ -25,42 +29,42 @@ async function listActiveBarbers(dbQuery, { limit = 8 } = {}) {
   }
 }
 
-async function listPublicServices(dbQuery, { limit = 10 } = {}) {
+async function listPublicServices(dbQuery, { limit = 10, shopId = null } = {}) {
+  if (shopId == null || shopId === "" || !Number.isFinite(Number(shopId))) {
+    return [];
+  }
   try {
     const r = await dbQuery(
-      `SELECT id, title, price, duration_minutes
-       FROM styles
-       WHERE coalesce(hidden,false) = false
-       ORDER BY title ASC NULLS LAST
-       LIMIT $1`,
-      [Math.min(Math.max(Number(limit) || 10, 1), 25)],
+      `SELECT DISTINCT ON (lower(btrim(s.name)))
+              s.id, s.name AS title, s.price, s.duration_minutes
+       FROM barber_services s
+       JOIN barbers b ON b.id::text = s.barber_id::text
+       WHERE b.business_id = $1::bigint
+         AND coalesce(s.is_active, true) = true
+         AND s.name IS NOT NULL AND btrim(s.name) <> ''
+       ORDER BY lower(btrim(s.name)), s.created_at DESC NULLS LAST
+       LIMIT $2`,
+      [Number(shopId), Math.min(Math.max(Number(limit) || 10, 1), 25)],
     );
     return safeRows(r);
   } catch (e) {
-    try {
-      const r2 = await dbQuery(
-        `SELECT id, name AS title, price, duration_minutes
-         FROM services
-         ORDER BY name ASC NULLS LAST
-         LIMIT $1`,
-        [Math.min(Math.max(Number(limit) || 10, 1), 25)],
-      );
-      return safeRows(r2);
-    } catch (e2) {
-      console.warn("[aura-voice-intel] listPublicServices:", e?.message || e, e2?.message || e2);
-      return null;
-    }
+    console.warn("[aura-voice-intel] listPublicServices:", e?.message || e);
+    return null;
   }
 }
 
-async function resolveShopContact(dbQuery) {
+async function resolveShopContact(dbQuery, { shopId = null } = {}) {
+  if (shopId == null || shopId === "" || !Number.isFinite(Number(shopId))) {
+    return null;
+  }
   try {
     const r = await dbQuery(
-      `SELECT name, phone, address, city, state
+      `SELECT id, name, phone, public_phone_e164, address, city, state,
+              operating_hours_json
        FROM businesses
-       WHERE id = 1 OR name ILIKE '%IFCDC%'
-       ORDER BY CASE WHEN id = 1 THEN 0 ELSE 1 END, id ASC
+       WHERE id = $1::bigint
        LIMIT 1`,
+      [Number(shopId)],
     );
     return safeRows(r)[0] || null;
   } catch (e) {

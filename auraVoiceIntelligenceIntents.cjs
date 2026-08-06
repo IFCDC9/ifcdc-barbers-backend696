@@ -24,7 +24,7 @@ const INTENT_PATTERNS = [
   { intent: "customer_support", re: /\b(support|help me|customer service|assistance)\b/i },
   { intent: "request_human", re: /\b(human|real person|agent|manager|administrator|speak to (someone|a person)|operator)\b/i },
   { intent: "general_question", re: /\b(what is ifcdc|who are you|aura|about (the )?(shop|app|ifcdc))\b/i },
-  { intent: "owner_ops", re: /\b(today'?s (bookings?|summary)|new customers?|system health|operations)\b/i },
+  { intent: "owner_ops", re: /\b(today'?s (bookings?|summary)|new customers?|system health|operations|founder (brief|mode)|executive (brief|summary))\b/i },
 ];
 
 const CARD_PAN_RE = /(?:\d[ -]*){13,19}/;

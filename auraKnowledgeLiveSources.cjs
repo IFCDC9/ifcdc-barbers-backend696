@@ -11,19 +11,25 @@ function pickQuery(opts) {
 
 async function liveServicesCatalog(opts = {}) {
   const dbQuery = pickQuery(opts);
-  const params = [];
+  const shopId = opts.shopId ?? opts.businessId ?? null;
+  if (shopId == null || !Number.isFinite(Number(shopId))) {
+    return { ok: false, reason: "shop_required", facts: [] };
+  }
+  const params = [Number(shopId)];
   let sql = `
-    SELECT DISTINCT ON (lower(btrim(name)))
-           name, description, price::float AS price, duration_minutes
-    FROM barber_services
-    WHERE coalesce(is_active, true) = true
-      AND name IS NOT NULL AND btrim(name) <> ''
+    SELECT DISTINCT ON (lower(btrim(s.name)))
+           s.name, s.description, s.price::float AS price, s.duration_minutes
+    FROM barber_services s
+    JOIN barbers b ON b.id::text = s.barber_id::text
+    WHERE b.business_id = $1::bigint
+      AND coalesce(s.is_active, true) = true
+      AND s.name IS NOT NULL AND btrim(s.name) <> ''
   `;
   if (opts.barberId) {
     params.push(String(opts.barberId));
-    sql += ` AND barber_id::text = $1`;
+    sql += ` AND s.barber_id::text = $${params.length}`;
   }
-  sql += ` ORDER BY lower(btrim(name)), created_at DESC NULLS LAST LIMIT 40`;
+  sql += ` ORDER BY lower(btrim(s.name)), s.created_at DESC NULLS LAST LIMIT 40`;
   const r = await dbQuery(sql, params);
   const rows = r.rows || [];
   if (!rows.length) {
@@ -49,12 +55,18 @@ async function liveServicesCatalog(opts = {}) {
 
 async function liveBarberProfiles(opts = {}) {
   const dbQuery = pickQuery(opts);
+  const shopId = opts.shopId ?? opts.businessId ?? null;
+  if (shopId == null || !Number.isFinite(Number(shopId))) {
+    return { ok: false, reason: "shop_required", facts: [] };
+  }
   const r = await dbQuery(
     `SELECT b.id::text AS id, b.name, b.bio, b.location
      FROM barbers b
-     WHERE b.name IS NOT NULL AND btrim(b.name) <> ''
+     WHERE b.business_id = $1::bigint
+       AND b.name IS NOT NULL AND btrim(b.name) <> ''
      ORDER BY b.name ASC
      LIMIT 40`,
+    [Number(shopId)],
   );
   const rows = r.rows || [];
   if (!rows.length) return { ok: false, reason: "no_active_barbers", facts: [] };
@@ -73,27 +85,25 @@ async function liveBarberProfiles(opts = {}) {
 
 async function liveShopLocation(opts = {}) {
   const dbQuery = pickQuery(opts);
+  const shopId = opts.shopId ?? opts.businessId ?? null;
+  if (shopId == null || !Number.isFinite(Number(shopId))) {
+    return { ok: false, reason: "shop_required", facts: [] };
+  }
   const r = await dbQuery(
-    `SELECT name, address, city, state, phone
+    `SELECT name, address, city, state, phone, public_phone_e164
      FROM businesses
-     ORDER BY id ASC
-     LIMIT 5`,
+     WHERE id = $1::bigint
+     LIMIT 1`,
+    [Number(shopId)],
   );
   const rows = r.rows || [];
   if (!rows.length) {
-    const fallback = String(process.env.BUSINESS_ADDRESS || process.env.SHOP_ADDRESS || "").trim();
-    if (!fallback) return { ok: false, reason: "no_business_location", facts: [] };
-    return {
-      ok: true,
-      facts: [{ address: fallback }],
-      summary: fallback,
-      sourceNote: "env_fallback",
-    };
+    return { ok: false, reason: "no_business_location", facts: [] };
   }
   const facts = rows.map((row) => ({
     name: row.name,
     address: [row.address, row.city, row.state].filter(Boolean).join(", "),
-    phone: row.phone || null,
+    phone: row.public_phone_e164 || row.phone || null,
   }));
   return {
     ok: true,
@@ -106,13 +116,43 @@ async function liveShopLocation(opts = {}) {
 
 async function liveBusinessHours(opts = {}) {
   const dbQuery = pickQuery(opts);
-  // Aggregate distinct open windows from barber_settings.availability JSON when present.
+  const shopId = opts.shopId ?? opts.businessId ?? null;
+  if (shopId == null || !Number.isFinite(Number(shopId))) {
+    return { ok: false, reason: "shop_required", facts: [] };
+  }
+
+  const shopHours = await dbQuery(
+    `SELECT name, operating_hours_json, holiday_hours_json, temporary_closed, temporary_closed_reason
+     FROM businesses WHERE id = $1::bigint LIMIT 1`,
+    [Number(shopId)],
+  );
+  const shop = shopHours.rows?.[0];
+  if (shop?.temporary_closed) {
+    return {
+      ok: true,
+      facts: [{ closed: true, reason: shop.temporary_closed_reason || "Temporarily closed" }],
+      summary: `${shop.name || "Shop"} is temporarily closed${
+        shop.temporary_closed_reason ? `: ${shop.temporary_closed_reason}` : ""
+      }`,
+    };
+  }
+  if (shop?.operating_hours_json?.note) {
+    return {
+      ok: true,
+      facts: [{ hours: shop.operating_hours_json.note }],
+      summary: String(shop.operating_hours_json.note),
+    };
+  }
+
+  // Aggregate distinct open windows from barber_settings for this shop only.
   const r = await dbQuery(
     `SELECT b.name AS barber_name, s.availability, s.timezone
      FROM barber_settings s
      JOIN barbers b ON b.id::text = s.barber_id::text
-     WHERE coalesce(b.is_active, true) = true
+     WHERE b.business_id = $1::bigint
+       AND coalesce(b.is_active, true) = true
      LIMIT 20`,
+    [Number(shopId)],
   );
   const rows = r.rows || [];
   if (!rows.length) return { ok: false, reason: "no_schedule_rows", facts: [] };

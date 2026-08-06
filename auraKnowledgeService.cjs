@@ -322,7 +322,11 @@ function inferCategory(q) {
   return "faq";
 }
 
-async function answerKnowledgeQuestion(dbQuery, rawQuestion, { actor = "aura", userId = null } = {}) {
+async function answerKnowledgeQuestion(
+  dbQuery,
+  rawQuestion,
+  { actor = "aura", userId = null, shopId = null, businessId = null } = {},
+) {
   const flags = auraPhase3Flags();
   if (!flags.knowledge) {
     return { ok: false, error: "aura_phase3_knowledge_disabled", escalate: false };
@@ -444,6 +448,8 @@ async function answerKnowledgeQuestion(dbQuery, rawQuestion, { actor = "aura", u
     if (a.source_type === "live_db" || a.source_type === "hybrid" || a.live_query_key) {
       live = await resolveLiveQuery(a.live_query_key || liveKeyByCategory[a.category], {
         dbQuery,
+        shopId: shopId ?? businessId ?? null,
+        businessId: businessId ?? shopId ?? null,
       });
       if (!live.ok) {
         await logAuraAction(dbQuery, {
@@ -472,7 +478,11 @@ async function answerKnowledgeQuestion(dbQuery, rawQuestion, { actor = "aura", u
       confidence = a.confidence || "approved";
     }
   } else if (liveKeyByCategory[category]) {
-    live = await resolveLiveQuery(liveKeyByCategory[category], { dbQuery });
+    live = await resolveLiveQuery(liveKeyByCategory[category], {
+      dbQuery,
+      shopId: shopId ?? businessId ?? null,
+      businessId: businessId ?? shopId ?? null,
+    });
     if (live.ok) {
       answer = `Here is the current information from our live shop records: ${live.summary}`;
       confidence = "approved";

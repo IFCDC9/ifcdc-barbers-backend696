@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Alert, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, Linking, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect, useNavigation, useRoute } from "@react-navigation/native";
 import type { RouteProp } from "@react-navigation/native";
 import type { StackNavigationProp } from "@react-navigation/stack";
@@ -117,6 +117,34 @@ function ShopDetailInner() {
                 label="Share shop"
               />
             </View>
+            {shop?.phone ? (
+              <View style={{ marginTop: 12 }}>
+                <GlowButton
+                  label={`☎️ Call ${displayName}`}
+                  variant="outline"
+                  onPress={() => {
+                    const digits = String(shop.phone).replace(/\D/g, "");
+                    const e164 =
+                      digits.length === 10
+                        ? `+1${digits}`
+                        : digits.length === 11 && digits.startsWith("1")
+                          ? `+${digits}`
+                          : String(shop.phone).startsWith("+")
+                            ? String(shop.phone)
+                            : `+${digits}`;
+                    void Linking.openURL(`tel:${e164}`);
+                  }}
+                />
+              </View>
+            ) : (
+              <View style={{ marginTop: 12 }}>
+                <GlowButton
+                  label="☎️ Call IFCDC Barbers App"
+                  variant="outline"
+                  onPress={() => void Linking.openURL("tel:+19895141064")}
+                />
+              </View>
+            )}
           </Section>
 
           <Section title="Metrics">

@@ -1,4 +1,5 @@
 import express from "express";
+import { createRequire } from "node:module";
 import { resolveAuthPayload } from "./authRoutes.js";
 import { isJwtGlobalSuperScope } from "./authPlatformJwt.js";
 import { dbQuery } from "./db.js";
@@ -16,6 +17,8 @@ import {
   updateShopAccessControls,
 } from "./adminShopsService.js";
 import { logAdminActivity, ADMIN_ACTIVITY } from "./adminActivityLog.js";
+
+const require = createRequire(import.meta.url);
 
 async function loadShopOwnerEmail(businessId) {
   const r = await dbQuery(
@@ -129,10 +132,106 @@ export function createAdminShopsRouter() {
     try {
       const detail = await getAdminShopDetail(businessId);
       if (!detail) return res.status(404).json({ ok: false, message: "Shop not found" });
-      return res.json({ ok: true, ...detail });
+      const { getShopTelephonySettings, buildGreetingPreview } = require("./auraShopTelephonyAdmin.cjs");
+      const telephony = await getShopTelephonySettings(dbQuery, businessId).catch(() => null);
+      return res.json({
+        ok: true,
+        ...detail,
+        telephony,
+        greetingPreview: buildGreetingPreview(telephony),
+      });
     } catch (e) {
       console.error("[admin/shops] detail failed:", e?.message || e);
       return res.status(500).json({ ok: false, message: "Failed to load shop detail" });
+    }
+  });
+
+  router.get("/api/admin/shops/:id/telephony", async (req, res) => {
+    const scope = await resolveShopManagementScope(req, res);
+    if (!scope) return;
+    const businessId = Number(req.params.id);
+    if (!Number.isFinite(businessId)) {
+      return res.status(400).json({ ok: false, message: "Invalid shop id" });
+    }
+    if (!assertShopInScope(scope, businessId)) {
+      return res.status(403).json({ ok: false, message: "That shop is outside your scope." });
+    }
+    try {
+      const { getShopTelephonySettings, buildGreetingPreview } = require("./auraShopTelephonyAdmin.cjs");
+      const telephony = await getShopTelephonySettings(dbQuery, businessId);
+      if (!telephony) return res.status(404).json({ ok: false, message: "Shop not found" });
+      return res.json({
+        ok: true,
+        telephony,
+        greetingPreview: buildGreetingPreview(telephony),
+        tests: {
+          testGreeting: buildGreetingPreview(telephony),
+          callTelHref: telephony.callTelHref,
+          note: "Test incoming/outgoing calls require Twilio console + Founder authorization to provision numbers.",
+        },
+      });
+    } catch (e) {
+      console.error("[admin/shops] telephony get failed:", e?.message || e);
+      return res.status(500).json({ ok: false, message: "Failed to load telephony settings" });
+    }
+  });
+
+  router.put("/api/admin/shops/:id/telephony", async (req, res) => {
+    const scope = await resolveShopManagementScope(req, res);
+    if (!scope) return;
+    const businessId = Number(req.params.id);
+    if (!Number.isFinite(businessId)) {
+      return res.status(400).json({ ok: false, message: "Invalid shop id" });
+    }
+    if (!assertShopInScope(scope, businessId)) {
+      return res.status(403).json({ ok: false, message: "That shop is outside your scope." });
+    }
+    // Twilio number / SID assignment is founder/platform-admin only
+    const body = req.body || {};
+    const highImpact =
+      body.twilioPhoneNumber != null ||
+      body.twilioPhoneE164 != null ||
+      body.twilioPhoneNumberSid != null ||
+      body.twilioPhoneSid != null;
+    if (highImpact && !scope.all) {
+      return res.status(403).json({
+        ok: false,
+        message: "Assigning or changing Twilio numbers requires platform Founder/admin authorization.",
+      });
+    }
+    try {
+      const { updateShopTelephonySettings, buildGreetingPreview } = require("./auraShopTelephonyAdmin.cjs");
+      const { auditShopInfoUpdate } = require("./auraShopContext.cjs");
+      const before = await require("./auraShopTelephonyAdmin.cjs").getShopTelephonySettings(dbQuery, businessId);
+      const out = await updateShopTelephonySettings(dbQuery, businessId, body, {
+        actor: { role: scope.isSuperAdmin ? "super_admin" : scope.all ? "admin" : "shop_owner", id: scope.actorId },
+      });
+      if (!out.ok) return res.status(400).json(out);
+      for (const key of Object.keys(body)) {
+        await auditShopInfoUpdate(dbQuery, {
+          shopId: businessId,
+          actorRole: scope.isSuperAdmin ? "super_admin" : scope.all ? "admin" : "shop_owner",
+          fieldName: key,
+          oldValue: before?.[key] ?? null,
+          newValue: body[key],
+          verified: true,
+          success: true,
+          detail: { via: "admin_api" },
+        });
+      }
+      void logAdminActivity({
+        eventType: "shop_telephony_updated",
+        adminUserId: scope.actorId,
+        metadata: { businessId, fields: Object.keys(body) },
+      }).catch(() => {});
+      return res.json({
+        ok: true,
+        telephony: out.settings,
+        greetingPreview: buildGreetingPreview(out.settings),
+      });
+    } catch (e) {
+      console.error("[admin/shops] telephony put failed:", e?.message || e);
+      return res.status(500).json({ ok: false, message: "Failed to update telephony settings" });
     }
   });
 

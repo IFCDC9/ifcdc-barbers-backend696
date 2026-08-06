@@ -65,6 +65,8 @@ function createAuraPhase3Router({ dbQuery, requireAdmin, requireAuth } = {}) {
       const question = req.body?.question || req.body?.message || req.query.q;
       const out = await answerKnowledgeQuestion(dbQuery, question, {
         userId: req.user?.id || null,
+        shopId: req.body?.shopId || req.body?.businessId || req.user?.business_id || 1,
+        businessId: req.body?.businessId || req.body?.shopId || req.user?.business_id || 1,
       });
       return res.status(out.ok ? 200 : out.blocked ? 403 : 200).json(out);
     } catch (e) {

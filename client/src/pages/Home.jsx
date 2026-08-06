@@ -6,6 +6,7 @@ import StyleCoverImage from "../components/StyleCoverImage.jsx";
 import LanguageDropdown from "../components/LanguageDropdown.jsx";
 import { formatNanpUsDisplay, nanpDialString } from "../lib/formatNanp.js";
 import { useAuraContactPhone } from "../lib/useAuraContactPhone.js";
+import CallShopButton from "../components/CallShopButton.jsx";
 import {
   APP_DOWNLOAD_CTA,
   PUBLIC_CONTACT_EMAIL,
@@ -309,24 +310,24 @@ export default function Home() {
               defaultValue: "Tap the floating AURA button to ask anything — or use the shortcuts below.",
             })}
           </p>
-          {auraPhoneTel ? (
-            <div className="aura-panel__call-block">
+          <div className="aura-panel__call-block">
+              <CallShopButton phoneE164={auraPhoneRaw || "+19895141064"} />
               <p className="aura-panel__call-text">
-                <a href={`tel:${auraPhoneTel}`} className="aura-panel__call-link">
-                  {t("web.homePage.callAura", { defaultValue: "Call AURA" })}
+                <a href={`tel:${auraPhoneTel || "+19895141064"}`} className="aura-panel__call-link">
+                  {t("web.homePage.callAura", { defaultValue: "☎️ Call IFCDC Barbers App" })}
                 </a>
                 {" · "}
-                <a href={`sms:${auraPhoneTel}`} className="aura-panel__call-link">
+                <a href={`sms:${auraPhoneTel || "+19895141064"}`} className="aura-panel__call-link">
                   {t("web.homePage.textAura", { defaultValue: "Text AURA" })}
                 </a>
               </p>
-              {auraPhoneDisplay ? (
-                <p className="aura-panel__call-display" aria-label={`IFCDC Barbers App ${auraPhoneDisplay}`}>
-                  IFCDC Barbers App · {auraPhoneDisplay}
-                </p>
-              ) : null}
+              <p
+                className="aura-panel__call-display"
+                aria-label={`IFCDC Barbers App ${auraPhoneDisplay || "(989) 514-1064"}`}
+              >
+                ☎️ IFCDC Barbers App · {auraPhoneDisplay || "(989) 514-1064"}
+              </p>
             </div>
-          ) : null}
         </div>
 
         <div className="quick-actions">

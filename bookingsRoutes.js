@@ -48,6 +48,17 @@ const {
 } = require("./bookingPaymentSettlement.cjs");
 const { isDeliverableCustomerEmail } = require("./bookingEmail.cjs");
 const { refundPayPalCapture, round2: roundRefundMoney } = require("./paypalRefund.cjs");
+
+function notifyFounderOps(event) {
+  try {
+    const { emitFounderEvent } = require("./auraFounderNotify.cjs");
+    void Promise.resolve(emitFounderEvent(dbQuery, event)).catch((e) => {
+      console.warn("[founder-notify]", e?.message || e);
+    });
+  } catch (e) {
+    console.warn("[founder-notify]", e?.message || e);
+  }
+}
 const { sendBookingRefundEmail } = require("./bookingEmail.cjs");
 const { assessBookingRemoval } = require("./bookingDeletePolicy.cjs");
 const {
@@ -144,15 +155,25 @@ export async function insertAuraVoiceBookingRow(body, sendBookingEmail) {
   const customerName = String(body.name || "").trim();
   const customerEmail = String(body.email || "").trim();
   const customerPhone = String(body.phone || "").trim();
-  const barberId = Number(body.barberId ?? body.barber);
-  const barberName = String(body.barber || "").trim();
+  const barberIdRaw = body.barberId ?? body.barber_id ?? null;
+  const barberName = String(body.barber || body.barberName || "").trim();
+  // Production barbers may be UUID or numeric — never Number()-coerce UUIDs to NaN.
+  const barberIdStr = String(barberIdRaw ?? "").trim();
+  const barberIdNum = Number(barberIdStr);
+  const barberId =
+    barberIdStr && /^\d+$/.test(barberIdStr) && Number.isFinite(barberIdNum)
+      ? barberIdNum
+      : barberIdStr.includes("-")
+        ? barberIdStr
+        : null;
   const dateStr = String(body.date || "").trim();
   const timeStr = String(body.time || "").trim();
   const callSid = String(body.callSid || "").trim();
   const styleIdRaw = String(body.styleId || "").trim();
   const serviceHint = String(body.service || "").trim();
+  const durationOverride = Number(body.durationMinutes ?? body.duration_minutes);
 
-  if (!customerName || !customerEmail || !dateStr || !timeStr || !Number.isFinite(barberId)) {
+  if (!customerName || !customerEmail || !dateStr || !timeStr || !barberId) {
     return { ok: false, status: 400, error: "missing_fields", message: "Missing required booking fields" };
   }
   if (!callSid) {
@@ -165,17 +186,35 @@ export async function insertAuraVoiceBookingRow(body, sendBookingEmail) {
     if (!styleRow) {
       return { ok: false, status: 400, error: "style_not_found", message: "Style not found" };
     }
-    if (Number(styleRow.barber_id) !== barberId) {
+    if (String(styleRow.barber_id) !== String(barberId)) {
       return { ok: false, status: 400, error: "barber_mismatch", message: "Style does not match selected barber" };
     }
   }
 
   const { validateBookingSlot } = await import("./barberSlotEngine.js");
-  const durationForSlot = styleRow ? Number(styleRow.duration_minutes) || 30 : 30;
+  const durationForSlot = styleRow
+    ? Number(styleRow.duration_minutes) || 30
+    : Number.isFinite(durationOverride) && durationOverride > 0
+      ? durationOverride
+      : 30;
   const slotCheck = await validateBookingSlot(barberId, dateStr, timeStr, barberName, {
     durationMinutes: durationForSlot,
   });
   if (!slotCheck.ok) {
+    notifyFounderOps({
+      eventType: "booking_attempt_failed",
+      customerName,
+      customerPhone,
+      barberName,
+      serviceName: serviceHint || "Phone booking",
+      originalDate: dateStr,
+      originalTime: timeStr,
+      paymentStatus: null,
+      bookingStatus: null,
+      actionRequired: false,
+      source: "aura_voice",
+      payload: { error: slotCheck.code || "slot_unavailable", callSid },
+    });
     return {
       ok: false,
       status: 409,
@@ -223,7 +262,13 @@ export async function insertAuraVoiceBookingRow(body, sendBookingEmail) {
   const stamp = Date.now();
   const voiceOrderId = `voice_order:${callSid}:${stamp}`;
   const voiceCaptureId = `voice_cap:${callSid}:${stamp}`;
-  const voiceBizId = await resolveBusinessIdForBarber(barberId);
+  let voiceBizId =
+    body.businessId != null || body.shopId != null
+      ? Number(body.businessId ?? body.shopId)
+      : NaN;
+  if (!Number.isFinite(voiceBizId)) {
+    voiceBizId = await resolveBusinessIdForBarber(barberId);
+  }
 
   const insert = await dbQuery(
     `INSERT INTO bookings
@@ -353,6 +398,21 @@ export async function insertAuraVoiceBookingRow(body, sendBookingEmail) {
     emailSent = false;
     emailError = e?.message || String(e);
   }
+
+  notifyFounderOps({
+    eventType: "booking_created_by_aura",
+    bookingId,
+    customerName,
+    customerPhone,
+    barberName,
+    serviceName: serviceTitle,
+    originalDate: dateStr,
+    originalTime: timeStr,
+    paymentStatus: "pay_in_person",
+    bookingStatus: "pending",
+    actionRequired: false,
+    source: "aura_voice",
+  });
 
   return {
     ok: true,
@@ -808,6 +868,22 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
         data: { bookingId: id, reason: reason || null },
       });
 
+      notifyFounderOps({
+        eventType: "appointment_cancelled",
+        bookingId: id,
+        customerName: booking.customer_name,
+        customerPhone: booking.phone || booking.customer_phone,
+        barberName: booking.barber_name,
+        serviceName: booking.service || booking.style_title,
+        originalDate: booking.date,
+        originalTime: booking.time,
+        cancellationReason: reason || null,
+        paymentStatus: booking.payment_status,
+        bookingStatus: "cancelled",
+        actionRequired: false,
+        source: "bookings_api",
+      });
+
       // AURA Phase 2 cancel emails / barber notify — no-op when flags off.
       void import("./auraPhase2Hooks.cjs")
         .then((m) =>
@@ -1066,6 +1142,23 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
         data: { bookingId: id, fromLabel: oldLabel, toLabel: newLabel },
       });
 
+      notifyFounderOps({
+        eventType: "appointment_rescheduled",
+        bookingId: id,
+        customerName: booking.customer_name,
+        customerPhone: booking.phone || booking.customer_phone,
+        barberName: booking.barber_name,
+        serviceName: booking.service || booking.style_title,
+        originalDate: oldDateStr,
+        originalTime: oldTimeSql,
+        newDate,
+        newTime: newTimeLabel,
+        paymentStatus: booking.payment_status,
+        bookingStatus: "confirmed",
+        actionRequired: false,
+        source: "bookings_api",
+      });
+
       // Best-effort confirmation email — logs warning but never blocks the save.
       if (typeof sendBookingEmail === "function") {
         const email = String(booking.customer_email || "").trim();
@@ -1211,6 +1304,20 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
             booking: { ...booking, ...completion.booking, id },
             firstCompletion: true,
             dispatchBookingPush,
+          });
+          notifyFounderOps({
+            eventType: "appointment_completed",
+            bookingId: id,
+            customerName: booking.customer_name,
+            customerPhone: booking.phone || booking.customer_phone,
+            barberName: booking.barber_name,
+            serviceName: booking.service || booking.style_title,
+            originalDate: booking.date,
+            originalTime: booking.time,
+            paymentStatus: updated.payment_status || booking.payment_status,
+            bookingStatus: "completed",
+            actionRequired: false,
+            source: "bookings_api",
           });
         }
 

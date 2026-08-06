@@ -14,6 +14,7 @@ import {
   patchAdminShopAccountStatus,
   rejectAdminShop,
   startAdminShopTrial,
+  putAdminShopTelephony,
 } from "../services/api.js";
 import { getStoredToken, getStoredUser } from "../lib/authHeaders.js";
 
@@ -51,6 +52,23 @@ export default function AdminShopDetail() {
   const [editing, setEditing] = React.useState(editMode);
   const [form, setForm] = React.useState({ name: "", phone: "", city: "", state: "", address: "" });
   const [busy, setBusy] = React.useState(false);
+  const [telForm, setTelForm] = React.useState({
+    publicPhoneNumber: "",
+    twilioPhoneNumber: "",
+    twilioPhoneNumberSid: "",
+    ownerNotificationPhone: "",
+    managerNotificationPhone: "",
+    escalationPhone: "",
+    customGreeting: "",
+    preferredLanguage: "en",
+    timezone: "America/New_York",
+    shopCode: "",
+    voiceEnabled: true,
+    smsEnabled: true,
+    auraEnabled: true,
+    telephonyActive: true,
+  });
+  const [greetingPreview, setGreetingPreview] = React.useState("");
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -66,6 +84,24 @@ export default function AdminShopDetail() {
         state: s.state || "",
         address: s.address || "",
       });
+      const tel = j?.telephony || {};
+      setTelForm({
+        publicPhoneNumber: tel.publicPhoneNumber || "",
+        twilioPhoneNumber: tel.twilioPhoneNumber || "",
+        twilioPhoneNumberSid: tel.twilioPhoneNumberSid || "",
+        ownerNotificationPhone: tel.ownerNotificationPhone || "",
+        managerNotificationPhone: tel.managerNotificationPhone || "",
+        escalationPhone: tel.escalationPhone || "",
+        customGreeting: tel.customGreeting || "",
+        preferredLanguage: tel.preferredLanguage || "en",
+        timezone: tel.timezone || "America/New_York",
+        shopCode: tel.shopCode || "",
+        voiceEnabled: tel.voiceEnabled !== false,
+        smsEnabled: tel.smsEnabled !== false,
+        auraEnabled: tel.auraEnabled !== false,
+        telephonyActive: tel.telephonyActive !== false,
+      });
+      setGreetingPreview(j?.greetingPreview || "");
     } catch (e) {
       setError(e?.message || "Failed to load shop");
       setDetail(null);
@@ -98,6 +134,20 @@ export default function AdminShopDetail() {
       await load();
     } catch (e) {
       setError(e?.message || "Save failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveTelephony = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const j = await putAdminShopTelephony(shopId, telForm);
+      setGreetingPreview(j?.greetingPreview || "");
+      await load();
+    } catch (e) {
+      setError(e?.message || "Telephony save failed");
     } finally {
       setBusy(false);
     }
@@ -254,6 +304,76 @@ export default function AdminShopDetail() {
               </Link>
             </div>
           </Card>
+
+          <Section title="Shop Telephone & AURA Settings">
+            <p style={{ color: theme.colors.muted, fontSize: 13, marginBottom: 12 }}>
+              Platform shared number remains <strong>+19895141064</strong> / (989) 514-1064. Shop Twilio numbers are
+              separate. Numbers are not purchased or released automatically.
+            </p>
+            {[
+              ["publicPhoneNumber", "Public telephone number (E.164)"],
+              ["twilioPhoneNumber", "Twilio telephone number (E.164)"],
+              ["twilioPhoneNumberSid", "Assigned Twilio SID"],
+              ["ownerNotificationPhone", "Owner notification number"],
+              ["managerNotificationPhone", "Manager notification number"],
+              ["escalationPhone", "Escalation telephone number"],
+              ["shopCode", "Shop code / extension"],
+              ["timezone", "Timezone"],
+              ["preferredLanguage", "Language"],
+            ].map(([key, label]) => (
+              <label key={key} style={{ display: "block", fontSize: 13, marginBottom: 4 }}>
+                {label}
+                <input
+                  style={inputStyle}
+                  value={telForm[key] || ""}
+                  onChange={(e) => setTelForm((f) => ({ ...f, [key]: e.target.value }))}
+                  disabled={busy || (key.startsWith("twilio") && !isSuper)}
+                />
+              </label>
+            ))}
+            <label style={{ display: "block", fontSize: 13, marginBottom: 4 }}>
+              Custom greeting
+              <textarea
+                style={{ ...inputStyle, minHeight: 72 }}
+                value={telForm.customGreeting || ""}
+                onChange={(e) => setTelForm((f) => ({ ...f, customGreeting: e.target.value }))}
+                disabled={busy}
+              />
+            </label>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginBottom: 12 }}>
+              {[
+                ["voiceEnabled", "Voice enabled"],
+                ["smsEnabled", "SMS enabled"],
+                ["auraEnabled", "AURA enabled"],
+                ["telephonyActive", "Number active"],
+              ].map(([key, label]) => (
+                <label key={key} style={{ fontSize: 13 }}>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(telForm[key])}
+                    onChange={(e) => setTelForm((f) => ({ ...f, [key]: e.target.checked }))}
+                    disabled={busy}
+                  />{" "}
+                  {label}
+                </label>
+              ))}
+            </div>
+            {telForm.publicPhoneNumber || detail?.telephony?.callTelHref ? (
+              <p style={{ marginBottom: 10 }}>
+                <a href={detail?.telephony?.callTelHref || `tel:${telForm.publicPhoneNumber}`}>
+                  Call AURA / shop dialer
+                </a>
+              </p>
+            ) : null}
+            {greetingPreview ? (
+              <p style={{ color: theme.colors.muted, fontSize: 13, marginBottom: 12 }}>
+                <strong>Test greeting:</strong> {greetingPreview}
+              </p>
+            ) : null}
+            <Button variant="indigo" type="button" onClick={() => void saveTelephony()} disabled={busy}>
+              Save telephone & AURA settings
+            </Button>
+          </Section>
 
           {isSuper ? (
             <Card style={{ marginTop: 16 }}>

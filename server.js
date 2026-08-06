@@ -1013,15 +1013,47 @@ app.get("/api/config", async (req, res) => {
   try {
     const businessId = req.query.businessId ?? req.query.business_id ?? null;
     const { phone, source } = await resolvePublicBusinessPhone(businessId);
-    // Prefer dedicated AURA line; fall back to shop/platform business phone so
-    // Call/Text AURA matches the official IFCDC Barbers App number when env is unset.
-    const auraPhone = String(AURA_NUMBER || BUSINESS_PHONE || phone || "").trim();
+    // Prefer dedicated AURA / shop public line; platform IFCDC number is the shared fallback.
+    let shopTelephony = null;
+    if (businessId != null && String(businessId).trim() !== "") {
+      try {
+        const { getShopTelephonySettings } = require("./auraShopTelephonyAdmin.cjs");
+        shopTelephony = await getShopTelephonySettings(dbQuery, businessId);
+      } catch {
+        shopTelephony = null;
+      }
+    }
+    const platformAura = String(AURA_NUMBER || BUSINESS_PHONE || "").trim() || "+19895141064";
+    const shopPublic =
+      shopTelephony?.publicPhoneNumber ||
+      shopTelephony?.twilioPhoneNumber ||
+      phone ||
+      null;
+    const displayPhone = shopPublic || platformAura;
+    const callLabel = shopTelephony?.shopName
+      ? `Call ${shopTelephony.shopName}`
+      : "Call IFCDC Barbers App";
     res.json({
-      phone: phone || null,
-      auraPhone: auraPhone || null,
-      phoneSource: source,
-      /** Stable label for customer-facing UI copy */
-      phoneLabel: auraPhone || phone ? "IFCDC Barbers App" : null,
+      phone: displayPhone || null,
+      phoneDisplay: shopTelephony?.publicPhoneDisplay || null,
+      auraPhone: platformAura || null,
+      phoneSource: shopTelephony?.publicPhoneNumber ? "shop_telephony" : source,
+      phoneLabel: shopTelephony?.shopName || (displayPhone ? "IFCDC Barbers App" : null),
+      callButtonLabel: callLabel,
+      callTelHref: displayPhone
+        ? `tel:${String(displayPhone).startsWith("+") ? displayPhone : `+${String(displayPhone).replace(/\D/g, "")}`}`
+        : `tel:+19895141064`,
+      shopId: shopTelephony?.shopId || (businessId != null ? Number(businessId) : null),
+      shopName: shopTelephony?.shopName || null,
+      platformSharedNumber: "+19895141064",
+      telephony: shopTelephony
+        ? {
+            voiceEnabled: shopTelephony.voiceEnabled,
+            smsEnabled: shopTelephony.smsEnabled,
+            auraEnabled: shopTelephony.auraEnabled,
+            timezone: shopTelephony.timezone,
+          }
+        : null,
     });
   } catch (e) {
     console.error("[api/config]", e);
@@ -1162,6 +1194,8 @@ async function handleAuraChatRequest(req, res) {
             const { answerKnowledgeQuestion } = require("./auraKnowledgeService.cjs");
             const kn = await answerKnowledgeQuestion(dbQuery, lastUser, {
               userId: req.user?.id || null,
+              shopId: req.body?.shopId || req.body?.businessId || req.user?.business_id || 1,
+              businessId: req.body?.businessId || req.body?.shopId || req.user?.business_id || 1,
             });
             if (kn?.ok && kn.answer) {
               reply = kn.answer;
@@ -1429,7 +1463,13 @@ async function startServer() {
     if (isAuraVoiceIntelligencePhase1()) {
       const { ensureAuraVoiceIntelligenceSchema } = require("./auraVoiceIntelligenceMigrations.cjs");
       await ensureAuraVoiceIntelligenceSchema(dbQuery);
-      console.log("[boot] AURA Voice Intelligence Phase 1 schema ensured");
+      const { ensureAuraFounderSchema } = require("./auraFounderMigrations.cjs");
+      await ensureAuraFounderSchema(dbQuery);
+      const { ensureAuraShopTelephonySchema } = require("./auraShopTelephonyMigrations.cjs");
+      await ensureAuraShopTelephonySchema(dbQuery);
+      const { ensureAuraShopTenantIsolation } = require("./auraShopTenantIsolationMigrations.cjs");
+      await ensureAuraShopTenantIsolation(dbQuery);
+      console.log("[boot] AURA Voice Intelligence Phase 1 + Founder + Shop Telephony + Tenant Isolation schema ensured");
     } else {
       console.log("[boot] AURA Voice Intelligence Phase 1 off (AURA_VOICE_INTELLIGENCE_PHASE_1)");
     }
