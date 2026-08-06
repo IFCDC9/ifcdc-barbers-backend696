@@ -13,6 +13,13 @@ import { normalizeBarberLang, openAiLanguageInstruction, twilioSayAttributes } f
 import { loadBarberSettingsRow } from "./barberScope.js";
 import { runSimpleBookingTurn, getSimpleBookingStage, STATES } from "./auraVoiceSimpleBookingFlow.js";
 import { isCallCompleted, markCallCompleted } from "./src/services/bookingLock.js";
+import { createRequire } from "module";
+
+const requireCjs = createRequire(import.meta.url);
+const {
+  isAuraVoiceIntelligencePhase1,
+} = requireCjs("./auraVoiceIntelligenceFlags.cjs");
+const { runVoiceIntelligenceTurn } = requireCjs("./auraVoiceIntelligenceOrchestrator.cjs");
 
 const WELCOME_SENTINEL = "__IFCDC_VOICE_WELCOME__";
 const NO_SPEECH_SENTINEL = "__IFCDC_NO_SPEECH__";
@@ -369,11 +376,12 @@ function buildPhoneDtmfGatherTwiML(processAction, attrs, innerSay, stillHereSay)
 
 /**
  * Twilio voice: respond immediately, then POST /api/aura/process for booking + reply.
- * @param {{ insertVoiceRow?: (body: object) => Promise<object> }} [opts]
+ * @param {{ insertVoiceRow?: (body: object) => Promise<object>, dbQuery?: Function }} [opts]
  * @returns {{ voice: import("express").RequestHandler, process: import("express").RequestHandler }}
  */
 export function createSimpleAuraVoiceHandlers(opts = {}) {
   const insertVoiceRow = opts.insertVoiceRow;
+  const dbQuery = opts.dbQuery;
 
   const voice = async (req, res) => {
     console.log("🚀 AURA WEBHOOK HIT", {
@@ -547,6 +555,47 @@ export function createSimpleAuraVoiceHandlers(opts = {}) {
       console.log("[aura/timing] /api/aura/process_settings_ms", Date.now() - tSettings);
 
       const attrs = twilioSayAttributes(language, voiceType);
+
+      /** Phase 1 intelligence (flagged) — never replaces Twilio Verify / SMS / PayPal. */
+      if (isAuraVoiceIntelligencePhase1()) {
+        try {
+          const fromE164 = String(body.From ?? q.From ?? "").trim();
+          const toE164 = String(body.To ?? q.To ?? "").trim();
+          const intel = await runVoiceIntelligenceTurn({
+            dbQuery,
+            callSid,
+            from: fromE164,
+            to: toE164,
+            userInput,
+            insertVoiceRow,
+            language,
+          });
+          if (intel?.handled && String(intel.reply || "").trim()) {
+            res.type("text/xml");
+            if (intel.afterBookingClose || intel.hangup) {
+              markCallCompleted(callSid);
+              req.session.bookingCompleted = true;
+              const closingSay = escapeTwilioSayText(String(intel.reply).trim());
+              res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="${xmlEscapeAttr(attrs.voice)}" language="${xmlEscapeAttr(attrs.language)}">${closingSay}</Say>
+  <Hangup/>
+</Response>`);
+              sent = true;
+              console.log("[aura/flow] twiml=voice_intel_close intent=", intel.intent || "");
+              return;
+            }
+            const safeMain = escapeTwilioSayText(String(intel.reply).trim());
+            const stillHere = escapeTwilioSayText("I'm still here if you need me.");
+            res.send(buildVoiceLoopTwiML(gatherAction, attrs, safeMain, stillHere));
+            sent = true;
+            console.log("[aura/flow] twiml=voice_intel intent=", intel.intent || "");
+            return;
+          }
+        } catch (intelErr) {
+          console.warn("[aura/voice-intel] turn failed; falling back to legacy:", intelErr?.message || intelErr);
+        }
+      }
 
       const tBook = Date.now();
       const bookingOut = await runSimpleBookingTurn({

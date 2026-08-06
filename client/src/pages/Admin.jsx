@@ -685,6 +685,9 @@ function AdminDashboard() {
           <a href="/admin/sms-delivery" style={{ ...goldButton, textDecoration: "none", display: "inline-block", background: "#222", color: "#d4af37", border: "1px solid #d4af37" }}>
             SMS delivery
           </a>
+          <a href="/admin/aura-voice" style={{ ...goldButton, textDecoration: "none", display: "inline-block", background: "#222", color: "#d4af37", border: "1px solid #d4af37" }}>
+            AURA Voice
+          </a>
         </div>
 
         {/* —— Money Dashboard (paid bookings + PayPal) —— */}

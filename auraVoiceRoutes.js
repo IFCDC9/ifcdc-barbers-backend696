@@ -962,6 +962,7 @@ export function attachAuraVoiceRoutes(app, opts = {}) {
   } else {
     const { voice: simpleVoice, process: simpleProcess } = createSimpleAuraVoiceHandlers({
       insertVoiceRow,
+      dbQuery: opts.dbQuery,
     });
     // Twilio Voice webhook: POST …/api/aura/voice — GET kept for browser/Twilio probes only (one handler each).
     app.get("/api/aura/voice", simpleVoice);

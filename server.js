@@ -217,6 +217,12 @@ function auraChatJson(reply, action = "NONE", meta = null) {
 function auraStatusPayload() {
   const wiz = String(process.env.AURA_VOICE_WIZARD || "").trim() === "1";
   const pub = getPublicApiBaseUrl();
+  let intelligencePhase1 = false;
+  try {
+    intelligencePhase1 = require("./auraVoiceIntelligenceFlags.cjs").isAuraVoiceIntelligencePhase1();
+  } catch {
+    intelligencePhase1 = false;
+  }
   return {
     ok: true,
     voice: {
@@ -229,6 +235,7 @@ function auraStatusPayload() {
         voiceDiagnosticEnv: String(process.env.AURA_VOICE_DIAGNOSTIC || "").trim() === "1",
         testResponseEnv: String(process.env.AURA_VOICE_TEST_RESPONSE || "").trim() === "1",
       },
+      intelligencePhase1,
       publicBaseUrlConfigured: Boolean(pub),
       webhookBaseUrl: pub || null,
       twilioWebhookUrl: pub ? `${pub}/api/aura/voice` : null,
@@ -529,6 +536,21 @@ try {
   console.warn("[boot] /api/sms mount skipped:", e?.message || e);
 }
 
+try {
+  const { createAuraVoiceIntelligenceRouter } = require("./auraVoiceIntelligenceRoutes.cjs");
+  app.use(
+    "/api/aura/voice-intelligence",
+    createAuraVoiceIntelligenceRouter({
+      dbQuery,
+      resolveAuthPayload,
+      isSuperAdminEmail,
+    }),
+  );
+  console.log("[boot] mounted /api/aura/voice-intelligence (Phase 1 status + admin)");
+} catch (e) {
+  console.warn("[boot] /api/aura/voice-intelligence mount skipped:", e?.message || e);
+}
+
 app.use(
   session({
     secret: String(process.env.SESSION_SECRET || "aura-secret"),
@@ -810,7 +832,7 @@ mountOnboardingBusinessRoutes(app);
 
 const insertAuraVoiceRow = (body) =>
   insertAuraVoiceBookingRow(body, require("./bookingEmail.cjs").sendAuraVoiceBookingEmail);
-attachAuraVoiceRoutes(app, { insertVoiceRow: insertAuraVoiceRow });
+attachAuraVoiceRoutes(app, { insertVoiceRow: insertAuraVoiceRow, dbQuery });
 attachAuraSmsWebhook(app, { insertVoiceRow: insertAuraVoiceRow });
 console.log(
   "[aura] Webhook routes attached: GET|POST /api/aura/voice (Twilio POST + GET probe), POST /api/aura/sms, GET /api/aura/test" +
@@ -1400,6 +1422,19 @@ async function startServer() {
     console.log("[boot] SMS schema ensured", { flags: smsFlags(), twilio: twilioConfigStatus() });
   } catch (e) {
     console.warn("[boot] SMS schema skipped:", e?.message || e);
+  }
+
+  try {
+    const { isAuraVoiceIntelligencePhase1 } = require("./auraVoiceIntelligenceFlags.cjs");
+    if (isAuraVoiceIntelligencePhase1()) {
+      const { ensureAuraVoiceIntelligenceSchema } = require("./auraVoiceIntelligenceMigrations.cjs");
+      await ensureAuraVoiceIntelligenceSchema(dbQuery);
+      console.log("[boot] AURA Voice Intelligence Phase 1 schema ensured");
+    } else {
+      console.log("[boot] AURA Voice Intelligence Phase 1 off (AURA_VOICE_INTELLIGENCE_PHASE_1)");
+    }
+  } catch (e) {
+    console.warn("[boot] AURA Voice Intelligence schema skipped:", e?.message || e);
   }
 
   // AURA Phase 2 — additive schema + reminder scanners (only when master flag is on)
