@@ -36,6 +36,27 @@ test("payment card risk blocks PAN-like input", () => {
   assert.equal(detectPaymentCardRisk("can you send a payment link").blocked, false);
 });
 
+test("official AURA number ignores legacy TWILIO_PHONE_NUMBER fallback", () => {
+  process.env.TWILIO_PHONE_NUMBER = "+13313168167";
+  delete process.env.AURA_PHONE_NUMBER;
+  delete process.env.BUSINESS_PHONE;
+  const {
+    getOfficialAuraBusinessE164,
+    getAuraOwnerAdminE164,
+  } = require("../auraVoiceIntelligenceFlags.cjs");
+  assert.equal(getOfficialAuraBusinessE164(), "+19895141064");
+  process.env.AURA_PHONE_NUMBER = "+19895141064";
+  assert.equal(getOfficialAuraBusinessE164(), "+19895141064");
+  process.env.AURA_OWNER_VOICE_PHONE = "+18484694448";
+  assert.equal(getAuraOwnerAdminE164(), "+18484694448");
+  // Owner must never collapse to the business line
+  process.env.AURA_OWNER_VOICE_PHONE = "+19895141064";
+  assert.equal(getAuraOwnerAdminE164(), "+18484694448");
+  delete process.env.TWILIO_PHONE_NUMBER;
+  delete process.env.AURA_PHONE_NUMBER;
+  delete process.env.AURA_OWNER_VOICE_PHONE;
+});
+
 test("owner caller recognition for +18484694448", () => {
   process.env.AURA_OWNER_VOICE_PHONE = "+18484694448";
   const { isOwnerCaller } = require("../auraVoiceIntelligenceOrchestrator.cjs");

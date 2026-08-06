@@ -26,23 +26,41 @@ function isAuraVoiceIntelligencePhase1() {
   return auraVoiceIntelligenceFlags().phase1Enabled;
 }
 
-/** Official IFCDC Barbers App line (customer-facing). */
+/** Official IFCDC Barbers App / AURA customer-facing line (never the owner handset). */
+const OFFICIAL_AURA_BUSINESS_E164 = "+19895141064";
+/** Legacy Twilio long codes that must not be used as the official AURA identity. */
+const LEGACY_TWILIO_LINES = new Set(["+13313168167", "+15309949546"]);
+
+/** Official IFCDC Barbers App line (customer-facing). Does NOT fall back to TWILIO_PHONE_NUMBER. */
 function getOfficialAuraBusinessE164() {
-  const raw = String(
-    process.env.AURA_PHONE_NUMBER ||
-      process.env.BUSINESS_PHONE ||
-      process.env.TWILIO_PHONE_NUMBER ||
-      "+19895141064",
-  ).trim();
-  return raw.replace(/\s/g, "") || "+19895141064";
+  const candidates = [
+    process.env.AURA_PHONE_NUMBER,
+    process.env.BUSINESS_PHONE,
+    OFFICIAL_AURA_BUSINESS_E164,
+  ];
+  for (const c of candidates) {
+    const raw = String(c || "")
+      .trim()
+      .replace(/\s/g, "");
+    if (!raw) continue;
+    if (LEGACY_TWILIO_LINES.has(raw)) continue;
+    return raw;
+  }
+  return OFFICIAL_AURA_BUSINESS_E164;
 }
 
 /** Owner / admin handset for executive greeting (not customer display). */
 function getAuraOwnerAdminE164() {
   const raw = String(
     process.env.AURA_OWNER_VOICE_PHONE || process.env.SUPER_ADMIN_SMS_PHONE || "+18484694448",
-  ).trim();
-  return raw.replace(/\s/g, "") || "+18484694448";
+  )
+    .trim()
+    .replace(/\s/g, "");
+  // Never treat the official business line as the owner handset.
+  if (!raw || raw === OFFICIAL_AURA_BUSINESS_E164 || LEGACY_TWILIO_LINES.has(raw)) {
+    return "+18484694448";
+  }
+  return raw;
 }
 
 module.exports = {
@@ -51,4 +69,6 @@ module.exports = {
   isAuraVoiceIntelligencePhase1,
   getOfficialAuraBusinessE164,
   getAuraOwnerAdminE164,
+  OFFICIAL_AURA_BUSINESS_E164,
+  LEGACY_TWILIO_LINES,
 };
