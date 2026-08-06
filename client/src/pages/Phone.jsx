@@ -90,8 +90,8 @@ export default function Phone() {
               </a>
             </p>
             {auraPhoneFormatted ? (
-              <p className="phone-page__aura-display" aria-label={`AURA ${auraPhoneFormatted}`}>
-                {auraPhoneFormatted}
+              <p className="phone-page__aura-display" aria-label={`IFCDC Barbers App ${auraPhoneFormatted}`}>
+                IFCDC Barbers App · {auraPhoneFormatted}
               </p>
             ) : null}
           </div>

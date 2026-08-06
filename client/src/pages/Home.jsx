@@ -321,8 +321,8 @@ export default function Home() {
                 </a>
               </p>
               {auraPhoneDisplay ? (
-                <p className="aura-panel__call-display" aria-label={`AURA ${auraPhoneDisplay}`}>
-                  {auraPhoneDisplay}
+                <p className="aura-panel__call-display" aria-label={`IFCDC Barbers App ${auraPhoneDisplay}`}>
+                  IFCDC Barbers App · {auraPhoneDisplay}
                 </p>
               ) : null}
             </div>

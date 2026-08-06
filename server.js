@@ -991,11 +991,15 @@ app.get("/api/config", async (req, res) => {
   try {
     const businessId = req.query.businessId ?? req.query.business_id ?? null;
     const { phone, source } = await resolvePublicBusinessPhone(businessId);
-    const auraPhone = String(AURA_NUMBER || "").trim();
+    // Prefer dedicated AURA line; fall back to shop/platform business phone so
+    // Call/Text AURA matches the official IFCDC Barbers App number when env is unset.
+    const auraPhone = String(AURA_NUMBER || BUSINESS_PHONE || phone || "").trim();
     res.json({
       phone: phone || null,
       auraPhone: auraPhone || null,
       phoneSource: source,
+      /** Stable label for customer-facing UI copy */
+      phoneLabel: auraPhone || phone ? "IFCDC Barbers App" : null,
     });
   } catch (e) {
     console.error("[api/config]", e);

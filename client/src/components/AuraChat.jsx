@@ -148,8 +148,8 @@ export default function AuraChat({
                 </a>
               </p>
               {auraPhoneDisplay ? (
-                <p className="aura-chat-contact-display" aria-label={`AURA ${auraPhoneDisplay}`}>
-                  {auraPhoneDisplay}
+                <p className="aura-chat-contact-display" aria-label={`IFCDC Barbers App ${auraPhoneDisplay}`}>
+                  IFCDC Barbers App · {auraPhoneDisplay}
                 </p>
               ) : null}
             </div>
