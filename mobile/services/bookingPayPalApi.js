@@ -542,7 +542,12 @@ export async function fetchBarbersList(providerType) {
       }
       throw lastErr;
     }
-    return Array.isArray(json) ? json : Array.isArray(json.barbers) ? json.barbers : [];
+    // Accept array body, { barbers }, { providers }, or { data }
+    if (Array.isArray(json)) return json;
+    if (Array.isArray(json?.providers)) return json.providers;
+    if (Array.isArray(json?.barbers)) return json.barbers;
+    if (Array.isArray(json?.data)) return json.data;
+    return [];
   }
   throw lastErr || new Error("Could not load providers.");
 }

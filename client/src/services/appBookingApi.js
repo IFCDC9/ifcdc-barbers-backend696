@@ -187,7 +187,7 @@ export async function fetchBarbersList(providerType) {
       }
       throw lastErr;
     }
-    return Array.isArray(json) ? json : Array.isArray(json.barbers) ? json.barbers : [];
+    return Array.isArray(json) ? json : Array.isArray(json.providers) ? json.providers : Array.isArray(json.barbers) ? json.barbers : [];
   }
   throw lastErr || new Error("Could not load providers.");
 }

@@ -2,9 +2,15 @@
  * Shared rules for which barbers appear on customer-facing booking screens
  * (website + iOS/Android). Keep this file as the single source of truth.
  */
-/** Positive numeric shop ids only — legacy `0` / empty placeholders are treated as unassigned. */
+/**
+ * Positive numeric shop ids only — legacy `0` / empty / "default" are unassigned.
+ * Always cast via ::text first so this works for both TEXT and BIGINT business_id
+ * (BIGINT + coalesce(..., '') previously crashed with: invalid input syntax for type bigint: "").
+ */
 const BARBER_BUSINESS_ID_SQL = `CASE
-  WHEN b.business_id IS NOT NULL AND btrim(b.business_id) ~ '^[1-9][0-9]*$' THEN btrim(b.business_id)::bigint
+  WHEN b.business_id IS NOT NULL
+       AND btrim(b.business_id::text) ~ '^[1-9][0-9]*$'
+    THEN btrim(b.business_id::text)::bigint
   ELSE NULL
 END`;
 
@@ -12,7 +18,7 @@ END`;
 function platformHouseBarberSql(barberAlias = "b") {
   const b = barberAlias;
   return `(
-    lower(btrim(coalesce(${b}.business_id, ''))) = 'default'
+    lower(btrim(coalesce(${b}.business_id::text, ''))) IN ('default', '0', '')
     OR lower(btrim(coalesce(${b}.name, ''))) = 'ifcdc barbers'
   )`;
 }
