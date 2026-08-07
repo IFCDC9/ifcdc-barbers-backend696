@@ -1,8 +1,8 @@
 diff --git a/node_modules/react-native-voice/android/build.gradle b/node_modules/react-native-voice/android/build.gradle
-index c0484f8..637bdab 100644
+index c0484f8..a331f41 100644
 --- a/node_modules/react-native-voice/android/build.gradle
 +++ b/node_modules/react-native-voice/android/build.gradle
-@@ -1,65 +1,30 @@
+@@ -1,65 +1,31 @@
 -apply plugin: 'com.android.library'
 +apply plugin: "com.android.library"
  
@@ -87,4 +87,18 @@ index c0484f8..637bdab 100644
 -    compile 'com.android.support:appcompat-v7:${supportVersion}'
 -    compile 'com.facebook.react:react-native:+'
 +  implementation "com.facebook.react:react-native:+"
++  implementation "androidx.annotation:annotation:1.9.1"
  }
+diff --git a/node_modules/react-native-voice/android/src/main/java/com/wenkesj/voice/VoiceModule.java b/node_modules/react-native-voice/android/src/main/java/com/wenkesj/voice/VoiceModule.java
+index 40b8927..d2d701d 100644
+--- a/node_modules/react-native-voice/android/src/main/java/com/wenkesj/voice/VoiceModule.java
++++ b/node_modules/react-native-voice/android/src/main/java/com/wenkesj/voice/VoiceModule.java
+@@ -11,7 +11,7 @@ import android.speech.RecognitionListener;
+ import android.speech.RecognitionService;
+ import android.speech.RecognizerIntent;
+ import android.speech.SpeechRecognizer;
+-import android.support.annotation.NonNull;
++import androidx.annotation.NonNull;
+ import android.util.Log;
+ 
+ import com.facebook.react.bridge.Arguments;
