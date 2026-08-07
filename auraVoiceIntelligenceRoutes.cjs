@@ -12,6 +12,7 @@ const { ensureAuraVoiceIntelligenceSchema } = require("./auraVoiceIntelligenceMi
 const { adminListCalls, adminCallStats } = require("./auraVoiceIntelligenceLog.cjs");
 const { maskPhoneForDisplay } = require("./smsPhone.cjs");
 const { getVoiceLatencyAverages } = require("./auraVoiceLatency.cjs");
+const { getNoiseControlStats } = require("./auraVoiceNoiseControl.cjs");
 
 function createAuraVoiceIntelligenceRouter(deps = {}) {
   const { dbQuery, resolveAuthPayload, isSuperAdminEmail } = deps;
@@ -67,6 +68,7 @@ function createAuraVoiceIntelligenceRouter(deps = {}) {
         ownerPinConfigured: Boolean(String(process.env.AURA_OWNER_VOICE_PIN || "").trim()),
       },
       latency: getVoiceLatencyAverages(),
+      noiseControl: getNoiseControlStats(),
       note: "Phase 1 is off by default. Set AURA_VOICE_INTELLIGENCE_PHASE_1=true to enable.",
     });
   });

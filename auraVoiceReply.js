@@ -21,6 +21,13 @@ const {
 } = requireCjs("./auraVoiceIntelligenceFlags.cjs");
 const { runVoiceIntelligenceTurn } = requireCjs("./auraVoiceIntelligenceOrchestrator.cjs");
 const { waitingAckPhrase, recordVoiceTiming } = requireCjs("./auraVoiceLatency.cjs");
+const {
+  evaluateSpeechInput,
+  rememberAssistantSpeech,
+  twilioGatherSpeechAttrs,
+  parseConfidence,
+  getNoiseControlStats,
+} = requireCjs("./auraVoiceNoiseControl.cjs");
 
 const WELCOME_SENTINEL = "__IFCDC_VOICE_WELCOME__";
 const NO_SPEECH_SENTINEL = "__IFCDC_NO_SPEECH__";
@@ -284,7 +291,7 @@ const VOICE_PROCESS_PATH = "/api/aura/process";
 const SAFE_REPLY_MS = 5000;
 const SETTINGS_BUDGET_MS = 3000;
 
-function callSessionsPut(callSid, text) {
+function callSessionsPut(callSid, text, meta = null) {
   const k = String(callSid ?? "").trim();
   if (!k) return;
   while (Object.keys(callSessions).length >= CALL_SESSION_CAP) {
@@ -292,16 +299,23 @@ function callSessionsPut(callSid, text) {
     if (first === undefined) break;
     delete callSessions[first];
   }
-  callSessions[k] = String(text ?? "");
+  callSessions[k] = {
+    text: String(text ?? ""),
+    meta: meta && typeof meta === "object" ? meta : {},
+  };
 }
 
 /** Read and remove so the next /process leg never reuses stale input. */
 function callSessionsTake(callSid) {
   const k = String(callSid ?? "").trim();
-  if (!k) return "";
+  if (!k) return { text: "", meta: {} };
   const v = callSessions[k];
   delete callSessions[k];
-  return v != null ? String(v) : "";
+  if (v == null) return { text: "", meta: {} };
+  if (typeof v === "object" && v && "text" in v) {
+    return { text: String(v.text ?? ""), meta: v.meta && typeof v.meta === "object" ? v.meta : {} };
+  }
+  return { text: String(v), meta: {} };
 }
 
 /**
@@ -331,10 +345,11 @@ async function safeGenerateReply(input, opts = {}) {
 }
 
 function buildVoiceLoopTwiML(gatherAction, attrs, mainSay, stillHereSay) {
-  // bargeIn + short speechTimeout: faster end-of-turn and natural interrupt while AURA speaks
+  const g = twilioGatherSpeechAttrs();
+  // Enhanced phone_call model + bargeIn; selective interrupt filtering happens in noise control on /process
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Gather input="speech dtmf" timeout="5" speechTimeout="1" bargeIn="true" method="POST" action="${gatherAction}">
+  <Gather input="speech dtmf" timeout="${g.timeout}" speechTimeout="${g.speechTimeout}" bargeIn="${g.bargeIn}" enhanced="${g.enhanced}" speechModel="${g.speechModel}" method="POST" action="${gatherAction}">
     <Say voice="${xmlEscapeAttr(attrs.voice)}" language="${xmlEscapeAttr(attrs.language)}">${mainSay}</Say>
   </Gather>
   <Say voice="${xmlEscapeAttr(attrs.voice)}" language="${xmlEscapeAttr(attrs.language)}">${stillHereSay}</Say>
@@ -426,6 +441,7 @@ export function createSimpleAuraVoiceHandlers(opts = {}) {
       }
       const speech = String(body.SpeechResult ?? "").trim();
       const digits = String(body.Digits ?? "").trim();
+      const confidence = parseConfidence(body.Confidence ?? body.confidence);
       let userInput;
       if (speech || digits) {
         userInput = speech || digits;
@@ -439,10 +455,15 @@ export function createSimpleAuraVoiceHandlers(opts = {}) {
       console.log(
         "USER INPUT:",
         userInput === WELCOME_SENTINEL ? "(welcome)" : userInput === NO_SPEECH_SENTINEL ? "(no speech)" : userInput,
+        confidence != null ? `conf=${confidence}` : "",
       );
 
       if (callSid) {
-        callSessionsPut(callSid, userInput);
+        callSessionsPut(callSid, userInput, {
+          confidence,
+          bargeInCandidate: Boolean(speech) && voiceAlreadyGreeted(callSid),
+          unstable: String(body.UnstableSpeechResult || "").trim() || null,
+        });
       } else {
         console.warn("[aura/flow] MISSING_LEG route=/api/aura/voice reason=no_CallSid_session_not_stored");
       }
@@ -526,17 +547,22 @@ export function createSimpleAuraVoiceHandlers(opts = {}) {
         return;
       }
 
-      const sessionPeek = callSid ? String(callSessions[callSid] ?? "") : "";
+      const sessionPeek = callSid ? callSessions[callSid] : null;
       const digitsBody = String(body.Digits ?? "").trim();
       const speechBody = String(body.SpeechResult ?? "").trim();
+      const confBody = parseConfidence(body.Confidence ?? body.confidence);
+      let stashed = { text: "", meta: {} };
       let userInput = "";
       if (digitsBody) userInput = digitsBody;
       else if (speechBody) userInput = speechBody;
-      else userInput = callSessionsTake(callSid);
+      else {
+        stashed = callSessionsTake(callSid);
+        userInput = stashed.text;
+      }
       if (!String(userInput).trim()) {
         if (getSimpleBookingStage(callSid) === STATES.ANYTHING_ELSE) {
           userInput = NO_SPEECH_SENTINEL;
-        } else if (callSid && !String(sessionPeek).trim()) {
+        } else if (callSid && !(sessionPeek && String(sessionPeek?.text || sessionPeek || "").trim())) {
           console.warn(
             "[aura/flow] MISSING_LEG route=/api/aura/process reason=callSessions_empty_after_take " +
               "(Redirect_POST_without_matching_voice_stash?) callSid=" +
@@ -547,7 +573,64 @@ export function createSimpleAuraVoiceHandlers(opts = {}) {
           userInput = "hello";
         }
       }
-      console.log("USER INPUT:", userInput, digitsBody ? "(Digits)" : speechBody ? "(SpeechResult)" : "");
+      const speechConfidence =
+        confBody != null ? confBody : stashed.meta?.confidence != null ? stashed.meta.confidence : null;
+      const isWelcome = userInput === WELCOME_SENTINEL;
+      const isNoSpeech = userInput === NO_SPEECH_SENTINEL;
+      const gate = evaluateSpeechInput({
+        callSid,
+        speechText: isWelcome || isNoSpeech ? userInput : userInput,
+        confidenceRaw: speechConfidence,
+        digits: digitsBody,
+        isWelcome,
+        isNoSpeech,
+        isBargeInCandidate: Boolean(stashed.meta?.bargeInCandidate) && !digitsBody,
+      });
+      console.log("USER INPUT:", gate.text || userInput, digitsBody ? "(Digits)" : speechBody ? "(SpeechResult)" : "", {
+        gate: gate.action,
+        reason: gate.reason,
+        confidence: gate.confidence,
+        gateMs: gate.metrics?.gateMs,
+      });
+
+      if (gate.action === "reject_prompt" || gate.action === "confirm_critical") {
+        let language = "en";
+        let voiceType = "Polly.Joanna";
+        try {
+          const env =
+            typeof process !== "undefined" && process?.env && typeof process.env === "object" ? process.env : {};
+          const bid = Number(env.VOICE_DEFAULT_BARBER_LANGUAGE_ID || "1") || 1;
+          const st = await Promise.race([
+            loadBarberSettingsRow(bid),
+            new Promise((resolve) => setTimeout(() => resolve(null), SETTINGS_BUDGET_MS)),
+          ]);
+          if (st && typeof st === "object") {
+            language = st?.language || "en";
+            voiceType = st?.aura_voice_type || "Polly.Joanna";
+          }
+        } catch {
+          /* keep defaults */
+        }
+        const attrs = twilioSayAttributes(language, voiceType);
+        const prompt = escapeTwilioSayText(String(gate.prompt || "Could you please repeat that?"));
+        const stillHere = escapeTwilioSayText("I'm still here if you need me.");
+        rememberAssistantSpeech(callSid, gate.prompt || "");
+        res.type("text/xml");
+        res.send(buildVoiceLoopTwiML(gatherAction, attrs, prompt, stillHere));
+        sent = true;
+        recordVoiceTiming({
+          speechToResponseMs: Date.now() - tRoute,
+          responseGenerationMs: gate.metrics?.gateMs ?? Date.now() - tRoute,
+          totalTurnMs: Date.now() - tRoute,
+        });
+        console.log("[aura/noise] gated", gate.action, gate.reason);
+        return;
+      }
+
+      if (gate.action === "use_pending" || gate.action === "accept") {
+        userInput = gate.text || userInput;
+      }
+      console.log("USER INPUT (gated):", userInput, digitsBody ? "(Digits)" : speechBody ? "(SpeechResult)" : "");
 
       let language = "en";
       let voiceType = "Polly.Joanna";
@@ -608,6 +691,7 @@ export function createSimpleAuraVoiceHandlers(opts = {}) {
             }
             const safeMain = escapeTwilioSayText(String(intel.reply).trim());
             const stillHere = escapeTwilioSayText("I'm still here if you need me.");
+            rememberAssistantSpeech(callSid, String(intel.reply).trim());
             res.send(buildVoiceLoopTwiML(gatherAction, attrs, safeMain, stillHere));
             sent = true;
             console.log("[aura/flow] twiml=voice_intel intent=", intel.intent || "");
@@ -702,6 +786,7 @@ export function createSimpleAuraVoiceHandlers(opts = {}) {
           : "I'm still here if you need me.",
       );
 
+      rememberAssistantSpeech(callSid, reply);
       res.send(buildVoiceLoopTwiML(gatherAction, attrs, safeMain, stillHere));
       sent = true;
       console.log("[aura/timing] /api/aura/process_total_ms", Date.now() - tRoute);

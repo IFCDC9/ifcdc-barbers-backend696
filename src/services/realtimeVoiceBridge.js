@@ -1,5 +1,9 @@
 import WebSocket from "ws"
 import { SHOP_CONTEXT } from "./shopContext.js"
+import { createRequire } from "module"
+
+const requireCjs = createRequire(import.meta.url)
+const { shouldForwardMulawFrame } = requireCjs("../../auraVoiceNoiseControl.cjs")
 
 const OPENAI_REALTIME_MODEL = process.env.OPENAI_REALTIME_MODEL || "gpt-4o-realtime-preview"
 
@@ -17,6 +21,11 @@ const safeJsonParse = (raw) => {
   }
 }
 
+const vadThreshold = () => {
+  const n = Number(process.env.AURA_REALTIME_VAD_THRESHOLD || 0.62)
+  return Number.isFinite(n) ? Math.min(0.9, Math.max(0.3, n)) : 0.62
+}
+
 const buildSystemPrompt = () => {
   return [
     SHOP_CONTEXT.trim(),
@@ -24,7 +33,11 @@ const buildSystemPrompt = () => {
     "Ask only one follow-up question at a time.",
     "Help with booking, queue status, barber requests, and shop information.",
     "Use the shop details above when answering questions about barbers, pricing, and hours.",
-    "If the caller interrupts, immediately stop speaking and listen.",
+    "If the primary caller clearly interrupts, stop speaking and listen.",
+    "Ignore television, music, radio, and distant background chatter.",
+    "If multiple voices are loud, ask the caller to speak directly into the phone.",
+    "If audio is unclear, ask them to repeat — never invent names, dates, times, or phone numbers.",
+    "Confirm appointment date, time, barber, and service before booking.",
     "Never say a booking is confirmed until the booking tool returns success.",
     "If you need more than a moment to look something up, say a brief acknowledgment first."
   ].join(" ")
@@ -50,10 +63,21 @@ export const attachTwilioRealtimeBridge = ({ server, path = "/api/voice/media-st
     let streamSid = null
     let openaiWs = null
     let isClosed = false
+    let assistantSpeaking = false
+    let assistantIdleTimer = null
+
+    const markAssistantSpeaking = (ms = 1200) => {
+      assistantSpeaking = true
+      if (assistantIdleTimer) clearTimeout(assistantIdleTimer)
+      assistantIdleTimer = setTimeout(() => {
+        assistantSpeaking = false
+      }, ms)
+    }
 
     const closeAll = () => {
       if (isClosed) return
       isClosed = true
+      if (assistantIdleTimer) clearTimeout(assistantIdleTimer)
 
       try {
         if (openaiWs && openaiWs.readyState === WebSocket.OPEN) {
@@ -96,15 +120,15 @@ export const attachTwilioRealtimeBridge = ({ server, path = "/api/voice/media-st
             output_audio_format: "g711_ulaw",
             turn_detection: {
               type: "server_vad",
-              threshold: 0.5,
-              prefix_padding_ms: 200,
-              silence_duration_ms: 400,
+              // Higher threshold = fewer false barge-ins from TV/music/room noise
+              threshold: vadThreshold(),
+              prefix_padding_ms: 180,
+              silence_duration_ms: 450,
               interrupt_response: true
             },
             voice: "alloy"
           }
         })
-        // Immediate greeting prompt so callers hear AURA without waiting for the first user turn.
         sendToOpenAI({
           type: "response.create",
           response: {
@@ -120,6 +144,7 @@ export const attachTwilioRealtimeBridge = ({ server, path = "/api/voice/media-st
         if (!event) return
 
         if (event.type === "response.audio.delta" && event.delta && streamSid) {
+          markAssistantSpeaking(900)
           sendToTwilio({
             event: "media",
             streamSid,
@@ -129,11 +154,19 @@ export const attachTwilioRealtimeBridge = ({ server, path = "/api/voice/media-st
           })
         }
 
+        if (event.type === "response.audio.done" || event.type === "response.done") {
+          markAssistantSpeaking(350)
+        }
+
+        // Selective barge-in: only clear playback when speech is strong enough while AURA talks
         if (event.type === "input_audio_buffer.speech_started" && streamSid) {
-          sendToTwilio({
-            event: "clear",
-            streamSid
-          })
+          if (!assistantSpeaking) {
+            sendToTwilio({ event: "clear", streamSid })
+          } else {
+            // Soft interrupt window — clear only if OpenAI already decided it was speech;
+            // energy gate below reduces weak noise frames reaching the model.
+            sendToTwilio({ event: "clear", streamSid })
+          }
         }
       })
 
@@ -152,9 +185,17 @@ export const attachTwilioRealtimeBridge = ({ server, path = "/api/voice/media-st
       }
 
       if (event.event === "media" && hasOpenAI) {
+        const payload = event.media?.payload
+        if (
+          !shouldForwardMulawFrame(payload, {
+            assistantSpeaking
+          })
+        ) {
+          return
+        }
         sendToOpenAI({
           type: "input_audio_buffer.append",
-          audio: event.media?.payload
+          audio: payload
         })
       }
 
