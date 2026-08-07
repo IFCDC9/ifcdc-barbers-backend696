@@ -1078,6 +1078,56 @@ video {
   position: relative;
   margin: 0.75rem auto 0;
   max-width: 34rem;
+  text-align: center;
+}
+
+.call-shop-button {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  margin: 0.35rem auto 0;
+  text-align: center;
+}
+
+.call-shop-button__line {
+  display: inline-block;
+  color: #fff7d6;
+  font-weight: 800;
+  font-size: 0.98rem;
+  letter-spacing: 0.02em;
+  line-height: 1.45;
+  text-decoration: none;
+  text-align: center;
+  padding: 0.35rem 0.5rem;
+  border-bottom: 1px solid rgba(212, 175, 55, 0.45);
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.call-shop-button__line:hover,
+.call-shop-button__line:focus-visible {
+  color: #ffe9a3;
+  border-bottom-color: #d4af37;
+  outline: none;
+}
+
+.call-shop-button--inline {
+  margin: 0.2rem 0 0;
+  justify-content: flex-start;
+}
+
+.call-shop-button--inline .call-shop-button__line {
+  font-size: 0.86rem;
+  font-weight: 700;
+  padding: 0.15rem 0;
+}
+
+.phone-page .call-shop-button {
+  margin: 1rem auto 1.25rem;
+}
+
+.aura-chat-call-shop {
+  margin-top: 0.35rem;
 }
 
 .smart-home .aura-panel__call-text {

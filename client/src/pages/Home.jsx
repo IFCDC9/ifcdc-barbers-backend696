@@ -4,8 +4,7 @@ import { useTranslation } from "react-i18next";
 import { getBarbers } from "../services/api.js";
 import StyleCoverImage from "../components/StyleCoverImage.jsx";
 import LanguageDropdown from "../components/LanguageDropdown.jsx";
-import { formatNanpUsDisplay, nanpDialString } from "../lib/formatNanp.js";
-import { useAuraContactPhone } from "../lib/useAuraContactPhone.js";
+import { usePublicBusinessPhone } from "../hooks/usePublicBusinessPhone.js";
 import CallShopButton from "../components/CallShopButton.jsx";
 import {
   APP_DOWNLOAD_CTA,
@@ -118,9 +117,12 @@ export default function Home() {
   const [locError, setLocError] = useState(null);
   const navigate = useNavigate();
 
-  const auraPhoneRaw = useAuraContactPhone();
-  const auraPhoneTel = nanpDialString(auraPhoneRaw);
-  const auraPhoneDisplay = formatNanpUsDisplay(auraPhoneRaw);
+  const {
+    phone: shopPhone,
+    auraPhone,
+    shopName: auraShopName,
+  } = usePublicBusinessPhone();
+  const auraPhoneRaw = shopPhone || auraPhone || "+19895141064";
   const appDownloadHref = useMemo(
     () =>
       typeof navigator !== "undefined"
@@ -311,23 +313,11 @@ export default function Home() {
             })}
           </p>
           <div className="aura-panel__call-block">
-              <CallShopButton phoneE164={auraPhoneRaw || "+19895141064"} />
-              <p className="aura-panel__call-text">
-                <a href={`tel:${auraPhoneTel || "+19895141064"}`} className="aura-panel__call-link">
-                  {t("web.homePage.callAura", { defaultValue: "☎️ Call IFCDC Barbers App" })}
-                </a>
-                {" · "}
-                <a href={`sms:${auraPhoneTel || "+19895141064"}`} className="aura-panel__call-link">
-                  {t("web.homePage.textAura", { defaultValue: "Text AURA" })}
-                </a>
-              </p>
-              <p
-                className="aura-panel__call-display"
-                aria-label={`IFCDC Barbers App ${auraPhoneDisplay || "(989) 514-1064"}`}
-              >
-                ☎️ IFCDC Barbers App · {auraPhoneDisplay || "(989) 514-1064"}
-              </p>
-            </div>
+            <CallShopButton
+              phoneE164={auraPhoneRaw}
+              shopName={auraShopName || null}
+            />
+          </div>
         </div>
 
         <div className="quick-actions">

@@ -3,7 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { fetchWithTimeout, apiUrl } from "../lib/api.js";
 import { useAuraContactPhone } from "../lib/useAuraContactPhone.js";
 import { applyAuraNavigateBookPrefill, AURA_STYLE_SESSION_KEY } from "../lib/auraBookingPrefill.js";
-import { formatNanpUsDisplay, nanpDialString } from "../lib/formatNanp.js";
+import { nanpDialString } from "../lib/formatNanp.js";
+import CallShopButton from "./CallShopButton.jsx";
 import "../styles/auraButton.css";
 
 /** POST /api/aura — OpenAI-backed assistant (see root `server.js`). */
@@ -56,8 +57,7 @@ export default function AuraChat({
   const navigate = navigateProp ?? routerNavigate ?? hashNavigate;
 
   const auraPhoneRaw = useAuraContactPhone();
-  const auraPhoneTel = nanpDialString(auraPhoneRaw);
-  const auraPhoneDisplay = formatNanpUsDisplay(auraPhoneRaw);
+  const auraPhoneTel = nanpDialString(auraPhoneRaw) || auraPhoneRaw || "+19895141064";
 
   const [message, setMessage] = useState("");
   const [chat, setChat] = useState([]);
@@ -137,22 +137,12 @@ export default function AuraChat({
         <div className="aura-chat-header-main">
           <div className="aura-chat-title">AURA</div>
           {auraPhoneTel ? (
-            <div className="aura-chat-contact-block">
-              <p className="aura-chat-contact-line">
-                <a className="aura-chat-contact-digits" href={`tel:${auraPhoneTel}`}>
-                  Call AURA
-                </a>
-                {" · "}
-                <a className="aura-chat-contact-digits" href={`sms:${auraPhoneTel}`}>
-                  Text AURA
-                </a>
-              </p>
-              {auraPhoneDisplay ? (
-                <p className="aura-chat-contact-display" aria-label={`IFCDC Barbers App ${auraPhoneDisplay}`}>
-                  IFCDC Barbers App · {auraPhoneDisplay}
-                </p>
-              ) : null}
-            </div>
+            <CallShopButton
+              phoneE164={auraPhoneTel}
+              shopName={null}
+              className="aura-chat-call-shop"
+              variant="inline"
+            />
           ) : null}
         </div>
         <button type="button" className="aura-chat-close" onClick={() => onRequestClose?.()}>
