@@ -4,7 +4,7 @@
   "private": true,
   "main": "node_modules/expo/AppEntry.js",
   "scripts": {
-    "postinstall": "node scripts/postinstall-ngrok.cjs",
+    "postinstall": "patch-package && node scripts/postinstall-ngrok.cjs",
     "prestart": "node scripts/verify-app-json.cjs",
     "prelan": "node scripts/verify-app-json.cjs",
     "prelan:clear": "node scripts/verify-app-json.cjs",
