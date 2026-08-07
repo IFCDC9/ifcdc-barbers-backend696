@@ -1031,8 +1031,8 @@ app.get("/api/config", async (req, res) => {
       null;
     const displayPhone = shopPublic || platformAura;
     const callLabel = shopTelephony?.shopName
-      ? `Call ${shopTelephony.shopName}`
-      : "Call IFCDC Barbers App";
+      ? `Call AURA at ${shopTelephony.shopName}`
+      : "Call AURA";
     res.json({
       phone: displayPhone || null,
       phoneDisplay: shopTelephony?.publicPhoneDisplay || null,

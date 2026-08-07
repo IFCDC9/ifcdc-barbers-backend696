@@ -11,7 +11,7 @@ export function usePublicBusinessPhone(opts = {}) {
   const [phone, setPhone] = useState(() => resolveDisplayBusinessPhone(""));
   const [auraPhone, setAuraPhone] = useState("");
   const [phoneSource, setPhoneSource] = useState("loading");
-  const [callButtonLabel, setCallButtonLabel] = useState("Call IFCDC Barbers App");
+  const [callButtonLabel, setCallButtonLabel] = useState("Call AURA");
   const [shopName, setShopName] = useState(null);
   const [callTelHref, setCallTelHref] = useState("tel:+19895141064");
   const [loading, setLoading] = useState(true);
@@ -41,7 +41,7 @@ export function usePublicBusinessPhone(opts = {}) {
           setPhoneSource(
             String(data?.phoneSource || (data?.phone ? "shop" : "platform_fallback")).trim() || "unknown",
           );
-          setCallButtonLabel(String(data?.callButtonLabel || "Call IFCDC Barbers App"));
+          setCallButtonLabel(String(data?.callButtonLabel || "Call AURA"));
           setShopName(data?.shopName ? String(data.shopName) : null);
           setCallTelHref(String(data?.callTelHref || "tel:+19895141064"));
         }
