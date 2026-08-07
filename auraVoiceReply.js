@@ -20,6 +20,7 @@ const {
   isAuraVoiceIntelligencePhase1,
 } = requireCjs("./auraVoiceIntelligenceFlags.cjs");
 const { runVoiceIntelligenceTurn } = requireCjs("./auraVoiceIntelligenceOrchestrator.cjs");
+const { waitingAckPhrase, recordVoiceTiming } = requireCjs("./auraVoiceLatency.cjs");
 
 const WELCOME_SENTINEL = "__IFCDC_VOICE_WELCOME__";
 const NO_SPEECH_SENTINEL = "__IFCDC_NO_SPEECH__";
@@ -29,8 +30,10 @@ const VOICE_GUIDE_ES = " Puedes decir reserva, servicios, o hacer una pregunta."
 
 const VOICE_SYSTEM_BASE = `You are AURA, a confident, intelligent assistant for Imperial Foundation CDC (never say the letters I-F-C-D-C as one mumbled acronym; say the full name or "Imperial Foundation CDC").
 Speak clearly, avoid repeating yourself, guide the user, and always move the conversation forward.
+Ask only one follow-up question at a time.
 Help with bookings, services, and pricing without sounding robotic.
-Do not ask for phone numbers. Never mention SMS. After booking, confirm that an email was sent and end the call cleanly.`;
+Do not ask for phone numbers. Never mention SMS. After booking, confirm that an email was sent and end the call cleanly.
+Never announce a booking as successful until the backend booking confirmation has completed.`;
 
 /** Per CallSid: first empty webhook → welcome; later empty (e.g. Gather timeout) → reprompt. */
 const voiceGreetedCallSids = new Set();
@@ -328,9 +331,10 @@ async function safeGenerateReply(input, opts = {}) {
 }
 
 function buildVoiceLoopTwiML(gatherAction, attrs, mainSay, stillHereSay) {
+  // bargeIn + short speechTimeout: faster end-of-turn and natural interrupt while AURA speaks
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Gather input="speech dtmf" timeout="8" speechTimeout="auto" method="POST" action="${gatherAction}">
+  <Gather input="speech dtmf" timeout="5" speechTimeout="1" bargeIn="true" method="POST" action="${gatherAction}">
     <Say voice="${xmlEscapeAttr(attrs.voice)}" language="${xmlEscapeAttr(attrs.language)}">${mainSay}</Say>
   </Gather>
   <Say voice="${xmlEscapeAttr(attrs.voice)}" language="${xmlEscapeAttr(attrs.language)}">${stillHereSay}</Say>
@@ -444,15 +448,26 @@ export function createSimpleAuraVoiceHandlers(opts = {}) {
       }
 
       res.type("text/xml");
-      const bridgeSay = escapeTwilioSayText("One moment.");
-      const xml = `<?xml version="1.0" encoding="UTF-8"?>
+      // Welcome: skip filler so the professional greeting is the first thing callers hear.
+      // Other turns: speak a short ack immediately while /process does the work (avoids silence).
+      const isWelcome = userInput === WELCOME_SENTINEL;
+      if (isWelcome) {
+        const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Redirect method="POST">${processPath}</Redirect>
+</Response>`;
+        res.send(xml);
+      } else {
+        const bridgeSay = escapeTwilioSayText(waitingAckPhrase(callSid));
+        const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say voice="Polly.Joanna" language="en-US">${bridgeSay}</Say>
   <Redirect method="POST">${processPath}</Redirect>
 </Response>`;
-      res.send(xml);
+        res.send(xml);
+      }
       console.log("[aura/timing] /api/aura/voice_ms", Date.now() - tRoute);
-      console.log("[aura/flow] voice→process enqueued callSid=", callSid || "(none)");
+      console.log("[aura/flow] voice→process enqueued callSid=", callSid || "(none)", "welcome=", isWelcome);
       return;
     } catch (err) {
       console.error("❌ AURA ERROR:", err?.stack || err);
@@ -571,6 +586,12 @@ export function createSimpleAuraVoiceHandlers(opts = {}) {
             language,
           });
           if (intel?.handled && String(intel.reply || "").trim()) {
+            const genMs = Date.now() - tRoute;
+            recordVoiceTiming({
+              speechToResponseMs: genMs,
+              responseGenerationMs: genMs,
+              totalTurnMs: Date.now() - tRoute,
+            });
             res.type("text/xml");
             if (intel.afterBookingClose || intel.hangup) {
               markCallCompleted(callSid);
@@ -606,6 +627,12 @@ export function createSimpleAuraVoiceHandlers(opts = {}) {
       });
       console.log("[aura/timing] simple_booking_turn_ms", Date.now() - tBook);
       console.log("STAGE:", bookingOut.stage, bookingOut.bookingLog ? `(${bookingOut.bookingLog})` : "");
+      recordVoiceTiming({
+        bookingLookupMs: Date.now() - tBook,
+        responseGenerationMs: Date.now() - tBook,
+        totalTurnMs: Date.now() - tRoute,
+        speechToResponseMs: Date.now() - tRoute,
+      });
 
       res.type("text/xml");
 

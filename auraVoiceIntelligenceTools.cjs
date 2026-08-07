@@ -2,6 +2,7 @@
  * Live DB tools for AURA Voice Intelligence — never invent shop facts.
  */
 const { normalizeToE164 } = require("./smsPhone.cjs");
+const { cachedLookup } = require("./auraVoiceShopCache.cjs");
 
 function safeRows(r) {
   return Array.isArray(r?.rows) ? r.rows : [];
@@ -12,65 +13,74 @@ async function listActiveBarbers(dbQuery, { limit = 8, shopId = null } = {}) {
   if (shopId == null || shopId === "" || !Number.isFinite(Number(shopId))) {
     return [];
   }
-  try {
-    const r = await dbQuery(
-      `SELECT id, name
-       FROM barbers
-       WHERE business_id = $1::bigint
-         AND coalesce(booking_hidden, false) = false
-       ORDER BY name ASC NULLS LAST
-       LIMIT $2`,
-      [Number(shopId), Math.min(Math.max(Number(limit) || 8, 1), 20)],
-    );
-    return safeRows(r);
-  } catch (e) {
-    console.warn("[aura-voice-intel] listActiveBarbers:", e?.message || e);
-    return null;
-  }
+  const { value } = await cachedLookup("barbers", shopId, async () => {
+    try {
+      const r = await dbQuery(
+        `SELECT id, name
+         FROM barbers
+         WHERE business_id = $1::bigint
+           AND coalesce(booking_hidden, false) = false
+         ORDER BY name ASC NULLS LAST
+         LIMIT $2`,
+        [Number(shopId), Math.min(Math.max(Number(limit) || 8, 1), 20)],
+      );
+      return safeRows(r);
+    } catch (e) {
+      console.warn("[aura-voice-intel] listActiveBarbers:", e?.message || e);
+      return null;
+    }
+  });
+  return value;
 }
 
 async function listPublicServices(dbQuery, { limit = 10, shopId = null } = {}) {
   if (shopId == null || shopId === "" || !Number.isFinite(Number(shopId))) {
     return [];
   }
-  try {
-    const r = await dbQuery(
-      `SELECT DISTINCT ON (lower(btrim(s.name)))
-              s.id, s.name AS title, s.price, s.duration_minutes
-       FROM barber_services s
-       JOIN barbers b ON b.id::text = s.barber_id::text
-       WHERE b.business_id = $1::bigint
-         AND coalesce(s.is_active, true) = true
-         AND s.name IS NOT NULL AND btrim(s.name) <> ''
-       ORDER BY lower(btrim(s.name)), s.created_at DESC NULLS LAST
-       LIMIT $2`,
-      [Number(shopId), Math.min(Math.max(Number(limit) || 10, 1), 25)],
-    );
-    return safeRows(r);
-  } catch (e) {
-    console.warn("[aura-voice-intel] listPublicServices:", e?.message || e);
-    return null;
-  }
+  const { value } = await cachedLookup("services", shopId, async () => {
+    try {
+      const r = await dbQuery(
+        `SELECT DISTINCT ON (lower(btrim(s.name)))
+                s.id, s.name AS title, s.price, s.duration_minutes
+         FROM barber_services s
+         JOIN barbers b ON b.id::text = s.barber_id::text
+         WHERE b.business_id = $1::bigint
+           AND coalesce(s.is_active, true) = true
+           AND s.name IS NOT NULL AND btrim(s.name) <> ''
+         ORDER BY lower(btrim(s.name)), s.created_at DESC NULLS LAST
+         LIMIT $2`,
+        [Number(shopId), Math.min(Math.max(Number(limit) || 10, 1), 25)],
+      );
+      return safeRows(r);
+    } catch (e) {
+      console.warn("[aura-voice-intel] listPublicServices:", e?.message || e);
+      return null;
+    }
+  });
+  return value;
 }
 
 async function resolveShopContact(dbQuery, { shopId = null } = {}) {
   if (shopId == null || shopId === "" || !Number.isFinite(Number(shopId))) {
     return null;
   }
-  try {
-    const r = await dbQuery(
-      `SELECT id, name, phone, public_phone_e164, address, city, state,
-              operating_hours_json
-       FROM businesses
-       WHERE id = $1::bigint
-       LIMIT 1`,
-      [Number(shopId)],
-    );
-    return safeRows(r)[0] || null;
-  } catch (e) {
-    console.warn("[aura-voice-intel] resolveShopContact:", e?.message || e);
-    return null;
-  }
+  const { value } = await cachedLookup("shop_contact", shopId, async () => {
+    try {
+      const r = await dbQuery(
+        `SELECT id, name, phone, public_phone_e164, address, city, state,
+                operating_hours_json
+         FROM businesses
+         WHERE id = $1::bigint
+         LIMIT 1`,
+        [Number(shopId)],
+      );
+      return safeRows(r)[0] || null;
+    } catch (e) {
+      console.warn("[aura-voice-intel] resolveShopContact:", e?.message || e);
+      return null;
+    }
+  });
+  return value;
 }
 
 async function findBookingsByPhone(dbQuery, phoneRaw, { limit = 5 } = {}) {

@@ -21,9 +21,12 @@ const buildSystemPrompt = () => {
   return [
     SHOP_CONTEXT.trim(),
     "Understand caller intent instantly and keep responses short.",
+    "Ask only one follow-up question at a time.",
     "Help with booking, queue status, barber requests, and shop information.",
     "Use the shop details above when answering questions about barbers, pricing, and hours.",
-    "If the caller interrupts, immediately stop speaking and listen."
+    "If the caller interrupts, immediately stop speaking and listen.",
+    "Never say a booking is confirmed until the booking tool returns success.",
+    "If you need more than a moment to look something up, say a brief acknowledgment first."
   ].join(" ")
 }
 
@@ -93,9 +96,21 @@ export const attachTwilioRealtimeBridge = ({ server, path = "/api/voice/media-st
             output_audio_format: "g711_ulaw",
             turn_detection: {
               type: "server_vad",
+              threshold: 0.5,
+              prefix_padding_ms: 200,
+              silence_duration_ms: 400,
               interrupt_response: true
             },
             voice: "alloy"
+          }
+        })
+        // Immediate greeting prompt so callers hear AURA without waiting for the first user turn.
+        sendToOpenAI({
+          type: "response.create",
+          response: {
+            modalities: ["audio", "text"],
+            instructions:
+              "Greet the caller now with a complete professional IFCDC Barbers App greeting as AURA. Ask only one question at the end: how you may help today."
           }
         })
       })

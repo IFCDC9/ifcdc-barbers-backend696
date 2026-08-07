@@ -320,7 +320,7 @@ async function runVoiceIntelligenceTurn({
   if (isSilence) {
     const reply = session.needsShopSelection
       ? SHOP_SELECT_PROMPT
-      : "I'm still here. Please tell me what you need — booking, hours, or something else.";
+      : "I'm still here. Please tell me what you need — booking, hours, or something else. One question at a time is perfect.";
     return { handled: true, reply: say(reply), intent: "silence", callId };
   }
 
@@ -386,10 +386,7 @@ async function runVoiceIntelligenceTurn({
       return {
         handled: true,
         reply: say(
-          `Understood — ${picked.shop.shopName}. ${buildShopGreeting({
-            shop: picked.shop,
-            needsShopSelection: false,
-          })}`,
+          `Understood — ${picked.shop.shopName}. How may I assist you today?`,
         ),
         intent: "shop_selected",
         callId,

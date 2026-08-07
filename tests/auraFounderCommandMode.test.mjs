@@ -22,7 +22,9 @@ test("founder identity phone is never the public AURA line", () => {
 test("founder greeting text is exact operational welcome", () => {
   const { FOUNDER_GREETING } = require("../auraFounderIdentity.cjs");
   assert.match(FOUNDER_GREETING, /Welcome back, Mister Allah/);
-  assert.match(FOUNDER_GREETING, /platform-wide summary|specific shop/i);
+  assert.match(FOUNDER_GREETING, /operational updates ready/i);
+  assert.match(FOUNDER_GREETING, /How may I assist you today/i);
+  assert.doesNotMatch(FOUNDER_GREETING, /^(Hello\?|Hi\.|What do you need\?)/i);
 });
 
 test("founder command detection covers schedule and change queries", () => {
@@ -72,7 +74,7 @@ test("founder greeting on verified CLI when Phase 1 on", async () => {
   });
   assert.equal(out.handled, true);
   assert.match(out.reply, /Mister Allah/i);
-  assert.match(out.reply, /platform-wide summary|specific shop/i);
+  assert.match(out.reply, /operational updates ready|How may I assist you today/i);
   getSession(sid).greeted = true;
   delete process.env.AURA_VOICE_INTELLIGENCE_PHASE_1;
 });

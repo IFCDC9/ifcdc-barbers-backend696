@@ -102,21 +102,24 @@ test("assertBarberInShop rejects cross-tenant barber", async () => {
 });
 
 test("dynamic greetings differ by shop vs shared", () => {
-  const { buildShopGreeting, SHOP_SELECT_PROMPT } = require("../auraShopContext.cjs");
+  const { buildShopGreeting, SHOP_SELECT_PROMPT, GENERAL_IFCDC_GREETING } = require("../auraShopContext.cjs");
   const shopGreet = buildShopGreeting({
     shop: { shopName: "Red Bank Cuts", customGreeting: null },
     needsShopSelection: false,
   });
   assert.match(shopGreet, /Red Bank Cuts/);
-  assert.match(shopGreet, /powered by the I F C D C Barbers App/i);
+  assert.match(shopGreet, /powered by the IFCDC Barbers App/i);
+  assert.match(shopGreet, /How may I assist you today/i);
 
   const shared = buildShopGreeting({ platformShared: true, needsShopSelection: true });
-  assert.match(shared, /Which shop or location/i);
+  assert.match(shared, /virtual assistant/i);
+  assert.match(shared, /How may I help you today/i);
+  assert.equal(shared, GENERAL_IFCDC_GREETING);
   assert.match(SHOP_SELECT_PROMPT, /location or shop/i);
 
   const founder = buildShopGreeting({ founder: true });
   assert.match(founder, /Mister Allah/);
-  assert.match(founder, /platform-wide summary|specific shop/i);
+  assert.match(founder, /operational updates ready/i);
 });
 
 test("inactive dedicated shop is flagged", async () => {

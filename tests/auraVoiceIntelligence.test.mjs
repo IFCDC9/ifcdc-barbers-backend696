@@ -91,7 +91,7 @@ test("orchestrator owner greeting when flag on", async () => {
   });
   assert.equal(out.handled, true);
   assert.match(out.reply, /Mister Allah/i);
-  assert.match(out.reply, /platform-wide summary|specific shop|I F C D C/i);
+  assert.match(out.reply, /operational updates ready|How may I assist you today/i);
   getSession(sid).greeted = true;
   delete process.env.AURA_VOICE_INTELLIGENCE_PHASE_1;
 });

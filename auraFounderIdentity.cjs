@@ -22,8 +22,9 @@ const FOUNDER_IDENTITY = Object.freeze({
   defaultEmail: "service@ifcdc.org",
 });
 
+/** Spoken founder greeting — always play in full before continuing. */
 const FOUNDER_GREETING =
-  "Welcome back, Mister Allah. This is AURA. I have the latest I F C D C Barbers App information available. Would you like the platform-wide summary or information for a specific shop?";
+  "Welcome back, Mister Allah. This is AURA. I hope you're having a great day. I have the latest IFCDC Barbers App operational updates ready, including today's schedule, bookings, cancellations, reschedules, payment updates, and system activity. How may I assist you today?";
 
 function founderPhoneE164() {
   const configured = getAuraOwnerAdminE164();

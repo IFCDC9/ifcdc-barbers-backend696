@@ -36,7 +36,7 @@ async function main() {
   console.log("=== Controlled founder command mode live tests ===");
   record("founder_cli_recognition", isFounderCaller("+18484694448") === true);
   record("public_line_not_founder", isFounderCaller("+19895141064") === false);
-  record("greeting_copy", /operational information ready/i.test(FOUNDER_GREETING));
+  record("greeting_copy", /operational updates ready/i.test(FOUNDER_GREETING));
 
   await ensureAuraFounderSchema(dbQuery);
   record("schema_ok", true);

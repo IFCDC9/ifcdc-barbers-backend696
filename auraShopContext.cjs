@@ -302,23 +302,33 @@ async function resolveInboundShopContext(dbQuery, { to, from, preferredShopId } 
   };
 }
 
+/** Full professional IFCDC / AURA greetings — never short openers like "Hello?" or "How can I help?" alone. */
+const GENERAL_IFCDC_GREETING =
+  "Thank you for calling the IFCDC Barbers App. This is AURA, your virtual assistant. I'm here to help you schedule appointments, answer questions, and assist with our services. How may I help you today?";
+
 function buildShopGreeting({ shop, platformShared, founder, needsShopSelection, inactive } = {}) {
   if (founder) {
-    return "Welcome back, Mister Allah. This is AURA. I have the latest I F C D C Barbers App information available. Would you like the platform-wide summary or information for a specific shop?";
+    try {
+      const { FOUNDER_GREETING } = require("./auraFounderIdentity.cjs");
+      return FOUNDER_GREETING;
+    } catch {
+      return "Welcome back, Mister Allah. This is AURA. I hope you're having a great day. I have the latest IFCDC Barbers App operational updates ready, including today's schedule, bookings, cancellations, reschedules, payment updates, and system activity. How may I assist you today?";
+    }
   }
   if (inactive && shop) {
-    return `You've reached ${shop.shopName}, but voice booking is not active for this location right now. Please try the I F C D C Barbers App, or call back later.`;
+    return `You've reached ${shop.shopName}, but voice booking is not active for this location right now. Please try the IFCDC Barbers App, or call back later.`;
   }
   if (shop && !needsShopSelection) {
     if (shop.customGreeting && String(shop.customGreeting).trim()) {
       return String(shop.customGreeting).trim();
     }
-    return `Thank you for calling ${shop.shopName}, powered by the I F C D C Barbers App. This is AURA. How may I assist you today?`;
+    return `Thank you for calling ${shop.shopName}, powered by the IFCDC Barbers App. This is AURA. How may I assist you today?`;
   }
+  // Shared / multi-shop: full professional greeting first; shop selection is a follow-up turn.
   if (platformShared || needsShopSelection) {
-    return "Thank you for calling the I F C D C Barbers App. This is AURA. Which shop or location may I assist you with today?";
+    return GENERAL_IFCDC_GREETING;
   }
-  return "Thank you for calling the I F C D C Barbers App. This is AURA. How may I help you?";
+  return GENERAL_IFCDC_GREETING;
 }
 
 const SHOP_SELECT_PROMPT =
@@ -436,6 +446,7 @@ module.exports = {
   resolveInboundShopContext,
   listActiveAuraShops,
   buildShopGreeting,
+  GENERAL_IFCDC_GREETING,
   SHOP_SELECT_PROMPT,
   logShopCallContext,
   auditShopInfoUpdate,

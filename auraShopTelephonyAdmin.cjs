@@ -151,7 +151,8 @@ async function updateShopTelephonySettings(dbQuery, shopId, patch = {}, { actor 
 function buildGreetingPreview(settings) {
   if (!settings) return null;
   if (settings.customGreeting) return settings.customGreeting;
-  return `Thank you for calling ${settings.shopName}, powered by the IFCDC Barbers App. This is AURA. How may I assist you today?`;
+  const name = String(settings.shopName || "").trim() || "this shop";
+  return `Thank you for calling ${name}, powered by the IFCDC Barbers App. This is AURA. How may I assist you today?`;
 }
 
 module.exports = {
