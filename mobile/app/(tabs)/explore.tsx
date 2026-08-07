@@ -7,6 +7,7 @@ import { useTranslation } from "react-i18next"
 import CardContainer from "../../components/CardContainer"
 import DarkGradientBackground from "../../components/DarkGradientBackground"
 import GlowButton from "../../components/GlowButton"
+import CallAuraLine from "../../components/CallAuraLine"
 import { palette, typography, ui } from "../../constants/theme"
 import { IFCDC_FOOTER_CLEARANCE } from "../../constants/profileLayout"
 
@@ -57,6 +58,7 @@ const ExploreScreen = () => {
             variant="outline"
             onPress={() => navigation.navigate("Book", { screen: "StyleDiscover" })}
           />
+          <CallAuraLine />
         </CardContainer>
       </ScrollView>
     </View>
