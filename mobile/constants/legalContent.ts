@@ -92,6 +92,7 @@ export const LEGAL_DOCUMENTS: Record<LegalDocKey, LegalDocument> = {
           "Service providers we rely on today: PayPal for payment processing, Resend for transactional email, and Expo for push delivery. Each provider receives only the minimum information required to perform its task.",
           "Legal and safety reasons: we may share information when required by law, when responding to valid legal process, or when needed to protect the rights, property, or safety of our users or the platform.",
           `We do not sell your personal information, and we do not rent your contact list to third parties. ${PLATFORM} does not run third-party ad networks.`,
+          "Mobile phone numbers, SMS consent records, and messaging opt-in information are not sold, rented, or shared with third parties or affiliates for marketing or promotional purposes.",
         ],
       },
       {
@@ -465,8 +466,11 @@ export const LEGAL_DOCUMENTS: Record<LegalDocKey, LegalDocument> = {
       {
         heading: "SMS",
         body: [
-          "SMS notifications are not active at this time. The platform's SMS provider is currently suspended.",
-          "If SMS is reintroduced in a future update, you will be asked to opt in separately on your account, and the consent will follow applicable telecommunications-consumer-protection rules in your jurisdiction.",
+          "Optional customer-care and appointment SMS may be offered by IFCDC Barbers App, operated by Imperial Foundation Community Development Center (IFCDC).",
+          "SMS consent is separate from Terms and Privacy acceptance, is unchecked by default, and is never required to register, book, or purchase.",
+          "Mobile phone numbers, SMS consent records, and messaging opt-in information are not sold, rented, or shared with third parties or affiliates for marketing or promotional purposes.",
+          "Reply STOP to opt out or HELP for help. Message frequency varies. Message and data rates may apply.",
+          "Public consent page: https://ifcdcbarbersapp.com/sms-consent",
           "SMS will never be enabled by default and will not be used for marketing without explicit, separate consent.",
         ],
       },

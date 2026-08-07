@@ -12,6 +12,8 @@ export const PUBLIC_SUPPORT_EMAIL = "support@ifcdcbarbersapp.com";
 export const PUBLIC_LEGAL = {
   privacy: "/privacy",
   terms: "/terms",
+  smsConsent: "/sms-consent",
+  smsConsentEvidence: "/sms-consent-evidence",
 };
 
 /** App Store listing (ASC app id 6766149605). */

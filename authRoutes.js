@@ -403,6 +403,43 @@ export function createAuthRouter({ sendEmail }) {
         console.warn("[auth] register acceptance log failed:", acceptErr?.message || acceptErr);
       }
 
+      // SMS consent — separate from Terms/Privacy. Optional; default no SMS.
+      try {
+        const smsOptIn =
+          req.body?.smsConsentOptIn === true ||
+          req.body?.sms_consent_opt_in === true ||
+          req.body?.smsOptIn === true;
+        const { upsertConsent } = require("./smsConsentService.cjs");
+        const { SMS_CONSENT_LANGUAGE_VERSION } = require("./smsConsentPublic.cjs");
+        await upsertConsent(dbQuery, {
+          phone,
+          userId: user.id,
+          optIn: Boolean(smsOptIn),
+          source: "web_register",
+          consentLanguageVersion: String(
+            req.body?.consentLanguageVersion || SMS_CONSENT_LANGUAGE_VERSION,
+          ).slice(0, 80),
+          metadata: { registrationRole: role },
+        });
+        if (smsOptIn) {
+          await dbQuery(
+            `INSERT INTO notification_preferences (user_id, sms_opt_in)
+             VALUES ($1::uuid, TRUE)
+             ON CONFLICT (user_id) DO UPDATE SET sms_opt_in = TRUE`,
+            [user.id],
+          ).catch(() => {});
+        } else {
+          await dbQuery(
+            `INSERT INTO notification_preferences (user_id, sms_opt_in)
+             VALUES ($1::uuid, FALSE)
+             ON CONFLICT (user_id) DO UPDATE SET sms_opt_in = FALSE`,
+            [user.id],
+          ).catch(() => {});
+        }
+      } catch (smsErr) {
+        console.warn("[auth] register sms consent failed:", smsErr?.message || smsErr);
+      }
+
       // HubSpot CRM sync — fire-and-forget; never blocks or fails registration.
       void import("./hubspotService.js")
         .then((m) =>

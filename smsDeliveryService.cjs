@@ -103,11 +103,12 @@ async function canSendTransactionalSms(dbQuery, { userId, toE164, category }) {
       [toE164],
     );
     const c = consent.rows?.[0];
-    if (c && (c.transactional_opt_in === false || c.opted_out_at)) {
-      return { ok: false, reason: "opted_out" };
+    // Fail closed: require an explicit opt-in record (A2P). Missing row = no SMS.
+    if (!c || c.transactional_opt_in !== true || c.opted_out_at) {
+      return { ok: false, reason: c ? "opted_out" : "no_sms_consent" };
     }
   } catch {
-    /* table may not exist yet on first boot race */
+    return { ok: false, reason: "consent_check_failed" };
   }
 
   if (!userId) return { ok: true };
@@ -205,7 +206,7 @@ async function sendTransactionalSms(
     return { ok: true, skipped: true, reason: "sms_notifications_disabled" };
   }
 
-  if (typeof dbQuery === "function") {
+  if (typeof dbQuery === "function" && !force) {
     const allowed = await canSendTransactionalSms(dbQuery, {
       userId,
       toE164: phone.e164,

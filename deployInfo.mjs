@@ -151,6 +151,8 @@ export async function getDeployInfoPayload() {
       inviteExample: `${resolvedWeb}/invite?token=…`,
       privacyUrl: `${resolvedWeb}/privacy`,
       termsUrl: `${resolvedWeb}/terms`,
+      smsConsentUrl: `${resolvedWeb}/sms-consent`,
+      smsConsentEvidenceUrl: `${resolvedWeb}/sms-consent-evidence`,
     },
     persistentStorage: {
       supabaseConfigured,

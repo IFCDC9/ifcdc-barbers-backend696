@@ -73,6 +73,7 @@ export default function RegisterScreen({ navigation }: { navigation: any }) {
   const [acceptedTerms, setAcceptedTerms] = React.useState(false);
   const [acceptedPrivacy, setAcceptedPrivacy] = React.useState(false);
   const [acceptedNotifications, setAcceptedNotifications] = React.useState(false);
+  const [acceptedSmsConsent, setAcceptedSmsConsent] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const submittingRef = React.useRef(false);
 
@@ -264,6 +265,8 @@ export default function RegisterScreen({ navigation }: { navigation: any }) {
           platform: Platform.OS,
           language: activeLang,
           providerType: accountSelection !== "customer" ? accountSelection : undefined,
+          smsConsentOptIn: Boolean(acceptedSmsConsent),
+          consentLanguageVersion: "ifcdc-sms-consent-v1-2026-08",
           ...profileExtras,
         },
       );
@@ -474,6 +477,22 @@ export default function RegisterScreen({ navigation }: { navigation: any }) {
           >
             {t("auth.consentNotifications")}
           </ConsentRow>
+          <View style={{ height: 8 }} />
+          <ConsentRow
+            checked={acceptedSmsConsent}
+            onToggle={() => setAcceptedSmsConsent(v => !v)}
+            disabled={busy}
+          >
+            I agree to receive customer-care and appointment-related text messages from IFCDC Barbers
+            App, operated by Imperial Foundation Community Development Center (IFCDC), including
+            booking confirmations, appointment reminders, rescheduling or cancellation notices,
+            payment and account updates, and customer-support replies. Message frequency varies.
+            Message and data rates may apply. Reply STOP to opt out or HELP for help. Consent is not
+            a condition of purchase. View our Terms and Conditions and Privacy Policy.
+          </ConsentRow>
+          <Text style={styles.policyVersion}>
+            Optional SMS consent — not required to register or book. Version ifcdc-sms-consent-v1-2026-08
+          </Text>
           <Text style={styles.policyVersion}>
             {t("auth.policyVersion", { version: POLICY_VERSION })}
           </Text>

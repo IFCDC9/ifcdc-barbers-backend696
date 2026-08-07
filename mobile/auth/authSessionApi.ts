@@ -238,6 +238,8 @@ export type RegisterExtras = {
   location?: string;
   city?: string;
   state?: string;
+  smsConsentOptIn?: boolean;
+  consentLanguageVersion?: string;
 };
 
 export async function registerWithEmailPassword(
@@ -262,6 +264,8 @@ export async function registerWithEmailPassword(
   if (extras.location) body.location = extras.location;
   if (extras.city) body.city = extras.city;
   if (extras.state) body.state = extras.state;
+  if (extras.smsConsentOptIn != null) body.smsConsentOptIn = Boolean(extras.smsConsentOptIn);
+  if (extras.consentLanguageVersion) body.consentLanguageVersion = extras.consentLanguageVersion;
   const { json, status } = await postAuthJson("/api/auth/register", body);
   if (loginResponseSucceeded(status, json)) {
     return { token: String(json.token).trim(), json };

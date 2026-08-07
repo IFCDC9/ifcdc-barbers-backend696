@@ -18,7 +18,13 @@ export default function IFCDCGlobalFooter() {
         <span className="home-footer__sep" aria-hidden>
           ·
         </span>
-        <Link to={PUBLIC_LEGAL.terms}>{t("web.footer.terms", { defaultValue: "Terms" })}</Link>
+        <Link to={PUBLIC_LEGAL.terms}>
+          {t("web.footer.terms", { defaultValue: "Terms and Conditions" })}
+        </Link>
+        <span className="home-footer__sep" aria-hidden>
+          ·
+        </span>
+        <Link to={PUBLIC_LEGAL.smsConsent}>SMS Consent</Link>
         <span className="home-footer__sep" aria-hidden>
           ·
         </span>

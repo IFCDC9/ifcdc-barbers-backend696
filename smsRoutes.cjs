@@ -10,6 +10,11 @@ const { startSmsVerification, checkSmsVerification } = require("./smsVerifyServi
 const { upsertConsent, handleInboundSmsKeyword } = require("./smsConsentService.cjs");
 const { updateLogBySid } = require("./smsDeliveryService.cjs");
 const { maskPhoneForDisplay } = require("./smsPhone.cjs");
+const {
+  SMS_CONSENT_LANGUAGE_VERSION,
+  SMS_CONSENT_DISCLOSURE,
+  SMS_SENDER_IDENTITY,
+} = require("./smsConsentPublic.cjs");
 
 function createSmsRouter(deps = {}) {
   const {
@@ -166,23 +171,101 @@ function createSmsRouter(deps = {}) {
     return res.json({ ok: true, verified: true, channel: "sms" });
   });
 
+  router.get("/consent/disclosure", (_req, res) => {
+    return res.json({
+      ok: true,
+      sender: SMS_SENDER_IDENTITY,
+      languageVersion: SMS_CONSENT_LANGUAGE_VERSION,
+      disclosure: SMS_CONSENT_DISCLOSURE,
+      publicPages: {
+        consent: "https://ifcdcbarbersapp.com/sms-consent",
+        evidence: "https://ifcdcbarbersapp.com/sms-consent-evidence",
+        terms: "https://ifcdcbarbersapp.com/terms",
+        privacy: "https://ifcdcbarbersapp.com/privacy",
+      },
+    });
+  });
+
+  /** Public A2P opt-in — no auth. Does not create an account. */
+  router.post("/consent/public", async (req, res) => {
+    try {
+      await ensureSmsSchema(dbQuery);
+      const phone = String(req.body?.phone || "").trim();
+      const optIn = req.body?.optIn === true || req.body?.opt_in === true;
+      if (!optIn) {
+        return res.status(400).json({
+          ok: false,
+          error: "opt_in_required",
+          message: "Check the SMS consent box to opt in. SMS is optional for using the app.",
+        });
+      }
+      const source = String(req.body?.source || "public_sms_consent_page").slice(0, 80);
+      const consentLanguageVersion = String(
+        req.body?.consentLanguageVersion || req.body?.consent_language_version || SMS_CONSENT_LANGUAGE_VERSION,
+      ).slice(0, 80);
+      const out = await upsertConsent(dbQuery, {
+        phone,
+        userId: null,
+        optIn: true,
+        source,
+        consentLanguageVersion,
+        metadata: {
+          ip: String(req.ip || "").slice(0, 80) || null,
+          userAgent: String(req.get("user-agent") || "").slice(0, 240) || null,
+          path: "/api/sms/consent/public",
+        },
+      });
+      if (!out.ok) return res.status(400).json(out);
+      return res.json({
+        ok: true,
+        consent: {
+          phoneMasked: maskPhoneForDisplay(out.consent?.phone_e164),
+          transactionalOptIn: true,
+          languageVersion: out.consent?.consent_language_version || consentLanguageVersion,
+          optedInAt: out.consent?.opted_in_at || null,
+          source: out.consent?.source || source,
+        },
+      });
+    } catch (e) {
+      console.warn("[sms] public consent error:", e?.message || e);
+      return res.status(500).json({ ok: false, error: "consent_failed" });
+    }
+  });
+
   router.post("/consent", async (req, res) => {
     const user = requireUser(req, res);
     if (!user) return;
     const phone = String(req.body?.phone || "").trim();
-    const optIn = req.body?.optIn !== false && req.body?.opt_in !== false;
+    const optIn = req.body?.optIn === true || req.body?.opt_in === true;
     const out = await upsertConsent(dbQuery, {
       phone,
       userId: user.id || user.sub,
       optIn,
       source: "user_api",
+      consentLanguageVersion: String(
+        req.body?.consentLanguageVersion || SMS_CONSENT_LANGUAGE_VERSION,
+      ).slice(0, 80),
     });
     if (!out.ok) return res.status(400).json(out);
+    // Keep notification prefs aligned with explicit consent
+    try {
+      if (user.id || user.sub) {
+        await dbQuery(
+          `INSERT INTO notification_preferences (user_id, sms_opt_in)
+           VALUES ($1::uuid, $2)
+           ON CONFLICT (user_id) DO UPDATE SET sms_opt_in = EXCLUDED.sms_opt_in`,
+          [user.id || user.sub, Boolean(optIn)],
+        ).catch(() => {});
+      }
+    } catch {
+      /* ignore */
+    }
     return res.json({
       ok: true,
       consent: {
         phoneMasked: maskPhoneForDisplay(out.consent?.phone_e164),
         transactionalOptIn: out.consent?.transactional_opt_in,
+        languageVersion: out.consent?.consent_language_version || null,
       },
     });
   });

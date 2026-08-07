@@ -5,19 +5,36 @@
 const { normalizeToE164 } = require("./smsPhone.cjs");
 const { ensureSmsConsentTable } = require("./smsMigrations.cjs");
 const { sendTransactionalSms } = require("./smsDeliveryService.cjs");
+const {
+  SMS_CONSENT_LANGUAGE_VERSION,
+  SMS_CONSENT_DISCLOSURE,
+} = require("./smsConsentPublic.cjs");
 
 async function upsertConsent(
   dbQuery,
-  { phone, userId = null, optIn = true, keyword = null, source = "api" } = {},
+  {
+    phone,
+    userId = null,
+    optIn = false,
+    keyword = null,
+    source = "api",
+    consentLanguageVersion = SMS_CONSENT_LANGUAGE_VERSION,
+    metadata = null,
+  } = {},
 ) {
   const phoneNorm = normalizeToE164(phone);
   if (!phoneNorm.ok) return { ok: false, error: phoneNorm.error };
   await ensureSmsConsentTable(dbQuery);
   const optedOut = !optIn;
+  const meta = {
+    ...(metadata && typeof metadata === "object" ? metadata : {}),
+    disclosure: SMS_CONSENT_DISCLOSURE,
+  };
   const r = await dbQuery(
     `INSERT INTO sms_consent
-       (user_id, phone_e164, transactional_opt_in, opted_out_at, opted_in_at, last_inbound_keyword, source)
-     VALUES ($1::uuid, $2, $3, $4::timestamptz, $5::timestamptz, $6, $7)
+       (user_id, phone_e164, transactional_opt_in, opted_out_at, opted_in_at,
+        last_inbound_keyword, source, consent_language_version, metadata)
+     VALUES ($1::uuid, $2, $3, $4::timestamptz, $5::timestamptz, $6, $7, $8, $9::jsonb)
      ON CONFLICT (phone_e164) DO UPDATE SET
        user_id = COALESCE(EXCLUDED.user_id, sms_consent.user_id),
        transactional_opt_in = EXCLUDED.transactional_opt_in,
@@ -25,6 +42,8 @@ async function upsertConsent(
        opted_in_at = EXCLUDED.opted_in_at,
        last_inbound_keyword = EXCLUDED.last_inbound_keyword,
        source = EXCLUDED.source,
+       consent_language_version = EXCLUDED.consent_language_version,
+       metadata = COALESCE(EXCLUDED.metadata, sms_consent.metadata),
        updated_at = NOW()
      RETURNING *`,
     [
@@ -35,6 +54,8 @@ async function upsertConsent(
       optIn ? new Date().toISOString() : null,
       keyword,
       source,
+      String(consentLanguageVersion || SMS_CONSENT_LANGUAGE_VERSION).slice(0, 80),
+      JSON.stringify(meta),
     ],
   );
   return { ok: true, consent: r.rows?.[0] || null };
@@ -53,7 +74,6 @@ async function handleInboundSmsKeyword(dbQuery, { from, body, publicBaseUrl } = 
       keyword: word,
       source: "inbound_stop",
     });
-    // Twilio often auto-replies for Advanced Opt-Out; we still log consent.
     return { ok: true, action: "opt_out", keyword: word };
   }
 
@@ -69,7 +89,7 @@ async function handleInboundSmsKeyword(dbQuery, { from, body, publicBaseUrl } = 
 
   if (word === "HELP" || word === "INFO") {
     const helpBody =
-      "IFCDC Barbers: transactional SMS for bookings, payments, and account security only. Msg frequency varies. Msg&data rates may apply. Reply STOP to opt out. Support: service@ifcdc.org";
+      "IFCDC Barbers App (IFCDC): customer-care & appointment texts. Msg frequency varies. Msg&data rates may apply. Reply STOP to opt out. Support: service@ifcdc.org";
     await sendTransactionalSms(dbQuery, {
       to: phoneNorm.e164,
       body: helpBody,
@@ -80,12 +100,6 @@ async function handleInboundSmsKeyword(dbQuery, { from, body, publicBaseUrl } = 
         ? `${String(publicBaseUrl).replace(/\/$/, "")}/api/sms/status`
         : null,
     });
-    await upsertConsent(dbQuery, {
-      phone: phoneNorm.e164,
-      optIn: true,
-      keyword: word,
-      source: "inbound_help",
-    });
     return { ok: true, action: "help", keyword: word };
   }
 
@@ -95,4 +109,5 @@ async function handleInboundSmsKeyword(dbQuery, { from, body, publicBaseUrl } = 
 module.exports = {
   upsertConsent,
   handleInboundSmsKeyword,
+  SMS_CONSENT_LANGUAGE_VERSION,
 };

@@ -55,14 +55,18 @@ async function ensureSmsConsentTable(dbQuery) {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       user_id UUID,
       phone_e164 TEXT NOT NULL,
-      transactional_opt_in BOOLEAN NOT NULL DEFAULT TRUE,
+      transactional_opt_in BOOLEAN NOT NULL DEFAULT FALSE,
       opted_out_at TIMESTAMPTZ,
       opted_in_at TIMESTAMPTZ,
       last_inbound_keyword TEXT,
       source TEXT,
+      consent_language_version TEXT,
       metadata JSONB
     )
   `);
+  await dbQuery(
+    `ALTER TABLE sms_consent ADD COLUMN IF NOT EXISTS consent_language_version TEXT`,
+  );
   await dbQuery(
     `CREATE UNIQUE INDEX IF NOT EXISTS sms_consent_phone_uidx ON sms_consent (phone_e164)`,
   );
@@ -119,7 +123,7 @@ async function ensureSmsPreferenceColumns(dbQuery) {
     `ALTER TABLE notification_preferences ADD COLUMN IF NOT EXISTS sms_payment_updates BOOLEAN DEFAULT TRUE`,
   );
   await dbQuery(
-    `ALTER TABLE notification_preferences ADD COLUMN IF NOT EXISTS sms_opt_in BOOLEAN DEFAULT TRUE`,
+    `ALTER TABLE notification_preferences ADD COLUMN IF NOT EXISTS sms_opt_in BOOLEAN DEFAULT FALSE`,
   );
 }
 

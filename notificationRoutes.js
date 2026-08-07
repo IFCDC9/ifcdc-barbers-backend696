@@ -176,7 +176,7 @@ export function createNotificationRouter(deps = {}) {
           marketing: false,
           email_booking_confirmations: true,
           email_reminders: true,
-          sms_opt_in: true,
+          sms_opt_in: false,
           sms_booking_confirmations: true,
           sms_reminders: true,
           sms_cancellations: true,

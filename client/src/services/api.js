@@ -120,6 +120,9 @@ export async function register({
   language,
   preferredLanguage,
   providerType,
+  smsConsentOptIn,
+  consentLanguageVersion,
+  acceptances,
 }) {
   const origin = getApiOrigin();
   const resolvedRole = accountType || role;
@@ -138,6 +141,9 @@ export async function register({
     state,
     ...(providerType ? { providerType } : {}),
     ...(lang ? { language: lang, preferredLanguage: lang } : {}),
+    smsConsentOptIn: Boolean(smsConsentOptIn),
+    consentLanguageVersion: consentLanguageVersion || undefined,
+    ...(Array.isArray(acceptances) ? { acceptances } : {}),
   };
   let res = await fetch(`${origin}/api/auth/register`, {
     method: "POST",

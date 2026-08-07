@@ -6,6 +6,8 @@ import { validateSignupPhone } from "../lib/phoneValidation.js";
 import { register } from "../services/api.js";
 import LanguageDropdown from "../components/LanguageDropdown.jsx";
 import ProviderTypeDropdown from "../components/ProviderTypeDropdown.jsx";
+import SmsConsentCheckbox from "../components/SmsConsentCheckbox.jsx";
+import { SMS_CONSENT_LANGUAGE_VERSION } from "../content/smsConsentPublic.js";
 import { DEFAULT_LANGUAGE, normalizeLocale } from "../lib/languages.js";
 import { LANG_STORAGE_KEY, setAppLanguage, currentAppLanguage } from "../i18n/index.js";
 
@@ -34,6 +36,7 @@ export default function Register() {
   const [submitting, setSubmitting] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
+  const [smsConsentOptIn, setSmsConsentOptIn] = useState(false);
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -83,6 +86,17 @@ export default function Register() {
         address: form.address.trim(),
         city: form.city.trim(),
         state: form.state.trim(),
+        smsConsentOptIn: Boolean(smsConsentOptIn),
+        consentLanguageVersion: SMS_CONSENT_LANGUAGE_VERSION,
+        acceptances: [
+          { documentKey: "terms", accepted: true },
+          { documentKey: "privacy", accepted: true },
+          {
+            documentKey: "sms_consent",
+            accepted: Boolean(smsConsentOptIn),
+            version: SMS_CONSENT_LANGUAGE_VERSION,
+          },
+        ],
       });
       await setAppLanguage(language);
       setStatus("Account created! You can sign in.");
@@ -263,7 +277,8 @@ export default function Register() {
           <label className="auth-subtext" style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 8 }}>
             <input type="checkbox" checked={acceptedTerms} onChange={(e) => setAcceptedTerms(e.target.checked)} />
             <span>
-              I agree to the <Link to="/terms">{t("web.footer.terms", { defaultValue: "Terms" })}</Link>
+              I agree to the{" "}
+              <Link to="/terms">{t("web.footer.terms", { defaultValue: "Terms and Conditions" })}</Link>
             </span>
           </label>
           <label className="auth-subtext" style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 12 }}>
@@ -273,6 +288,13 @@ export default function Register() {
               <Link to="/privacy">{t("web.footer.privacy", { defaultValue: "Privacy Policy" })}</Link>
             </span>
           </label>
+
+          <SmsConsentCheckbox
+            id="register-sms-consent"
+            checked={smsConsentOptIn}
+            onChange={setSmsConsentOptIn}
+            disabled={submitting}
+          />
 
           <button type="submit" disabled={submitting} className="auth-btn">
             {submitting

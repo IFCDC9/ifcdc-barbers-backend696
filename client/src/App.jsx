@@ -29,6 +29,8 @@ import BarberSettings from "./pages/BarberSettings.jsx";
 import RequireRole from "./components/RequireRole.jsx";
 import Invite from "./pages/Invite.jsx";
 import PublicLegalPage from "./pages/PublicLegalPage.jsx";
+import SmsConsentPage from "./pages/SmsConsentPage.jsx";
+import SmsComplianceEvidencePage from "./pages/SmsComplianceEvidencePage.jsx";
 import IFCDCGlobalFooter from "./components/IFCDCGlobalFooter.jsx";
 import StylesBrowse from "./pages/StylesBrowse.jsx";
 import StyleDiscoverPage from "./pages/StyleDiscoverPage.jsx";
@@ -124,6 +126,8 @@ function AppShell() {
             <Route path="/invite" element={<Invite />} />
             <Route path="/privacy" element={<PublicLegalPage />} />
             <Route path="/terms" element={<PublicLegalPage />} />
+            <Route path="/sms-consent" element={<SmsConsentPage />} />
+            <Route path="/sms-consent-evidence" element={<SmsComplianceEvidencePage />} />
             <Route path="/register" element={<Register />} />
             <Route path="/signup-business" element={<SignupBusiness />} />
             <Route path="/onboarding/barber" element={<BarberOnboarding />} />
