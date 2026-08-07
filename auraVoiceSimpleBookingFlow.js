@@ -233,8 +233,8 @@ async function handleBooking(callSid, input, language, insertVoiceRow) {
       session.step = STATES.SERVICE;
       return {
         reply: T(
-          "Thanks for calling I F C D C Barbers. What service would you like today? You can say haircut, fade, or beard trim.",
-          "Gracias por llamar a I F C D C Barbers. ¿Qué servicio deseas hoy? Puedes decir corte, fade o barba.",
+          "Thank you for calling the IFCDC Barbers App. This is AURA, your virtual assistant. I'm here to help you schedule appointments, answer questions, and assist with our services. How may I help you today?",
+          "Gracias por llamar a la aplicación IFCDC Barbers. Soy AURA, tu asistente virtual. Estoy aquí para ayudarte a agendar citas, responder preguntas y asistirte con nuestros servicios. ¿En qué puedo ayudarte hoy?",
         ),
         log: "start→service",
       };

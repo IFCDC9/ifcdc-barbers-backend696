@@ -211,14 +211,14 @@ export async function generateAuraReply(userInput, opts = {}) {
   if (!raw) {
     core =
       L === "es"
-        ? "Hola, soy AURA de Imperial Foundation CDC. ¿En qué puedo ayudarte hoy? Puedes reservar una cita o preguntar por servicios."
-        : "Hi, this is AURA from Imperial Foundation CDC. How can I help you today? You can book an appointment or ask about services.";
+        ? "Gracias por llamar a la aplicación IFCDC Barbers. Soy AURA, tu asistente virtual. Estoy aquí para ayudarte a agendar citas, responder preguntas y asistirte con nuestros servicios. ¿En qué puedo ayudarte hoy?"
+        : "Thank you for calling the IFCDC Barbers App. This is AURA, your virtual assistant. I'm here to help you schedule appointments, answer questions, and assist with our services. How may I help you today?";
     skipGuide = true;
   } else if (raw === WELCOME_SENTINEL) {
     core =
       L === "es"
-        ? "Hola, soy AURA de Imperial Foundation CDC. ¿En qué puedo ayudarte hoy? Puedes reservar una cita o preguntar por servicios."
-        : "Hi, this is AURA from Imperial Foundation CDC. How can I help you today? You can book an appointment or ask about services.";
+        ? "Gracias por llamar a la aplicación IFCDC Barbers. Soy AURA, tu asistente virtual. Estoy aquí para ayudarte a agendar citas, responder preguntas y asistirte con nuestros servicios. ¿En qué puedo ayudarte hoy?"
+        : "Thank you for calling the IFCDC Barbers App. This is AURA, your virtual assistant. I'm here to help you schedule appointments, answer questions, and assist with our services. How may I help you today?";
     skipGuide = true;
   } else if (raw === NO_SPEECH_SENTINEL) {
     core =
