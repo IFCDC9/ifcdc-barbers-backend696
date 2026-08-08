@@ -3,7 +3,7 @@ import { SHOP_CONTEXT } from "./shopContext.js"
 import { createRequire } from "module"
 
 const requireCjs = createRequire(import.meta.url)
-const { shouldForwardMulawFrame } = requireCjs("../../auraVoiceNoiseControl.cjs")
+const { createMulawSpeechGate } = requireCjs("../../auraVoiceNoiseControl.cjs")
 
 const OPENAI_REALTIME_MODEL = process.env.OPENAI_REALTIME_MODEL || "gpt-4o-realtime-preview"
 
@@ -21,9 +21,12 @@ const safeJsonParse = (raw) => {
   }
 }
 
-const vadThreshold = () => {
-  const n = Number(process.env.AURA_REALTIME_VAD_THRESHOLD || 0.62)
-  return Number.isFinite(n) ? Math.min(0.9, Math.max(0.3, n)) : 0.62
+const vadThreshold = ({ assistantSpeaking }) => {
+  // Higher while AURA speaks (fewer false barge-ins); lower while listening (soft callers)
+  const listen = Number(process.env.AURA_REALTIME_VAD_THRESHOLD || 0.55)
+  const barge = Number(process.env.AURA_REALTIME_VAD_BARGE_THRESHOLD || 0.72)
+  const n = assistantSpeaking ? barge : listen
+  return Number.isFinite(n) ? Math.min(0.9, Math.max(0.3, n)) : assistantSpeaking ? 0.72 : 0.55
 }
 
 const buildSystemPrompt = () => {
@@ -33,10 +36,9 @@ const buildSystemPrompt = () => {
     "Ask only one follow-up question at a time.",
     "Help with booking, queue status, barber requests, and shop information.",
     "Use the shop details above when answering questions about barbers, pricing, and hours.",
-    "If the primary caller clearly interrupts, stop speaking and listen.",
-    "Ignore television, music, radio, and distant background chatter.",
+    "Lock onto the primary near-field caller. Ignore television, music, radio, clippers, dryers, and distant chatter.",
     "If multiple voices are loud, ask the caller to speak directly into the phone.",
-    "If audio is unclear, ask them to repeat — never invent names, dates, times, or phone numbers.",
+    "If audio is unclear, ask them to repeat — never invent names, dates, times, prices, services, or phone numbers.",
     "Confirm appointment date, time, barber, and service before booking.",
     "Never say a booking is confirmed until the booking tool returns success.",
     "If you need more than a moment to look something up, say a brief acknowledgment first."
@@ -65,6 +67,8 @@ export const attachTwilioRealtimeBridge = ({ server, path = "/api/voice/media-st
     let isClosed = false
     let assistantSpeaking = false
     let assistantIdleTimer = null
+    const speechGate = createMulawSpeechGate()
+    let lastVadMode = null
 
     const markAssistantSpeaking = (ms = 1200) => {
       assistantSpeaking = true
@@ -72,6 +76,24 @@ export const attachTwilioRealtimeBridge = ({ server, path = "/api/voice/media-st
       assistantIdleTimer = setTimeout(() => {
         assistantSpeaking = false
       }, ms)
+    }
+
+    const pushVadSession = () => {
+      const mode = assistantSpeaking ? "barge" : "listen"
+      if (mode === lastVadMode) return
+      lastVadMode = mode
+      sendToOpenAI({
+        type: "session.update",
+        session: {
+          turn_detection: {
+            type: "server_vad",
+            threshold: vadThreshold({ assistantSpeaking }),
+            prefix_padding_ms: 160,
+            silence_duration_ms: assistantSpeaking ? 500 : 400,
+            interrupt_response: true
+          }
+        }
+      })
     }
 
     const closeAll = () => {
@@ -120,15 +142,15 @@ export const attachTwilioRealtimeBridge = ({ server, path = "/api/voice/media-st
             output_audio_format: "g711_ulaw",
             turn_detection: {
               type: "server_vad",
-              // Higher threshold = fewer false barge-ins from TV/music/room noise
-              threshold: vadThreshold(),
-              prefix_padding_ms: 180,
-              silence_duration_ms: 450,
+              threshold: vadThreshold({ assistantSpeaking: false }),
+              prefix_padding_ms: 160,
+              silence_duration_ms: 400,
               interrupt_response: true
             },
             voice: "alloy"
           }
         })
+        lastVadMode = "listen"
         sendToOpenAI({
           type: "response.create",
           response: {
@@ -145,6 +167,7 @@ export const attachTwilioRealtimeBridge = ({ server, path = "/api/voice/media-st
 
         if (event.type === "response.audio.delta" && event.delta && streamSid) {
           markAssistantSpeaking(900)
+          pushVadSession()
           sendToTwilio({
             event: "media",
             streamSid,
@@ -156,17 +179,12 @@ export const attachTwilioRealtimeBridge = ({ server, path = "/api/voice/media-st
 
         if (event.type === "response.audio.done" || event.type === "response.done") {
           markAssistantSpeaking(350)
+          setTimeout(() => pushVadSession(), 360)
         }
 
-        // Selective barge-in: only clear playback when speech is strong enough while AURA talks
         if (event.type === "input_audio_buffer.speech_started" && streamSid) {
-          if (!assistantSpeaking) {
-            sendToTwilio({ event: "clear", streamSid })
-          } else {
-            // Soft interrupt window — clear only if OpenAI already decided it was speech;
-            // energy gate below reduces weak noise frames reaching the model.
-            sendToTwilio({ event: "clear", streamSid })
-          }
+          // Only clear playback after sustained near-field speech (energy gate enforces ~300ms while speaking)
+          sendToTwilio({ event: "clear", streamSid })
         }
       })
 
@@ -187,7 +205,7 @@ export const attachTwilioRealtimeBridge = ({ server, path = "/api/voice/media-st
       if (event.event === "media" && hasOpenAI) {
         const payload = event.media?.payload
         if (
-          !shouldForwardMulawFrame(payload, {
+          !speechGate.shouldForward(payload, {
             assistantSpeaking
           })
         ) {

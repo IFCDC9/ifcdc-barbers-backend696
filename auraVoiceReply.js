@@ -344,9 +344,8 @@ async function safeGenerateReply(input, opts = {}) {
   return out;
 }
 
-function buildVoiceLoopTwiML(gatherAction, attrs, mainSay, stillHereSay) {
-  const g = twilioGatherSpeechAttrs();
-  // Enhanced phone_call model + bargeIn; selective interrupt filtering happens in noise control on /process
+function buildVoiceLoopTwiML(gatherAction, attrs, mainSay, stillHereSay, callSid = "") {
+  const g = twilioGatherSpeechAttrs(callSid);
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Gather input="speech dtmf" timeout="${g.timeout}" speechTimeout="${g.speechTimeout}" bargeIn="${g.bargeIn}" enhanced="${g.enhanced}" speechModel="${g.speechModel}" method="POST" action="${gatherAction}">
@@ -616,14 +615,14 @@ export function createSimpleAuraVoiceHandlers(opts = {}) {
         const stillHere = escapeTwilioSayText("I'm still here if you need me.");
         rememberAssistantSpeech(callSid, gate.prompt || "");
         res.type("text/xml");
-        res.send(buildVoiceLoopTwiML(gatherAction, attrs, prompt, stillHere));
+        res.send(buildVoiceLoopTwiML(gatherAction, attrs, prompt, stillHere, callSid));
         sent = true;
         recordVoiceTiming({
           speechToResponseMs: Date.now() - tRoute,
           responseGenerationMs: gate.metrics?.gateMs ?? Date.now() - tRoute,
           totalTurnMs: Date.now() - tRoute,
         });
-        console.log("[aura/noise] gated", gate.action, gate.reason);
+        console.log("[aura/noise] gated", gate.action, gate.reason, "noisy=", gate.noisyMode);
         return;
       }
 
@@ -692,7 +691,7 @@ export function createSimpleAuraVoiceHandlers(opts = {}) {
             const safeMain = escapeTwilioSayText(String(intel.reply).trim());
             const stillHere = escapeTwilioSayText("I'm still here if you need me.");
             rememberAssistantSpeech(callSid, String(intel.reply).trim());
-            res.send(buildVoiceLoopTwiML(gatherAction, attrs, safeMain, stillHere));
+            res.send(buildVoiceLoopTwiML(gatherAction, attrs, safeMain, stillHere, callSid));
             sent = true;
             console.log("[aura/flow] twiml=voice_intel intent=", intel.intent || "");
             return;
@@ -787,7 +786,7 @@ export function createSimpleAuraVoiceHandlers(opts = {}) {
       );
 
       rememberAssistantSpeech(callSid, reply);
-      res.send(buildVoiceLoopTwiML(gatherAction, attrs, safeMain, stillHere));
+      res.send(buildVoiceLoopTwiML(gatherAction, attrs, safeMain, stillHere, callSid));
       sent = true;
       console.log("[aura/timing] /api/aura/process_total_ms", Date.now() - tRoute);
       console.log(
