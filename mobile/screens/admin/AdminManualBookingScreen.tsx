@@ -31,7 +31,7 @@ type Nav = StackNavigationProp<AdminStackParamList, "AdminManualBooking">;
 
 const PAYMENT_OPTIONS: { id: BypassPaymentType; title: string; subtitle: string }[] = [
   { id: "paid_online", title: "Paid Online", subtitle: "PayPal checkout · platform fee applies" },
-  { id: "complimentary", title: "Complimentary", subtitle: "No charge · confirmation email sent" },
+  { id: "complimentary", title: "Complimentary", subtitle: "No charge · SMS confirmation sent" },
   { id: "pay_at_shop", title: "Pay at Shop", subtitle: "Confirmed · collect payment in person" },
   { id: "staff_training", title: "Staff / Training", subtitle: "Blocks calendar · no payment" },
 ];
@@ -46,11 +46,11 @@ function AdminManualBookingScreenInner() {
   const [barberId, setBarberId] = useState("");
   const [barberName, setBarberName] = useState("");
   const [customerName, setCustomerName] = useState("");
-  const [customerEmail, setCustomerEmail] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("");
   const [clientUserId, setClientUserId] = useState<string | null>(null);
   const [createClient, setCreateClient] = useState(true);
   const [clientQuery, setClientQuery] = useState("");
-  const [clientHits, setClientHits] = useState<{ id: string; name: string; email: string }[]>([]);
+  const [clientHits, setClientHits] = useState<{ id: string; name: string; email?: string; phone?: string | null }[]>([]);
   const [service, setService] = useState("Haircut");
   const [price, setPrice] = useState("35");
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -110,8 +110,8 @@ function AdminManualBookingScreenInner() {
 
   const onSubmit = useCallback(async () => {
     if (!allowed) return;
-    if (!barberId || !customerName.trim() || !customerEmail.trim() || !date || !time) {
-      Alert.alert("Missing fields", "Barber, client name, email, date, and time are required.");
+    if (!barberId || !customerName.trim() || !customerPhone.trim() || !date || !time) {
+      Alert.alert("Missing fields", "Barber, client name, phone number, date, and time are required.");
       return;
     }
     setBusy(true);
@@ -122,7 +122,7 @@ function AdminManualBookingScreenInner() {
         barberId,
         barberName: selectedBarberLabel,
         customerName: customerName.trim(),
-        customerEmail: customerEmail.trim().toLowerCase(),
+        customerPhone: customerPhone.trim(),
         clientUserId,
         createClient: createClient && !clientUserId,
         service: service.trim() || "Appointment",
@@ -152,7 +152,7 @@ function AdminManualBookingScreenInner() {
           },
         ]);
       } else {
-        Alert.alert("Booked", "Manual booking created and calendar updated.");
+        Alert.alert("Booked", "Manual booking created. SMS confirmation sent when eligible.");
       }
       if (bookingId) {
         navigation.navigate("AdminBookingDetail", { bookingId: String(bookingId) });
@@ -168,7 +168,7 @@ function AdminManualBookingScreenInner() {
     allowed,
     barberId,
     customerName,
-    customerEmail,
+    customerPhone,
     date,
     time,
     paymentType,
@@ -249,7 +249,7 @@ function AdminManualBookingScreenInner() {
             onPress={() => {
               setClientUserId(c.id);
               setCustomerName(c.name || "");
-              setCustomerEmail(c.email || "");
+              setCustomerPhone(c.phone || "");
               setCreateClient(false);
               setClientQuery("");
               setClientHits([]);
@@ -257,8 +257,8 @@ function AdminManualBookingScreenInner() {
             style={styles.optionWrap}
           >
             <ProfileCard style={styles.option}>
-              <Text style={styles.optionTitle}>{c.name || c.email}</Text>
-              <Text style={styles.optionSub}>{c.email}</Text>
+              <Text style={styles.optionTitle}>{c.name || c.phone || c.email}</Text>
+              <Text style={styles.optionSub}>{c.phone || c.email || "No phone on file"}</Text>
             </ProfileCard>
           </Pressable>
         ))}
@@ -274,13 +274,14 @@ function AdminManualBookingScreenInner() {
         />
         <TextInput
           style={styles.input}
-          placeholder="Client email"
+          placeholder="Client phone number"
           placeholderTextColor={theme.colors.muted}
           autoCapitalize="none"
-          keyboardType="email-address"
-          value={customerEmail}
+          keyboardType="phone-pad"
+          textContentType="telephoneNumber"
+          value={customerPhone}
           onChangeText={(v) => {
-            setCustomerEmail(v);
+            setCustomerPhone(v);
             setClientUserId(null);
             setCreateClient(true);
           }}

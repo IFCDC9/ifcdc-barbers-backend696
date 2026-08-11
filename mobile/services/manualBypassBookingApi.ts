@@ -7,7 +7,10 @@ export type ManualBookingPayload = {
   barberId: string;
   barberName?: string;
   customerName: string;
-  customerEmail: string;
+  /** Required for Manual Booking / Bypass Mode SMS confirmations. */
+  customerPhone: string;
+  /** Optional — not required for bypass bookings. */
+  customerEmail?: string;
   clientUserId?: string | null;
   createClient?: boolean;
   serviceId?: string | null;

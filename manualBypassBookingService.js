@@ -11,6 +11,7 @@ import { logAdminActivity } from "./adminActivityLog.js";
 const require = createRequire(import.meta.url);
 const { resolveBarberIdentity, barberIdForTable } = require("./barberIdentity.cjs");
 const { PAYMENT_STATUS } = require("./bookingPaymentSettlement.cjs");
+const { normalizeToE164, maskPhoneForDisplay } = require("./smsPhone.cjs");
 
 export const BYPASS_PAYMENT_TYPES = Object.freeze({
   PAID_ONLINE: "paid_online",
@@ -20,6 +21,20 @@ export const BYPASS_PAYMENT_TYPES = Object.freeze({
 });
 
 const BYPASS_SET = new Set(Object.values(BYPASS_PAYMENT_TYPES));
+
+/** Placeholder email when creating an app_users row with phone only (email column is NOT NULL). */
+function syntheticEmailFromPhoneE164(e164) {
+  const digits = String(e164 || "").replace(/\D/g, "");
+  return `phone.${digits || "unknown"}@ifcdc.local`;
+}
+
+function isDeliverableCustomerEmail(email) {
+  const e = text(email).toLowerCase();
+  if (!e || !e.includes("@")) return false;
+  if (e.endsWith("@ifcdc.local")) return false;
+  if (/^pending\+/i.test(e)) return false;
+  return true;
+}
 
 export function isBypassPaymentType(value) {
   return BYPASS_SET.has(String(value || "").trim().toLowerCase());
@@ -115,65 +130,116 @@ async function resolveOrCreateClientUser({
   clientUserId,
   customerName,
   customerEmail,
+  customerPhone,
   createClient,
 }) {
-  const email = text(customerEmail).toLowerCase();
+  const phoneNorm = normalizeToE164(customerPhone, { defaultCountry: "US" });
+  if (!phoneNorm.ok) {
+    return { ok: false, error: phoneNorm.error, message: phoneNorm.message || "Valid client phone number is required" };
+  }
+  const phoneE164 = phoneNorm.e164;
+  const emailRaw = text(customerEmail).toLowerCase();
+  const emailOptional = isDeliverableCustomerEmail(emailRaw) ? emailRaw : null;
+
+  async function stampUserPhone(userId) {
+    if (!userId) return;
+    await dbQuery(
+      `UPDATE app_users
+       SET phone = $2,
+           phone_e164 = $3
+       WHERE id = $1::uuid`,
+      [userId, phoneE164, phoneE164],
+    ).catch(() => {});
+  }
+
   if (clientUserId) {
     const u = await dbQuery(
-      `SELECT id, name, email FROM app_users WHERE id = $1::uuid LIMIT 1`,
+      `SELECT id, name, email, phone, phone_e164 FROM app_users WHERE id = $1::uuid LIMIT 1`,
       [String(clientUserId)],
     );
     if (u.rows?.[0]) {
+      await stampUserPhone(u.rows[0].id);
       return {
+        ok: true,
         userId: String(u.rows[0].id),
         name: text(u.rows[0].name) || customerName || "Client",
-        email: text(u.rows[0].email) || email,
+        email: emailOptional || text(u.rows[0].email) || null,
+        phone: phoneE164,
       };
     }
   }
-  if (email && email.includes("@")) {
+
+  const byPhone = await dbQuery(
+    `SELECT id, name, email, phone, phone_e164 FROM app_users
+     WHERE phone_e164 = $1
+        OR regexp_replace(coalesce(phone,''), '\\D', '', 'g') = $2
+     ORDER BY created_at DESC NULLS LAST
+     LIMIT 1`,
+    [phoneE164, phoneNorm.digits],
+  ).catch(() => ({ rows: [] }));
+  if (byPhone.rows?.[0]) {
+    await stampUserPhone(byPhone.rows[0].id);
+    return {
+      ok: true,
+      userId: String(byPhone.rows[0].id),
+      name: text(byPhone.rows[0].name) || customerName || "Client",
+      email: emailOptional || text(byPhone.rows[0].email) || null,
+      phone: phoneE164,
+    };
+  }
+
+  if (emailOptional) {
     const existing = await dbQuery(
-      `SELECT id, name, email FROM app_users WHERE lower(trim(email)) = lower(trim($1)) LIMIT 1`,
-      [email],
+      `SELECT id, name, email, phone, phone_e164 FROM app_users WHERE lower(trim(email)) = lower(trim($1)) LIMIT 1`,
+      [emailOptional],
     );
     if (existing.rows?.[0]) {
+      await stampUserPhone(existing.rows[0].id);
       return {
+        ok: true,
         userId: String(existing.rows[0].id),
         name: text(existing.rows[0].name) || customerName || "Client",
         email: text(existing.rows[0].email),
+        phone: phoneE164,
       };
     }
-    if (createClient) {
-      const name = text(customerName) || email.split("@")[0] || "Client";
-      const ins = await dbQuery(
-        `INSERT INTO app_users (name, email, role, password_hash)
-         VALUES ($1, $2, 'user', NULL)
-         RETURNING id, name, email`,
-        [name, email],
-      ).catch(async () => {
-        // Some schemas require password_hash NOT NULL — use unusable placeholder hash.
-        const { hashPassword } = await import("./authPasswordPolicy.js");
-        const ph = await hashPassword(`Bypass!${Date.now()}Aa1`);
-        return dbQuery(
-          `INSERT INTO app_users (name, email, role, password_hash)
-           VALUES ($1, $2, 'user', $3)
-           RETURNING id, name, email`,
-          [name, email, ph],
-        );
-      });
-      if (ins.rows?.[0]) {
-        return {
-          userId: String(ins.rows[0].id),
-          name: text(ins.rows[0].name),
-          email: text(ins.rows[0].email),
-        };
-      }
+  }
+
+  if (createClient) {
+    const name = text(customerName) || "Client";
+    const emailForInsert = emailOptional || syntheticEmailFromPhoneE164(phoneE164);
+    const ins = await dbQuery(
+      `INSERT INTO app_users (name, email, phone, phone_e164, role, password_hash)
+       VALUES ($1, $2, $3, $4, 'user', NULL)
+       RETURNING id, name, email, phone, phone_e164`,
+      [name, emailForInsert, phoneE164, phoneE164],
+    ).catch(async () => {
+      const { hashPassword } = await import("./authPasswordPolicy.js");
+      const ph = await hashPassword(`Bypass!${Date.now()}Aa1`);
+      return dbQuery(
+        `INSERT INTO app_users (name, email, phone, phone_e164, role, password_hash)
+         VALUES ($1, $2, $3, $4, 'user', $5)
+         RETURNING id, name, email, phone, phone_e164`,
+        [name, emailForInsert, phoneE164, phoneE164, ph],
+      );
+    });
+    if (ins.rows?.[0]) {
+      return {
+        ok: true,
+        userId: String(ins.rows[0].id),
+        name: text(ins.rows[0].name),
+        email: emailOptional || text(ins.rows[0].email) || null,
+        phone: phoneE164,
+      };
     }
   }
+
   return {
+    ok: true,
     userId: null,
     name: text(customerName) || "Client",
-    email: email || null,
+    email: emailOptional,
+    phone: phoneE164,
   };
 }
 
@@ -210,6 +276,10 @@ export async function createManualBypassBooking({
   startPaidOnlineCheckout,
 } = {}) {
   await ensureManualBypassBookingColumns(dbQuery);
+  // Phone columns used for SMS-first Manual Booking (idempotent).
+  await dbQuery(`ALTER TABLE app_users ADD COLUMN IF NOT EXISTS phone TEXT`).catch(() => {});
+  await dbQuery(`ALTER TABLE app_users ADD COLUMN IF NOT EXISTS phone_e164 TEXT`).catch(() => {});
+  await dbQuery(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS phone TEXT`).catch(() => {});
 
   const bypassType = text(body?.paymentType || body?.bypassPaymentType || body?.payment_type).toLowerCase();
   if (!isBypassPaymentType(bypassType)) {
@@ -257,11 +327,28 @@ export async function createManualBypassBooking({
     clientUserId: body?.clientUserId || body?.userId || body?.client_id,
     customerName: body?.customerName || body?.clientName || body?.name,
     customerEmail: body?.customerEmail || body?.clientEmail || body?.email,
+    customerPhone:
+      body?.customerPhone ||
+      body?.clientPhone ||
+      body?.phone ||
+      body?.phoneNumber ||
+      body?.phone_e164,
     createClient,
   });
-  if (!client.email || !client.email.includes("@")) {
-    return { ok: false, status: 400, message: "Client email is required" };
+  if (!client.ok) {
+    return {
+      ok: false,
+      status: 400,
+      code: client.error || "invalid_phone",
+      message: client.message || "Valid client phone number is required",
+    };
   }
+  if (!client.phone) {
+    return { ok: false, status: 400, message: "Client phone number is required" };
+  }
+
+  // Store a real email on the booking when provided; otherwise leave null (email not required).
+  const bookingEmail = isDeliverableCustomerEmail(client.email) ? client.email : null;
 
   const service = await resolveService(
     barberKey,
@@ -368,7 +455,7 @@ export async function createManualBypassBooking({
 
   const ins = await dbQuery(
     `INSERT INTO bookings (
-       user_id, customer_name, customer_email, barber_name, barber_id, service,
+       user_id, customer_name, customer_email, phone, barber_name, barber_id, service,
        service_duration_minutes, date, time, amount,
        total_price, service_price, deposit_amount, amount_paid, remaining_balance, balance_due,
        payment_type, payment_status, payment_method, payment_provider, paypal_order_id, paypal_capture_id,
@@ -378,25 +465,26 @@ export async function createManualBypassBooking({
        manual_bypass, bypass_payment_type, bypass_reason, bypass_created_by,
        bypass_created_by_email, bypass_created_at, appointment_notes
      ) VALUES (
-       $1::uuid, $2, $3, $4, $5, $6,
-       $7, $8::date, $9::time, $10,
-       $11, $12, 0, $13, $14, $14,
-       $15, $16, $17, $18, $19, $20,
-       $21, $22, $23, $24,
-       $25, $26, false, $27, $28,
-       $29, $30, $31, $32,
-       true, $33, $34, $35::uuid,
-       $36, NOW(), $37
+       $1::uuid, $2, $3, $4, $5, $6, $7,
+       $8, $9::date, $10::time, $11,
+       $12, $13, 0, $14, $15, $15,
+       $16, $17, $18, $19, $20, $21,
+       $22, $23, $24, $25,
+       $26, $27, false, $28, $29,
+       $30, $31, $32, $33,
+       true, $34, $35, $36::uuid,
+       $37, NOW(), $38
      )
      RETURNING id, booking_status, payment_status, payment_method, booking_source, total_price, total_amount, platform_fee,
-               is_paid_booking, customer_name, customer_email, barber_name, barber_id,
+               is_paid_booking, customer_name, customer_email, phone, barber_name, barber_id,
                service, date::text AS date, to_char(time,'HH24:MI') AS time,
                manual_bypass, bypass_payment_type, bypass_reason, bypass_created_by_email,
                bypass_created_at, appointment_notes, created_at, user_id, business_id`,
     [
       client.userId,
       client.name,
-      client.email,
+      bookingEmail,
+      client.phone,
       barberName,
       insertBarberId,
       service.title,
@@ -456,7 +544,7 @@ export async function createManualBypassBooking({
     eventType: "manual_bypass_created",
     adminUserId: actorId,
     adminEmail: actorEmail,
-    userEmail: client.email,
+    userEmail: bookingEmail || maskPhoneForDisplay(client.phone),
     userName: client.name,
     detail: `Bypass ${bypassType} booking ${booking.id}`,
     metadata: {
@@ -467,6 +555,7 @@ export async function createManualBypassBooking({
       reason,
       date: dateStr,
       time: timeStr,
+      phoneMasked: maskPhoneForDisplay(client.phone),
     },
   }).catch(() => {});
 
@@ -485,14 +574,15 @@ export async function createManualBypassBooking({
     }
   }
 
+  // Email is optional — only when a real customer email is on file.
   const shouldEmail =
-    bypassType !== BYPASS_PAYMENT_TYPES.STAFF_TRAINING
-    || body?.sendEmail === true;
-  if (shouldEmail && typeof sendBookingEmail === "function" && client.email) {
+    (bypassType !== BYPASS_PAYMENT_TYPES.STAFF_TRAINING || body?.sendEmail === true)
+    && isDeliverableCustomerEmail(bookingEmail);
+  if (shouldEmail && typeof sendBookingEmail === "function") {
     try {
       await sendBookingEmail({
         name: client.name,
-        email: client.email,
+        email: bookingEmail,
         barberName,
         date: dateStr,
         time: timeStr,
@@ -511,22 +601,27 @@ export async function createManualBypassBooking({
     }
   }
 
-  // SMS confirmation — independent of email.
+  // SMS confirmation — primary channel for Manual Booking / Bypass Mode.
   try {
     const { notifyBookingSms } = require("./smsBookingNotify.cjs");
+    const smsCategory =
+      paymentStatus === "paid_in_full" || paymentStatus === "paid"
+        ? "booking_approved"
+        : "booking_created";
     void notifyBookingSms(
       dbQuery,
-      paymentStatus === "paid_in_full" || paymentStatus === "paid" ? "booking_approved" : "booking_created",
+      smsCategory,
       {
         id: booking?.id,
-        phone: client.phone || body?.phone || null,
+        phone: client.phone,
         customer_name: client.name,
-        customer_email: client.email,
+        customer_email: bookingEmail,
         barber_name: barberName,
         service: service.title,
         date: dateStr,
         time: timeStr,
         location: "IFCDC Barbers",
+        user_id: client.userId,
       },
       { occurrence: "manual_bypass" },
     ).catch((e) => console.warn("[manual-bypass] SMS notify:", e?.message || e));
@@ -542,8 +637,9 @@ export async function createManualBypassBooking({
         booking: {
           id: booking.id,
           user_id: client.userId,
-          customer_email: client.email,
+          customer_email: bookingEmail,
           customer_name: client.name,
+          phone: client.phone,
           barber_id: barberKey,
           barber_name: barberName,
           business_id: businessId,

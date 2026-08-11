@@ -104,7 +104,7 @@ export function createManualBypassBookingRouter({ sendBookingEmail } = {}) {
         {
           id: BYPASS_PAYMENT_TYPES.COMPLIMENTARY,
           label: "Complimentary (No Charge)",
-          description: "Total $0. Skips payment. Confirmation email sent.",
+          description: "Total $0. Skips payment. SMS confirmation sent.",
         },
         {
           id: BYPASS_PAYMENT_TYPES.PAY_AT_SHOP,
@@ -128,16 +128,18 @@ export function createManualBypassBookingRouter({ sendBookingEmail } = {}) {
         return res.json({ ok: true, clients: [] });
       }
       const r = await dbQuery(
-        `SELECT id, name, email, role
+        `SELECT id, name, email, phone, phone_e164, role
          FROM app_users
          WHERE lower(role) IN ('user', 'customer')
            AND (
-             lower(email) LIKE lower($1)
+             lower(coalesce(email,'')) LIKE lower($1)
              OR lower(coalesce(name,'')) LIKE lower($1)
+             OR coalesce(phone_e164,'') LIKE $2
+             OR regexp_replace(coalesce(phone,''), '\\D', '', 'g') LIKE $3
            )
          ORDER BY name ASC NULLS LAST
          LIMIT 25`,
-        [`%${q}%`],
+        [`%${q}%`, `%${q.replace(/\D/g, "")}%`, `%${q.replace(/\D/g, "")}%`],
       );
       return res.json({
         ok: true,
@@ -145,6 +147,7 @@ export function createManualBypassBookingRouter({ sendBookingEmail } = {}) {
           id: row.id,
           name: row.name,
           email: row.email,
+          phone: row.phone_e164 || row.phone || null,
         })),
       });
     } catch (e) {

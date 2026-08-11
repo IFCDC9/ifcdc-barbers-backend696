@@ -33,7 +33,7 @@ const cardStyle = {
 
 const PAYMENT_OPTIONS = [
   { id: "paid_online", title: "Paid Online", subtitle: "PayPal checkout · platform fee applies" },
-  { id: "complimentary", title: "Complimentary", subtitle: "No charge · confirmation email sent" },
+  { id: "complimentary", title: "Complimentary", subtitle: "No charge · SMS confirmation sent" },
   { id: "pay_at_shop", title: "Pay at Shop", subtitle: "Confirmed · collect payment in person" },
   { id: "staff_training", title: "Staff / Training", subtitle: "Blocks calendar · no payment" },
 ];
@@ -50,7 +50,7 @@ export default function AdminManualBooking() {
   const [barbers, setBarbers] = useState([]);
   const [barberId, setBarberId] = useState("");
   const [customerName, setCustomerName] = useState("");
-  const [customerEmail, setCustomerEmail] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("");
   const [service, setService] = useState("Haircut");
   const [price, setPrice] = useState("35");
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -93,6 +93,10 @@ export default function AdminManualBooking() {
       setError("Super Admin only.");
       return;
     }
+    if (!customerPhone.trim()) {
+      setError("Client phone number is required.");
+      return;
+    }
     setBusy(true);
     try {
       const origin = getApiOrigin();
@@ -108,7 +112,7 @@ export default function AdminManualBooking() {
           barberId,
           barberName: selectedBarber?.name,
           customerName: customerName.trim(),
-          customerEmail: customerEmail.trim().toLowerCase(),
+          customerPhone: customerPhone.trim(),
           createClient: true,
           service: service.trim() || "Appointment",
           price: Number(price) || 0,
@@ -120,7 +124,9 @@ export default function AdminManualBooking() {
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json.ok) throw new Error(json.message || `HTTP ${res.status}`);
-      setMessage(`Booking created: ${json.booking?.id || "ok"}`);
+      setMessage(
+        `Booking created: ${json.booking?.id || "ok"}${json.booking?.phone ? ` · phone ${json.booking.phone}` : ""}`,
+      );
       if (json.paypal?.approveUrl) {
         window.open(json.paypal.approveUrl, "_blank", "noopener,noreferrer");
       }
@@ -179,12 +185,15 @@ export default function AdminManualBooking() {
           <label style={labelStyle}>Client name</label>
           <input style={inputStyle} value={customerName} onChange={(ev) => setCustomerName(ev.target.value)} required />
 
-          <label style={labelStyle}>Client email</label>
+          <label style={labelStyle}>Client phone number</label>
           <input
             style={inputStyle}
-            type="email"
-            value={customerEmail}
-            onChange={(ev) => setCustomerEmail(ev.target.value)}
+            type="tel"
+            inputMode="tel"
+            autoComplete="tel"
+            placeholder="+1 (989) 555-0100"
+            value={customerPhone}
+            onChange={(ev) => setCustomerPhone(ev.target.value)}
             required
           />
 

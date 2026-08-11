@@ -19,6 +19,7 @@ import {
   formatBookingDateTime,
   formatMoney,
 } from "../../utils/bookingDisplay";
+import { maskPhoneForDisplay } from "../../utils/redactPii";
 import { theme } from "../../constants/theme";
 import type { AdminStackParamList } from "../../navigation/AdminStack";
 
@@ -35,7 +36,13 @@ function BookingCard({
   onDelete?: (bookingId: string) => void;
 }) {
   const when = formatBookingDateTime(row.date, row.time, row.created_at);
-  const customerLine = `${displayCustomerName(row.customer_name, row.customer_email)} · ${displayCustomerEmail(row.customer_email)}`;
+  const phoneLabel = row.phone ? maskPhoneForDisplay(String(row.phone)) : null;
+  const emailLabel = displayCustomerEmail(row.customer_email);
+  const contact =
+    phoneLabel ||
+    (emailLabel !== "No email on file" && emailLabel !== "Guest customer" ? emailLabel : null) ||
+    "No phone on file";
+  const customerLine = `${displayCustomerName(row.customer_name, row.customer_email)} · ${contact}`;
 
   return (
     <Pressable
