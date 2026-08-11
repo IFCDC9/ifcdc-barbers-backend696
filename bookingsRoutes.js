@@ -414,6 +414,29 @@ export async function insertAuraVoiceBookingRow(body, sendBookingEmail) {
     source: "aura_voice",
   });
 
+  // SMS confirmation — independent of email success/failure.
+  try {
+    const { notifyBookingSms } = require("./smsBookingNotify.cjs");
+    void notifyBookingSms(
+      dbQuery,
+      "booking_created",
+      {
+        id: bookingId,
+        phone: customerPhone,
+        customer_name: customerName,
+        customer_email: customerEmail,
+        barber_name: barberName,
+        service: serviceTitle,
+        date: dateStr,
+        time: timeStr,
+        location: "IFCDC Barbers",
+      },
+      { occurrence: "aura_voice_created" },
+    ).catch((e) => console.warn("[aura-voice] SMS notify:", e?.message || e));
+  } catch (e) {
+    console.warn("[aura-voice] SMS notify setup:", e?.message || e);
+  }
+
   return {
     ok: true,
     booking: {
@@ -1388,6 +1411,16 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
           );
       }
 
+      if (target === "cancelled") {
+        void import("./auraPhase2Hooks.cjs")
+          .then((m) =>
+            m.afterBookingCancelled(dbQuery, booking, {
+              reason: note || "Cancelled via status update",
+            }),
+          )
+          .catch((e) => console.warn("[sms] status cancel hook:", e?.message || e));
+      }
+
       const verb =
         target === "checked_in"
           ? "checked in"
@@ -1581,6 +1614,13 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
             audience: ["customer", "barber", "shop_owners"],
             data: { bookingId: id },
           });
+          void import("./auraPhase2Hooks.cjs")
+            .then((m) =>
+              m.afterBookingCancelled(dbQuery, booking, {
+                reason: req.body?.note || "Cancelled by admin",
+              }),
+            )
+            .catch((e) => console.warn("[sms] admin cancel hook:", e?.message || e));
         }
         return res.json({ ok: true, booking: r.rows[0], message: "Booking cancelled" });
       }
@@ -1610,6 +1650,13 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
             audience: ["customer", "barber", "shop_owners"],
             data: { bookingId: id, refunded: true },
           });
+          void import("./auraPhase2Hooks.cjs")
+            .then((m) =>
+              m.afterBookingCancelled(dbQuery, booking, {
+                reason: req.body?.note || "Cancelled with refund by admin",
+              }),
+            )
+            .catch((e) => console.warn("[sms] admin refund-cancel hook:", e?.message || e));
         }
         return res.json({
           ok: true,
@@ -2566,6 +2613,30 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
           bookingId,
           to: customerEmail,
         });
+      }
+
+      // SMS confirmation — independent of email; never blocks booking response.
+      try {
+        const { notifyBookingSms } = require("./smsBookingNotify.cjs");
+        const customerPhone = String(body.phone || body.customerPhone || "").trim();
+        void notifyBookingSms(
+          dbQuery,
+          "booking_approved",
+          {
+            id: bookingId,
+            phone: customerPhone || null,
+            customer_name: customerName,
+            customer_email: customerEmail,
+            barber_name: confirmedBarberName || barberName,
+            service: serviceTitle,
+            date: dateStr,
+            time: timeStr,
+            location: "IFCDC Barbers",
+          },
+          { occurrence: "web_book_paid" },
+        ).catch((e) => console.warn("[booking] SMS notify:", e?.message || e));
+      } catch (e) {
+        console.warn("[booking] SMS notify setup:", e?.message || e);
       }
 
       return res.json({

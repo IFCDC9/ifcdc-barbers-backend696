@@ -182,6 +182,7 @@ async function sendTransactionalSms(
           reason: "idempotent_duplicate",
           logId: existing.id,
           twilioSid: existing.twilio_sid || null,
+          duplicate: true,
         };
       }
     } catch {
@@ -194,13 +195,17 @@ async function sendTransactionalSms(
       const log = await insertLog(dbQuery, {
         status: "skipped_flag_off",
         toE164: phone.e164,
+        fromIdentity: getOfficialCustomerSmsFromE164(),
         category: cat,
         bookingId,
         paymentRef,
         userId,
         body,
         idempotencyKey,
-        metadata: { maskedTo: maskPhoneForDisplay(phone.e164) },
+        metadata: {
+          maskedTo: maskPhoneForDisplay(phone.e164),
+          duplicateOrIdempotent: false,
+        },
       }).catch(() => null);
       return { ok: true, skipped: true, reason: "sms_notifications_disabled", logId: log?.id };
     }
@@ -217,6 +222,7 @@ async function sendTransactionalSms(
       const log = await insertLog(dbQuery, {
         status: "skipped_consent",
         toE164: phone.e164,
+        fromIdentity: getOfficialCustomerSmsFromE164(),
         category: cat,
         bookingId,
         paymentRef,
@@ -224,6 +230,7 @@ async function sendTransactionalSms(
         body,
         idempotencyKey,
         errorMessage: allowed.reason,
+        metadata: { duplicateOrIdempotent: false },
       }).catch(() => null);
       return { ok: true, skipped: true, reason: allowed.reason, logId: log?.id };
     }

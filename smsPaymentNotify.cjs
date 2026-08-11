@@ -28,15 +28,18 @@ function mapPaypalEventToCategory(eventType) {
   return null;
 }
 
-function buildPaymentSmsBody(category, { amount, currency, bookingId, captureId }) {
+function buildPaymentSmsBody(category, { amount, currency, bookingId, captureId, service, date, time }) {
   const ref = shortRef(bookingId) !== "N/A" ? shortRef(bookingId) : String(captureId || "").slice(-8).toUpperCase();
   const amt =
     amount != null && String(amount).trim()
       ? `${String(amount).trim()} ${String(currency || "USD").trim()}`
       : null;
+  const when = [String(date || "").slice(0, 10), String(time || "").slice(0, 8)].filter(Boolean).join(" ");
+  const svc = String(service || "").trim();
+  const appt = [svc, when].filter(Boolean).join(" · ");
   switch (category) {
     case "payment_success":
-      return `IFCDC Barbers: Payment received${amt ? ` (${amt})` : ""}. Booking ref ${ref}. Thank you.`;
+      return `IFCDC Barbers: Payment received${amt ? ` (${amt})` : ""}. Booking ref ${ref}${appt ? ` — ${appt}` : ""}. Thank you.`;
     case "payment_failed":
       return `IFCDC Barbers: Payment did not complete for booking ref ${ref}. Action required — no charge confirmed. Reply HELP for support.`;
     case "payment_denied":
@@ -76,7 +79,8 @@ async function notifyPaymentSmsFromPaypalWebhook(dbQuery, body, opts = {}) {
     let booking = null;
     if (typeof dbQuery === "function" && (captureId || orderId)) {
       const r = await dbQuery(
-        `SELECT id, user_id, customer_email, phone, customer_name, paypal_capture_id, paypal_order_id
+        `SELECT id, user_id, customer_email, phone, customer_name, paypal_capture_id, paypal_order_id,
+                service, style_title, date::text AS date, to_char(time, 'HH24:MI') AS time
          FROM bookings
          WHERE ($1 <> '' AND paypal_capture_id = $1)
             OR ($2 <> '' AND paypal_order_id = $2)
@@ -110,6 +114,9 @@ async function notifyPaymentSmsFromPaypalWebhook(dbQuery, body, opts = {}) {
       currency,
       bookingId: booking?.id,
       captureId,
+      service: booking?.service || booking?.style_title || null,
+      date: booking?.date || null,
+      time: booking?.time || null,
     });
     const publicBase =
       opts.publicBaseUrl || process.env.RENDER_EXTERNAL_URL || process.env.PUBLIC_BASE_URL || "";

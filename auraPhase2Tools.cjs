@@ -192,7 +192,7 @@ async function confirmCancel(dbQuery, opts = {}) {
          cancellation_reason = COALESCE($2, cancellation_reason)
      WHERE id = $1::uuid
        AND COALESCE(booking_status,'') NOT IN ('cancelled','canceled')
-     RETURNING id, customer_name, customer_email, barber_name, service, barber_id, user_id,
+     RETURNING id, customer_name, customer_email, phone, barber_name, service, barber_id, user_id,
                date::text AS date, to_char(time, 'HH12:MI AM') AS time,
                booking_status, total_paid, amount_paid, total_price,
                payment_status, is_paid_booking`,
@@ -347,7 +347,7 @@ async function confirmReschedule(dbQuery, opts = {}) {
            rescheduled_at = NOW()
        WHERE id = $1::uuid
          AND COALESCE(booking_status,'') NOT IN ('cancelled','canceled','completed')
-       RETURNING id, customer_name, customer_email, barber_name, service, barber_id, user_id,
+       RETURNING id, customer_name, customer_email, phone, barber_name, service, barber_id, user_id,
                  date::text AS date, to_char(time, 'HH12:MI AM') AS time,
                  booking_status, total_paid, amount_paid, total_price`,
       [id, newDate, timeSql],
@@ -410,6 +410,7 @@ async function proposeBook(dbQuery, opts = {}) {
   const service = String(opts.service || "Appointment").trim();
   const customerName = String(opts.customerName || "").trim();
   const customerEmail = normalizeEmail(opts.customerEmail);
+  const customerPhone = String(opts.phone || opts.customerPhone || "").trim();
   const durationMinutes = Number(opts.durationMinutes) || 30;
 
   if (!barberId || !date || !time || !customerName || !customerEmail) {
@@ -448,6 +449,7 @@ async function proposeBook(dbQuery, opts = {}) {
     service,
     customerName,
     customerEmail,
+    customerPhone,
     durationMinutes,
   };
 
@@ -535,20 +537,21 @@ async function confirmBook(dbQuery, opts = {}) {
   try {
     inserted = await dbQuery(
       `INSERT INTO bookings (
-          customer_name, customer_email, barber_id, barber_name, service,
+          customer_name, customer_email, phone, barber_id, barber_name, service,
           date, time, amount, payment_status, booking_status, is_paid_booking,
           total_price, service_duration_minutes, notes, booking_source
         ) VALUES (
-          $1, $2, $3::uuid, $4, $5,
-          $6::date, $7::time, 0, 'pay_at_shop', 'confirmed', false,
-          0, $8, $9, 'aura_tools'
+          $1, $2, $3, $4::uuid, $5, $6,
+          $7::date, $8::time, 0, 'pay_at_shop', 'confirmed', false,
+          0, $9, $10, 'aura_tools'
         )
-        RETURNING id, customer_name, customer_email, barber_name, service, barber_id, user_id,
+        RETURNING id, customer_name, customer_email, phone, barber_name, service, barber_id, user_id,
                   date::text AS date, to_char(time, 'HH12:MI AM') AS time,
                   booking_status, total_paid, amount_paid, total_price, payment_status, is_paid_booking`,
       [
         p.customerName,
         p.customerEmail,
+        p.customerPhone || null,
         p.barberId,
         p.barberName || "your barber",
         p.service,
@@ -570,20 +573,21 @@ async function confirmBook(dbQuery, opts = {}) {
     if (/booking_source/i.test(String(sqlErr?.message || ""))) {
       inserted = await dbQuery(
         `INSERT INTO bookings (
-            customer_name, customer_email, barber_id, barber_name, service,
+            customer_name, customer_email, phone, barber_id, barber_name, service,
             date, time, amount, payment_status, booking_status, is_paid_booking,
             total_price, service_duration_minutes, notes
           ) VALUES (
-            $1, $2, $3::uuid, $4, $5,
-            $6::date, $7::time, 0, 'pay_at_shop', 'confirmed', false,
-            0, $8, $9
+            $1, $2, $3, $4::uuid, $5, $6,
+            $7::date, $8::time, 0, 'pay_at_shop', 'confirmed', false,
+            0, $9, $10
           )
-          RETURNING id, customer_name, customer_email, barber_name, service, barber_id, user_id,
+          RETURNING id, customer_name, customer_email, phone, barber_name, service, barber_id, user_id,
                     date::text AS date, to_char(time, 'HH12:MI AM') AS time,
                     booking_status, total_paid, amount_paid, total_price, payment_status, is_paid_booking`,
         [
           p.customerName,
           p.customerEmail,
+          p.customerPhone || null,
           p.barberId,
           p.barberName || "your barber",
           p.service,
@@ -598,8 +602,11 @@ async function confirmBook(dbQuery, opts = {}) {
     }
   }
 
-  const row = inserted.rows?.[0];
-  if (!row) return { ok: false, error: "create_failed" };
+  const row = {
+    ...(inserted.rows?.[0] || {}),
+    phone: inserted.rows?.[0]?.phone || p.customerPhone || opts.phone || opts.customerPhone || null,
+  };
+  if (!row.id) return { ok: false, error: "create_failed" };
 
   await logAuraAction(dbQuery, {
     action: "create_booking",

@@ -511,6 +511,29 @@ export async function createManualBypassBooking({
     }
   }
 
+  // SMS confirmation — independent of email.
+  try {
+    const { notifyBookingSms } = require("./smsBookingNotify.cjs");
+    void notifyBookingSms(
+      dbQuery,
+      paymentStatus === "paid_in_full" || paymentStatus === "paid" ? "booking_approved" : "booking_created",
+      {
+        id: booking?.id,
+        phone: client.phone || body?.phone || null,
+        customer_name: client.name,
+        customer_email: client.email,
+        barber_name: barberName,
+        service: service.title,
+        date: dateStr,
+        time: timeStr,
+        location: "IFCDC Barbers",
+      },
+      { occurrence: "manual_bypass" },
+    ).catch((e) => console.warn("[manual-bypass] SMS notify:", e?.message || e));
+  } catch (e) {
+    console.warn("[manual-bypass] SMS notify setup:", e?.message || e);
+  }
+
   try {
     const pushNotifier = await import("./pushNotifier.js");
     void pushNotifier

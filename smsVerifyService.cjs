@@ -131,6 +131,44 @@ async function startSmsVerification(
     return allowed;
   }
 
+  // Customer verification SMS requires transactional consent. Super-admin login is exempt.
+  const purposeKey = String(purpose || "customer_phone");
+  if (purposeKey === "customer_phone" && typeof dbQuery === "function") {
+    try {
+      const { ensureSmsConsentTable } = require("./smsMigrations.cjs");
+      await ensureSmsConsentTable(dbQuery);
+      const consent = await dbQuery(
+        `SELECT transactional_opt_in, opted_out_at FROM sms_consent
+         WHERE phone_e164 = $1 LIMIT 1`,
+        [phoneNorm.e164],
+      );
+      const c = consent.rows?.[0];
+      if (!c || c.transactional_opt_in !== true || c.opted_out_at) {
+        await recordAttempt(dbQuery, {
+          phoneE164: phoneNorm.e164,
+          purpose: purposeKey,
+          actorUserId,
+          ipText,
+          action: "send",
+          result: c ? "opted_out" : "no_sms_consent",
+        });
+        return {
+          ok: false,
+          error: c ? "opted_out" : "no_sms_consent",
+          message:
+            "SMS consent is required before sending a verification code. Opt in at /sms-consent or reply START.",
+        };
+      }
+    } catch (e) {
+      console.warn("[sms-verify] consent check failed:", e?.message || e);
+      return {
+        ok: false,
+        error: "consent_check_failed",
+        message: "Could not verify SMS consent. Try again shortly.",
+      };
+    }
+  }
+
   try {
     const client = getTwilioClient();
     const verification = await client.verify.v2

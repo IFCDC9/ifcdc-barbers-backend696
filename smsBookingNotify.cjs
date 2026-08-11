@@ -27,6 +27,62 @@ function resolvePhone(booking = {}) {
   return n.ok ? n.e164 : null;
 }
 
+/** Resolve phone from booking fields, then app_users / email when dbQuery is available. */
+async function resolvePhoneAsync(dbQuery, booking = {}) {
+  const direct = resolvePhone(booking);
+  if (direct) return direct;
+  if (typeof dbQuery !== "function") return null;
+  try {
+    const userId = booking.user_id || booking.userId || null;
+    if (userId) {
+      const u = await dbQuery(
+        `SELECT phone_e164, phone FROM app_users WHERE id = $1::uuid LIMIT 1`,
+        [userId],
+      );
+      const n = normalizeToE164(u.rows?.[0]?.phone_e164 || u.rows?.[0]?.phone || "");
+      if (n.ok) return n.e164;
+    }
+    const email = String(booking.customer_email || booking.customerEmail || "")
+      .trim()
+      .toLowerCase();
+    if (email.includes("@")) {
+      const u = await dbQuery(
+        `SELECT phone_e164, phone FROM app_users
+         WHERE lower(coalesce(email,'')) = $1
+         ORDER BY updated_at DESC NULLS LAST
+         LIMIT 1`,
+        [email],
+      );
+      const n = normalizeToE164(u.rows?.[0]?.phone_e164 || u.rows?.[0]?.phone || "");
+      if (n.ok) return n.e164;
+    }
+  } catch {
+    /* non-fatal */
+  }
+  return null;
+}
+
+/** Clear reminder markers so rescheduled appointments can receive fresh reminders. */
+async function resetBookingReminderMarkers(dbQuery, bookingId) {
+  if (!bookingId || typeof dbQuery !== "function") return;
+  try {
+    await dbQuery(
+      `UPDATE bookings
+       SET reminder_sent_at = NULL,
+           reminder_24h_sent_at = NULL,
+           reminder_2h_sent_at = NULL
+       WHERE id = $1::uuid`,
+      [bookingId],
+    );
+  } catch {
+    try {
+      await dbQuery(`UPDATE bookings SET reminder_sent_at = NULL WHERE id = $1::uuid`, [bookingId]);
+    } catch {
+      /* columns may be absent */
+    }
+  }
+}
+
 function buildBookingSmsBody(event, booking = {}, extra = {}) {
   const customer = String(
     booking.customer_name || booking.customerName || booking.name || "there",
@@ -62,7 +118,7 @@ function buildBookingSmsBody(event, booking = {}, extra = {}) {
  */
 async function notifyBookingSms(dbQuery, event, booking, opts = {}) {
   try {
-    const to = resolvePhone(booking) || opts.to || null;
+    const to = opts.to || (await resolvePhoneAsync(dbQuery, booking)) || null;
     if (!to) return { ok: true, skipped: true, reason: "no_phone" };
     const category = String(event || "booking_created");
     const body = buildBookingSmsBody(category, booking, opts);
@@ -94,4 +150,6 @@ module.exports = {
   buildBookingSmsBody,
   notifyBookingSms,
   resolvePhone,
+  resolvePhoneAsync,
+  resetBookingReminderMarkers,
 };

@@ -417,6 +417,14 @@ async function handleFounderMutateAppointment({ dbQuery, callSid, fromE164, raw,
       if (!upd.rows?.length) {
         throw new Error("update_failed");
       }
+      try {
+        const { afterBookingCancelled } = require("./auraPhase2Hooks.cjs");
+        await afterBookingCancelled(dbQuery, booking, {
+          reason: "Cancelled by founder via AURA voice",
+        });
+      } catch (hookErr) {
+        console.warn("[founder] cancel SMS hook:", hookErr?.message || hookErr);
+      }
       const { emitFounderEvent } = require("./auraFounderNotify.cjs");
       void emitFounderEvent(dbQuery, {
         eventType: "appointment_cancelled",
@@ -495,6 +503,16 @@ async function handleFounderMutateAppointment({ dbQuery, callSid, fromE164, raw,
       [booking.id, dateYmd, timeLabel],
     );
     if (!upd.rows?.length) throw new Error("update_failed");
+    try {
+      const { afterBookingRescheduled } = require("./auraPhase2Hooks.cjs");
+      await afterBookingRescheduled(dbQuery, booking, {
+        fromLabel: `${booking.date || ""} ${booking.time || ""}`.trim(),
+        newDate: dateYmd,
+        newTime: timeLabel,
+      });
+    } catch (hookErr) {
+      console.warn("[founder] reschedule SMS hook:", hookErr?.message || hookErr);
+    }
     const { emitFounderEvent } = require("./auraFounderNotify.cjs");
     void emitFounderEvent(dbQuery, {
       eventType: "appointment_rescheduled",

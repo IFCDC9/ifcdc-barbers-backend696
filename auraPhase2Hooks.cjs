@@ -67,6 +67,16 @@ async function afterBookingRescheduled(dbQuery, booking, { fromLabel, newDate, n
   const results = {};
   if (!booking?.id) return { skipped: true };
 
+  // Allow fresh reminders against the new appointment time (never blocks SMS).
+  try {
+    const { resetBookingReminderMarkers } = require("./smsBookingNotify.cjs");
+    await resetBookingReminderMarkers(dbQuery, booking.id);
+    results.remindersReset = true;
+  } catch (e) {
+    results.remindersReset = false;
+    results.remindersResetError = e?.message || String(e);
+  }
+
   try {
     const { notifyBookingSms } = require("./smsBookingNotify.cjs");
     results.sms = await notifyBookingSms(
