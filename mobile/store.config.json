@@ -24,7 +24,7 @@
         "title": "IFCDC Barbers",
         "subtitle": "Book cuts with style photos",
         "privacyPolicyUrl": "https://ifcdcbarbersapp.com/privacy",
-        "releaseNotes": "Version 1.1.10 (Build 75)\n\n• Call AURA phone line on Home and AURA tabs: ☎️ Call AURA: (989) 514-1064\n• Opens the device dialer (tel:+19895141064); shop-aware number when viewing another shop\n• Booking list shows only Super Admin–approved, publicly bookable providers\n• Nine-language customer experience",
+        "releaseNotes": "Version 1.1.10 (Build 76)\n\n• Super Admin Book for Client: Client phone number (email no longer required)\n• Manual Booking / Bypass Mode saves phone and sends SMS confirmations\n• Complimentary option: No charge · SMS confirmation sent\n• Existing client phone auto-fills when selected\n• Official customer SMS sender: (989) 514-1064",
         "screenshots": {
           "APP_IPAD_PRO_3GEN_129": [
             "store/apple/screenshot/en-US/APP_IPAD_PRO_3GEN_129/iPad Pro 13-inch (M4)-06_AURA.png",
