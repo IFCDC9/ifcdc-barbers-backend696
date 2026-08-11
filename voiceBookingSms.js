@@ -29,6 +29,13 @@ function normalizeMessagingServiceSid() {
   return stripOuterQuotes(process.env.TWILIO_MESSAGING_SERVICE_SID).replace(/\s/g, "");
 }
 
+/** Official customer-facing SMS From (must already be in Messaging Service sender pool). */
+const OFFICIAL_CUSTOMER_SMS_FROM_E164 = "+19895141064";
+
+function getOfficialCustomerSmsFromE164() {
+  return OFFICIAL_CUSTOMER_SMS_FROM_E164;
+}
+
 function normalizeFallbackFromE164() {
   return stripOuterQuotes(process.env.TWILIO_SMS_FALLBACK_FROM || "").replace(/\s/g, "");
 }
@@ -232,6 +239,7 @@ export async function sendConfirmationSMS(data, opts = {}) {
           body: message,
           to,
           messagingServiceSid,
+          from: getOfficialCustomerSmsFromE164(),
         });
         logTwilioCreateResponse(msg);
         return msg.sid;

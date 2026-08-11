@@ -132,17 +132,22 @@ async function afterBookingRescheduled(dbQuery, booking, { fromLabel, newDate, n
   return results;
 }
 
-async function afterBookingCreated(dbQuery, booking) {
+async function afterBookingCreated(dbQuery, booking, { skipSms = false } = {}) {
   const results = {};
   if (!booking?.id) return { skipped: true };
 
-  try {
-    const { notifyBookingSms } = require("./smsBookingNotify.cjs");
-    results.sms = await notifyBookingSms(dbQuery, "booking_created", booking, {
-      occurrence: "created",
-    });
-  } catch (e) {
-    results.sms = { ok: false, error: e?.message || String(e) };
+  // Paid app checkout sends booking_approved separately — skip to avoid duplicate SMS.
+  if (!skipSms) {
+    try {
+      const { notifyBookingSms } = require("./smsBookingNotify.cjs");
+      results.sms = await notifyBookingSms(dbQuery, "booking_created", booking, {
+        occurrence: "created",
+      });
+    } catch (e) {
+      results.sms = { ok: false, error: e?.message || String(e) };
+    }
+  } else {
+    results.sms = { ok: true, skipped: true, reason: "skip_sms_paid_confirmation" };
   }
 
   const flags = auraPhase2Flags();

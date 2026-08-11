@@ -38,9 +38,9 @@ function buildPaymentSmsBody(category, { amount, currency, bookingId, captureId 
     case "payment_success":
       return `IFCDC Barbers: Payment received${amt ? ` (${amt})` : ""}. Booking ref ${ref}. Thank you.`;
     case "payment_failed":
-      return `IFCDC Barbers: Payment did not complete for booking ref ${ref}. No charge confirmed. Reply HELP for support.`;
+      return `IFCDC Barbers: Payment did not complete for booking ref ${ref}. Action required — no charge confirmed. Reply HELP for support.`;
     case "payment_denied":
-      return `IFCDC Barbers: Payment was denied for booking ref ${ref}. Contact your payment provider or try again.`;
+      return `IFCDC Barbers: Payment was denied for booking ref ${ref}. Action required — contact your payment provider or try again.`;
     case "payment_refunded":
       return `IFCDC Barbers: Refund processed${amt ? ` (${amt})` : ""} for booking ref ${ref}.`;
     case "payment_reversed":
@@ -122,6 +122,7 @@ async function notifyPaymentSmsFromPaypalWebhook(dbQuery, body, opts = {}) {
       paymentRef,
       userId: booking?.user_id || null,
       idempotencyKey,
+      force: Boolean(opts.force),
       statusCallbackUrl: publicBase
         ? `${String(publicBase).replace(/\/$/, "")}/api/sms/status`
         : null,

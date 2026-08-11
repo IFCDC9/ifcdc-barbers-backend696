@@ -28,6 +28,9 @@ function resolvePhone(booking = {}) {
 }
 
 function buildBookingSmsBody(event, booking = {}, extra = {}) {
+  const customer = String(
+    booking.customer_name || booking.customerName || booking.name || "there",
+  ).trim();
   const barber = String(booking.barber_name || booking.barberName || "your barber").trim();
   const service = String(booking.service || booking.style_title || "appointment").trim();
   const when = formatWhen(booking.date, booking.time);
@@ -38,19 +41,19 @@ function buildBookingSmsBody(event, booking = {}, extra = {}) {
   const base = `IFCDC Barbers · Ref ${ref}`;
   switch (event) {
     case "booking_created":
-      return `${base}: Booking received — ${service} with ${barber} on ${when} at ${location}.`;
+      return `${base}: Hi ${customer}, we received your booking — ${service} with ${barber} on ${when} at ${location}.`;
     case "booking_approved":
-      return `${base}: Booking confirmed — ${service} with ${barber} on ${when} at ${location}.`;
+      return `${base}: Hi ${customer}, your booking is confirmed — ${service} with ${barber} on ${when} at ${location}. See you then.`;
     case "booking_rescheduled":
-      return `${base}: Rescheduled — ${service} with ${barber} now ${when} at ${location}.`;
+      return `${base}: Hi ${customer}, your appointment was rescheduled — ${service} with ${barber} now ${when} at ${location}.`;
     case "booking_canceled":
-      return `${base}: Booking canceled — ${service} with ${barber} (${when}).`;
+      return `${base}: Hi ${customer}, your booking was canceled — ${service} with ${barber} (${when}).`;
     case "booking_completed":
-      return `${base}: Thanks for visiting — ${service} with ${barber} is marked complete.`;
+      return `${base}: Hi ${customer}, thanks for visiting — ${service} with ${barber} is marked complete.`;
     case "booking_reminder":
-      return `${base}: Reminder — ${service} with ${barber} on ${when} at ${location}.`;
+      return `${base}: Hi ${customer}, reminder — ${service} with ${barber} on ${when} at ${location}.`;
     default:
-      return `${base}: Update — ${service} with ${barber} on ${when}. ${String(extra.note || "").slice(0, 80)}`;
+      return `${base}: Hi ${customer}, update — ${service} with ${barber} on ${when}. ${String(extra.note || "").slice(0, 80)}`;
   }
 }
 
@@ -75,6 +78,7 @@ async function notifyBookingSms(dbQuery, event, booking, opts = {}) {
       bookingId,
       userId: booking.user_id || booking.userId || null,
       idempotencyKey,
+      force: Boolean(opts.force),
       statusCallbackUrl: publicBase
         ? `${String(publicBase).replace(/\/$/, "")}/api/sms/status`
         : null,

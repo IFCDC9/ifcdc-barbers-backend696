@@ -7,6 +7,7 @@ const {
   getTwilioClient,
   getTwilioMessagingServiceSid,
   getTwilioPhoneNumber,
+  getOfficialCustomerSmsFromE164,
   isTwilioMessagingConfigured,
 } = require("./smsTwilioClient.cjs");
 const { normalizeToE164, maskPhoneForDisplay } = require("./smsPhone.cjs");
@@ -248,10 +249,13 @@ async function sendTransactionalSms(
 
   const client = getTwilioClient();
   const messagingServiceSid = getTwilioMessagingServiceSid();
+  // Official customer-facing From (must already be in Messaging Service sender pool).
+  const fromE164 = getOfficialCustomerSmsFromE164();
   const createParams = {
     to: phone.e164,
     body: String(body || "").slice(0, 1500),
     messagingServiceSid,
+    from: fromE164,
   };
   if (statusCallbackUrl) createParams.statusCallback = statusCallbackUrl;
 
@@ -263,14 +267,18 @@ async function sendTransactionalSms(
             twilioSid: msg.sid,
             status: String(msg.status || "queued").toLowerCase(),
             toE164: phone.e164,
-            fromIdentity: messagingServiceSid,
+            fromIdentity: fromE164,
             category: cat,
             bookingId,
             paymentRef,
             userId,
             body,
             idempotencyKey,
-            metadata: { maskedTo: maskPhoneForDisplay(phone.e164) },
+            metadata: {
+              maskedTo: maskPhoneForDisplay(phone.e164),
+              messagingServiceSid,
+              fromE164,
+            },
           }).catch(() => null)
         : null;
     return {
@@ -288,7 +296,7 @@ async function sendTransactionalSms(
         ? await insertLog(dbQuery, {
             status: "failed",
             toE164: phone.e164,
-            fromIdentity: messagingServiceSid || getTwilioPhoneNumber() || null,
+            fromIdentity: fromE164 || messagingServiceSid || getTwilioPhoneNumber() || null,
             category: cat,
             bookingId,
             paymentRef,

@@ -89,10 +89,28 @@ async function fetchTwilioStatus(sid) {
   if (!sid || !isTwilioAccountConfigured()) return null;
   try {
     const msg = await getTwilioClient().messages(sid).fetch();
-    return { status: msg.status, errorCode: msg.errorCode, errorMessage: msg.errorMessage };
+    return {
+      status: msg.status,
+      from: msg.from || null,
+      to: msg.to || null,
+      messagingServiceSid: msg.messagingServiceSid || null,
+      errorCode: msg.errorCode ?? null,
+      errorMessage: msg.errorMessage ?? null,
+    };
   } catch (e) {
     return { status: "fetch_failed", errorMessage: e?.message || String(e) };
   }
+}
+
+async function pollUntilTerminal(sid, { attempts = 12, delayMs = 2500 } = {}) {
+  let last = null;
+  for (let i = 0; i < attempts; i++) {
+    last = await fetchTwilioStatus(sid);
+    const st = String(last?.status || "").toLowerCase();
+    if (["delivered", "failed", "undelivered", "canceled", "cancelled"].includes(st)) break;
+    await new Promise((r) => setTimeout(r, delayMs));
+  }
+  return last;
 }
 
 async function main() {
@@ -170,6 +188,7 @@ async function main() {
     const booking = {
       id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
       phone: ALLOWED,
+      customer_name: "Founder Test",
       barber_name: "IFCDC Controlled",
       service: "SMS Battery Test",
       date: "2026-08-10",
@@ -188,10 +207,46 @@ async function main() {
       const out = await notifyBookingSms(dbQuery, event, booking, {
         occurrence: marker,
         publicBaseUrl: process.env.PUBLIC_BASE_URL,
+        force: true, // controlled approved handset only
       });
-      const tw = out.twilioSid ? await fetchTwilioStatus(out.twilioSid) : null;
-      results.push({ name: event, ...out, twilio: tw });
+      const tw = out.twilioSid ? await pollUntilTerminal(out.twilioSid) : null;
+      results.push({
+        name: event,
+        workflow: event,
+        ok: out.ok,
+        skipped: out.skipped,
+        reason: out.reason,
+        messageSid: out.twilioSid || null,
+        actualFrom: tw?.from || null,
+        deliveryStatus: tw?.status || out.status || null,
+        errorCode: tw?.errorCode ?? null,
+        twilio: tw,
+      });
       await new Promise((r) => setTimeout(r, 800));
+    }
+
+    // AURA / operational transactional (founder handset as destination only)
+    {
+      const out = await sendTransactionalSms(dbQuery, {
+        to: ALLOWED,
+        body: `IFCDC Barbers AURA ops test (${marker}): transactional customer/ops alert path confirmed.`,
+        category: "system",
+        force: true,
+        idempotencyKey: `aura_ops:${marker}`,
+      });
+      const tw = out.twilioSid ? await pollUntilTerminal(out.twilioSid) : null;
+      results.push({
+        name: "aura_operational_notification",
+        workflow: "aura_operational_notification",
+        ok: out.ok,
+        skipped: out.skipped,
+        reason: out.reason,
+        messageSid: out.twilioSid || null,
+        actualFrom: tw?.from || null,
+        deliveryStatus: tw?.status || out.status || null,
+        errorCode: tw?.errorCode ?? null,
+        twilio: tw,
+      });
     }
 
     const paymentCases = [
@@ -247,9 +302,21 @@ async function main() {
       const out = await notifyPaymentSmsFromPaypalWebhook(dbQuery, pc.body, {
         to: ALLOWED,
         publicBaseUrl: process.env.PUBLIC_BASE_URL,
+        force: true,
       });
-      const tw = out.twilioSid ? await fetchTwilioStatus(out.twilioSid) : null;
-      results.push({ name: pc.name, ...out, twilio: tw });
+      const tw = out.twilioSid ? await pollUntilTerminal(out.twilioSid) : null;
+      results.push({
+        name: pc.name,
+        workflow: pc.name,
+        ok: out.ok,
+        skipped: out.skipped,
+        reason: out.reason,
+        messageSid: out.twilioSid || null,
+        actualFrom: tw?.from || null,
+        deliveryStatus: tw?.status || out.status || null,
+        errorCode: tw?.errorCode ?? null,
+        twilio: tw,
+      });
       await new Promise((r) => setTimeout(r, 800));
     }
 
@@ -265,10 +332,12 @@ async function main() {
     const first = await notifyPaymentSmsFromPaypalWebhook(dbQuery, dupBody, {
       to: ALLOWED,
       publicBaseUrl: process.env.PUBLIC_BASE_URL,
+      force: true,
     });
     const second = await notifyPaymentSmsFromPaypalWebhook(dbQuery, dupBody, {
       to: ALLOWED,
       publicBaseUrl: process.env.PUBLIC_BASE_URL,
+      force: true,
     });
     results.push({
       name: "paypal_duplicate_prevention",

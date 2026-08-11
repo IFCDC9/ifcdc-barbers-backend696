@@ -56,19 +56,23 @@ test("payment SMS body has amount + ref but no card/paypal account numbers", () 
   assert.doesNotMatch(body, /card/i);
 });
 
-test("booking SMS body includes barber service when/ref without payment secrets", () => {
+test("booking SMS body includes customer name barber service when/shop/ref", () => {
   const body = buildBookingSmsBody("booking_approved", {
     id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
-    barber_name: "IFCDC Barbers",
+    customer_name: "Alex",
+    barber_name: "Jordan",
     service: "Taper",
     date: "2026-08-06",
     time: "13:30",
-    location: "HQ",
+    location: "IFCDC Barbers HQ",
   });
+  assert.match(body, /Alex/);
+  assert.match(body, /confirmed/i);
   assert.match(body, /Taper/);
-  assert.match(body, /IFCDC Barbers/);
+  assert.match(body, /Jordan/);
   assert.match(body, /2026-08-06/);
   assert.match(body, /13:30/);
+  assert.match(body, /IFCDC Barbers HQ/);
   assert.match(body, /AAAAAAAA/i);
   assert.equal(shortRef("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"), "AAAAAAAA");
 });

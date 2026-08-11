@@ -45,13 +45,12 @@ export async function scanAndSendBookingReminders() {
   }
 
   const { getResend, sendEmail } = require("./emailResend.cjs");
-  if (!getResend()) return { sent: 0, skipped: "no_resend" };
-
   const { customerEmailLabels, tLabel } = require("./customerEmailI18n.cjs");
   const { resolveCustomerLanguage } = await import("./customerLanguage.js");
+  // Email is best-effort; SMS still runs when Resend is unavailable.
 
   const r = await dbQuery(
-    `SELECT id, customer_name, customer_email, barber_name, service, date::text AS date, to_char(time, 'HH24:MI') AS time,
+    `SELECT id, customer_name, customer_email, barber_name, service, phone, date::text AS date, to_char(time, 'HH24:MI') AS time,
             user_id
      FROM bookings
      WHERE reminder_sent_at IS NULL
@@ -65,38 +64,67 @@ export async function scanAndSendBookingReminders() {
   const rows = r.rows || [];
   let sent = 0;
   for (const row of rows) {
-    const to = String(row.customer_email || "").trim();
-    if (!to) continue;
     const name = String(row.customer_name || "there").trim();
     const when = `${row.date} ${row.time}`.trim();
-    const language = await resolveCustomerLanguage({
-      userId: row.user_id || null,
-      customerEmail: to,
-    });
-    const labels = customerEmailLabels(language);
-    const barber = String(row.barber_name || "your barber");
-    const service = String(row.service || "service");
-    const subj = tLabel(labels, "reminderSubject");
-    const html = `<p>${escapeHtml(tLabel(labels, "reminderHi", { name }))}</p>
+    const to = String(row.customer_email || "").trim();
+    let emailOk = false;
+    if (to && getResend()) {
+      try {
+        const language = await resolveCustomerLanguage({
+          userId: row.user_id || null,
+          customerEmail: to,
+        });
+        const labels = customerEmailLabels(language);
+        const barber = String(row.barber_name || "your barber");
+        const service = String(row.service || "service");
+        const subj = tLabel(labels, "reminderSubject");
+        const html = `<p>${escapeHtml(tLabel(labels, "reminderHi", { name }))}</p>
 <p>${tLabel(labels, "reminderBody", {
       when: escapeHtml(when),
       barber: escapeHtml(barber),
       service: escapeHtml(service),
     })}</p>
 <p>${escapeHtml(tLabel(labels, "reminderSeeYou"))}</p>`;
+        const out = await sendEmail({
+          to,
+          subject: subj,
+          html,
+          text: tLabel(labels, "reminderText", { name, when }),
+          label: "booking-reminder",
+        });
+        if (out?.error) throw new Error(out.error.message || "send failed");
+        emailOk = true;
+      } catch (e) {
+        console.warn("[reminder] email skip booking", row.id, e?.message || e);
+      }
+    }
+
+    // SMS is independent of email success/failure (and of missing email).
+    let smsOk = false;
     try {
-      const out = await sendEmail({
-        to,
-        subject: subj,
-        html,
-        text: tLabel(labels, "reminderText", { name, when }),
-        label: "booking-reminder",
+      const { notifyBookingSms } = require("./smsBookingNotify.cjs");
+      const sms = await notifyBookingSms(dbQuery, "booking_reminder", row, {
+        occurrence: "30m",
       });
-      if (out?.error) throw new Error(out.error.message || "send failed");
+      smsOk = Boolean(sms?.ok && !sms?.skipped);
+    } catch (e) {
+      console.warn("[reminder] sms skip booking", row.id, e?.message || e);
+    }
+
+    if (!emailOk && !smsOk && !to) {
+      // No channel available — leave reminder_sent_at null so a later pass can retry if phone/email appears.
+      continue;
+    }
+    if (!emailOk && !smsOk) {
+      console.warn("[reminder] both channels failed", row.id);
+      continue;
+    }
+
+    try {
       await dbQuery(`UPDATE bookings SET reminder_sent_at = NOW() WHERE id = $1::uuid`, [row.id]);
       sent += 1;
     } catch (e) {
-      console.warn("[reminder] skip booking", row.id, e?.message || e);
+      console.warn("[reminder] mark sent failed", row.id, e?.message || e);
     }
   }
   return { sent, checked: rows.length };
@@ -113,7 +141,6 @@ async function scanWindow({
   if (!phase2) return { sent: 0, skipped: "phase2_unavailable" };
   const { emails, log } = phase2;
   const { getResend } = require("./emailResend.cjs");
-  if (!getResend()) return { sent: 0, skipped: "no_resend" };
 
   await log.ensureAuraReminderColumns(dbQuery);
 
@@ -147,46 +174,71 @@ async function scanWindow({
   let sent = 0;
   for (const row of rows) {
     const to = String(row.customer_email || "").trim();
-    if (!to) continue;
-    try {
-      const out = await emails.sendAuraReminderEmail(
-        {
-          customerName: row.customer_name,
-          customerEmail: to,
-          barberName: row.barber_name,
-          service: row.service,
-          date: row.date,
-          time: row.time_ampm || row.time,
-          price: row.price,
-          bookingId: row.id,
-        },
-        windowLabel,
-      );
-      if (!out?.ok) throw new Error(out?.error || "send_failed");
-      await dbQuery(`UPDATE bookings SET ${column} = NOW() WHERE id = $1::uuid`, [row.id]);
-      await log.logAuraAction(dbQuery, {
-        action: `reminder_${windowLabel}`,
-        bookingId: row.id,
-        result: "sent",
-        metadata: { to },
-      });
+    let emailOk = false;
+    if (to && getResend()) {
       try {
-        const { notifyBookingSms } = require("./smsBookingNotify.cjs");
-        void notifyBookingSms(dbQuery, "booking_reminder", row, {
-          occurrence: windowLabel,
-        }).catch(() => {});
-      } catch {
-        /* SMS optional */
+        const out = await emails.sendAuraReminderEmail(
+          {
+            customerName: row.customer_name,
+            customerEmail: to,
+            barberName: row.barber_name,
+            service: row.service,
+            date: row.date,
+            time: row.time_ampm || row.time,
+            price: row.price,
+            bookingId: row.id,
+          },
+          windowLabel,
+        );
+        if (!out?.ok) throw new Error(out?.error || "send_failed");
+        emailOk = true;
+        await log.logAuraAction(dbQuery, {
+          action: `reminder_${windowLabel}`,
+          bookingId: row.id,
+          result: "sent",
+          metadata: { to, channel: "email" },
+        });
+      } catch (e) {
+        console.warn(`[reminder-${windowLabel}] email skip`, row.id, e?.message || e);
+        if (phase2.flags.adminAlerts) {
+          void emails.sendAuraAdminFailureAlert({
+            kind: `reminder_${windowLabel}_failed`,
+            detail: { bookingId: row.id, error: e?.message || String(e) },
+          });
+        }
       }
-      sent += 1;
-    } catch (e) {
-      console.warn(`[reminder-${windowLabel}] skip`, row.id, e?.message || e);
-      if (phase2.flags.adminAlerts) {
-        void emails.sendAuraAdminFailureAlert({
-          kind: `reminder_${windowLabel}_failed`,
-          detail: { bookingId: row.id, error: e?.message || String(e) },
+    }
+
+    let smsOk = false;
+    let smsSkipped = false;
+    try {
+      const { notifyBookingSms } = require("./smsBookingNotify.cjs");
+      const sms = await notifyBookingSms(dbQuery, "booking_reminder", row, {
+        occurrence: windowLabel,
+      });
+      smsSkipped = Boolean(sms?.skipped);
+      smsOk = Boolean(sms?.ok && !sms?.skipped);
+      if (sms?.ok) {
+        await log.logAuraAction(dbQuery, {
+          action: `reminder_${windowLabel}_sms`,
+          bookingId: row.id,
+          result: smsSkipped ? "skipped" : "sent",
+          metadata: { reason: sms.reason || null, twilioSid: sms.twilioSid || null },
         });
       }
+    } catch (e) {
+      console.warn(`[reminder-${windowLabel}] sms skip`, row.id, e?.message || e);
+    }
+
+    // Mark window sent when email and/or SMS actually delivered to avoid duplicate loops.
+    // Hard failures leave the column null so a later pass can retry.
+    if (!(emailOk || smsOk)) continue;
+
+    try {
+      await dbQuery(`UPDATE bookings SET ${column} = NOW() WHERE id = $1::uuid`, [row.id]);
+      sent += 1;
+    } catch (e) {
+      console.warn(`[reminder-${windowLabel}] mark sent failed`, row.id, e?.message || e);
     }
   }
   return { sent, checked: rows.length, window: windowLabel };

@@ -10,6 +10,10 @@
 #   If credentials only work on live API, PAYPAL_ENV must be live (sandbox → invalid_client).
 #   DATABASE_URL (Supabase / Postgres)
 #   TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER (recommended)
+#   TWILIO_MESSAGING_SERVICE_SID (IFCDC Barbers AI SMS Engine — existing MG…)
+#   SMS_NOTIFICATIONS_ENABLED=1  (transactional booking/payment/reminder SMS)
+#   SMS_VERIFY_ENABLED=1         (Twilio Verify — account/security codes)
+#   Customer-facing SMS From is fixed in code to +19895141064 (Messaging Service pool)
 #   OPENAI_API_KEY, JWT_SECRET, GOOGLE_CLIENT_ID (if used)
 #   SUPABASE_URL
 #   SUPABASE_PUBLISHABLE_KEY or SUPABASE_ANON_KEY (public API key)
@@ -75,6 +79,9 @@ services:
         sync: false
       # Customer multilingual (emails + preferred_language). Safe with website i18n rollout.
       - key: MULTI_LANGUAGE_DROPDOWN_V2
+        value: "1"
+      # Transactional SMS via existing Messaging Service (From +19895141064 set in code)
+      - key: SMS_NOTIFICATIONS_ENABLED
         value: "1"
 
   # AURA / Twilio voice + chat API — same Node backend as backend696 (repo root), NOT client/

@@ -1256,11 +1256,15 @@ async function sendPaidConfirmationForAppBooking({ fresh, row, captureId, settle
     try {
       const { afterBookingCreated } = require("./auraPhase2Hooks.cjs");
       const { dbQuery } = await loadDb();
-      void afterBookingCreated(dbQuery, {
-        ...fresh,
-        customer_email: toEmail,
-        total_paid: view.amountPaid,
-      }).catch((e) => console.warn("[aura-phase2] created hook:", e?.message || e));
+      void afterBookingCreated(
+        dbQuery,
+        {
+          ...fresh,
+          customer_email: toEmail,
+          total_paid: view.amountPaid,
+        },
+        { skipSms: true },
+      ).catch((e) => console.warn("[aura-phase2] created hook:", e?.message || e));
     } catch (auraErr) {
       console.warn("[aura-phase2] created hook setup:", auraErr?.message || auraErr);
     }

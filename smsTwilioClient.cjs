@@ -34,6 +34,13 @@ function getTwilioPhoneNumber() {
   ).replace(/\s/g, "");
 }
 
+/** Official customer-facing SMS From (must be in Messaging Service sender pool). */
+const OFFICIAL_CUSTOMER_SMS_FROM_E164 = "+19895141064";
+
+function getOfficialCustomerSmsFromE164() {
+  return OFFICIAL_CUSTOMER_SMS_FROM_E164;
+}
+
 function isTwilioAccountConfigured() {
   const sid = getTwilioAccountSid();
   const token = getTwilioAuthToken();
@@ -114,6 +121,8 @@ module.exports = {
   getTwilioVerifyServiceSid,
   getTwilioMessagingServiceSid,
   getTwilioPhoneNumber,
+  getOfficialCustomerSmsFromE164,
+  OFFICIAL_CUSTOMER_SMS_FROM_E164,
   isTwilioAccountConfigured,
   isTwilioMessagingConfigured,
   isTwilioVerifyConfigured,
