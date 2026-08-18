@@ -51,9 +51,19 @@ const checks = [
     },
   },
   {
-    name: "app finalize returns emailSent",
+    name: "app finalize never returns emailError to clients",
     file: "appBookingCheckoutRoutes.cjs",
-    ok: () => read("appBookingCheckoutRoutes.cjs").includes("emailSent,"),
+    ok: () => {
+      const s = read("appBookingCheckoutRoutes.cjs");
+      const start = s.indexOf("function buildFinalizeSuccessPayload");
+      const end = s.indexOf("async function sendPaidConfirmationForAppBooking");
+      const payloadFn = start >= 0 && end > start ? s.slice(start, end) : "";
+      return (
+        payloadFn.includes("Never leak email provider failures") &&
+        payloadFn.includes("smsSent: Boolean(smsSent)") &&
+        !/\bemailError\b/.test(payloadFn)
+      );
+    },
   },
   {
     name: "PayPal already-captured fallback",

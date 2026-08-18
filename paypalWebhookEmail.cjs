@@ -40,8 +40,56 @@ async function handlePaypalWebhookEvent(body) {
   if (SMS_PAYMENT_EVENTS.has(type) || /PAYMENT\.CAPTURE|REFUND|REVERSAL|CANCEL/i.test(type)) {
     try {
       const { dbQuery } = await import("./db.js");
-      const { notifyPaymentSmsFromPaypalWebhook } = require("./smsPaymentNotify.cjs");
-      await notifyPaymentSmsFromPaypalWebhook(dbQuery, body);
+      if (type === "PAYMENT.CAPTURE.COMPLETED") {
+        const { notifyPaidBookingConfirmationSms } = require("./smsBookingNotify.cjs");
+        const resource = body.resource || {};
+        const captureId = String(resource.id || "").trim();
+        const orderId = String(
+          resource.supplementary_data?.related_ids?.order_id || resource.order_id || "",
+        ).trim();
+        let booking = null;
+        if (captureId || orderId) {
+          const r = await dbQuery(
+            `SELECT id, user_id, customer_email, phone, customer_name, barber_name, service, style_title,
+                    date::text AS date, to_char(time, 'HH24:MI') AS time, payment_status,
+                    paypal_capture_id, paypal_order_id, amount_paid, amount_charged, total_amount
+             FROM bookings
+             WHERE ($1 <> '' AND paypal_capture_id = $1)
+                OR ($2 <> '' AND paypal_order_id = $2)
+             ORDER BY created_at DESC NULLS LAST
+             LIMIT 1`,
+            [captureId, orderId],
+          );
+          booking = r.rows?.[0] || null;
+        }
+        if (booking) {
+          const sms = await notifyPaidBookingConfirmationSms(dbQuery, booking, {
+            captureId: captureId || booking.paypal_capture_id,
+            amountPaid: booking.amount_paid || booking.amount_charged || resource.amount?.value,
+          });
+          if (sms?.ok && !sms?.skipped) {
+            console.log("[paypal] paid confirmation SMS sent", {
+              bookingId: booking.id,
+              twilioSid: sms.twilioSid || null,
+              status: sms.status || null,
+              to: sms.maskedTo || null,
+            });
+          } else {
+            console.error("[paypal] paid confirmation SMS not delivered", {
+              bookingId: booking.id,
+              reason: sms?.reason || sms?.error || "unknown",
+              twilioSid: sms?.twilioSid || null,
+              status: sms?.status || null,
+            });
+          }
+        } else {
+          const { notifyPaymentSmsFromPaypalWebhook } = require("./smsPaymentNotify.cjs");
+          await notifyPaymentSmsFromPaypalWebhook(dbQuery, body);
+        }
+      } else {
+        const { notifyPaymentSmsFromPaypalWebhook } = require("./smsPaymentNotify.cjs");
+        await notifyPaymentSmsFromPaypalWebhook(dbQuery, body);
+      }
     } catch (e) {
       console.warn("[paypal] payment SMS notify skipped:", e?.message || e);
     }

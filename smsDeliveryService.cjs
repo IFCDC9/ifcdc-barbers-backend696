@@ -36,6 +36,21 @@ function previewBody(body) {
   return String(body || "").replace(/\s+/g, " ").trim().slice(0, 240);
 }
 
+const SUCCESSFUL_SMS_STATUSES = new Set([
+  "accepted",
+  "queued",
+  "sending",
+  "sent",
+  "delivered",
+  "receiving",
+  "received",
+  "scheduled",
+]);
+
+function isSuccessfulSmsLogStatus(status) {
+  return SUCCESSFUL_SMS_STATUSES.has(String(status || "").trim().toLowerCase());
+}
+
 async function findByIdempotencyKey(dbQuery, key) {
   if (!key) return null;
   const r = await dbQuery(
@@ -47,6 +62,45 @@ async function findByIdempotencyKey(dbQuery, key) {
 
 async function insertLog(dbQuery, row) {
   await ensureSmsMessageLogTable(dbQuery);
+  if (row.idempotencyKey) {
+    const existing = await findByIdempotencyKey(dbQuery, row.idempotencyKey);
+    if (existing?.id) {
+      const upd = await dbQuery(
+        `UPDATE sms_message_log
+            SET twilio_sid = COALESCE($2, twilio_sid),
+                status = COALESCE($3, status),
+                to_e164 = COALESCE($4, to_e164),
+                from_identity = COALESCE($5, from_identity),
+                category = COALESCE($6, category),
+                booking_id = COALESCE($7::uuid, booking_id),
+                payment_ref = COALESCE($8, payment_ref),
+                user_id = COALESCE($9::uuid, user_id),
+                body_preview = COALESCE($10, body_preview),
+                error_code = $11,
+                error_message = $12,
+                metadata = COALESCE($13::jsonb, metadata),
+                updated_at = NOW()
+          WHERE id = $1
+          RETURNING *`,
+        [
+          existing.id,
+          row.twilioSid || null,
+          row.status || "queued",
+          row.toE164 || null,
+          row.fromIdentity || null,
+          row.category,
+          row.bookingId || null,
+          row.paymentRef || null,
+          row.userId || null,
+          previewBody(row.body),
+          row.errorCode != null ? String(row.errorCode) : null,
+          row.errorMessage || null,
+          row.metadata ? JSON.stringify(row.metadata) : null,
+        ],
+      );
+      return upd.rows?.[0] || existing;
+    }
+  }
   const ins = await dbQuery(
     `INSERT INTO sms_message_log
        (twilio_sid, status, to_e164, from_identity, category, booking_id, payment_ref,
@@ -175,13 +229,16 @@ async function sendTransactionalSms(
   if (idempotencyKey && typeof dbQuery === "function") {
     try {
       const existing = await findByIdempotencyKey(dbQuery, idempotencyKey);
-      if (existing) {
+      // Only treat as sent if Twilio actually accepted the message.
+      // Failed / skipped_consent / skipped_flag_off rows must not block a real send.
+      if (existing && isSuccessfulSmsLogStatus(existing.status) && existing.twilio_sid) {
         return {
           ok: true,
           skipped: true,
           reason: "idempotent_duplicate",
           logId: existing.id,
           twilioSid: existing.twilio_sid || null,
+          status: existing.status || null,
           duplicate: true,
         };
       }
@@ -268,11 +325,22 @@ async function sendTransactionalSms(
 
   try {
     const msg = await client.messages.create(createParams);
+    const twilioSid = msg.sid || null;
+    const createStatus = String(msg.status || "queued").toLowerCase();
+    console.log("[sms] twilio create OK", {
+      category: cat,
+      bookingId,
+      twilioSid,
+      status: createStatus,
+      to: maskPhoneForDisplay(phone.e164),
+      from: fromE164,
+      messagingServiceSid: messagingServiceSid ? `${String(messagingServiceSid).slice(0, 4)}…` : null,
+    });
     const log =
       typeof dbQuery === "function"
         ? await insertLog(dbQuery, {
-            twilioSid: msg.sid,
-            status: String(msg.status || "queued").toLowerCase(),
+            twilioSid,
+            status: createStatus,
             toE164: phone.e164,
             fromIdentity: fromE164,
             category: cat,
@@ -291,13 +359,25 @@ async function sendTransactionalSms(
     return {
       ok: true,
       logId: log?.id || null,
-      twilioSid: msg.sid,
-      status: msg.status,
+      twilioSid,
+      status: createStatus,
+      to: phone.e164,
+      maskedTo: maskPhoneForDisplay(phone.e164),
+      errorCode: msg.errorCode || msg.error_code || null,
+      errorMessage: msg.errorMessage || msg.error_message || null,
     };
   } catch (e) {
     const err = e?.message || String(e);
     const code = e?.code || e?.status || null;
-    console.warn("[sms] send failed:", err, { to: maskPhoneForDisplay(phone.e164), category: cat });
+    console.error("[sms] twilio create FAILED", {
+      category: cat,
+      bookingId,
+      to: maskPhoneForDisplay(phone.e164),
+      error: err,
+      errorCode: code,
+      from: fromE164,
+      messagingServiceSid: messagingServiceSid ? `${String(messagingServiceSid).slice(0, 4)}…` : null,
+    });
     const log =
       typeof dbQuery === "function"
         ? await insertLog(dbQuery, {
@@ -314,7 +394,14 @@ async function sendTransactionalSms(
             errorMessage: err,
           }).catch(() => null)
         : null;
-    return { ok: false, reason: "send_failed", error: err, logId: log?.id };
+    return {
+      ok: false,
+      reason: "send_failed",
+      error: err,
+      errorCode: code,
+      logId: log?.id,
+      maskedTo: maskPhoneForDisplay(phone.e164),
+    };
   }
 }
 
@@ -324,4 +411,5 @@ module.exports = {
   updateLogBySid,
   findByIdempotencyKey,
   canSendTransactionalSms,
+  isSuccessfulSmsLogStatus,
 };

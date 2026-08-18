@@ -98,6 +98,26 @@ function extractOrderCurrency(order) {
   return "USD";
 }
 
+function extractPayerPhoneFromPayPalOrder(order) {
+  const payer = order?.payer || {};
+  const phoneObj = payer.phone?.phone_number || payer.phone_number || {};
+  const country = String(phoneObj.country_code || payer.phone?.country_code || "").replace(/\D/g, "");
+  const national = String(phoneObj.national_number || phoneObj.number || "").replace(/\D/g, "");
+  if (country && national) return `+${country}${national}`;
+  if (national) return national;
+  const shippingPhone =
+    order?.purchase_units?.[0]?.shipping?.phone_number ||
+    order?.purchase_units?.[0]?.shipping?.address?.phone ||
+    "";
+  const raw = String(
+    shippingPhone ||
+      payer.phone_number ||
+      (typeof payer.phone === "string" ? payer.phone : "") ||
+      "",
+  ).trim();
+  return raw || null;
+}
+
 /** Read-only order GET — does not capture. */
 async function getPayPalOrder(client, orderID) {
   const getReq = new paypalSdk.orders.OrdersGetRequest(orderID);
@@ -250,6 +270,7 @@ module.exports = {
   extractCaptureIdFromOrder,
   extractOrderAmountUsd,
   extractOrderCurrency,
+  extractPayerPhoneFromPayPalOrder,
   getPayPalOrder,
   captureOrGetCompletedPayPalOrder,
 };

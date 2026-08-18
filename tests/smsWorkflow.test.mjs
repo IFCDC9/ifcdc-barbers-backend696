@@ -16,7 +16,7 @@ const { normalizeToE164 } = require("../smsPhone.cjs");
 const { isSmsNotificationsEnabled, isSmsVerifyEnabled, smsFlags } = require("../smsFlags.cjs");
 const { startSmsVerification, checkSmsVerification } = require("../smsVerifyService.cjs");
 const { sendTransactionalSms, findByIdempotencyKey } = require("../smsDeliveryService.cjs");
-const { notifyBookingSms, buildBookingSmsBody } = require("../smsBookingNotify.cjs");
+const { notifyBookingSms, buildBookingSmsBody, notifyPaidBookingConfirmationSms, buildPaidConfirmationSmsBody } = require("../smsBookingNotify.cjs");
 const {
   mapPaypalEventToCategory,
   buildPaymentSmsBody,
@@ -46,6 +46,16 @@ function memoryDb() {
     }
     if (/SELECT \* FROM sms_message_log WHERE idempotency_key/i.test(s)) {
       const hit = rows.find((r) => r.idempotency_key === params[0]);
+      return { rows: hit ? [hit] : [] };
+    }
+    if (/UPDATE sms_message_log/i.test(s)) {
+      const hit =
+        rows.find((r) => r.id === params[0]) ||
+        rows.find((r) => r.twilio_sid && r.twilio_sid === params[0]);
+      if (hit) {
+        if (params[1] != null) hit.twilio_sid = hit.twilio_sid || params[1];
+        if (params[2] != null) hit.status = params[2];
+      }
       return { rows: hit ? [hit] : [] };
     }
     if (/FROM bookings/i.test(s)) {
@@ -228,4 +238,138 @@ test("email fallback contract: SMS skip leaves email path free to run", async ()
   assert.equal(sms.skipped, true);
   const emailWouldStillRun = sms.skipped === true || sms.ok === false;
   assert.equal(emailWouldStillRun, true);
+});
+
+test("paid confirmation SMS body matches client receipt format", () => {
+  const body = buildPaidConfirmationSmsBody(
+    {
+      id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      customer_name: "Alex",
+      barber_name: "IFCDC Barbers",
+      service: "Haircut",
+      date: "2026-08-20",
+      time: "14:00",
+    },
+    { amountPaid: 35 },
+  );
+  assert.match(body, /IFCDC Barbers · Ref AAAAAAAA/);
+  assert.match(body, /Payment received — \$35\.00/);
+  assert.match(body, /Your Haircut with IFCDC Barbers is confirmed for Aug 20 at 2:00 PM/);
+  assert.match(body, /Thank you for booking, Alex/);
+  assert.match(body, /Support: \+19895141064/);
+});
+
+test("paid confirmation SMS is not sent without capture or for unpaid bookings", async () => {
+  const dbQuery = memoryDb();
+  const booking = {
+    id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+    phone: "+15551234567",
+    payment_status: "unpaid",
+    service: "Haircut",
+    date: "2026-08-20",
+    time: "14:00",
+  };
+  const noCapture = await notifyPaidBookingConfirmationSms(dbQuery, booking, {});
+  assert.equal(noCapture.ok, true);
+  assert.equal(noCapture.skipped, true);
+  assert.equal(noCapture.reason, "no_capture");
+
+  const unpaid = await notifyPaidBookingConfirmationSms(dbQuery, booking, { captureId: "CAPUNPAID" });
+  assert.equal(unpaid.ok, true);
+  assert.equal(unpaid.skipped, true);
+  assert.equal(unpaid.reason, "payment_not_paid");
+
+  const cancelled = await notifyPaidBookingConfirmationSms(
+    dbQuery,
+    { ...booking, payment_status: "payment_failed" },
+    { captureId: "CAPFAIL" },
+  );
+  assert.equal(cancelled.skipped, true);
+  assert.equal(cancelled.reason, "payment_not_paid");
+});
+
+test("paid confirmation SMS idempotency blocks finalize + webhook duplicates", async () => {
+  const dbQuery = memoryDb();
+  const key = "booking:paid_confirmation:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+  dbQuery._rows.push({
+    id: "existing-paid-sms",
+    idempotency_key: key,
+    twilio_sid: "SMpaid1",
+    status: "queued",
+    category: "booking_approved",
+  });
+
+  const retry = await sendTransactionalSms(dbQuery, {
+    to: "+15551234567",
+    body: "IFCDC Barbers · Ref AAAAAAAA: Payment received — $35.00.",
+    category: "booking_approved",
+    bookingId: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+    paymentRef: "CAPDUP",
+    idempotencyKey: key,
+    force: true,
+  });
+  assert.equal(retry.ok, true);
+  assert.equal(retry.skipped, true);
+  assert.equal(retry.reason, "idempotent_duplicate");
+  assert.equal(retry.twilioSid, "SMpaid1");
+  assert.equal(dbQuery._rows.filter((r) => r.idempotency_key === key).length, 1);
+});
+
+test("failed SMS log does not block a later paid-confirmation send", async () => {
+  const dbQuery = memoryDb();
+  const key = "booking:paid_confirmation:bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+  dbQuery._rows.push({
+    id: "failed-paid-sms",
+    idempotency_key: key,
+    twilio_sid: null,
+    status: "failed",
+    category: "booking_approved",
+  });
+
+  const retry = await sendTransactionalSms(dbQuery, {
+    to: "+15551234567",
+    body: "IFCDC Barbers · Ref BBBBBBBB: Payment received — $35.00.",
+    category: "booking_approved",
+    bookingId: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+    paymentRef: "CAPRETRY",
+    idempotencyKey: key,
+    force: true,
+  });
+  assert.notEqual(retry.reason, "idempotent_duplicate");
+  assert.equal(retry.ok, false);
+  assert.equal(retry.reason, "twilio_messaging_not_configured");
+});
+
+test("paid confirmation SMS is attempted even when notification flags are off", async () => {
+  assert.equal(isSmsNotificationsEnabled(), false);
+  const dbQuery = memoryDb();
+  const sms = await notifyPaidBookingConfirmationSms(
+    dbQuery,
+    {
+      id: "cccccccc-cccc-cccc-cccc-cccccccccccc",
+      phone: "+15551234567",
+      payment_status: "paid_in_full",
+      paypal_capture_id: "CAPFORCE",
+      service: "Haircut",
+      date: "2026-08-20",
+      time: "14:00",
+    },
+    { captureId: "CAPFORCE", alreadySettled: true, amountPaid: 35 },
+  );
+  assert.equal(sms.functionCalled, true);
+  assert.notEqual(sms.reason, "sms_notifications_disabled");
+  assert.equal(sms.ok, false);
+  assert.equal(sms.reason, "twilio_messaging_not_configured");
+});
+
+test("email failure path is independent of SMS call order in finalize helper", () => {
+  const src = require("node:fs").readFileSync(
+    new URL("../appBookingCheckoutRoutes.cjs", import.meta.url),
+    "utf8",
+  );
+  const smsIdx = src.indexOf("notifyPaidBookingConfirmationSms");
+  const emailIdx = src.indexOf("sendBookingEmail");
+  assert.ok(smsIdx > 0 && emailIdx > smsIdx);
+  assert.match(src, /SMS already attempted/);
+  assert.match(src, /Never leak email provider failures/);
 });

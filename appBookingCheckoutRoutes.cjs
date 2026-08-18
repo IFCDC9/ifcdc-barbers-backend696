@@ -46,7 +46,12 @@ const {
   normalizePayPalEnvValue,
   getPayPalSecret,
 } = require("./paypalEnv.cjs");
-const { captureOrGetCompletedPayPalOrder, getPayPalOrder, parsePayPalSdkError } = require("./paypalOrderCaptureHelpers.cjs");
+const {
+  captureOrGetCompletedPayPalOrder,
+  getPayPalOrder,
+  parsePayPalSdkError,
+  extractPayerPhoneFromPayPalOrder,
+} = require("./paypalOrderCaptureHelpers.cjs");
 const { sendOrphanedPaymentAdminAlert } = require("./orphanedPaymentAlert.cjs");
 const { refundCapturedBookingOrAlert } = require("./orphanPaymentRefund.cjs");
 const { bookingDateToYmd } = require("./bookingDateYmd.cjs");
@@ -129,6 +134,43 @@ function assertValidPayPalAmount(label, value) {
     throw err;
   }
   return round2(n);
+}
+
+async function stampBookingCustomerPhone(dbQuery, { bookingId, userId, rawPhone, paypalOrder } = {}) {
+  if (!bookingId) return null;
+  const { normalizeToE164, maskPhoneForDisplay } = require("./smsPhone.cjs");
+  const candidates = [rawPhone];
+  try {
+    if (userId) {
+      const ph = await dbQuery(
+        `SELECT phone_e164, phone FROM app_users WHERE id = $1::uuid LIMIT 1`,
+        [userId],
+      );
+      candidates.push(ph.rows?.[0]?.phone_e164, ph.rows?.[0]?.phone);
+    }
+  } catch (userPhoneErr) {
+    console.error("[app-bookings] app_users phone lookup failed:", userPhoneErr?.message || userPhoneErr);
+  }
+  if (paypalOrder) {
+    candidates.push(extractPayerPhoneFromPayPalOrder(paypalOrder));
+  }
+  for (const candidate of candidates) {
+    const n = normalizeToE164(String(candidate || "").trim());
+    if (!n.ok) continue;
+    await dbQuery(`UPDATE bookings SET phone = $2 WHERE id = $1::uuid`, [bookingId, n.e164]);
+    console.log("[app-bookings] phone stamped", {
+      bookingId,
+      phone: maskPhoneForDisplay(n.e164),
+    });
+    return n.e164;
+  }
+  console.error("[app-bookings] no valid E.164 phone to stamp", {
+    bookingId,
+    userId: userId || null,
+    hadRawPhone: Boolean(String(rawPhone || "").trim()),
+    hadPaypalPayerPhone: Boolean(paypalOrder && extractPayerPhoneFromPayPalOrder(paypalOrder)),
+  });
+  return null;
 }
 
 function extractCaptureIdFromOrder(capture) {
@@ -807,6 +849,16 @@ router.post("/start", async (req, res) => {
     }
     logBookingInsertSuccess(bookingId);
 
+    try {
+      await stampBookingCustomerPhone(dbQuery, {
+        bookingId,
+        userId: resolvedUserId,
+        rawPhone: body.phone || body.customerPhone || body.customer_phone,
+      });
+    } catch (phoneErr) {
+      console.error("[app-bookings] phone stamp failed at start:", phoneErr?.message || phoneErr);
+    }
+
     let paypalAmount = assertValidPayPalAmount("total", total);
     let amountString = paypalAmount.toFixed(2);
     let rewardReservation = null;
@@ -1162,14 +1214,14 @@ function buildFinalizeSuccessPayload({
   row,
   view,
   emailSent,
-  emailError,
+  smsSent = false,
   paymentCaptured = true,
   alreadyCaptured = false,
   needsReview = false,
   reviewReason = null,
 }) {
   const customerEmail = String(fresh?.customer_email || row?.customer_email || "").trim();
-  return {
+  const payload = {
     verified: true,
     paymentCaptured,
     bookingConfirmed: Boolean(view?.isPaidInFull ?? view?.captureId),
@@ -1179,8 +1231,7 @@ function buildFinalizeSuccessPayload({
     captureId: captureId || view?.captureId || null,
     bookingId: fresh?.id || row?.id || null,
     customerEmail,
-    emailSent,
-    emailError,
+    smsSent: Boolean(smsSent),
     alreadyCaptured,
     booking: {
       id: fresh.id,
@@ -1193,21 +1244,102 @@ function buildFinalizeSuccessPayload({
       total: view.totalDue,
     },
   };
+  // Never leak email provider failures to the customer app.
+  // Installed apps treat emailSent:false as a customer-facing payment error.
+  if (emailSent === true) payload.emailSent = true;
+  return payload;
 }
 
-async function sendPaidConfirmationForAppBooking({ fresh, row, captureId, settlement }) {
+async function sendPaidConfirmationForAppBooking({ fresh, row, captureId, settlement, paypalOrder = null }) {
   let emailSent = false;
   let emailError = null;
+  let smsSent = false;
+  let smsError = null;
+  let smsSkipped = null;
+  let smsTwilioSid = null;
+  let smsStatus = null;
+  let smsMaskedTo = null;
   if (!shouldSendPaidConfirmationEmail(settlement.paymentStatus)) {
     emailError = `Payment status "${settlement.paymentStatus}" — confirmation email not sent`;
-    return { emailSent, emailError };
+    console.error("[booking-sms] paid confirmation skipped — payment not paid", {
+      bookingId: fresh?.id,
+      captureId,
+      paymentStatus: settlement.paymentStatus,
+    });
+    return { emailSent, emailError, smsSent, smsError, smsSkipped: "payment_not_paid", smsTwilioSid, smsStatus };
   }
+
+  try {
+    const { notifyPaidBookingConfirmationSms } = require("./smsBookingNotify.cjs");
+    const { dbQuery } = await loadDb();
+    const stamped = await stampBookingCustomerPhone(dbQuery, {
+      bookingId: fresh.id,
+      userId: fresh.user_id || row.user_id,
+      rawPhone: fresh.phone || row.phone,
+      paypalOrder,
+    });
+    if (stamped) {
+      fresh.phone = stamped;
+      row.phone = stamped;
+    }
+    const view = bookingPaymentViewFromRow(fresh);
+    const sms = await notifyPaidBookingConfirmationSms(
+      dbQuery,
+      {
+        ...fresh,
+        phone: stamped || fresh.phone || row.phone,
+        user_id: fresh.user_id || row.user_id,
+        paypal_capture_id: captureId || fresh.paypal_capture_id || row.paypal_capture_id,
+        payment_status: settlement.paymentStatus || fresh.payment_status,
+      },
+      {
+        captureId,
+        amountPaid: view.amountPaid,
+        alreadySettled: true,
+        barberName: fresh.barber_name || row.barber_name,
+        service: fresh.service || row.service,
+      },
+    );
+    smsSent = Boolean(sms?.ok) && !sms?.skipped;
+    smsSkipped = sms?.skipped ? sms.reason : null;
+    smsTwilioSid = sms?.twilioSid || null;
+    smsStatus = sms?.status || null;
+    smsMaskedTo = sms?.maskedTo || null;
+    if (!sms?.ok) smsError = sms?.error || sms?.reason || "sms_failed";
+    else if (sms?.skipped && sms.reason !== "idempotent_duplicate") {
+      smsError = sms.reason;
+    }
+    const smsLog = {
+      bookingId: fresh.id,
+      captureId,
+      functionCalled: true,
+      smsSent,
+      smsSkipped,
+      smsError: smsError || null,
+      twilioSid: smsTwilioSid,
+      status: smsStatus,
+      to: smsMaskedTo,
+    };
+    if (smsSent || sms?.reason === "idempotent_duplicate") {
+      console.log("[booking-sms] paid confirmation", smsLog);
+    } else {
+      console.error("[booking-sms] paid confirmation not delivered", smsLog);
+    }
+  } catch (smsErr) {
+    smsError = smsErr?.message || String(smsErr);
+    console.error("[booking-sms] paid confirmation EXCEPTION (email will still run):", smsError);
+  }
+
   const { sendBookingEmail, isDeliverableCustomerEmail } = require("./bookingEmail.cjs");
   const toEmail = String(fresh.customer_email || row.customer_email || "").trim();
   if (!isDeliverableCustomerEmail(toEmail)) {
     emailError = `Customer email not deliverable: ${toEmail || "(empty)"}`;
-    console.error("[app-bookings] confirmation email SKIPPED:", emailError, { bookingId: fresh.id });
-    return { emailSent, emailError };
+    console.error("[app-bookings] confirmation email SKIPPED (SMS already attempted):", emailError, {
+      bookingId: fresh.id,
+      smsSent,
+      twilioSid: smsTwilioSid,
+    });
+    return { emailSent, emailError, smsSent, smsError, smsSkipped, smsTwilioSid, smsStatus };
   }
   try {
     const view = bookingPaymentViewFromRow(fresh);
@@ -1270,12 +1402,14 @@ async function sendPaidConfirmationForAppBooking({ fresh, row, captureId, settle
     }
   } catch (mailErr) {
     emailError = mailErr?.message || String(mailErr);
-    console.error("[booking-email] FAILED (app-bookings finalize) — queued pending_delivery:", emailError, {
+    console.error("[booking-email] FAILED (app-bookings finalize) — queued pending_delivery; SMS already attempted:", emailError, {
       paypalOrderId: row.paypal_order_id,
       captureId,
       bookingId: fresh.id,
       customerEmail: toEmail,
       emailSent: false,
+      smsSent,
+      twilioSid: smsTwilioSid,
     });
     try {
       const { logAuraAction } = require("./auraActionLog.cjs");
@@ -1320,7 +1454,7 @@ async function sendPaidConfirmationForAppBooking({ fresh, row, captureId, settle
       /* ignore */
     }
   }
-  return { emailSent, emailError };
+  return { emailSent, emailError, smsSent, smsError, smsSkipped, smsTwilioSid, smsStatus };
 }
 
 router.post("/finalize", async (req, res) => {
@@ -1350,7 +1484,7 @@ router.post("/finalize", async (req, res) => {
 
     // Load pending booking BEFORE capturing so closed/vacation days never take money.
     const foundEarly = await dbQuery(
-      `SELECT id, user_id, business_id, customer_name, customer_email, service, service_duration_minutes,
+      `SELECT id, user_id, business_id, customer_name, customer_email, phone, service, service_duration_minutes,
               barber_id, barber_name, date, time, total_price, deposit_amount, tip_amount,
               remaining_balance, platform_fee, amount_paid, amount_charged, balance_due,
               service_price, payment_status, paypal_capture_id, total_amount, booking_status,
@@ -1523,7 +1657,7 @@ router.post("/finalize", async (req, res) => {
 
     if (!row) {
       const found = await dbQuery(
-        `SELECT id, user_id, business_id, customer_name, customer_email, service, service_duration_minutes,
+        `SELECT id, user_id, business_id, customer_name, customer_email, phone, service, service_duration_minutes,
                 barber_id, barber_name, date, time, total_price, deposit_amount, tip_amount,
                 remaining_balance, platform_fee, amount_paid, amount_charged, balance_due,
                 service_price, payment_status, paypal_capture_id, total_amount, loyalty_redemption_id
@@ -1531,6 +1665,19 @@ router.post("/finalize", async (req, res) => {
         [orderID],
       );
       row = found.rows?.[0] || null;
+    }
+
+    if (row?.id) {
+      const stamped = await stampBookingCustomerPhone(dbQuery, {
+        bookingId: row.id,
+        userId: row.user_id,
+        rawPhone: row.phone,
+        paypalOrder: capture,
+      }).catch((phoneErr) => {
+        console.error("[app-bookings] post-capture phone stamp failed:", phoneErr?.message || phoneErr);
+        return null;
+      });
+      if (stamped) row.phone = stamped;
     }
 
     if (!row) {
@@ -1606,11 +1753,12 @@ router.post("/finalize", async (req, res) => {
       isBookingPaymentSettled(row)
     ) {
       const view = bookingPaymentViewFromRow(row);
-      const { emailSent, emailError } = await sendPaidConfirmationForAppBooking({
+      const { emailSent, smsSent, smsTwilioSid, smsStatus, smsError } = await sendPaidConfirmationForAppBooking({
         fresh: row,
         row,
         captureId,
         settlement: { paymentStatus: PAYMENT_STATUS.PAID_IN_FULL },
+        paypalOrder: capture,
       });
       console.log("[app-bookings] finalize idempotent OK", {
         paypalOrderId: orderID,
@@ -1618,6 +1766,10 @@ router.post("/finalize", async (req, res) => {
         bookingId: row.id,
         customerEmail: row.customer_email,
         emailSent,
+        smsSent,
+        twilioSid: smsTwilioSid || null,
+        smsStatus: smsStatus || null,
+        smsError: smsError || null,
       });
       return res.json(
         buildFinalizeSuccessPayload({
@@ -1627,7 +1779,7 @@ router.post("/finalize", async (req, res) => {
           row,
           view,
           emailSent,
-          emailError,
+          smsSent,
           alreadyCaptured,
         }),
       );
@@ -1701,11 +1853,11 @@ router.post("/finalize", async (req, res) => {
     await dbQuery(sql, values);
 
     const updated = await dbQuery(
-      `SELECT id, barber_name, date, time, service, service_price, total_price, amount, deposit_amount,
+      `SELECT id, user_id, barber_name, date, time, service, service_price, total_price, amount, deposit_amount,
               balance_due, remaining_balance, platform_fee, tip_amount, amount_charged, amount_paid,
               total_paid, payment_status, payment_method, payment_provider, paypal_capture_id,
-              stripe_payment_intent_id, payment_id, total_amount, customer_name, customer_email,
-              service_duration_minutes, barber_name
+              stripe_payment_intent_id, payment_id, total_amount, customer_name, customer_email, phone,
+              service_duration_minutes
        FROM bookings WHERE id = $1::uuid LIMIT 1`,
       [row.id],
     );
@@ -1758,25 +1910,13 @@ router.post("/finalize", async (req, res) => {
       });
     }
 
-    const { emailSent, emailError } = await sendPaidConfirmationForAppBooking({
+    const { emailSent, smsSent, smsTwilioSid, smsStatus, smsError } = await sendPaidConfirmationForAppBooking({
       fresh,
       row,
       captureId,
       settlement,
+      paypalOrder: capture,
     });
-
-    // Best-effort booking SMS (gated; never affects payment settlement).
-    try {
-      const { notifyBookingSms } = require("./smsBookingNotify.cjs");
-      const { dbQuery: dq } = await loadDb();
-      void notifyBookingSms(dq, "booking_approved", {
-        ...fresh,
-        phone: fresh.phone || row.phone,
-        user_id: fresh.user_id || row.user_id,
-      }).catch((e) => console.warn("[app-bookings] SMS notify:", e?.message || e));
-    } catch (e) {
-      console.warn("[app-bookings] SMS notify setup:", e?.message || e);
-    }
 
     console.log("[app-bookings] finalize SUCCESS", {
       paypalOrderId: orderID,
@@ -1784,7 +1924,10 @@ router.post("/finalize", async (req, res) => {
       bookingId: fresh.id,
       customerEmail: fresh.customer_email,
       emailSent,
-      emailError: emailError || null,
+      smsSent,
+      twilioSid: smsTwilioSid || null,
+      smsStatus: smsStatus || null,
+      smsError: smsError || null,
       alreadyCaptured,
     });
 
@@ -1848,7 +1991,7 @@ router.post("/finalize", async (req, res) => {
         row,
         view,
         emailSent,
-        emailError,
+        smsSent,
         alreadyCaptured,
       }),
     );
@@ -1900,10 +2043,8 @@ router.post("/finalize", async (req, res) => {
               captureId,
               bookingId: found.rows[0].id,
               customerEmail: found.rows[0].customer_email,
-              emailSent: false,
-              emailError: "Booking needs manual review — retry finalize or contact support.",
               message:
-                "Your PayPal payment was received. We are finalizing your booking — check your email shortly.",
+                "Your PayPal payment was received. We are finalizing your booking.",
             });
           }
         }
