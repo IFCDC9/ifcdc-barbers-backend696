@@ -185,11 +185,11 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
   };
 
   const login = async () => {
-    if (submittingRef.current) return;
+    if (submittingRef.current || busy) return;
     submittingRef.current = true;
     try {
       setBusy(true);
-      const codeInput = verificationCode.trim();
+      const codeInput = verificationCode.trim().replace(/\s+/g, "");
       if (needsVerification && !codeInput) {
         Alert.alert("Sign in", "Enter the verification code from your text message.");
         return;
@@ -199,7 +199,11 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
       if (result.requiresVerification) {
         setNeedsVerification(true);
         const rawMsg = String(result.json?.message || "").trim();
-        const err = String(result.json?.error || "");
+        const err = String(result.json?.error || "").trim();
+        const cleanRateLimit =
+          err === "rate_limited" ||
+          err === "retry_too_soon" ||
+          /rate[_\s-]?limit|wait a moment|try again later/i.test(`${err} ${rawMsg}`);
         const smsAccepted =
           result.json?.smsAccepted === true || (result.json as { smsAccepted?: boolean })?.smsAccepted === true;
         const smsFailed =
@@ -210,11 +214,18 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
           );
         // If we already submitted a code, do not treat this as a fresh "code sent" success.
         if (submittedCode) {
-          const msg =
-            rawMsg ||
-            "That verification code wasn’t accepted. Check the latest text and try again.";
+          const msg = cleanRateLimit
+            ? "Please wait a moment and try again."
+            : /^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$/.test(rawMsg || err)
+              ? "Please wait a moment and try again."
+              : rawMsg ||
+                "That verification code wasn’t accepted. Check the latest text and try again.";
           setVerificationHint(msg);
           Alert.alert("Sign in", msg);
+          return;
+        }
+        if (cleanRateLimit) {
+          setVerificationHint("Please wait a moment and try again.");
           return;
         }
         setVerificationHint(

@@ -111,10 +111,23 @@ export default function Login() {
             `${data.error || ""} ${rawMsg}`,
           );
         if (needsVerification && String(form.verificationCode || "").trim()) {
+          const looksRaw =
+            /^(rate_limited|retry_too_soon)$/i.test(rawMsg) ||
+            /^(rate_limited|retry_too_soon)$/i.test(String(data.error || ""));
           setStatus(
-            rawMsg ||
-              "That verification code wasn’t accepted. Check the latest text and try again.",
+            looksRaw
+              ? "Please wait a moment and try again."
+              : rawMsg ||
+                  "That verification code wasn’t accepted. Check the latest text and try again.",
           );
+          return;
+        }
+        if (
+          data.error === "rate_limited" ||
+          data.error === "retry_too_soon" ||
+          /rate[_\s-]?limit/i.test(rawMsg)
+        ) {
+          setStatus("Please wait a moment and try again.");
           return;
         }
         if (!smsAccepted || smsFailed) {

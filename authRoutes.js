@@ -134,8 +134,11 @@ async function startSuperAdminSmsLogin({ user, email, req }) {
 
   const { isSmsVerifyEnabled } = require("./smsFlags.cjs");
   const { isTwilioVerifyConfigured } = require("./smsTwilioClient.cjs");
+  const { resolveVerifyServiceSid } = require("./smsVerifyService.cjs");
+  const resolvedVerifySid = await resolveVerifyServiceSid().catch(() => "");
+  const verifyReady = Boolean(resolvedVerifySid) || isTwilioVerifyConfigured();
 
-  if (isSmsVerifyEnabled() && isTwilioVerifyConfigured()) {
+  if (isSmsVerifyEnabled() && verifyReady) {
     const { startSmsVerification } = require("./smsVerifyService.cjs");
     const started = await startSmsVerification(dbQuery, {
       phone,
@@ -165,16 +168,30 @@ async function startSuperAdminSmsLogin({ user, email, req }) {
         email,
         toMasked,
         error: started.error,
+        alreadySent: Boolean(started.alreadySent),
       });
+      // If a code was already sent recently, keep the user on the verify step
+      // instead of blocking sign-in entirely.
+      if (started.alreadySent) {
+        return {
+          ok: true,
+          delivery: "sms_verify_pending",
+          toMasked,
+          expiresInSec: 600,
+          alreadySent: true,
+          twilioSid: null,
+          status: "pending",
+        };
+      }
       return {
         ok: false,
         status: 429,
         body: {
           ok: false,
           success: false,
-          error: started.error,
+          error: "rate_limited",
           smsAccepted: false,
-          message: "We couldn’t send your verification code. Please try again.",
+          message: "Please wait a moment and try again.",
           requiresVerification: true,
           verificationDelivery: "sms",
         },
@@ -271,10 +288,12 @@ async function consumeSuperAdminSmsOrChallenge({ email, req, verificationCode, u
   const { isSmsVerifyEnabled } = require("./smsFlags.cjs");
   const { isTwilioVerifyConfigured } = require("./smsTwilioClient.cjs");
   const code = String(verificationCode || "").trim().replace(/\s+/g, "");
+  const { checkSmsVerification, resolveVerifyServiceSid } = require("./smsVerifyService.cjs");
+  const resolvedVerifySid = await resolveVerifyServiceSid().catch(() => "");
+  const verifyReady = Boolean(resolvedVerifySid) || isTwilioVerifyConfigured();
 
-  if (phoneRes.ok && isSmsVerifyEnabled() && isTwilioVerifyConfigured()) {
+  if (phoneRes.ok && isSmsVerifyEnabled() && verifyReady) {
     try {
-      const { checkSmsVerification } = require("./smsVerifyService.cjs");
       console.log("[auth] Super Admin SMS Verify check start", {
         email,
         toMasked: phoneRes.masked,
@@ -306,8 +325,10 @@ async function consumeSuperAdminSmsOrChallenge({ email, req, verificationCode, u
         ok: false,
         error: smsCheck.error || "invalid_code",
         message:
-          smsCheck.message ||
-          "Invalid or expired SMS code. Request a new code by signing in again.",
+          smsCheck.error === "rate_limited" || smsCheck.error === "retry_too_soon"
+            ? "Please wait a moment and try again."
+            : smsCheck.message ||
+              "Invalid or expired SMS code. Request a new code by signing in again.",
         verificationFailed: true,
       };
     } catch (e) {
@@ -771,16 +792,30 @@ export function createAuthRouter({ sendEmail }) {
     try {
       const email = normalizeEmail(req.body?.email);
       const password = String(req.body?.password || "");
-      const verificationCode = String(
+      let verificationCode = String(
         req.body?.verificationCode ||
+          req.body?.verification_code ||
           req.body?.recoveryCode ||
           req.body?.code ||
           req.body?.otp ||
           req.body?.smsCode ||
+          req.body?.sms_code ||
           "",
       )
         .trim()
         .replace(/\s+/g, "");
+      // Also accept a bare 4–8 digit field if older clients put the SMS code in an unexpected key.
+      if (!verificationCode && req.body && typeof req.body === "object") {
+        for (const [k, v] of Object.entries(req.body)) {
+          if (/pass|email|channel|prefer/i.test(k)) continue;
+          const s = String(v || "").trim().replace(/\s+/g, "");
+          if (/^\d{4,8}$/.test(s)) {
+            verificationCode = s;
+            break;
+          }
+        }
+      }
+      const hasVerificationCode = Boolean(verificationCode);
       if (!email || !password) {
         return res.status(400).json({ error: "missing_credentials", message: "Email and password required" });
       }
@@ -823,6 +858,12 @@ export function createAuthRouter({ sendEmail }) {
 
       // Super Admin step-up: SMS-primary (Twilio Verify or Messaging Service). Other roles unchanged.
       if (isCanonicalSuperAdmin && isSuperAdminLoginStepUpEnabled()) {
+        console.log("[auth] Super Admin login step-up", {
+          email,
+          hasVerificationCode,
+          codeLen: verificationCode ? verificationCode.length : 0,
+          bodyKeys: req.body && typeof req.body === "object" ? Object.keys(req.body) : [],
+        });
         if (verificationCode) {
           const verified = await consumeSuperAdminSmsOrChallenge({
             email,
@@ -838,13 +879,19 @@ export function createAuthRouter({ sendEmail }) {
               req,
               metadata: { error: verified.error, channel: "sms" },
             });
-            return res.status(401).json({
+            const status =
+              verified.error === "rate_limited" || verified.error === "retry_too_soon" ? 429 : 401;
+            return res.status(status).json({
               ok: false,
               success: false,
               error: verified.error || "invalid_code",
-              message: verified.message || "Invalid or expired SMS code.",
+              message:
+                verified.error === "rate_limited" || verified.error === "retry_too_soon"
+                  ? "Please wait a moment and try again."
+                  : verified.message || "Invalid or expired SMS code.",
               requiresVerification: true,
               verificationDelivery: "sms",
+              smsAccepted: false,
             });
           }
           void writeSecurityAudit({
@@ -875,6 +922,7 @@ export function createAuthRouter({ sendEmail }) {
                 delivery: started.delivery,
                 toMasked: started.toMasked || null,
                 challengeId: started.challengeId || null,
+                alreadySent: Boolean(started.alreadySent),
               },
             });
             return res.status(200).json({
@@ -889,7 +937,9 @@ export function createAuthRouter({ sendEmail }) {
               expiresInSec: started.expiresInSec,
               twilioSid: started.twilioSid || undefined,
               twilioStatus: started.status || undefined,
-              message: "Verification code sent by text.",
+              message: started.alreadySent
+                ? "Enter the verification code we already sent by text."
+                : "Verification code sent by text.",
             });
           } catch (e) {
             console.warn("[auth] SMS start failed:", e?.message || e);

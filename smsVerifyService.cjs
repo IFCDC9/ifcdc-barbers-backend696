@@ -14,9 +14,31 @@ const {
   ensureAppUserPhoneVerificationColumns,
 } = require("./smsMigrations.cjs");
 
-const MAX_SENDS_PER_HOUR = Number(process.env.SMS_VERIFY_MAX_SENDS_PER_HOUR || 5);
-const MAX_CHECKS_PER_HOUR = Number(process.env.SMS_VERIFY_MAX_CHECKS_PER_HOUR || 10);
-const MIN_SECONDS_BETWEEN_SENDS = Number(process.env.SMS_VERIFY_MIN_SECONDS_BETWEEN_SENDS || 45);
+const MAX_SENDS_PER_HOUR = Number(process.env.SMS_VERIFY_MAX_SENDS_PER_HOUR || 8);
+const MAX_CHECKS_PER_HOUR = Number(process.env.SMS_VERIFY_MAX_CHECKS_PER_HOUR || 30);
+const MIN_SECONDS_BETWEEN_SENDS = Number(process.env.SMS_VERIFY_MIN_SECONDS_BETWEEN_SENDS || 25);
+const SUPER_ADMIN_MAX_SENDS_PER_HOUR = Number(process.env.SMS_VERIFY_SA_MAX_SENDS_PER_HOUR || 15);
+const SUPER_ADMIN_MAX_CHECKS_PER_HOUR = Number(process.env.SMS_VERIFY_SA_MAX_CHECKS_PER_HOUR || 40);
+const SUPER_ADMIN_MIN_SECONDS_BETWEEN_SENDS = Number(
+  process.env.SMS_VERIFY_SA_MIN_SECONDS_BETWEEN_SENDS || 20,
+);
+const RATE_LIMIT_USER_MESSAGE = "Please wait a moment and try again.";
+
+function limitsForPurpose(purpose) {
+  const p = String(purpose || "");
+  if (p === "super_admin_login") {
+    return {
+      maxSends: SUPER_ADMIN_MAX_SENDS_PER_HOUR,
+      maxChecks: SUPER_ADMIN_MAX_CHECKS_PER_HOUR,
+      minSecondsBetweenSends: SUPER_ADMIN_MIN_SECONDS_BETWEEN_SENDS,
+    };
+  }
+  return {
+    maxSends: MAX_SENDS_PER_HOUR,
+    maxChecks: MAX_CHECKS_PER_HOUR,
+    minSecondsBetweenSends: MIN_SECONDS_BETWEEN_SENDS,
+  };
+}
 
 async function recordAttempt(dbQuery, row) {
   if (typeof dbQuery !== "function") return;
@@ -36,21 +58,29 @@ async function recordAttempt(dbQuery, row) {
   );
 }
 
-async function countRecent(dbQuery, { phoneE164, purpose, action, sinceMinutes }) {
+/** Only count real Twilio traffic — never rate_limited / retry_too_soon (those used to lock users out permanently). */
+async function countRecent(dbQuery, { phoneE164, purpose, action, sinceMinutes, results = null }) {
+  const params = [phoneE164, purpose, action, String(sinceMinutes)];
+  let resultClause = "";
+  if (Array.isArray(results) && results.length > 0) {
+    resultClause = ` AND result = ANY($${params.length + 1}::text[])`;
+    params.push(results);
+  }
   const r = await dbQuery(
     `SELECT COUNT(*)::int AS n FROM sms_verify_attempts
      WHERE phone_e164 = $1 AND purpose = $2 AND action = $3
-       AND created_at > NOW() - ($4::text || ' minutes')::interval`,
-    [phoneE164, purpose, action, String(sinceMinutes)],
+       AND created_at > NOW() - ($4::text || ' minutes')::interval
+       ${resultClause}`,
+    params,
   );
   return Number(r.rows?.[0]?.n || 0);
 }
 
-async function secondsSinceLastSend(dbQuery, { phoneE164, purpose }) {
+async function secondsSinceLastSuccessfulSend(dbQuery, { phoneE164, purpose }) {
   const r = await dbQuery(
     `SELECT EXTRACT(EPOCH FROM (NOW() - created_at))::int AS secs
      FROM sms_verify_attempts
-     WHERE phone_e164 = $1 AND purpose = $2 AND action = 'send'
+     WHERE phone_e164 = $1 AND purpose = $2 AND action = 'send' AND result = 'sent'
      ORDER BY created_at DESC LIMIT 1`,
     [phoneE164, purpose],
   );
@@ -58,40 +88,89 @@ async function secondsSinceLastSend(dbQuery, { phoneE164, purpose }) {
   return secs == null ? null : Number(secs);
 }
 
+async function hasRecentSuccessfulSend(dbQuery, { phoneE164, purpose, withinMinutes = 10 }) {
+  const n = await countRecent(dbQuery, {
+    phoneE164,
+    purpose,
+    action: "send",
+    sinceMinutes: withinMinutes,
+    results: ["sent"],
+  });
+  return n > 0;
+}
+
 async function assertSendAllowed(dbQuery, { phoneE164, purpose }) {
   await ensureSmsVerifyRateLimitTable(dbQuery);
+  const limits = limitsForPurpose(purpose);
   const sends = await countRecent(dbQuery, {
     phoneE164,
     purpose,
     action: "send",
     sinceMinutes: 60,
+    results: ["sent"],
   });
-  if (sends >= MAX_SENDS_PER_HOUR) {
-    return { ok: false, error: "rate_limited", message: "Too many code requests. Try again later." };
+  if (sends >= limits.maxSends) {
+    const alreadySent = await hasRecentSuccessfulSend(dbQuery, { phoneE164, purpose, withinMinutes: 15 });
+    return {
+      ok: false,
+      error: "rate_limited",
+      message: RATE_LIMIT_USER_MESSAGE,
+      alreadySent,
+    };
   }
-  const since = await secondsSinceLastSend(dbQuery, { phoneE164, purpose });
-  if (since != null && since < MIN_SECONDS_BETWEEN_SENDS) {
+  const since = await secondsSinceLastSuccessfulSend(dbQuery, { phoneE164, purpose });
+  if (since != null && since < limits.minSecondsBetweenSends) {
+    const alreadySent = since < 600;
     return {
       ok: false,
       error: "retry_too_soon",
-      message: `Wait ${MIN_SECONDS_BETWEEN_SENDS - since}s before requesting another code.`,
-      retryAfterSec: MIN_SECONDS_BETWEEN_SENDS - since,
+      message: RATE_LIMIT_USER_MESSAGE,
+      retryAfterSec: limits.minSecondsBetweenSends - since,
+      alreadySent,
     };
   }
   return { ok: true };
 }
 
 async function assertCheckAllowed(dbQuery, { phoneE164, purpose }) {
+  const limits = limitsForPurpose(purpose);
   const checks = await countRecent(dbQuery, {
     phoneE164,
     purpose,
     action: "check",
     sinceMinutes: 60,
+    results: ["approved", "denied", "failed"],
   });
-  if (checks >= MAX_CHECKS_PER_HOUR) {
-    return { ok: false, error: "rate_limited", message: "Too many verification attempts. Try again later." };
+  if (checks >= limits.maxChecks) {
+    return { ok: false, error: "rate_limited", message: RATE_LIMIT_USER_MESSAGE };
   }
   return { ok: true };
+}
+
+async function resolveVerifyServiceSid() {
+  const {
+    getTwilioClient,
+    getTwilioVerifyServiceSid,
+    isTwilioAccountConfigured,
+  } = require("./smsTwilioClient.cjs");
+  let sid = getTwilioVerifyServiceSid();
+  if (sid && /^VA[0-9a-fA-F]{32}$/.test(sid)) return sid;
+  if (!isTwilioAccountConfigured()) return "";
+  try {
+    const client = getTwilioClient();
+    const services = await client.verify.v2.services.list({ limit: 10 });
+    const match =
+      services.find((s) => /AURA|IFCDC|Verification|Verify/i.test(String(s.friendlyName || ""))) ||
+      services[0];
+    if (match?.sid && /^VA[0-9a-fA-F]{32}$/.test(match.sid)) {
+      process.env.TWILIO_VERIFY_SERVICE_SID = match.sid;
+      console.log("[sms-verify] resolved TWILIO_VERIFY_SERVICE_SID prefix:", `${match.sid.slice(0, 4)}…`);
+      return match.sid;
+    }
+  } catch (e) {
+    console.warn("[sms-verify] Verify SID resolve failed:", e?.message || e);
+  }
+  return getTwilioVerifyServiceSid() || "";
 }
 
 /**
@@ -105,7 +184,8 @@ async function startSmsVerification(
   if (!isSmsVerifyEnabled()) {
     return { ok: false, error: "sms_verify_disabled", message: "SMS verification is not enabled." };
   }
-  if (!isTwilioVerifyConfigured()) {
+  const resolvedSid = await resolveVerifyServiceSid();
+  if (!resolvedSid && !isTwilioVerifyConfigured()) {
     return {
       ok: false,
       error: "twilio_verify_not_configured",
@@ -120,13 +200,15 @@ async function startSmsVerification(
     purpose: String(purpose || "customer_phone"),
   });
   if (!allowed.ok) {
+    // Do not record as action=send — that used to inflate the hourly cap permanently.
     await recordAttempt(dbQuery, {
       phoneE164: phoneNorm.e164,
       purpose: String(purpose || "customer_phone"),
       actorUserId,
       ipText,
-      action: "send",
+      action: "send_blocked",
       result: allowed.error,
+      metadata: { alreadySent: Boolean(allowed.alreadySent) },
     });
     return allowed;
   }
@@ -149,7 +231,7 @@ async function startSmsVerification(
           purpose: purposeKey,
           actorUserId,
           ipText,
-          action: "send",
+          action: "send_blocked",
           result: c ? "opted_out" : "no_sms_consent",
         });
         return {
@@ -170,9 +252,17 @@ async function startSmsVerification(
   }
 
   try {
+    const verifySid = await resolveVerifyServiceSid();
+    if (!verifySid) {
+      return {
+        ok: false,
+        error: "twilio_verify_not_configured",
+        message: "TWILIO_VERIFY_SERVICE_SID is not configured.",
+      };
+    }
     const client = getTwilioClient();
     const verification = await client.verify.v2
-      .services(getTwilioVerifyServiceSid())
+      .services(verifySid)
       .verifications.create({ to: phoneNorm.e164, channel: "sms" });
 
     await recordAttempt(dbQuery, {
@@ -236,7 +326,8 @@ async function checkSmsVerification(
   if (!isSmsVerifyEnabled()) {
     return { ok: false, error: "sms_verify_disabled", message: "SMS verification is not enabled." };
   }
-  if (!isTwilioVerifyConfigured()) {
+  const resolvedSid = await resolveVerifyServiceSid();
+  if (!resolvedSid && !isTwilioVerifyConfigured()) {
     return { ok: false, error: "twilio_verify_not_configured", message: "Verify service not configured." };
   }
   const phoneNorm = normalizeToE164(phone);
@@ -256,16 +347,24 @@ async function checkSmsVerification(
       purpose: String(purpose || "customer_phone"),
       actorUserId,
       ipText,
-      action: "check",
+      action: "check_blocked",
       result: allowed.error,
     });
     return allowed;
   }
 
   try {
+    const verifySid = await resolveVerifyServiceSid();
+    if (!verifySid) {
+      return {
+        ok: false,
+        error: "twilio_verify_not_configured",
+        message: "Could not validate verification code. Please try again.",
+      };
+    }
     const client = getTwilioClient();
     const check = await client.verify.v2
-      .services(getTwilioVerifyServiceSid())
+      .services(verifySid)
       .verificationChecks.create({ to: phoneNorm.e164, code: rawCode });
 
     const approved = String(check.status || "").toLowerCase() === "approved";
@@ -309,13 +408,23 @@ async function checkSmsVerification(
       metadata: { error: err },
     });
     console.warn("[sms-verify] check failed:", err);
-    return { ok: false, error: "verify_check_failed", message: "Could not validate verification code." };
+    const notFound = /not found|20404/i.test(err);
+    return {
+      ok: false,
+      error: notFound ? "code_expired" : "verify_check_failed",
+      message: notFound
+        ? "That verification code expired. Sign in again to receive a new SMS code."
+        : "Could not validate verification code. Please try again.",
+    };
   }
 }
 
 module.exports = {
   startSmsVerification,
   checkSmsVerification,
+  resolveVerifyServiceSid,
+  hasRecentSuccessfulSend,
+  RATE_LIMIT_USER_MESSAGE,
   MAX_SENDS_PER_HOUR,
   MAX_CHECKS_PER_HOUR,
   MIN_SECONDS_BETWEEN_SENDS,

@@ -81,6 +81,17 @@ export function mapAuthErrorToMessage(json: JsonAuth | null, status: number): st
   if (code === "invalid_code" || code === "code_expired" || code === "code_already_used") {
     return msg || "Invalid or expired verification code.";
   }
+  if (code === "rate_limited" || code === "retry_too_soon") {
+    return "Please wait a moment and try again.";
+  }
+  if (code === "verify_check_failed" || code === "verify_send_failed" || code === "sms_start_failed") {
+    return msg || "Please wait a moment and try again.";
+  }
+
+  // Never surface raw backend error codes (snake_case) to customers.
+  if (/^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$/.test(code) && (!msg || msg === code)) {
+    return "Please wait a moment and try again.";
+  }
 
   if (code === "forbidden_role") return msg || "That account type cannot be created here.";
   if (code === "invalid_role") return msg || "Choose a valid account type.";

@@ -27,6 +27,14 @@ export function userFacingApiError(e: unknown, fallback = DEFAULT): string {
   const msg = sanitize(e.message);
   if (!msg || looksLikeStackTrace(msg)) return fallback;
 
+  // Never show raw backend error codes (e.g. rate_limited).
+  if (/^(rate_limited|retry_too_soon|verify_check_failed|verify_send_failed|sms_start_failed|invalid_code)$/i.test(msg)) {
+    return "Please wait a moment and try again.";
+  }
+  if (/^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$/.test(msg)) {
+    return "Please wait a moment and try again.";
+  }
+
   if (msg.includes("network error") || msg.includes("Network request failed") || msg.includes("AbortError")) {
     return UX.errorConnection;
   }
