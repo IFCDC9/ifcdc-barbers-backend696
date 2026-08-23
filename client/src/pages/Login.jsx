@@ -78,24 +78,8 @@ export default function Login() {
         needsVerification ? form.verificationCode : undefined,
       );
 
-      if (data?.requiresVerification === true) {
-        setNeedsVerification(true);
-        const rawMsg = String(data.message || "").trim();
-        const smsAccepted = data.smsAccepted === true;
-        const smsFailed =
-          data.smsAccepted === false ||
-          /couldn.?t send|could not send|sms_start_failed|sms_phone_unconfigured/i.test(
-            `${data.error || ""} ${rawMsg}`,
-          );
-        if (!smsAccepted || smsFailed) {
-          setStatus("We couldn’t send your verification code. Please try again.");
-        } else {
-          setStatus("Verification code sent by SMS.");
-        }
-        return;
-      }
-
-      const authed = data.success === true || (data.ok === true && data.token);
+      // Prefer an issued token over a requiresVerification flag — never drop a successful session.
+      const authed = Boolean(data?.token) && (data.success === true || data.ok === true || data.smsVerified === true);
       if (authed && data.token && data.user) {
         persistAuthSession({ token: data.token, user: data.user });
         const profileLang = normalizeLocale(
@@ -114,9 +98,34 @@ export default function Login() {
               : "/booking",
           { replace: true },
         );
-      } else {
-        setStatus(t("web.authPage.invalidLogin", { defaultValue: "Invalid login" }));
+        return;
       }
+
+      if (data?.requiresVerification === true) {
+        setNeedsVerification(true);
+        const rawMsg = String(data.message || "").trim();
+        const smsAccepted = data.smsAccepted === true;
+        const smsFailed =
+          data.smsAccepted === false ||
+          /couldn.?t send|could not send|sms_start_failed|sms_phone_unconfigured/i.test(
+            `${data.error || ""} ${rawMsg}`,
+          );
+        if (needsVerification && String(form.verificationCode || "").trim()) {
+          setStatus(
+            rawMsg ||
+              "That verification code wasn’t accepted. Check the latest text and try again.",
+          );
+          return;
+        }
+        if (!smsAccepted || smsFailed) {
+          setStatus("We couldn’t send your verification code. Please try again.");
+        } else {
+          setStatus("Verification code sent by text.");
+        }
+        return;
+      }
+
+      setStatus(t("web.authPage.invalidLogin", { defaultValue: "Invalid login" }));
     } catch (err) {
       console.error("LOGIN ERROR:", err);
       setStatus(

@@ -68,7 +68,8 @@
     "consentRequiredBody": "Please review and accept the Terms & Conditions and the Privacy Policy to continue.",
     "policyVersion": "Policy version {{version}}",
     "chooseLanguage": "Choose your language",
-    "chooseLanguageHint": "You can change this later in Profile."
+    "chooseLanguageHint": "You can change this later in Profile.",
+    "codeSentSms": "Verification code sent by text."
   },
   "tabs": {
     "home": "Home",
@@ -122,7 +123,9 @@
     "amountServerNote": "Amount is set on the server when you pay — the app does not send totals to PayPal.",
     "confirmTitle": "Confirm Booking",
     "confirmedTitle": "Booking confirmed",
-    "confirmedBody": "We'll see you at your appointment. A confirmation email is on the way.",
+    "confirmedBody": "We'll see you at your appointment.",
+    "paymentReceivedTitle": "Payment received",
+    "confirmedSmsBody": "A confirmation text has been sent to your phone.",
     "cancellationLabel": "Cancel booking",
     "rescheduleLabel": "Reschedule",
     "shareReceipt": "Share receipt",
@@ -275,8 +278,8 @@
     "deleteAccountSignInRequired": "Sign in again to delete your account."
   },
   "notifications": {
-    "emailTitle": "Booking confirmation email",
-    "emailBody": "After you pay with PayPal on the Book tab, IFCDC sends a confirmation email to the address on your account. Push alerts below are optional reminders."
+    "emailTitle": "Booking confirmations & alerts",
+    "emailBody": "IFCDC sends booking confirmations, reminders, and important updates by SMS to the phone number on your account when SMS is enabled. Email and push remain available as additional channels."
   },
   "language": {
     "title": "Language",

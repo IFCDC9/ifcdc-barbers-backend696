@@ -189,27 +189,43 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
     submittingRef.current = true;
     try {
       setBusy(true);
-      const result = await loginWithEmailPassword(
-        email.trim(),
-        password,
-        needsVerification ? verificationCode.trim() : undefined,
-      );
+      const codeInput = verificationCode.trim();
+      if (needsVerification && !codeInput) {
+        Alert.alert("Sign in", "Enter the verification code from your text message.");
+        return;
+      }
+      const submittedCode = needsVerification ? codeInput : undefined;
+      const result = await loginWithEmailPassword(email.trim(), password, submittedCode);
       if (result.requiresVerification) {
         setNeedsVerification(true);
-        const delivery = String(result.json?.verificationDelivery || "");
         const rawMsg = String(result.json?.message || "").trim();
         const err = String(result.json?.error || "");
-        const smsAccepted = result.json?.smsAccepted === true;
+        const smsAccepted =
+          result.json?.smsAccepted === true || (result.json as { smsAccepted?: boolean })?.smsAccepted === true;
         const smsFailed =
           result.json?.smsAccepted === false ||
+          (result.json as { smsAccepted?: boolean })?.smsAccepted === false ||
           /couldn.?t send|could not send|sms_start_failed|sms_phone_unconfigured/i.test(
             `${err} ${rawMsg}`,
           );
+        // If we already submitted a code, do not treat this as a fresh "code sent" success.
+        if (submittedCode) {
+          const msg =
+            rawMsg ||
+            "That verification code wasn’t accepted. Check the latest text and try again.";
+          setVerificationHint(msg);
+          Alert.alert("Sign in", msg);
+          return;
+        }
         setVerificationHint(
           !smsAccepted || smsFailed
             ? "We couldn’t send your verification code. Please try again."
-            : "Verification code sent by SMS.",
+            : t("auth.codeSentSms", { defaultValue: "Verification code sent by text." }),
         );
+        return;
+      }
+      if (!result.token) {
+        Alert.alert("Sign in", "Sign-in succeeded but no session token was returned. Please try again.");
         return;
       }
       const u = result.json?.user;
@@ -222,6 +238,9 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
       });
       try {
         await signInWithToken(result.token);
+        setNeedsVerification(false);
+        setVerificationCode("");
+        setVerificationHint("");
       } catch (saveErr) {
         Alert.alert("Session", userFacingApiError(saveErr));
       }

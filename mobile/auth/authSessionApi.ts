@@ -204,8 +204,18 @@ export async function loginWithEmailPassword(
     preferSms: true,
   };
   const code = String(verificationCode || "").trim();
-  if (code) body.verificationCode = code;
+  if (code) {
+    // Send common aliases so older backends still accept the SMS code.
+    body.verificationCode = code;
+    body.code = code;
+    body.otp = code;
+    body.smsCode = code;
+  }
   const { json, status } = await postAuthJson("/api/auth/login", body);
+  // Prefer a issued token over requiresVerification — never drop a successful session.
+  if (loginResponseSucceeded(status, json)) {
+    return { token: String(json.token).trim(), json, requiresVerification: false as const };
+  }
   if (json?.requiresVerification === true && status >= 200 && status < 300) {
     return {
       token: "",
@@ -214,12 +224,10 @@ export async function loginWithEmailPassword(
         verificationDelivery?: string;
         challengeId?: string;
         expiresInSec?: number;
+        smsAccepted?: boolean;
       },
       requiresVerification: true as const,
     };
-  }
-  if (loginResponseSucceeded(status, json)) {
-    return { token: String(json.token).trim(), json, requiresVerification: false as const };
   }
   throw new Error(mapAuthErrorToMessage(json, status));
 }

@@ -124,16 +124,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signInWithToken = React.useCallback(async (t: string) => {
+    const normalized = String(t || "").trim();
+    if (!normalized) {
+      throw new Error("Sign-in failed: missing session token.");
+    }
     try {
-      await setAuthToken(t);
-      const me = await getAuthMe(t, 15_000);
+      // Persist + apply session immediately so AuthGate leaves Login before /me returns.
+      await setAuthToken(normalized);
+      applySession(normalized, null);
+      const me = await getAuthMe(normalized, 15_000);
       if (me.ok && me.json.token) {
         const fresh = String(me.json.token).trim();
         await setAuthToken(fresh);
         applySession(fresh, me.json.user ?? null);
-      } else {
-        applySession(t, me.ok ? me.json.user ?? null : null);
+      } else if (me.ok) {
+        applySession(normalized, me.json.user ?? null);
       }
+      // If /me fails transiently, keep the JWT session — do not bounce back to Login.
     } catch (e) {
       const raw = e instanceof Error ? e.message : String(e);
       console.error("[auth] SecureStore setItemAsync failed:", raw);

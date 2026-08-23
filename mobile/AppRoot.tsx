@@ -282,6 +282,7 @@ function AuthGate() {
         onReady={() => console.log("[startup] NAV READY", { hasToken: Boolean(token) })}
       >
         <Stack.Navigator
+          key={token ? "app" : "auth"}
           screenOptions={{ headerShown: false }}
           initialRouteName={token ? "Main" : "Login"}
         >

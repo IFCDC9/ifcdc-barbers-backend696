@@ -496,7 +496,7 @@
       "register": "Register",
       "invalidLogin": "Invalid login",
       "serverError": "Server error",
-      "codeSentSms": "Verification code sent by SMS.",
+      "codeSentSms": "Verification code sent by text.",
       "codeSendFailed": "We couldn’t send your verification code. Please try again.",
       "createAccount": "Create account",
       "joinCommunity": "Join the IFCDC community.",

@@ -270,13 +270,20 @@ async function consumeSuperAdminSmsOrChallenge({ email, req, verificationCode, u
   const phoneRes = resolveSuperAdminSmsPhone(user || {});
   const { isSmsVerifyEnabled } = require("./smsFlags.cjs");
   const { isTwilioVerifyConfigured } = require("./smsTwilioClient.cjs");
+  const code = String(verificationCode || "").trim().replace(/\s+/g, "");
 
   if (phoneRes.ok && isSmsVerifyEnabled() && isTwilioVerifyConfigured()) {
     try {
       const { checkSmsVerification } = require("./smsVerifyService.cjs");
+      console.log("[auth] Super Admin SMS Verify check start", {
+        email,
+        toMasked: phoneRes.masked,
+        toE164Suffix: phoneRes.e164.slice(-4),
+        codeLen: code.length,
+      });
       const smsCheck = await checkSmsVerification(dbQuery, {
         phone: phoneRes.e164,
-        code: verificationCode,
+        code,
         purpose: "super_admin_login",
         ipText: String(req.ip || "").slice(0, 80),
       });
@@ -293,14 +300,30 @@ async function consumeSuperAdminSmsOrChallenge({ email, req, verificationCode, u
         toMasked: phoneRes.masked,
         error: smsCheck.error || null,
       });
+      // Verify was the delivery channel — do not fall through to a Messaging challenge
+      // that was never issued (that looks like a login restart / invalid code loop).
+      return {
+        ok: false,
+        error: smsCheck.error || "invalid_code",
+        message:
+          smsCheck.message ||
+          "Invalid or expired SMS code. Request a new code by signing in again.",
+        verificationFailed: true,
+      };
     } catch (e) {
       console.warn("[auth] SMS verify check failed:", e?.message || e);
+      return {
+        ok: false,
+        error: "verify_check_failed",
+        message: "Could not validate your SMS code. Please try again.",
+        verificationFailed: true,
+      };
     }
   }
 
   const consumed = await consumeSuperAdminLoginChallenge(dbQuery, {
     email,
-    code: verificationCode,
+    code,
   });
   if (consumed.ok) {
     console.log("[auth] Super Admin SMS challenge code accepted", {
@@ -315,7 +338,12 @@ async function consumeSuperAdminSmsOrChallenge({ email, req, verificationCode, u
       : consumed.error === "code_already_used"
         ? "That verification code was already used. Sign in again to receive a new SMS code."
         : "Invalid or expired SMS code.";
-  return { ok: false, error: consumed.error || "invalid_code", message: msg };
+  return {
+    ok: false,
+    error: consumed.error || "invalid_code",
+    message: msg,
+    verificationFailed: true,
+  };
 }
 
 /** Normalize JWT payload to a consistent req.user shape (id, barberId, etc.). */
@@ -744,7 +772,12 @@ export function createAuthRouter({ sendEmail }) {
       const email = normalizeEmail(req.body?.email);
       const password = String(req.body?.password || "");
       const verificationCode = String(
-        req.body?.verificationCode || req.body?.recoveryCode || req.body?.code || "",
+        req.body?.verificationCode ||
+          req.body?.recoveryCode ||
+          req.body?.code ||
+          req.body?.otp ||
+          req.body?.smsCode ||
+          "",
       )
         .trim()
         .replace(/\s+/g, "");
@@ -856,7 +889,7 @@ export function createAuthRouter({ sendEmail }) {
               expiresInSec: started.expiresInSec,
               twilioSid: started.twilioSid || undefined,
               twilioStatus: started.status || undefined,
-              message: "Verification code sent by SMS.",
+              message: "Verification code sent by text.",
             });
           } catch (e) {
             console.warn("[auth] SMS start failed:", e?.message || e);
@@ -896,9 +929,13 @@ export function createAuthRouter({ sendEmail }) {
       return res.json({
         ok: true,
         success: true,
+        requiresVerification: false,
         token,
         user: publicUser,
         redirect,
+        ...(isCanonicalSuperAdmin && verificationCode
+          ? { smsVerified: true, message: "Signed in successfully." }
+          : {}),
       });
     } catch (e) {
       console.error("[auth] login error:", e);
