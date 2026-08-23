@@ -185,14 +185,26 @@ async function startSmsVerification(
       metadata: {
         status: verification.status,
         sid: verification.sid,
+        channel: "sms",
         masked: maskPhoneForDisplay(phoneNorm.e164),
       },
+    });
+
+    console.log("[sms-verify] start OK", {
+      purpose: String(purpose || "customer_phone"),
+      channel: "sms",
+      toMasked: maskPhoneForDisplay(phoneNorm.e164),
+      twilioSid: verification.sid || null,
+      status: verification.status || null,
     });
 
     return {
       ok: true,
       toMasked: maskPhoneForDisplay(phoneNorm.e164),
       status: verification.status,
+      sid: verification.sid || null,
+      twilioSid: verification.sid || null,
+      channel: "sms",
       // Twilio Verify manages TTL (typically 10 minutes) — do not store plaintext codes.
     };
   } catch (e) {
@@ -206,7 +218,13 @@ async function startSmsVerification(
       result: "failed",
       metadata: { error: err },
     });
-    console.warn("[sms-verify] start failed:", err);
+    console.error("[sms-verify] start failed", {
+      purpose: String(purpose || "customer_phone"),
+      channel: "sms",
+      toMasked: maskPhoneForDisplay(phoneNorm.e164),
+      error: err,
+      errorCode: e?.code || e?.status || null,
+    });
     return { ok: false, error: "verify_send_failed", message: "Could not send verification SMS." };
   }
 }

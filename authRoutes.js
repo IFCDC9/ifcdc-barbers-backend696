@@ -30,13 +30,10 @@ import {
 const require = createRequire(import.meta.url);
 const jwt = require("jsonwebtoken");
 const {
-  ensureSuperAdminLoginChallengeTable,
-  isOutageRecoveryEnabled,
   isSuperAdminLoginStepUpEnabled,
   issueSuperAdminLoginChallenge,
   consumeSuperAdminLoginChallenge,
 } = require("./superAdminLoginChallenge.cjs");
-const { sendEmail: sendResendEmail } = require("./emailResend.cjs");
 
 /** @deprecated Use CANONICAL_SUPER_ADMIN_EMAIL from rolePolicy.js */
 export const ADMIN_EMAIL = CANONICAL_SUPER_ADMIN_EMAIL;
@@ -63,6 +60,246 @@ export function issueAppUserJwt(userRow) {
 function postLoginRedirectFromClaims(claims) {
   if (claims?.isOwner === true && claims?.isSuperAdmin === true) return "admin_dashboard";
   return "app";
+}
+
+/**
+ * Resolve Super Admin SMS destination.
+ * Prefer account phone on the Super Admin user row, then SUPER_ADMIN_SMS_PHONE.
+ * Never trust a client-supplied phone for step-up.
+ */
+function resolveSuperAdminSmsPhone(user = {}) {
+  const { normalizeToE164, maskPhoneForDisplay } = require("./smsPhone.cjs");
+  const candidates = [
+    user.phone_e164,
+    user.phone,
+    process.env.SUPER_ADMIN_SMS_PHONE,
+    process.env.SUPER_ADMIN_PHONE,
+  ];
+  for (const raw of candidates) {
+    const n = normalizeToE164(String(raw || "").trim());
+    if (n.ok) {
+      return { ok: true, e164: n.e164, masked: maskPhoneForDisplay(n.e164) };
+    }
+  }
+  return { ok: false, error: "sms_phone_unconfigured" };
+}
+
+/**
+ * Super Admin step-up is SMS-primary (channel=sms).
+ * Uses Twilio Verify when enabled; otherwise Messaging Service + login challenge.
+ * Does not use the booking/payment confirmation SMS path.
+ */
+async function startSuperAdminSmsLogin({ user, email, req }) {
+  const phoneRes = resolveSuperAdminSmsPhone(user);
+  if (!phoneRes.ok) {
+    console.error("[auth] Super Admin SMS login blocked — no verified phone", {
+      email,
+      userId: user?.id || null,
+    });
+    return {
+      ok: false,
+      status: 503,
+      body: {
+        ok: false,
+        success: false,
+        error: "sms_phone_unconfigured",
+        message: "We couldn’t send your verification code. Please try again.",
+        requiresVerification: true,
+        verificationDelivery: "sms",
+      },
+    };
+  }
+
+  const phone = phoneRes.e164;
+  const toMasked = phoneRes.masked;
+  console.log("[auth] Super Admin SMS login start", {
+    email,
+    userId: user?.id || null,
+    channel: "sms",
+    toMasked,
+  });
+
+  const { isSmsVerifyEnabled } = require("./smsFlags.cjs");
+  const { isTwilioVerifyConfigured } = require("./smsTwilioClient.cjs");
+
+  if (isSmsVerifyEnabled() && isTwilioVerifyConfigured()) {
+    const { startSmsVerification } = require("./smsVerifyService.cjs");
+    const started = await startSmsVerification(dbQuery, {
+      phone,
+      purpose: "super_admin_login",
+      actorUserId: user.id,
+      ipText: String(req.ip || "").slice(0, 80),
+    });
+    if (started.ok) {
+      console.log("[auth] Super Admin SMS Verify accepted", {
+        email,
+        channel: "sms",
+        toMasked: started.toMasked || toMasked,
+        twilioSid: started.sid || started.twilioSid || null,
+        status: started.status || null,
+      });
+      return {
+        ok: true,
+        delivery: "sms_verify",
+        toMasked: started.toMasked || toMasked,
+        expiresInSec: 600,
+        twilioSid: started.sid || started.twilioSid || null,
+        status: started.status || null,
+      };
+    }
+    if (started.error === "rate_limited" || started.error === "retry_too_soon") {
+      console.warn("[auth] Super Admin SMS Verify rate-limited", {
+        email,
+        toMasked,
+        error: started.error,
+      });
+      return {
+        ok: false,
+        status: 429,
+        body: {
+          ok: false,
+          success: false,
+          error: started.error,
+          message: "We couldn’t send your verification code. Please try again.",
+          requiresVerification: true,
+          verificationDelivery: "sms",
+        },
+      };
+    }
+    console.warn("[auth] Twilio Verify Super Admin send failed; falling back to Messaging Service", {
+      email,
+      toMasked,
+      error: started.error || started.message || null,
+    });
+  }
+
+  const issued = await issueSuperAdminLoginChallenge(dbQuery, {
+    userId: user.id,
+    email,
+    delivery: "sms",
+    metadata: { source: "login", channel: "sms" },
+  });
+  if (!issued.ok) {
+    console.error("[auth] Super Admin SMS challenge create failed", {
+      email,
+      toMasked,
+      error: issued.error || null,
+    });
+    return {
+      ok: false,
+      status: 500,
+      body: {
+        ok: false,
+        success: false,
+        error: "challenge_failed",
+        message: "We couldn’t send your verification code. Please try again.",
+      },
+    };
+  }
+
+  const { sendTransactionalSms } = require("./smsDeliveryService.cjs");
+  const sent = await sendTransactionalSms(dbQuery, {
+    to: phone,
+    body: `IFCDC Super Admin verification code: ${issued.code}. Expires in 10 minutes. Do not share this code.`,
+    category: "security_verify",
+    userId: user.id,
+    force: true,
+    idempotencyKey: `sa-login-${issued.challengeId}`,
+  });
+  const delivered =
+    Boolean(sent?.ok) &&
+    (!sent?.skipped || sent?.reason === "idempotent_duplicate" || sent?.duplicate === true);
+  if (!delivered) {
+    console.error("[auth] Super Admin SMS Messaging Service send failed", {
+      email,
+      toMasked,
+      error: sent?.reason || sent?.error || null,
+      twilioSid: sent?.twilioSid || null,
+      status: sent?.status || null,
+    });
+    return {
+      ok: false,
+      status: 503,
+      body: {
+        ok: false,
+        success: false,
+        error: "sms_start_failed",
+        message: "We couldn’t send your verification code. Please try again.",
+        requiresVerification: true,
+        verificationDelivery: "sms",
+      },
+    };
+  }
+
+  console.log("[auth] Super Admin SMS Messaging Service accepted", {
+    email,
+    channel: "sms",
+    toMasked,
+    twilioSid: sent?.twilioSid || null,
+    status: sent?.status || null,
+    challengeId: issued.challengeId || null,
+  });
+  return {
+    ok: true,
+    delivery: "sms",
+    toMasked,
+    challengeId: issued.challengeId,
+    expiresInSec: issued.expiresInSec,
+    twilioSid: sent?.twilioSid || null,
+    status: sent?.status || null,
+  };
+}
+
+async function consumeSuperAdminSmsOrChallenge({ email, req, verificationCode, user = null }) {
+  const phoneRes = resolveSuperAdminSmsPhone(user || {});
+  const { isSmsVerifyEnabled } = require("./smsFlags.cjs");
+  const { isTwilioVerifyConfigured } = require("./smsTwilioClient.cjs");
+
+  if (phoneRes.ok && isSmsVerifyEnabled() && isTwilioVerifyConfigured()) {
+    try {
+      const { checkSmsVerification } = require("./smsVerifyService.cjs");
+      const smsCheck = await checkSmsVerification(dbQuery, {
+        phone: phoneRes.e164,
+        code: verificationCode,
+        purpose: "super_admin_login",
+        ipText: String(req.ip || "").slice(0, 80),
+      });
+      if (smsCheck.ok) {
+        console.log("[auth] Super Admin SMS Verify check approved", {
+          email,
+          toMasked: phoneRes.masked,
+          channel: "sms_verify",
+        });
+        return { ok: true, channel: "sms_verify" };
+      }
+      console.warn("[auth] Super Admin SMS Verify check rejected", {
+        email,
+        toMasked: phoneRes.masked,
+        error: smsCheck.error || null,
+      });
+    } catch (e) {
+      console.warn("[auth] SMS verify check failed:", e?.message || e);
+    }
+  }
+
+  const consumed = await consumeSuperAdminLoginChallenge(dbQuery, {
+    email,
+    code: verificationCode,
+  });
+  if (consumed.ok) {
+    console.log("[auth] Super Admin SMS challenge code accepted", {
+      email,
+      challengeId: consumed.challengeId || null,
+    });
+    return { ok: true, channel: "sms", challengeId: consumed.challengeId };
+  }
+  const msg =
+    consumed.error === "code_expired"
+      ? "That verification code expired. Sign in again to receive a new SMS code."
+      : consumed.error === "code_already_used"
+        ? "That verification code was already used. Sign in again to receive a new SMS code."
+        : "Invalid or expired SMS code.";
+  return { ok: false, error: consumed.error || "invalid_code", message: msg };
 }
 
 /** Normalize JWT payload to a consistent req.user shape (id, barberId, etc.). */
@@ -499,7 +736,11 @@ export function createAuthRouter({ sendEmail }) {
         return res.status(400).json({ error: "missing_credentials", message: "Email and password required" });
       }
       const found = await dbQuery(
-        "SELECT id, name, email, password_hash, role, barber_id, business_id, created_at FROM app_users WHERE lower(trim(email::text)) = $1 LIMIT 1",
+        `SELECT id, name, email, password_hash, role, barber_id, business_id, created_at,
+                phone, phone_e164
+         FROM app_users
+         WHERE lower(trim(email::text)) = $1
+         LIMIT 1`,
         [email]
       );
       const user = found.rows?.[0] || null;
@@ -531,101 +772,30 @@ export function createAuthRouter({ sendEmail }) {
       const isCanonicalSuperAdmin =
         isSuperAdminEmail(email) && dbRole === "super_admin";
 
-      // Super Admin step-up (email OTP, SMS Verify, or outage recovery). Customers/other roles unchanged.
+      // Super Admin step-up: SMS-primary (Twilio Verify or Messaging Service). Other roles unchanged.
       if (isCanonicalSuperAdmin && isSuperAdminLoginStepUpEnabled()) {
-        const channelRaw = String(
-          req.body?.verificationChannel || req.body?.channel || "",
-        )
-          .trim()
-          .toLowerCase();
-        const wantsSms =
-          channelRaw === "sms" ||
-          channelRaw === "text" ||
-          Boolean(req.body?.textMe) ||
-          Boolean(req.body?.preferSms);
-
         if (verificationCode) {
-          if (wantsSms || channelRaw === "sms") {
-            try {
-              const { isSmsVerifyEnabled } = require("./smsFlags.cjs");
-              const { checkSmsVerification } = require("./smsVerifyService.cjs");
-              if (!isSmsVerifyEnabled()) {
-                return res.status(503).json({
-                  ok: false,
-                  success: false,
-                  error: "sms_verify_disabled",
-                  message: "SMS verification is not enabled yet.",
-                  requiresVerification: true,
-                });
-              }
-              const phone = String(
-                req.body?.phone || process.env.SUPER_ADMIN_SMS_PHONE || "",
-              ).trim();
-              const smsCheck = await checkSmsVerification(dbQuery, {
-                phone,
-                code: verificationCode,
-                purpose: "super_admin_login",
-                ipText: String(req.ip || "").slice(0, 80),
-              });
-              if (!smsCheck.ok) {
-                void writeSecurityAudit({
-                  eventType: "super_admin_login_challenge_failed",
-                  actorUserId: user.id,
-                  actorEmail: email,
-                  req,
-                  metadata: { error: smsCheck.error, channel: "sms" },
-                });
-                return res.status(401).json({
-                  ok: false,
-                  success: false,
-                  error: smsCheck.error || "invalid_code",
-                  message: smsCheck.message || "Invalid or expired SMS code.",
-                  requiresVerification: true,
-                  verificationDelivery: "sms",
-                });
-              }
-              void writeSecurityAudit({
-                eventType: "super_admin_login_challenge_verified",
-                actorUserId: user.id,
-                actorEmail: email,
-                req,
-                metadata: { channel: "sms", trustedDeviceFeature: false },
-              });
-              // fall through to issue token
-            } catch (e) {
-              console.warn("[auth] SMS verify path failed:", e?.message || e);
-              return res.status(500).json({
-                ok: false,
-                success: false,
-                error: "sms_verify_failed",
-                message: "SMS verification failed.",
-              });
-            }
-          } else {
-          const consumed = await consumeSuperAdminLoginChallenge(dbQuery, {
+          const verified = await consumeSuperAdminSmsOrChallenge({
             email,
-            code: verificationCode,
+            req,
+            verificationCode,
+            user,
           });
-          if (!consumed.ok) {
+          if (!verified.ok) {
             void writeSecurityAudit({
               eventType: "super_admin_login_challenge_failed",
               actorUserId: user.id,
               actorEmail: email,
               req,
-              metadata: { error: consumed.error, outageRecovery: isOutageRecoveryEnabled() },
+              metadata: { error: verified.error, channel: "sms" },
             });
-            const msg =
-              consumed.error === "code_expired"
-                ? "That verification code expired. Request a new one."
-                : consumed.error === "code_already_used"
-                  ? "That verification code was already used. Request a new one."
-                  : "Invalid verification code.";
             return res.status(401).json({
               ok: false,
               success: false,
-              error: consumed.error || "invalid_code",
-              message: msg,
+              error: verified.error || "invalid_code",
+              message: verified.message || "Invalid or expired SMS code.",
               requiresVerification: true,
+              verificationDelivery: "sms",
             });
           }
           void writeSecurityAudit({
@@ -634,64 +804,40 @@ export function createAuthRouter({ sendEmail }) {
             actorEmail: email,
             req,
             metadata: {
-              challengeId: consumed.challengeId,
-              outageRecovery: isOutageRecoveryEnabled(),
-              channel: "email_or_recovery",
+              channel: verified.channel || "sms",
+              challengeId: verified.challengeId || null,
               trustedDeviceFeature: false,
             },
           });
           // fall through to issue token
-          }
-        } else if (wantsSms) {
+        } else {
           try {
-            const { isSmsVerifyEnabled } = require("./smsFlags.cjs");
-            const { startSmsVerification } = require("./smsVerifyService.cjs");
-            if (!isSmsVerifyEnabled()) {
-              return res.status(503).json({
-                ok: false,
-                success: false,
-                error: "sms_verify_disabled",
-                message: "SMS verification is not enabled. Use email or recovery code.",
-                requiresVerification: true,
-                verificationOptions: ["email", "recovery"],
-              });
-            }
-            const phone = String(
-              req.body?.phone || process.env.SUPER_ADMIN_SMS_PHONE || "",
-            ).trim();
-            const started = await startSmsVerification(dbQuery, {
-              phone,
-              purpose: "super_admin_login",
-              actorUserId: user.id,
-              ipText: String(req.ip || "").slice(0, 80),
-            });
+            const started = await startSuperAdminSmsLogin({ user, email, req });
             if (!started.ok) {
-              const status =
-                started.error === "rate_limited" || started.error === "retry_too_soon"
-                  ? 429
-                  : 400;
-              return res.status(status).json({
-                ...started,
-                success: false,
-                requiresVerification: true,
-                verificationDelivery: "sms",
-              });
+              return res.status(started.status || 500).json(started.body);
             }
             void writeSecurityAudit({
               eventType: "super_admin_login_challenge_issued",
               actorUserId: user.id,
               actorEmail: email,
               req,
-              metadata: { channel: "sms", toMasked: started.toMasked },
+              metadata: {
+                channel: "sms",
+                delivery: started.delivery,
+                toMasked: started.toMasked || null,
+                challengeId: started.challengeId || null,
+              },
             });
             return res.status(200).json({
               ok: true,
               success: false,
               requiresVerification: true,
               verificationDelivery: "sms",
-              verificationOptions: ["sms", "email"],
+              verificationOptions: ["sms"],
               toMasked: started.toMasked,
-              message: "Enter the SMS code we texted you.",
+              challengeId: started.challengeId || undefined,
+              expiresInSec: started.expiresInSec,
+              message: "We sent a verification code to your phone.",
             });
           } catch (e) {
             console.warn("[auth] SMS start failed:", e?.message || e);
@@ -699,82 +845,9 @@ export function createAuthRouter({ sendEmail }) {
               ok: false,
               success: false,
               error: "sms_start_failed",
-              message: "Could not send SMS code.",
+              message: "We couldn’t send your verification code. Please try again.",
             });
           }
-        } else {
-          const issued = await issueSuperAdminLoginChallenge(dbQuery, {
-            userId: user.id,
-            email,
-            delivery: isOutageRecoveryEnabled() ? "outage_recovery" : "email",
-            metadata: { source: "login" },
-          });
-          if (!issued.ok) {
-            return res.status(500).json({
-              ok: false,
-              success: false,
-              error: "challenge_failed",
-              message: "Could not start Super Admin verification.",
-            });
-          }
-
-          let emailed = false;
-          let emailError = null;
-          if (!isOutageRecoveryEnabled()) {
-            try {
-              const mail = await sendResendEmail({
-                to: email,
-                subject: "IFCDC Super Admin verification code",
-                html: `<p>Your IFCDC Super Admin login code is:</p>
-<p style="font-size:28px;font-weight:700;letter-spacing:4px">${issued.code}</p>
-<p>This code expires in 10 minutes and can be used once. If you did not try to sign in, contact support.</p>`,
-                label: "super-admin-login-otp",
-              });
-              emailed = Boolean(mail?.data?.id || mail?.id || mail?.messageId) && !mail?.error;
-              if (mail?.error) {
-                emailError =
-                  typeof mail.error === "string"
-                    ? mail.error
-                    : mail.error?.message || JSON.stringify(mail.error);
-              }
-            } catch (e) {
-              emailError = e?.message || String(e);
-            }
-          } else {
-            emailError = "outage_recovery_mode";
-          }
-
-          // Never queue login OTPs for later delivery — security-sensitive, must be fresh.
-          void writeSecurityAudit({
-            eventType: "super_admin_login_challenge_issued",
-            actorUserId: user.id,
-            actorEmail: email,
-            req,
-            metadata: {
-              challengeId: issued.challengeId,
-              delivery: isOutageRecoveryEnabled() ? "outage_recovery" : emailed ? "email" : "email_failed",
-              emailError: emailError || null,
-              expiresInSec: issued.expiresInSec,
-              channel: "email",
-            },
-          });
-
-          return res.status(200).json({
-            ok: true,
-            success: false,
-            requiresVerification: true,
-            verificationDelivery: isOutageRecoveryEnabled()
-              ? "outage_recovery"
-              : emailed
-                ? "email"
-                : "recovery_required",
-            verificationOptions: ["email", "sms", "recovery"],
-            challengeId: issued.challengeId,
-            expiresInSec: issued.expiresInSec,
-            message: isOutageRecoveryEnabled() || !emailed
-              ? "Enter the one-time Super Admin recovery code (email delivery unavailable). Or request SMS with channel=sms."
-              : "Enter the verification code sent to your Super Admin email. Or choose Text me a code.",
-          });
         }
       }
 

@@ -195,7 +195,14 @@ export async function loginWithEmailPassword(
   password: string,
   verificationCode?: string,
 ) {
-  const body: Record<string, unknown> = { email, password };
+  const body: Record<string, unknown> = {
+    email,
+    password,
+    // Super Admin step-up is SMS-primary. Harmless for other roles (backend ignores this).
+    verificationChannel: "sms",
+    channel: "sms",
+    preferSms: true,
+  };
   const code = String(verificationCode || "").trim();
   if (code) body.verificationCode = code;
   const { json, status } = await postAuthJson("/api/auth/login", body);

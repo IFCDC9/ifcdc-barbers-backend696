@@ -80,12 +80,21 @@ export default function Login() {
 
       if (data?.requiresVerification === true) {
         setNeedsVerification(true);
-        setStatus(
-          data.message ||
-            t("web.authPage.enterCode", {
-              defaultValue: "Enter the one-time Super Admin verification code.",
+        const delivery = String(data.verificationDelivery || "");
+        const rawMsg = String(data.message || "").trim();
+        const smsFailed =
+          /couldn.?t send|could not send|sms_start_failed|sms_phone_unconfigured/i.test(
+            `${data.error || ""} ${rawMsg}`,
+          );
+        if (smsFailed) {
+          setStatus("We couldn’t send your verification code. Please try again.");
+        } else {
+          setStatus(
+            t("web.authPage.codeSentSms", {
+              defaultValue: "We sent a verification code to your phone.",
             }),
-        );
+          );
+        }
         return;
       }
 
@@ -205,7 +214,17 @@ export default function Login() {
           </button>
         </form>
 
-        {status ? <p className="auth-status auth-status--error">{status}</p> : null}
+        {status ? (
+          <p
+            className={
+              needsVerification && !/couldn.?t send|try again/i.test(String(status))
+                ? "auth-status auth-status--success"
+                : "auth-status auth-status--error"
+            }
+          >
+            {status}
+          </p>
+        ) : null}
 
         <div className="auth-links">
           <Link to="/forgot-password" className="auth-link">

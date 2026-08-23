@@ -71,7 +71,14 @@ export async function deleteMyAccount() {
 
 export async function login(email, password, verificationCode) {
   const origin = getApiOrigin();
-  const payload = { email, password };
+  const payload = {
+    email,
+    password,
+    // Super Admin step-up is SMS-primary. Harmless for other roles (backend ignores).
+    channel: "sms",
+    verificationChannel: "sms",
+    preferSms: true,
+  };
   const code = String(verificationCode || "").trim();
   if (code) payload.verificationCode = code;
 

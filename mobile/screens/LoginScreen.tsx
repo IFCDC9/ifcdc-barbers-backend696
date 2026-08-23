@@ -196,8 +196,17 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
       );
       if (result.requiresVerification) {
         setNeedsVerification(true);
+        const delivery = String(result.json?.verificationDelivery || "");
+        const rawMsg = String(result.json?.message || "").trim();
+        const err = String(result.json?.error || "");
+        const smsFailed =
+          /couldn.?t send|could not send|sms_start_failed|sms_phone_unconfigured/i.test(
+            `${err} ${rawMsg}`,
+          );
         setVerificationHint(
-          String(result.json?.message || "Enter the one-time Super Admin verification code."),
+          smsFailed
+            ? "We couldn’t send your verification code. Please try again."
+            : "We sent a verification code to your phone.",
         );
         return;
       }
