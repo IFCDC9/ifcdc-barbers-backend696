@@ -16,7 +16,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
 const require = createRequire(import.meta.url);
 
-const LANGS = ["en", "es", "fr", "ht", "pt", "ar", "zh-CN", "ko", "vi"];
+const LANGS = ["en", "es", "fr", "ht", "pt", "ar", "he", "zh-CN", "ko", "vi"];
 const liveArg = process.argv.find((a) => a.startsWith("--live"));
 const liveBase = liveArg
   ? liveArg.includes("=")
@@ -79,6 +79,11 @@ console.log("\n=== MULTI_LANGUAGE_DROPDOWN_V2 QA ===\n");
       if (!sample || /Home/i.test(sample)) fail("arabic_rtl", `ar web.nav.home looks English: ${sample}`);
       else ok("arabic_rtl", `ar web.nav.home = ${sample}`);
     }
+    if (code === "he") {
+      const sample = loc?.web?.nav?.home || "";
+      if (!sample || /Home/i.test(sample)) fail("hebrew_rtl", `he web.nav.home looks English: ${sample}`);
+      else ok("hebrew_rtl", `he web.nav.home = ${sample}`);
+    }
   }
 }
 
@@ -122,15 +127,18 @@ console.log("\n=== MULTI_LANGUAGE_DROPDOWN_V2 QA ===\n");
     if (JSON.stringify([...PHASE1_LANGUAGE_CODES]) !== JSON.stringify(["en", "es"])) {
       fail("feature_flag", `PHASE1 unexpected: ${PHASE1_LANGUAGE_CODES}`);
     } else ok("feature_flag", "flag OFF registry → en,es only");
-    if (MULTI_LANGUAGE_CODES.length !== 9) {
-      fail("feature_flag", `flag ON expected 9 langs got ${MULTI_LANGUAGE_CODES.length}`);
+    if (MULTI_LANGUAGE_CODES.length !== 10) {
+      fail("feature_flag", `flag ON expected 10 langs got ${MULTI_LANGUAGE_CODES.length}`);
     } else ok("feature_flag", `flag ON → ${MULTI_LANGUAGE_CODES.join(", ")}`);
-    // Client web picker mirrors shared codes + ar.rtl
+    // Client web picker mirrors shared codes + ar/he rtl
     const webLangs = path.join(root, "client/src/lib/languages.js");
     const webSrc = fs.readFileSync(webLangs, "utf8");
     if (!webSrc.includes('code: "ar"') || !webSrc.includes("rtl: true")) {
       fail("arabic_rtl", "client languages.js missing ar rtl:true");
     } else ok("arabic_rtl", "client languages.js marks ar as rtl");
+    if (!webSrc.includes('code: "he"') || !/code: "he"[\s\S]*?rtl: true/.test(webSrc)) {
+      fail("hebrew_rtl", "client languages.js missing he rtl:true");
+    } else ok("hebrew_rtl", "client languages.js marks he as rtl");
   } catch (e) {
     fail("feature_flag", e.message || String(e));
   }
@@ -176,16 +184,16 @@ console.log("\n=== MULTI_LANGUAGE_DROPDOWN_V2 QA ===\n");
         .map((f) => fs.readFileSync(path.join(root, "client/dist/assets", f), "utf8"))
         .join("\n");
       // With flag baked in at build time, native language names should appear
-      for (const sample of ["Español", "Français", "العربية", "한국어", "Tiếng Việt"]) {
+      for (const sample of ["Español", "Français", "العربية", "עברית", "한국어", "Tiếng Việt"]) {
         if (!bundle.includes(sample)) fail("client_build", `bundle missing language label: ${sample}`);
       }
       if (failed === results.filter((x) => !x.pass && x.area === "client_build").length) {
         /* recount */
       }
-      const missingLabels = ["Español", "Français", "العربية", "한국어", "Tiếng Việt"].filter(
+      const missingLabels = ["Español", "Français", "العربية", "עברית", "한국어", "Tiếng Việt"].filter(
         (s) => !bundle.includes(s),
       );
-      if (!missingLabels.length) ok("client_build", "all 9 native language labels present in bundle");
+      if (!missingLabels.length) ok("client_build", "all 10 native language labels present in bundle");
     }
   } catch (e) {
     fail("client_build", e.message);

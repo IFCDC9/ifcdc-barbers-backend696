@@ -1,5 +1,7 @@
 /**
- * Minimal AURA / booking language helpers (en | es). No generic i18n framework.
+ * AURA / booking language helpers.
+ * Barber voice/SMS packs remain en | es. Customer chat can also select Hebrew (he)
+ * from the app UI language for future Hebrew voice/text conversations.
  */
 
 export function normalizeBarberLang(raw) {
@@ -9,12 +11,28 @@ export function normalizeBarberLang(raw) {
 }
 
 /**
+ * Normalize a customer app language hint for AURA chat.
+ * Recognizes en, es, and he (Hebrew). Legacy `iw` maps to he.
+ * @returns {"en"|"es"|"he"|null}
+ */
+export function normalizeAuraClientLang(raw) {
+  if (!raw) return null;
+  const first = String(raw).toLowerCase().trim().split(/[,;]/)[0].trim();
+  if (!first) return null;
+  const primary = first.split("-")[0];
+  if (primary === "he" || primary === "iw") return "he";
+  if (primary === "es") return "es";
+  if (primary === "en") return "en";
+  return null;
+}
+
+/**
  * Pull the customer's app language from a chat request body / headers.
  * Looked-at sources (in order): body.language, body.locale, body.lang,
- * `Accept-Language` header. Returns "en" or "es", or null if not stated.
+ * `Accept-Language` header. Returns "en", "es", "he", or null if not stated.
  *
  * @param {{ body?: any, get?: (h: string) => string | undefined, headers?: Record<string,string> }} req
- * @returns {"en"|"es"|null}
+ * @returns {"en"|"es"|"he"|null}
  */
 export function detectClientLanguage(req) {
   const body = req && typeof req.body === "object" && req.body ? req.body : {};
@@ -24,12 +42,8 @@ export function detectClientLanguage(req) {
       : req?.headers?.["accept-language"] || req?.headers?.["Accept-Language"];
   const candidates = [body.language, body.locale, body.lang, headerVal];
   for (const raw of candidates) {
-    if (!raw) continue;
-    const first = String(raw).toLowerCase().trim().split(/[,;]/)[0].trim();
-    if (!first) continue;
-    const primary = first.split("-")[0];
-    if (primary === "es") return "es";
-    if (primary === "en") return "en";
+    const hit = normalizeAuraClientLang(raw);
+    if (hit) return hit;
   }
   return null;
 }
@@ -37,11 +51,11 @@ export function detectClientLanguage(req) {
 /**
  * Resolve the language AURA should respond in for a chat request.
  * Customer app preference (body/headers) wins. Falls back to the barber's
- * configured language, then to English. Always returns "en" | "es".
+ * configured language, then to English. Returns "en" | "es" | "he".
  *
  * @param {object} req Express request
  * @param {string} [barberLang] Stored barber language (existing behavior)
- * @returns {"en"|"es"}
+ * @returns {"en"|"es"|"he"}
  */
 export function resolveAuraLanguage(req, barberLang) {
   const explicit = detectClientLanguage(req);
@@ -49,8 +63,16 @@ export function resolveAuraLanguage(req, barberLang) {
   return normalizeBarberLang(barberLang);
 }
 
-/** OpenAI system add-on so chat replies match barber language. */
+/** OpenAI system add-on so chat replies match the customer/barber language. */
 export function openAiLanguageInstruction(lang) {
+  const client = normalizeAuraClientLang(lang);
+  if (client === "he") {
+    return (
+      " Always respond in Hebrew (עברית). Keep replies short and actionable." +
+      " Prefer natural Israeli Hebrew. Keep names, phone numbers, dates, times," +
+      " prices, and confirmation/reference numbers in their original form."
+    );
+  }
   return normalizeBarberLang(lang) === "es"
     ? " Always respond in Spanish (neutral Latin American). Keep replies short and actionable."
     : " Always respond in English. Keep replies short and actionable.";

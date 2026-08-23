@@ -68,7 +68,8 @@
     "consentRequiredBody": "Veuillez consulter et accepter les Conditions générales et la Politique de confidentialité pour continuer.",
     "policyVersion": "Version de la politique {{version}}",
     "chooseLanguage": "Choisissez votre langue",
-    "chooseLanguageHint": "Vous pourrez la modifier plus tard dans Profil."
+    "chooseLanguageHint": "Vous pourrez la modifier plus tard dans Profil.",
+    "codeSentSms": "Code de vérification envoyé par SMS."
   },
   "tabs": {
     "home": "Accueil",
@@ -122,7 +123,9 @@
     "amountServerNote": "Le montant est défini sur le serveur lors du paiement — l'application n'envoie pas les totaux à PayPal.",
     "confirmTitle": "Confirmer la réservation",
     "confirmedTitle": "Réservation confirmée",
-    "confirmedBody": "Nous vous attendons à votre rendez-vous. Un e-mail de confirmation est en cours d'envoi.",
+    "confirmedBody": "Nous vous attendons à votre rendez-vous.",
+    "paymentReceivedTitle": "Paiement reçu",
+    "confirmedSmsBody": "Un SMS de confirmation a été envoyé sur votre téléphone.",
     "cancellationLabel": "Annuler la réservation",
     "rescheduleLabel": "Reprogrammer",
     "shareReceipt": "Partager le reçu",
@@ -275,8 +278,8 @@
     "deleteAccountSignInRequired": "Reconnectez-vous pour supprimer votre compte."
   },
   "notifications": {
-    "emailTitle": "E-mail de confirmation de réservation",
-    "emailBody": "Après avoir payé avec PayPal dans l'onglet Réserver, IFCDC envoie un e-mail de confirmation à l'adresse de votre compte. Les alertes push ci-dessous sont des rappels facultatifs."
+    "emailTitle": "Confirmations et alertes de réservation",
+    "emailBody": "IFCDC envoie les confirmations, rappels et mises à jour importantes par SMS au numéro de téléphone de votre compte lorsque les SMS sont activés. L'e-mail et les notifications push restent disponibles comme canaux supplémentaires."
   },
   "language": {
     "title": "Langue",

@@ -31,6 +31,7 @@ export const MULTI_LANGUAGE_CODES = [
   "ht",
   "pt",
   "ar",
+  "he",
   "zh-CN",
   "ko",
   "vi",

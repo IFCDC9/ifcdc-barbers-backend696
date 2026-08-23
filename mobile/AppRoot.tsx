@@ -53,7 +53,8 @@ import { addNotificationListeners } from "./services/notificationService";
 // i18next must be imported before any screen using `useTranslation()`. The
 // `./i18n` module's bottom calls `initSync()`, so this triggers the
 // synchronous default-English init at import time.
-import "./i18n";
+import i18n, { currentLanguage } from "./i18n";
+import { softLayoutDirection } from "./i18n/rtlLayout";
 
 import { AuthProvider, useAuth } from "./services/authContext";
 import { BACKEND_URL } from "./constants/config";
@@ -324,24 +325,44 @@ function MainShell() {
 // AppRoot — the heavy provider tree, lazily required from App.tsx.
 // ─────────────────────────────────────────────────────────────────────────────
 
+function SoftRtlShell({ children }: { children: React.ReactNode }) {
+  const [lang, setLang] = React.useState(() => currentLanguage());
+
+  React.useEffect(() => {
+    const onChanged = () => setLang(currentLanguage());
+    i18n.on("languageChanged", onChanged);
+    return () => {
+      i18n.off("languageChanged", onChanged);
+    };
+  }, []);
+
+  return (
+    <View style={{ flex: 1, direction: softLayoutDirection(lang) }}>
+      {children}
+    </View>
+  );
+}
+
 export default function AppRoot() {
   console.log("[startup] AppRoot render");
 
   React.useEffect(() => {
     void import("./i18n")
       .then((m) => m.bootstrapI18n())
-      .then((lang) => console.log("[startup] i18n bootstrapped:", lang))
+      .then((bootLang) => console.log("[startup] i18n bootstrapped:", bootLang))
       .catch((e) => console.warn("[startup] i18n bootstrap failed:", e?.message || e));
   }, []);
 
   return (
     <ProviderBoundary name="SafeAreaProvider">
       <SafeAreaProvider>
-        <ProviderBoundary name="AuthProvider">
-          <AuthProvider>
-            <AuthGate />
-          </AuthProvider>
-        </ProviderBoundary>
+        <SoftRtlShell>
+          <ProviderBoundary name="AuthProvider">
+            <AuthProvider>
+              <AuthGate />
+            </AuthProvider>
+          </ProviderBoundary>
+        </SoftRtlShell>
       </SafeAreaProvider>
     </ProviderBoundary>
   );

@@ -5,17 +5,17 @@
  * ENTIRE native layout and can stick across English sessions until cleared.
  *
  * Production policy (Build 72 hotfix):
- * - Native layout is ALWAYS LTR for every language (including Arabic).
- * - Arabic / other RTL languages still receive translated strings.
- * - Document `dir` on the website still switches for Arabic text pages.
+ * - Native I18nManager layout is ALWAYS LTR unless EXPO_PUBLIC_ENABLE_NATIVE_RTL=1.
+ * - Arabic / Hebrew still receive translated strings and soft Yoga `direction`
+ *   RTL via AppRoot (no sticky I18nManager flip).
+ * - Document `dir` on the website switches for Arabic / Hebrew pages.
  *
- * Why disable native RTL flipping for now:
+ * Why gate native RTL flipping:
  * - forceRTL requires a process reload to fully apply, and sticky RTL was
  *   mirroring Home, Booking, Calendar, Profile, Admin, and nav for English.
- * - Restoring LTR for the release candidate is the priority.
  *
- * Re-enable native Arabic RTL later behind EXPO_PUBLIC_ENABLE_NATIVE_RTL=1
- * once expo-updates (or equivalent) can safely reload after a direction flip.
+ * Re-enable native RTL behind EXPO_PUBLIC_ENABLE_NATIVE_RTL=1 once
+ * expo-updates (or equivalent) can safely reload after a direction flip.
  */
 import { I18nManager } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -34,6 +34,18 @@ function nativeRtlFeatureEnabled(): boolean {
 
 export function isRtlLanguage(code: string | null | undefined): boolean {
   return languageMeta(code).rtl === true;
+}
+
+/** Soft per-tree Yoga direction — safe without I18nManager.forceRTL. */
+export function softLayoutDirection(
+  code?: string | null,
+): "rtl" | "ltr" {
+  return isRtlLanguage(code) ? "rtl" : "ltr";
+}
+
+/** Text alignment helpers for RTL languages (Hebrew, Arabic). */
+export function rtlTextAlign(code?: string | null): "right" | "left" {
+  return isRtlLanguage(code) ? "right" : "left";
 }
 
 /** Force native layout to LTR immediately (English and all LTR langs). */

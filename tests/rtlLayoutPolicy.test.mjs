@@ -13,6 +13,7 @@ const appSrc = readFileSync(join(root, "mobile/App.tsx"), "utf8");
 const i18nSrc = readFileSync(join(root, "mobile/i18n/index.ts"), "utf8");
 
 assert.match(languagesSrc, /code: "ar".*rtl: true/s);
+assert.match(languagesSrc, /code: "he".*rtl: true/s);
 assert.match(languagesSrc, /code: "en".*rtl: false/s);
 assert.match(languagesSrc, /code: "es".*rtl: false/s);
 assert.match(languagesSrc, /code: "fr".*rtl: false/s);

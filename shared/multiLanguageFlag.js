@@ -21,6 +21,7 @@ export const MULTI_LANGUAGE_CODES = Object.freeze([
   "ht",
   "pt",
   "ar",
+  "he",
   "zh-CN",
   "ko",
   "vi",

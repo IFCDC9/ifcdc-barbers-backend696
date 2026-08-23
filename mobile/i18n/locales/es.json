@@ -68,7 +68,8 @@
     "consentRequiredBody": "Revisa y acepta los Términos y Condiciones y la Política de Privacidad para continuar.",
     "policyVersion": "Versión de política {{version}}",
     "chooseLanguage": "Elige tu idioma",
-    "chooseLanguageHint": "Puedes cambiarlo después en tu perfil."
+    "chooseLanguageHint": "Puedes cambiarlo después en tu perfil.",
+    "codeSentSms": "Código de verificación enviado por mensaje de texto."
   },
   "tabs": {
     "home": "Inicio",
@@ -122,7 +123,9 @@
     "amountServerNote": "El monto se establece en el servidor al pagar — la app no envía totales a PayPal.",
     "confirmTitle": "Confirmar reserva",
     "confirmedTitle": "Reserva confirmada",
-    "confirmedBody": "Te esperamos en tu cita. Un correo de confirmación está en camino.",
+    "confirmedBody": "Te esperamos en tu cita.",
+    "paymentReceivedTitle": "Pago recibido",
+    "confirmedSmsBody": "Se envió un mensaje de confirmación a tu teléfono.",
     "cancellationLabel": "Cancelar reserva",
     "rescheduleLabel": "Reprogramar",
     "shareReceipt": "Compartir recibo",
@@ -275,8 +278,8 @@
     "deleteAccountSignInRequired": "Inicia sesión de nuevo para eliminar tu cuenta."
   },
   "notifications": {
-    "emailTitle": "Correo de confirmación de reserva",
-    "emailBody": "Después de pagar con PayPal en la pestaña Reservar, IFCDC envía un correo de confirmación a la dirección de tu cuenta. Las alertas push de abajo son recordatorios opcionales."
+    "emailTitle": "Confirmaciones y alertas de reserva",
+    "emailBody": "IFCDC envía confirmaciones, recordatorios y actualizaciones importantes por SMS al teléfono de tu cuenta cuando el SMS está activado. El correo y las notificaciones push siguen disponibles como canales adicionales."
   },
   "language": {
     "title": "Idioma",

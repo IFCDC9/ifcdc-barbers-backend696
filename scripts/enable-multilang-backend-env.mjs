@@ -162,5 +162,5 @@ Done.
 Frontend alignment:
   Web:    VITE_MULTI_LANGUAGE_DROPDOWN_V2=1 (baked in Render frontend build)
   Mobile: EXPO_PUBLIC_MULTI_LANGUAGE_DROPDOWN_V2=1 (EAS production profile)
-  Shared codes: en, es, fr, ht, pt, ar, zh-CN, ko, vi
+  Shared codes: en, es, fr, ht, pt, ar, he, zh-CN, ko, vi
 `);

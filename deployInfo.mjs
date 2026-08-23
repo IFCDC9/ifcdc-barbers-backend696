@@ -215,7 +215,7 @@ export async function getDeployInfoPayload() {
           .toLowerCase();
         return v === "1" || v === "true" || v === "yes" || v === "on";
       })(),
-      codes: ["en", "es", "fr", "ht", "pt", "ar", "zh-CN", "ko", "vi"],
+      codes: ["en", "es", "fr", "ht", "pt", "ar", "he", "zh-CN", "ko", "vi"],
       englishFallback: true,
       frontendFlag: "VITE_MULTI_LANGUAGE_DROPDOWN_V2",
       mobileFlag: "EXPO_PUBLIC_MULTI_LANGUAGE_DROPDOWN_V2",

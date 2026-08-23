@@ -68,7 +68,8 @@
     "consentRequiredBody": "계속하려면 이용약관과 개인정보 처리방침을 검토하고 동의해 주세요.",
     "policyVersion": "정책 버전 {{version}}",
     "chooseLanguage": "언어 선택",
-    "chooseLanguageHint": "나중에 프로필에서 변경할 수 있습니다."
+    "chooseLanguageHint": "나중에 프로필에서 변경할 수 있습니다.",
+    "codeSentSms": "인증 코드가 문자로 전송되었습니다."
   },
   "tabs": {
     "home": "홈",
@@ -122,7 +123,7 @@
     "amountServerNote": "금액은 결제 시 서버에서 설정됩니다 — 앱은 PayPal로 합계를 전송하지 않습니다.",
     "confirmTitle": "예약 확인",
     "confirmedTitle": "예약이 확인되었습니다",
-    "confirmedBody": "예약 시간에 뵙겠습니다. 확인 이메일이 곧 발송됩니다.",
+    "confirmedBody": "예약 시간에 뵙겠습니다.",
     "cancellationLabel": "예약 취소",
     "rescheduleLabel": "일정 변경",
     "shareReceipt": "영수증 공유",
@@ -227,7 +228,9 @@
       "title": "예약",
       "empty": "아직 예약이 없습니다.",
       "loading": "예약 로딩 중…"
-    }
+    },
+    "paymentReceivedTitle": "결제 완료",
+    "confirmedSmsBody": "확인 문자가 휴대폰으로 전송되었습니다."
   },
   "services": {
     "title": "서비스",

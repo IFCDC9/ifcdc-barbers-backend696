@@ -68,7 +68,8 @@
     "consentRequiredBody": "يُرجى مراجعة والموافقة على الشروط والأحكام وسياسة الخصوصية للمتابعة.",
     "policyVersion": "إصدار السياسة {{version}}",
     "chooseLanguage": "اختر لغتك",
-    "chooseLanguageHint": "يمكنك تغيير ذلك لاحقًا في الملف الشخصي."
+    "chooseLanguageHint": "يمكنك تغيير ذلك لاحقًا في الملف الشخصي.",
+    "codeSentSms": "تم إرسال رمز التحقق عبر رسالة نصية."
   },
   "tabs": {
     "home": "الرئيسية",
@@ -122,7 +123,7 @@
     "amountServerNote": "يُحدَّد المبلغ على الخادم عند الدفع — التطبيق لا يرسل الإجماليات إلى PayPal.",
     "confirmTitle": "تأكيد الحجز",
     "confirmedTitle": "تم تأكيد الحجز",
-    "confirmedBody": "نراك في موعدك. رسالة التأكيد بالبريد الإلكتروني في الطريق.",
+    "confirmedBody": "نراك في موعدك.",
     "cancellationLabel": "إلغاء الحجز",
     "rescheduleLabel": "إعادة الجدولة",
     "shareReceipt": "مشاركة الإيصال",
@@ -227,7 +228,9 @@
       "title": "الحجوزات",
       "empty": "ليس لديك أي حجوزات بعد.",
       "loading": "جارٍ تحميل الحجوزات…"
-    }
+    },
+    "paymentReceivedTitle": "تم استلام الدفع",
+    "confirmedSmsBody": "تم إرسال رسالة تأكيد إلى هاتفك."
   },
   "services": {
     "title": "الخدمات",

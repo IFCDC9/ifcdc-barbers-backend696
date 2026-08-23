@@ -19,6 +19,7 @@ import fr from "./locales/fr.json";
 import ht from "./locales/ht.json";
 import pt from "./locales/pt.json";
 import ar from "./locales/ar.json";
+import he from "./locales/he.json";
 import zhCN from "./locales/zh-CN.json";
 import ko from "./locales/ko.json";
 import vi from "./locales/vi.json";
@@ -33,6 +34,7 @@ const resources = {
   ht: { translation: ht },
   pt: { translation: pt },
   ar: { translation: ar },
+  he: { translation: he },
   "zh-CN": { translation: zhCN },
   ko: { translation: ko },
   vi: { translation: vi },

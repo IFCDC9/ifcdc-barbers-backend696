@@ -11,6 +11,7 @@ function normalizeLang(language) {
   if (lower.startsWith("ht") || lower.startsWith("cpf") || lower === "creole") return "ht";
   if (lower.startsWith("pt")) return "pt";
   if (lower.startsWith("ar")) return "ar";
+  if (lower.startsWith("he") || lower.startsWith("iw")) return "he";
   if (lower.startsWith("zh")) return "zh-CN";
   if (lower.startsWith("ko")) return "ko";
   if (lower.startsWith("vi")) return "vi";
@@ -234,6 +235,41 @@ const TABLE = {
     loyaltySubject: "تحديث ولاء IFCDC",
     loyaltyBody: "تم تحديث نقاط ولاء IFCDC الخاصة بك. واصل الحجز لفتح المكافآت.",
     loyaltyOpen: "افتح IFCDC Barbers",
+  },
+  he: {
+    reminderSubject: "תזכורת — התור בעוד כ־30 דקות",
+    reminderHi: "שלום {{name}},",
+    reminderBody:
+      "זו תזכורת ידידותית: יש לך תור בסביבות <strong>{{when}}</strong> עם <strong>{{barber}}</strong> ({{service}}).",
+    reminderSeeYou: "נתראה בקרוב.",
+    reminderText: "שלום {{name}}. תזכורת: תור ~{{when}}.",
+    reviewSubject: "התור הושלם — דרגו את {{barber}}",
+    reviewTitle: "איך הייתה החוויה?",
+    reviewHi: "שלום {{name}},",
+    reviewBody:
+      "התור הושלם. איך הייתה החוויה עם <strong>{{barber}}</strong>? לחצו למטה כדי להשאיר דירוג, ביקורת ותמונות.",
+    reviewCta: "השאירו ביקורת",
+    reviewAppLink: "קישור לאפליקציה:",
+    reviewNote: "רק לקוחות עם תורים שהושלמו יכולים להשאיר ביקורות — ביקורת אחת לכל הזמנה.",
+    refundSubject: "[IFCDC] בוצע החזר — ${{amount}}",
+    refundTitle: "אישור החזר",
+    refundName: "שם",
+    refundBarber: "ספר",
+    refundService: "שירות",
+    refundDate: "תאריך",
+    refundTime: "שעה",
+    refundStatus: "סטטוס",
+    refundAmount: "סכום ההחזר",
+    refundRef: "אסמכתת החזר PayPal",
+    refundReason: "סיבה",
+    refundFunds: "בדרך כלל הכספים חוזרים ל־PayPal או לכרטיס תוך 3–10 ימי עסקים.",
+    cancelSubject: "התור בוטל — IFCDC Barbers",
+    cancelTitle: "התור בוטל",
+    cancelBody: "התור שלכם בוטל.",
+    cancelWhen: "נקבע במקור ל",
+    loyaltySubject: "עדכון נאמנות IFCDC",
+    loyaltyBody: "נקודות הנאמנות שלכם ב־IFCDC עודכנו. המשיכו להזמין כדי לפתוח הטבות.",
+    loyaltyOpen: "פתחו את IFCDC Barbers",
   },
   "zh-CN": {
     reminderSubject: "提醒 — 约 ~30 分钟后有预约",

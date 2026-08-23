@@ -68,7 +68,8 @@
     "consentRequiredBody": "Reveja e aceite os Termos e Condições e a Política de Privacidade para continuar.",
     "policyVersion": "Versão da política {{version}}",
     "chooseLanguage": "Escolha o seu idioma",
-    "chooseLanguageHint": "Pode alterar isto mais tarde em Perfil."
+    "chooseLanguageHint": "Pode alterar isto mais tarde em Perfil.",
+    "codeSentSms": "Código de verificação enviado por SMS."
   },
   "tabs": {
     "home": "Início",
@@ -122,7 +123,7 @@
     "amountServerNote": "O valor é definido no servidor quando paga — a aplicação não envia totais ao PayPal.",
     "confirmTitle": "Confirmar reserva",
     "confirmedTitle": "Reserva confirmada",
-    "confirmedBody": "Vemo-nos na sua consulta. Um e-mail de confirmação está a caminho.",
+    "confirmedBody": "Vemo-nos na sua consulta.",
     "cancellationLabel": "Cancelar reserva",
     "rescheduleLabel": "Reagendar",
     "shareReceipt": "Partilhar recibo",
@@ -227,7 +228,9 @@
       "title": "Reservas",
       "empty": "Ainda não tem nenhuma reserva.",
       "loading": "A carregar reservas…"
-    }
+    },
+    "paymentReceivedTitle": "Pagamento recebido",
+    "confirmedSmsBody": "Uma mensagem de confirmação foi enviada para o seu telefone."
   },
   "services": {
     "title": "Serviços",

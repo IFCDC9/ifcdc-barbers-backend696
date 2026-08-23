@@ -1094,7 +1094,9 @@ async function handleAuraChatRequest(req, res) {
         const emptyReply =
           Lempty === "es"
             ? "Dígame qué necesita: reservar, horarios, servicios o cómo llegar."
-            : "Tell me what you need — booking, hours, services, or directions.";
+            : Lempty === "he"
+              ? "ספרו לי במה אוכל לעזור — הזמנה, שעות פעילות, שירותים או הגעה."
+              : "Tell me what you need — booking, hours, services, or directions.";
         return res.status(200).json(
           auraChatJson(emptyReply, "NONE", { language: Lempty, replyLanguage: Lempty }),
         );

@@ -1,10 +1,10 @@
 /**
  * IFCDC Barbers — i18n entry point.
  *
- * - Bundles en/es + V2 locales (fr, ht, pt, ar, zh-CN, ko, vi).
+ * - Bundles en/es + V2 locales (fr, ht, pt, ar, he, zh-CN, ko, vi).
  * - Fallback language is always English (never blank / raw keys).
  * - MULTI_LANGUAGE_DROPDOWN_V2 gates which languages appear in the picker.
- * - Native RTL layout only for Arabic via rtlLayout.ts (LTR otherwise).
+ * - Native RTL layout for Arabic/Hebrew via rtlLayout.ts (LTR otherwise).
  */
 
 import i18n from "i18next";
@@ -18,6 +18,7 @@ import fr from "./locales/fr.json";
 import ht from "./locales/ht.json";
 import pt from "./locales/pt.json";
 import ar from "./locales/ar.json";
+import he from "./locales/he.json";
 import zhCN from "./locales/zh-CN.json";
 import ko from "./locales/ko.json";
 import vi from "./locales/vi.json";
@@ -44,6 +45,7 @@ const resources = {
   ht: { translation: ht },
   pt: { translation: pt },
   ar: { translation: ar },
+  he: { translation: he },
   "zh-CN": { translation: zhCN },
   ko: { translation: ko },
   vi: { translation: vi },
@@ -251,5 +253,5 @@ export {
 } from "./languages";
 export type { SupportedLanguageCode } from "./languages";
 export { isMultiLanguageDropdownV2Enabled } from "./featureFlag";
-export { forceNativeLtr, isRtlLanguage } from "./rtlLayout";
+export { forceNativeLtr, isRtlLanguage, softLayoutDirection, rtlTextAlign } from "./rtlLayout";
 export default i18n;

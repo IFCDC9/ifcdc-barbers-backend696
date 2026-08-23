@@ -139,6 +139,7 @@ function bookingEmailLabels(language) {
   else if (lower.startsWith("ht") || lower.startsWith("cpf") || lower === "creole") code = "ht";
   else if (lower.startsWith("pt")) code = "pt";
   else if (lower.startsWith("ar")) code = "ar";
+  else if (lower.startsWith("he") || lower.startsWith("iw")) code = "he";
   else if (lower.startsWith("zh")) code = "zh-CN";
   else if (lower.startsWith("ko")) code = "ko";
   else if (lower.startsWith("vi")) code = "vi";
@@ -270,6 +271,27 @@ function bookingEmailLabels(language) {
       lblTotalCharged: "الإجمالي المحصل (PayPal)",
       lblPayRef: "مرجع الدفع",
       thanks: "شكرًا لحجزك مع IFCDC Barbers.",
+    },
+    he: {
+      subjectFull: "אישור הזמנה — IFCDC Barbers",
+      subjectDeposit: "ההזמנה אושרה (מקדמה) — IFCDC Barbers",
+      h2: "ההזמנה אושרה",
+      lblName: "שם",
+      lblBarber: "ספר",
+      lblService: "שירות",
+      lblServicePrice: "מחיר השירות",
+      lblServiceDuration: "משך",
+      lblDate: "תאריך",
+      lblTime: "שעה",
+      lblDepositPaid: "מקדמה ששולמה",
+      lblServiceTotal: "סה״כ שירות",
+      lblRemaining: "יתרה לתשלום (בדרך כלל ביום התור)",
+      lblAmountPaid: "סכום ששולם",
+      lblPaidInFull: "(שולם במלואו)",
+      lblTip: "טיפ",
+      lblTotalCharged: "סה״כ שחויב (PayPal)",
+      lblPayRef: "אסמכתת תשלום",
+      thanks: "תודה שהזמנתם עם IFCDC Barbers.",
     },
     "zh-CN": {
       subjectFull: "预约确认 — IFCDC Barbers",

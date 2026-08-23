@@ -68,7 +68,8 @@
     "consentRequiredBody": "Tanpri li epi aksepte Tèm ak Kondisyon yo ak Politik Prive a pou kontinye.",
     "policyVersion": "Vèsyon politik {{version}}",
     "chooseLanguage": "Chwazi lang ou",
-    "chooseLanguageHint": "Ou ka chanje sa pita nan Pwofil."
+    "chooseLanguageHint": "Ou ka chanje sa pita nan Pwofil.",
+    "codeSentSms": "Kòd verifikasyon an voye pa tèks."
   },
   "tabs": {
     "home": "Akèy",
@@ -122,7 +123,7 @@
     "amountServerNote": "Montan an fikse sou sèvè a lè w peye — aplikasyon an pa voye total bay PayPal.",
     "confirmTitle": "Konfime rezèvasyon",
     "confirmedTitle": "Rezèvasyon konfime",
-    "confirmedBody": "N ap wè w nan randevou ou a. Yon imèl konfimasyon ap vini.",
+    "confirmedBody": "N ap wè w nan randevou ou a.",
     "cancellationLabel": "Anile rezèvasyon",
     "rescheduleLabel": "Chanje dat",
     "shareReceipt": "Pataje resi",
@@ -227,7 +228,9 @@
       "title": "Rezèvasyon",
       "empty": "Ou poko gen okenn rezèvasyon.",
       "loading": "Chajman rezèvasyon yo…"
-    }
+    },
+    "paymentReceivedTitle": "Peman resevwa",
+    "confirmedSmsBody": "Yo voye yon tèks konfimasyon nan telefòn ou."
   },
   "services": {
     "title": "Sèvis",

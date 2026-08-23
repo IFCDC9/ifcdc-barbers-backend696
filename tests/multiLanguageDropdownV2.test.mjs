@@ -27,12 +27,12 @@ function flatten(obj, prefix = "") {
 
 const en = JSON.parse(readFileSync(join(localesDir, "en.json"), "utf8"));
 const enFlat = flatten(en);
-assert.equal(Object.keys(enFlat).length, 289);
+assert.equal(Object.keys(enFlat).length, 292);
 
-for (const code of ["es", "fr", "ht", "pt", "ar", "zh-CN", "ko", "vi"]) {
+for (const code of ["es", "fr", "ht", "pt", "ar", "he", "zh-CN", "ko", "vi"]) {
   const loc = JSON.parse(readFileSync(join(localesDir, `${code}.json`), "utf8"));
   const flat = flatten(loc);
-  assert.equal(Object.keys(flat).length, 289, `${code} key count`);
+  assert.equal(Object.keys(flat).length, 292, `${code} key count`);
   const missing = Object.keys(enFlat).filter((k) => !(k in flat));
   assert.equal(missing.length, 0, `${code} missing ${missing.slice(0, 5)}`);
 }
@@ -42,9 +42,10 @@ assert.equal(isMultiLanguageDropdownV2Enabled({ MULTI_LANGUAGE_DROPDOWN_V2: "1" 
 assert.equal(normalizePreferredLanguage("es-MX", { allowV2: false }), "es");
 assert.equal(normalizePreferredLanguage("zh-CN", { allowV2: true }), "zh-CN");
 assert.equal(normalizePreferredLanguage("zh", { allowV2: true }), "zh-CN");
+assert.equal(normalizePreferredLanguage("he", { allowV2: true }), "he");
 assert.equal(normalizePreferredLanguage("fr", { allowV2: false }), null);
 assert.equal(normalizePreferredLanguage("fr", { allowV2: true }), "fr");
 assert.deepEqual([...PHASE1_LANGUAGE_CODES], ["en", "es"]);
-assert.equal(MULTI_LANGUAGE_CODES.length, 9);
+assert.equal(MULTI_LANGUAGE_CODES.length, 10);
 
 console.log("multiLanguageDropdownV2 tests passed");

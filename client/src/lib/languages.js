@@ -10,6 +10,7 @@ export const ALL_LANGUAGES = [
   { code: "ht", nativeName: "Kreyòl Ayisyen", englishName: "Haitian Creole", rtl: false },
   { code: "pt", nativeName: "Português", englishName: "Portuguese", rtl: false },
   { code: "ar", nativeName: "العربية", englishName: "Arabic", rtl: true },
+  { code: "he", nativeName: "עברית", englishName: "Hebrew", rtl: true },
   { code: "zh-CN", nativeName: "简体中文", englishName: "Chinese — Simplified", rtl: false },
   { code: "ko", nativeName: "한국어", englishName: "Korean", rtl: false },
   { code: "vi", nativeName: "Tiếng Việt", englishName: "Vietnamese", rtl: false },

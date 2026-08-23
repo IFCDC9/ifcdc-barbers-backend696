@@ -20,4 +20,9 @@ const ar = customerEmailLabels("ar");
 assert.ok(tLabel(ar, "cancelTitle").length > 0);
 assert.notEqual(tLabel(ar, "cancelTitle"), "");
 
+assert.equal(normalizeLang("he-IL"), "he");
+const he = customerEmailLabels("he");
+assert.match(tLabel(he, "cancelTitle"), /בוטל|ביטול/);
+assert.match(tLabel(he, "reviewCta"), /ביקורת/);
+
 console.log("customerEmailI18n tests passed");

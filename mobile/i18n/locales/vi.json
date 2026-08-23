@@ -68,7 +68,8 @@
     "consentRequiredBody": "Vui lòng xem và chấp nhận Điều khoản & Điều kiện cũng như Chính sách quyền riêng tư để tiếp tục.",
     "policyVersion": "Phiên bản chính sách {{version}}",
     "chooseLanguage": "Chọn ngôn ngữ của bạn",
-    "chooseLanguageHint": "Bạn có thể thay đổi sau trong Hồ sơ."
+    "chooseLanguageHint": "Bạn có thể thay đổi sau trong Hồ sơ.",
+    "codeSentSms": "Mã xác minh đã được gửi bằng tin nhắn."
   },
   "tabs": {
     "home": "Trang chủ",
@@ -122,7 +123,7 @@
     "amountServerNote": "Số tiền được thiết lập trên máy chủ khi bạn thanh toán — ứng dụng không gửi tổng tiền tới PayPal.",
     "confirmTitle": "Xác nhận đặt lịch",
     "confirmedTitle": "Đã xác nhận đặt lịch",
-    "confirmedBody": "Hẹn gặp bạn vào lịch hẹn. Email xác nhận đang được gửi.",
+    "confirmedBody": "Hẹn gặp bạn vào lịch hẹn.",
     "cancellationLabel": "Hủy đặt lịch",
     "rescheduleLabel": "Đổi lịch",
     "shareReceipt": "Chia sẻ biên lai",
@@ -227,7 +228,9 @@
       "title": "Đặt lịch",
       "empty": "Bạn chưa có đặt lịch nào.",
       "loading": "Đang tải đặt lịch…"
-    }
+    },
+    "paymentReceivedTitle": "Đã nhận thanh toán",
+    "confirmedSmsBody": "Tin nhắn xác nhận đã được gửi tới điện thoại của bạn."
   },
   "services": {
     "title": "Dịch vụ",
