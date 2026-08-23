@@ -62,26 +62,36 @@ function postLoginRedirectFromClaims(claims) {
   return "app";
 }
 
+/** Canonical Super Admin login SMS destination (service@ifcdc.org). */
+const CANONICAL_SUPER_ADMIN_SMS_E164 = "+18484694448";
+
 /**
- * Resolve Super Admin SMS destination.
- * Prefer account phone on the Super Admin user row, then SUPER_ADMIN_SMS_PHONE.
- * Never trust a client-supplied phone for step-up.
+ * Resolve Super Admin SMS destination for login step-up.
+ * Hard-locked to +18484694448 so stale app_users phones (e.g. 732…5048) never win.
+ * Never trusts a client-supplied phone.
  */
-function resolveSuperAdminSmsPhone(user = {}) {
+function resolveSuperAdminSmsPhone(_user = {}) {
   const { normalizeToE164, maskPhoneForDisplay } = require("./smsPhone.cjs");
-  const candidates = [
-    user.phone_e164,
-    user.phone,
-    process.env.SUPER_ADMIN_SMS_PHONE,
-    process.env.SUPER_ADMIN_PHONE,
-  ];
-  for (const raw of candidates) {
-    const n = normalizeToE164(String(raw || "").trim());
-    if (n.ok) {
-      return { ok: true, e164: n.e164, masked: maskPhoneForDisplay(n.e164) };
+  const envRaw = String(
+    process.env.SUPER_ADMIN_SMS_PHONE || process.env.SUPER_ADMIN_PHONE || "",
+  ).trim();
+  if (envRaw) {
+    const envNorm = normalizeToE164(envRaw);
+    if (envNorm.ok && envNorm.e164 !== CANONICAL_SUPER_ADMIN_SMS_E164) {
+      console.warn("[auth] Ignoring non-canonical SUPER_ADMIN_SMS_PHONE for login", {
+        envMasked: maskPhoneForDisplay(envNorm.e164),
+        required: CANONICAL_SUPER_ADMIN_SMS_E164,
+      });
     }
   }
-  return { ok: false, error: "sms_phone_unconfigured" };
+  const n = normalizeToE164(CANONICAL_SUPER_ADMIN_SMS_E164);
+  if (!n.ok) return { ok: false, error: "sms_phone_unconfigured" };
+  return {
+    ok: true,
+    e164: n.e164,
+    masked: maskPhoneForDisplay(n.e164),
+    source: "canonical_super_admin_sms",
+  };
 }
 
 /**
@@ -117,6 +127,8 @@ async function startSuperAdminSmsLogin({ user, email, req }) {
     userId: user?.id || null,
     channel: "sms",
     toMasked,
+    toE164Suffix: phone.slice(-4),
+    phoneSource: phoneRes.source || null,
   });
 
   const { isSmsVerifyEnabled } = require("./smsFlags.cjs");
@@ -834,10 +846,13 @@ export function createAuthRouter({ sendEmail }) {
               requiresVerification: true,
               verificationDelivery: "sms",
               verificationOptions: ["sms"],
+              smsAccepted: true,
               toMasked: started.toMasked,
               challengeId: started.challengeId || undefined,
               expiresInSec: started.expiresInSec,
-              message: "We sent a verification code to your phone.",
+              twilioSid: started.twilioSid || undefined,
+              twilioStatus: started.status || undefined,
+              message: "Verification code sent by SMS.",
             });
           } catch (e) {
             console.warn("[auth] SMS start failed:", e?.message || e);
@@ -845,6 +860,7 @@ export function createAuthRouter({ sendEmail }) {
               ok: false,
               success: false,
               error: "sms_start_failed",
+              smsAccepted: false,
               message: "We couldn’t send your verification code. Please try again.",
             });
           }

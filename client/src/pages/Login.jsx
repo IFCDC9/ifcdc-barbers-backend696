@@ -80,20 +80,17 @@ export default function Login() {
 
       if (data?.requiresVerification === true) {
         setNeedsVerification(true);
-        const delivery = String(data.verificationDelivery || "");
         const rawMsg = String(data.message || "").trim();
+        const smsAccepted = data.smsAccepted === true;
         const smsFailed =
+          data.smsAccepted === false ||
           /couldn.?t send|could not send|sms_start_failed|sms_phone_unconfigured/i.test(
             `${data.error || ""} ${rawMsg}`,
           );
-        if (smsFailed) {
+        if (!smsAccepted || smsFailed) {
           setStatus("We couldn’t send your verification code. Please try again.");
         } else {
-          setStatus(
-            t("web.authPage.codeSentSms", {
-              defaultValue: "We sent a verification code to your phone.",
-            }),
-          );
+          setStatus("Verification code sent by SMS.");
         }
         return;
       }

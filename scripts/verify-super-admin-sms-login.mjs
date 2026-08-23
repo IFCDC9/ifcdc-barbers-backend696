@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 /**
- * Live Super Admin SMS login probe — does NOT require password.
- * Resolves phone from app_users (service@ifcdc.org), then Twilio Verify channel=sms.
+ * Live Super Admin SMS login probe — sends Twilio Verify to +18484694448 only.
  *
  *   CONFIRM_LIVE_SMS=1 node --import ./loadBackendEnv.mjs scripts/verify-super-admin-sms-login.mjs
  */
@@ -19,11 +18,8 @@ const {
   twilioConfigStatus,
 } = require("../smsTwilioClient.cjs");
 
-const CANONICAL = String(
-  process.env.CANONICAL_SUPER_ADMIN_EMAIL || "service@ifcdc.org",
-)
-  .trim()
-  .toLowerCase();
+const CANONICAL = "service@ifcdc.org";
+const REQUIRED_TO = "+18484694448";
 
 if (process.env.CONFIRM_LIVE_SMS !== "1") {
   console.error("Refusing: set CONFIRM_LIVE_SMS=1 to send a live Super Admin Verify SMS.");
@@ -44,69 +40,70 @@ async function resolveVerifySidIfNeeded() {
   }
 }
 
+async function syncAccountPhone() {
+  await dbQuery(`ALTER TABLE app_users ADD COLUMN IF NOT EXISTS phone_e164 TEXT`).catch(() => {});
+  const upd = await dbQuery(
+    `UPDATE app_users
+     SET phone = $2, phone_e164 = $3
+     WHERE lower(trim(email::text)) = $1
+     RETURNING email, phone, phone_e164`,
+    [CANONICAL, "8484694448", REQUIRED_TO],
+  );
+  console.log("[sa-sms] app_users phone synced", upd.rows?.[0] || null);
+}
+
 async function main() {
   process.env.SMS_VERIFY_ENABLED = process.env.SMS_VERIFY_ENABLED || "1";
   await resolveVerifySidIfNeeded();
+  await syncAccountPhone();
 
   console.log("[sa-sms] twilio", twilioConfigStatus());
   if (!isTwilioVerifyConfigured()) {
     throw new Error("Twilio Verify is not configured after SID resolve");
   }
 
+  const to = normalizeToE164(REQUIRED_TO);
+  if (!to.ok || to.e164 !== REQUIRED_TO) {
+    throw new Error(`Required To must be ${REQUIRED_TO}`);
+  }
+
   const found = await dbQuery(
-    `SELECT id, email, role, phone, phone_e164
-     FROM app_users
-     WHERE lower(trim(email::text)) = $1
-     LIMIT 1`,
+    `SELECT id, email, role, phone, phone_e164 FROM app_users WHERE lower(trim(email::text)) = $1 LIMIT 1`,
     [CANONICAL],
   );
   const user = found.rows?.[0];
   if (!user) throw new Error(`Super Admin user not found: ${CANONICAL}`);
 
-  const envPhone = String(process.env.SUPER_ADMIN_SMS_PHONE || "").trim();
-  const candidates = [user.phone_e164, user.phone, envPhone];
-  let phone = null;
-  for (const raw of candidates) {
-    const n = normalizeToE164(String(raw || "").trim());
-    if (n.ok) {
-      phone = n.e164;
-      break;
-    }
-  }
-  if (!phone) throw new Error("No E.164 Super Admin phone on account or SUPER_ADMIN_SMS_PHONE");
-
   console.log("[sa-sms] targeting", {
     email: user.email,
     role: user.role,
-    toMasked: maskPhoneForDisplay(phone),
-    source: user.phone_e164 || user.phone ? "app_users" : "SUPER_ADMIN_SMS_PHONE",
+    to: REQUIRED_TO,
+    toMasked: maskPhoneForDisplay(REQUIRED_TO),
     channel: "sms",
+    accountPhone: user.phone || null,
+    accountPhoneE164: user.phone_e164 || null,
   });
 
   const started = await startSmsVerification(dbQuery, {
-    phone,
+    phone: REQUIRED_TO,
     purpose: "super_admin_login",
     actorUserId: user.id,
     ipText: "verify-super-admin-sms-login",
   });
 
-  console.log(
-    JSON.stringify(
-      {
-        ok: started.ok === true,
-        channel: "sms",
-        toMasked: started.toMasked || maskPhoneForDisplay(phone),
-        twilioSid: started.sid || started.twilioSid || null,
-        status: started.status || null,
-        error: started.error || null,
-        message: started.message || null,
-      },
-      null,
-      2,
-    ),
-  );
+  const report = {
+    ok: started.ok === true,
+    channel: "sms",
+    to: REQUIRED_TO,
+    toMasked: started.toMasked || maskPhoneForDisplay(REQUIRED_TO),
+    twilioSid: started.sid || started.twilioSid || null,
+    status: started.status || null,
+    error: started.error || null,
+    message: started.message || null,
+  };
+  console.log(JSON.stringify(report, null, 2));
 
-  if (!started.ok || !(started.sid || started.twilioSid)) {
+  if (!report.ok || !report.twilioSid || report.to !== REQUIRED_TO) {
     process.exit(3);
   }
 }
