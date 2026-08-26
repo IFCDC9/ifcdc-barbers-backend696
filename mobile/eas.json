@@ -28,6 +28,21 @@
       "android": {
         "credentialsSource": "remote"
       }
+    },
+    "play-internal": {
+      "autoIncrement": false,
+      "distribution": "store",
+      "env": {
+        "EAS_BUILD_NO_EXPO_GO_WARNING": "true",
+        "EXPO_PUBLIC_WEB_URL": "https://ifcdcbarbersapp.com",
+        "EXPO_PUBLIC_API_URL": "https://ifcdc-barbers-backend696.onrender.com",
+        "EXPO_PUBLIC_BACKEND_URL": "https://ifcdc-barbers-backend696.onrender.com",
+        "EXPO_PUBLIC_MULTI_LANGUAGE_DROPDOWN_V2": "1"
+      },
+      "android": {
+        "buildType": "app-bundle",
+        "credentialsSource": "remote"
+      }
     }
   },
   "submit": {
@@ -36,6 +51,12 @@
         "ascAppId": "6766149605",
         "appleTeamId": "KTP587XA2T",
         "metadataPath": "./store.config.json"
+      }
+    },
+    "play-internal": {
+      "android": {
+        "track": "internal",
+        "releaseStatus": "completed"
       }
     }
   }

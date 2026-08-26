@@ -24,7 +24,7 @@
         "title": "IFCDC Barbers",
         "subtitle": "Book cuts with style photos",
         "privacyPolicyUrl": "https://ifcdcbarbersapp.com/privacy",
-        "releaseNotes": "Version 1.1.10 (Build 76)\n\n• Super Admin Book for Client: Client phone number (email no longer required)\n• Manual Booking / Bypass Mode saves phone and sends SMS confirmations\n• Complimentary option: No charge · SMS confirmation sent\n• Existing client phone auto-fills when selected\n• Official customer SMS sender: (989) 514-1064",
+        "releaseNotes": "Version 1.1.10 (Build 78)\n\n• Hebrew language support — עברית (he)\n• Hebrew translations across customer screens (Registration, Sign In, Home, Booking, AURA, Profile, Payments, Rewards, Reviews, SMS)\n• Right-to-left (RTL) layout when Hebrew is selected; English restores LTR\n• Language preference saved across logout, login, and app relaunch",
         "screenshots": {
           "APP_IPAD_PRO_3GEN_129": [
             "store/apple/screenshot/en-US/APP_IPAD_PRO_3GEN_129/iPad Pro 13-inch (M4)-06_AURA.png",

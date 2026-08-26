@@ -19,7 +19,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.ifcdc.barbers",
-      "buildNumber": "76",
+      "buildNumber": "78",
       "usesAppleSignIn": true,
       "entitlements": {
         "com.apple.developer.applesignin": [
@@ -48,12 +48,35 @@
     },
     "android": {
       "package": "com.ifcdc.barbers",
-      "versionCode": 54,
+      "versionCode": 61,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#050505"
       },
-      "usesCleartextTraffic": true
+      "usesCleartextTraffic": true,
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ],
+          "data": [
+            {
+              "scheme": "ifcdc-barbers"
+            },
+            {
+              "scheme": "ifcdc-barbers",
+              "host": "paypal-booking",
+              "pathPrefix": "/"
+            },
+            {
+              "scheme": "ifcdc-barbers",
+              "host": "paypal-booking"
+            }
+          ]
+        }
+      ]
     },
     "plugins": [
       "expo-secure-store",
@@ -62,6 +85,16 @@
         "expo-localization",
         {
           "supportsRTL": true
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "compileSdkVersion": 36,
+            "targetSdkVersion": 36,
+            "buildToolsVersion": "36.0.0"
+          }
         }
       ]
     ],
