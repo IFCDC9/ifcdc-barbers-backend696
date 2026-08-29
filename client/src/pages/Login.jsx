@@ -13,9 +13,7 @@ export default function Login() {
   const [form, setForm] = useState({
     email: "",
     password: "",
-    verificationCode: "",
   });
-  const [needsVerification, setNeedsVerification] = useState(false);
   const [status, setStatus] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [language, setLanguage] = useState(() => {
@@ -72,14 +70,9 @@ export default function Login() {
       }
       setStatus(null);
       setSubmitting(true);
-      const data = await login(
-        form.email,
-        form.password,
-        needsVerification ? form.verificationCode : undefined,
-      );
+      const data = await login(form.email, form.password);
 
-      // Prefer an issued token over a requiresVerification flag — never drop a successful session.
-      const authed = Boolean(data?.token) && (data.success === true || data.ok === true || data.smsVerified === true);
+      const authed = Boolean(data?.token) && (data.success === true || data.ok === true);
       if (authed && data.token && data.user) {
         persistAuthSession({ token: data.token, user: data.user });
         const profileLang = normalizeLocale(
@@ -98,43 +91,6 @@ export default function Login() {
               : "/booking",
           { replace: true },
         );
-        return;
-      }
-
-      if (data?.requiresVerification === true) {
-        setNeedsVerification(true);
-        const rawMsg = String(data.message || "").trim();
-        const smsAccepted = data.smsAccepted === true;
-        const smsFailed =
-          data.smsAccepted === false ||
-          /couldn.?t send|could not send|sms_start_failed|sms_phone_unconfigured/i.test(
-            `${data.error || ""} ${rawMsg}`,
-          );
-        if (needsVerification && String(form.verificationCode || "").trim()) {
-          const looksRaw =
-            /^(rate_limited|retry_too_soon)$/i.test(rawMsg) ||
-            /^(rate_limited|retry_too_soon)$/i.test(String(data.error || ""));
-          setStatus(
-            looksRaw
-              ? "Please wait a moment and try again."
-              : rawMsg ||
-                  "That verification code wasn’t accepted. Check the latest text and try again.",
-          );
-          return;
-        }
-        if (
-          data.error === "rate_limited" ||
-          data.error === "retry_too_soon" ||
-          /rate[_\s-]?limit/i.test(rawMsg)
-        ) {
-          setStatus("Please wait a moment and try again.");
-          return;
-        }
-        if (!smsAccepted || smsFailed) {
-          setStatus("We couldn’t send your verification code. Please try again.");
-        } else {
-          setStatus("Verification code sent by text.");
-        }
         return;
       }
 
@@ -197,26 +153,6 @@ export default function Login() {
             />
           </div>
 
-          {needsVerification ? (
-            <div className="auth-field">
-              <span className="auth-icon" aria-hidden>
-                #
-              </span>
-              <input
-                name="verificationCode"
-                type="text"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                placeholder={t("web.authPage.verificationCode", {
-                  defaultValue: "Verification code",
-                })}
-                value={form.verificationCode}
-                onChange={handleChange}
-                className="auth-input"
-              />
-            </div>
-          ) : null}
-
           <LanguageDropdown
             value={language}
             disabled={submitting}
@@ -234,15 +170,7 @@ export default function Login() {
         </form>
 
         {status ? (
-          <p
-            className={
-              needsVerification && !/couldn.?t send|try again/i.test(String(status))
-                ? "auth-status auth-status--success"
-                : "auth-status auth-status--error"
-            }
-          >
-            {status}
-          </p>
+          <p className="auth-status auth-status--error">{status}</p>
         ) : null}
 
         <div className="auth-links">

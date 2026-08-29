@@ -44,9 +44,9 @@ function isOutageRecoveryEnabled() {
   return true;
 }
 
-/** Super Admin password login uses email/recovery step-up unless explicitly disabled. */
+/** Super Admin login step-up is OFF by default. Set SUPER_ADMIN_LOGIN_STEPUP=1 to restore SMS verification. */
 function isSuperAdminLoginStepUpEnabled() {
-  const off = String(process.env.SUPER_ADMIN_LOGIN_STEPUP ?? "1").trim().toLowerCase();
+  const off = String(process.env.SUPER_ADMIN_LOGIN_STEPUP ?? "0").trim().toLowerCase();
   if (off === "0" || off === "false" || off === "off") return false;
   return true;
 }

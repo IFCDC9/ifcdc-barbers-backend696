@@ -201,44 +201,10 @@ export async function postAuthJson(
   return { json, status: res.status, raw, url };
 }
 
-export async function loginWithEmailPassword(
-  email: string,
-  password: string,
-  verificationCode?: string,
-) {
-  const body: Record<string, unknown> = {
-    email,
-    password,
-    // Super Admin step-up is SMS-primary. Harmless for other roles (backend ignores this).
-    verificationChannel: "sms",
-    channel: "sms",
-    preferSms: true,
-  };
-  const code = String(verificationCode || "").trim();
-  if (code) {
-    // Send common aliases so older backends still accept the SMS code.
-    body.verificationCode = code;
-    body.code = code;
-    body.otp = code;
-    body.smsCode = code;
-  }
-  const { json, status } = await postAuthJson("/api/auth/login", body);
-  // Prefer a issued token over requiresVerification — never drop a successful session.
+export async function loginWithEmailPassword(email: string, password: string) {
+  const { json, status } = await postAuthJson("/api/auth/login", { email, password });
   if (loginResponseSucceeded(status, json)) {
-    return { token: String(json.token).trim(), json, requiresVerification: false as const };
-  }
-  if (json?.requiresVerification === true && status >= 200 && status < 300) {
-    return {
-      token: "",
-      json: json as JsonAuth & {
-        requiresVerification: true;
-        verificationDelivery?: string;
-        challengeId?: string;
-        expiresInSec?: number;
-        smsAccepted?: boolean;
-      },
-      requiresVerification: true as const,
-    };
+    return { token: String(json.token).trim(), json };
   }
   throw new Error(mapAuthErrorToMessage(json, status));
 }

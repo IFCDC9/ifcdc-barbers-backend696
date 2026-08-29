@@ -36,9 +36,6 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
   const { signInWithToken } = useAuth();
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
-  const [verificationCode, setVerificationCode] = React.useState("");
-  const [needsVerification, setNeedsVerification] = React.useState(false);
-  const [verificationHint, setVerificationHint] = React.useState("");
   const [lang, setLang] = React.useState<SupportedLanguageCode>(currentLanguage());
   const [busy, setBusy] = React.useState(false);
   const [appleAvailable, setAppleAvailable] = React.useState(false);
@@ -189,52 +186,7 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
     submittingRef.current = true;
     try {
       setBusy(true);
-      const codeInput = verificationCode.trim().replace(/\s+/g, "");
-      if (needsVerification && !codeInput) {
-        Alert.alert("Sign in", "Enter the verification code from your text message.");
-        return;
-      }
-      const submittedCode = needsVerification ? codeInput : undefined;
-      const result = await loginWithEmailPassword(email.trim(), password, submittedCode);
-      if (result.requiresVerification) {
-        setNeedsVerification(true);
-        const rawMsg = String(result.json?.message || "").trim();
-        const err = String(result.json?.error || "").trim();
-        const cleanRateLimit =
-          err === "rate_limited" ||
-          err === "retry_too_soon" ||
-          /rate[_\s-]?limit|wait a moment|try again later/i.test(`${err} ${rawMsg}`);
-        const smsAccepted =
-          result.json?.smsAccepted === true || (result.json as { smsAccepted?: boolean })?.smsAccepted === true;
-        const smsFailed =
-          result.json?.smsAccepted === false ||
-          (result.json as { smsAccepted?: boolean })?.smsAccepted === false ||
-          /couldn.?t send|could not send|sms_start_failed|sms_phone_unconfigured/i.test(
-            `${err} ${rawMsg}`,
-          );
-        // If we already submitted a code, do not treat this as a fresh "code sent" success.
-        if (submittedCode) {
-          const msg = cleanRateLimit
-            ? "Please wait a moment and try again."
-            : /^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$/.test(rawMsg || err)
-              ? "Please wait a moment and try again."
-              : rawMsg ||
-                "That verification code wasn’t accepted. Check the latest text and try again.";
-          setVerificationHint(msg);
-          Alert.alert("Sign in", msg);
-          return;
-        }
-        if (cleanRateLimit) {
-          setVerificationHint("Please wait a moment and try again.");
-          return;
-        }
-        setVerificationHint(
-          !smsAccepted || smsFailed
-            ? "We couldn’t send your verification code. Please try again."
-            : t("auth.codeSentSms", { defaultValue: "Verification code sent by text." }),
-        );
-        return;
-      }
+      const result = await loginWithEmailPassword(email.trim(), password);
       if (!result.token) {
         Alert.alert("Sign in", "Sign-in succeeded but no session token was returned. Please try again.");
         return;
@@ -249,9 +201,6 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
       });
       try {
         await signInWithToken(result.token);
-        setNeedsVerification(false);
-        setVerificationCode("");
-        setVerificationHint("");
       } catch (saveErr) {
         Alert.alert("Session", userFacingApiError(saveErr));
       }
@@ -315,21 +264,6 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
           secureTextEntry
           editable={!busy}
         />
-        {needsVerification ? (
-          <>
-            <View style={{ height: 10 }} />
-            <Text style={styles.helper}>{verificationHint || "Enter verification code"}</Text>
-            <View style={{ height: 8 }} />
-            <IFCDCInput
-              value={verificationCode}
-              onChangeText={setVerificationCode}
-              placeholder="Verification code"
-              autoCapitalize="none"
-              keyboardType="number-pad"
-              editable={!busy}
-            />
-          </>
-        ) : null}
         <View style={{ height: 12 }} />
         <LanguageDropdown
           label={t("language.title")}

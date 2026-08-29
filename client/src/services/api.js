@@ -69,18 +69,9 @@ export async function deleteMyAccount() {
   return data;
 }
 
-export async function login(email, password, verificationCode) {
+export async function login(email, password) {
   const origin = getApiOrigin();
-  const payload = {
-    email,
-    password,
-    // Super Admin step-up is SMS-primary. Harmless for other roles (backend ignores).
-    channel: "sms",
-    verificationChannel: "sms",
-    preferSms: true,
-  };
-  const code = String(verificationCode || "").trim();
-  if (code) payload.verificationCode = code;
+  const payload = { email, password };
 
   // Prefer new auth endpoint; fallback to legacy /api/login for older servers.
   let res = await fetch(`${origin}/api/auth/login`, {

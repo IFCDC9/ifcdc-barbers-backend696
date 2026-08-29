@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Handoff tests for Super Admin SMS verify → session.
+ * Login MFA is disabled by default. These checks guard against accidental reintroduction.
  *
  *   node --import ./loadBackendEnv.mjs scripts/test-super-admin-sms-verify-handoff.mjs
  */
@@ -13,29 +13,24 @@ import { dirname, join } from "node:path";
 const require = createRequire(import.meta.url);
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
+const challenge = readFileSync(join(root, "superAdminLoginChallenge.cjs"), "utf8");
+assert.match(challenge, /SUPER_ADMIN_LOGIN_STEPUP \?\? "0"/);
+console.log("[handoff] PASS — Super Admin login step-up defaults OFF");
+
 const apiSrc = readFileSync(join(root, "mobile/auth/authSessionApi.ts"), "utf8");
 const loginFn = apiSrc.slice(apiSrc.indexOf("export async function loginWithEmailPassword"));
-const tokenPos = loginFn.indexOf("loginResponseSucceeded(status, json)");
-const reqPos = loginFn.indexOf("json?.requiresVerification === true");
-assert.ok(tokenPos >= 0 && reqPos >= 0 && tokenPos < reqPos, "client must prefer token over requiresVerification");
-console.log("[handoff] PASS — mobile client prefers token over requiresVerification");
+assert.doesNotMatch(loginFn, /requiresVerification/);
+assert.doesNotMatch(loginFn, /verificationChannel|preferSms/);
+console.log("[handoff] PASS — mobile login API is email/password only");
 
 const loginSrc = readFileSync(join(root, "mobile/screens/LoginScreen.tsx"), "utf8");
-assert.match(loginSrc, /submittedCode/);
-assert.match(loginSrc, /codeSentSms|Verification code sent by text/);
+assert.doesNotMatch(loginSrc, /needsVerification|verificationCode|verificationHint/);
 assert.match(loginSrc, /signInWithToken\(result\.token\)/);
-console.log("[handoff] PASS — LoginScreen verify→session wiring present");
+console.log("[handoff] PASS — LoginScreen has no verification-code UI");
 
-const authCtx = readFileSync(join(root, "mobile/services/authContext.tsx"), "utf8");
-assert.match(authCtx, /applySession\(normalized,\s*null\)/);
-const appRoot = readFileSync(join(root, "mobile/AppRoot.tsx"), "utf8");
-assert.match(appRoot, /key=\{token \? "app" : "auth"\}/);
-console.log("[handoff] PASS — AuthGate + immediate session apply present");
-
-const authRoutes = readFileSync(join(root, "authRoutes.js"), "utf8");
-assert.match(authRoutes, /never issued|do not fall through|verificationFailed:\s*true/);
-assert.match(authRoutes, /requiresVerification:\s*false/);
-console.log("[handoff] PASS — backend verify handoff guards present");
+const webLogin = readFileSync(join(root, "client/src/pages/Login.jsx"), "utf8");
+assert.doesNotMatch(webLogin, /needsVerification|verificationCode/);
+console.log("[handoff] PASS — web Login has no verification-code UI");
 
 const password = String(
   process.env.SUPER_ADMIN_PASSWORD ||
@@ -49,23 +44,13 @@ if (!password) {
     JSON.stringify({
       liveLogin: "skipped",
       reason: "no_password_env",
-      note: "Set SUPER_ADMIN_PASSWORD to exercise DB login + mocked Verify → token.",
+      note: "Set SUPER_ADMIN_PASSWORD to exercise Super Admin login without MFA.",
     }),
   );
   process.exit(0);
 }
 
-const verifyPath = require.resolve("../smsVerifyService.cjs");
-const realVerify = require(verifyPath);
-require.cache[verifyPath].exports = {
-  ...realVerify,
-  async checkSmsVerification() {
-    return { ok: true, e164: "+18484694448", status: "approved" };
-  },
-  async startSmsVerification() {
-    throw new Error("startSmsVerification must not run during code-verify handoff");
-  },
-};
+delete process.env.SUPER_ADMIN_LOGIN_STEPUP;
 
 const { createAuthRouter } = await import("../authRoutes.js");
 const router = createAuthRouter({ sendEmail: async () => ({ ok: true }) });
@@ -90,9 +75,6 @@ await login(
     body: {
       email: process.env.SUPER_ADMIN_EMAIL || "service@ifcdc.org",
       password,
-      verificationCode: "123456",
-      channel: "sms",
-      verificationChannel: "sms",
     },
     ip: "127.0.0.1",
     headers: {},
@@ -120,9 +102,8 @@ console.log(
   ),
 );
 
-assert.equal(out.statusCode, 200, "mocked Verify approval must yield HTTP 200");
-assert.equal(out.body?.requiresVerification, false);
+assert.equal(out.statusCode, 200, "Super Admin login must succeed without MFA");
+assert.notEqual(out.body?.requiresVerification, true);
 assert.ok(out.body?.token, "must issue session token");
 assert.ok(out.body?.user, "must return user");
-console.log("[handoff] PASS — mocked SMS verify → token session");
-process.exit(0);
+console.log("[handoff] PASS — Super Admin email/password → token when step-up disabled");
