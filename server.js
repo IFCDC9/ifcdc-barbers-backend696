@@ -49,6 +49,8 @@ import { expireStaleRewardReservations, seedDefaultRewardsIfEmpty } from "./loya
 import { createHubSpotRouter } from "./hubspotRoutes.js";
 import { ensureHubSpotSchema } from "./hubspotMigrations.js";
 import { createAdminShopsRouter } from "./adminShopsRoutes.js";
+import { createManagementTeamRouter } from "./managementTeamRoutes.js";
+import { ensureManagementTeamSchema } from "./managementTeamMigrations.js";
 import { createAdminHubSpotRouter } from "./adminHubspotRoutes.js";
 import { ensureAdminBarberManagementSchema } from "./adminBarberMigrations.js";
 import { ensureProviderTypeSchema } from "./providerTypeMigrations.js";
@@ -821,8 +823,9 @@ app.use(
 );
 console.log("[boot] mounted /api/admin/hubspot (kpis)");
 app.use(createAdminShopsRouter());
+app.use(createManagementTeamRouter());
 console.log(
-  "[admin] routes mounted: invite, audit, password-reset, barbers, shops, notifications",
+  "[admin] routes mounted: invite, audit, password-reset, barbers, shops, management-team, notifications",
 );
 
 const barberBusinessUploadDir = path.join(__dirname, "backend", "uploads");
@@ -1307,6 +1310,8 @@ async function startServer() {
       console.warn("[boot] preferred_language:", e?.message || e),
     );
     await ensureAdminShopManagementSchema();
+    await ensureManagementTeamSchema();
+    console.log("[migrate] management team schema: ok");
     try {
       const aligned = await ensureAppUsersBarberIdTypeAligned();
       if (aligned?.converted) console.log("[migrate] app_users.barber_id aligned to uuid");

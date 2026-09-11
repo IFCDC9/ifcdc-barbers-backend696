@@ -218,8 +218,20 @@ export async function listAdminBarbers(scope, filters = {}) {
   const where = ["1=1"];
 
   if (!scope.all) {
-    params.push(Number(scope.businessId));
-    where.push(`${BARBER_BUSINESS_ID_SQL} = $${params.length}::bigint`);
+    const ids = Array.isArray(scope.businessIds)
+      ? scope.businessIds.map(Number).filter(Number.isFinite)
+      : Number.isFinite(Number(scope.businessId))
+        ? [Number(scope.businessId)]
+        : [];
+    if (!ids.length) {
+      where.push(`1=0`);
+    } else if (ids.length === 1) {
+      params.push(ids[0]);
+      where.push(`${BARBER_BUSINESS_ID_SQL} = $${params.length}::bigint`);
+    } else {
+      params.push(ids);
+      where.push(`${BARBER_BUSINESS_ID_SQL} = ANY($${params.length}::bigint[])`);
+    }
   }
 
   const shop = String(filters.shop || "").trim();
@@ -294,8 +306,20 @@ export async function getAdminBarberById(scope, barberIdRaw) {
   const params = [barberId];
   const where = ["b.id::text = $1::text"];
   if (!scope.all) {
-    params.push(Number(scope.businessId));
-    where.push(`${BARBER_BUSINESS_ID_SQL} = $${params.length}::bigint`);
+    const ids = Array.isArray(scope.businessIds)
+      ? scope.businessIds.map(Number).filter(Number.isFinite)
+      : Number.isFinite(Number(scope.businessId))
+        ? [Number(scope.businessId)]
+        : [];
+    if (!ids.length) {
+      where.push(`1=0`);
+    } else if (ids.length === 1) {
+      params.push(ids[0]);
+      where.push(`${BARBER_BUSINESS_ID_SQL} = $${params.length}::bigint`);
+    } else {
+      params.push(ids);
+      where.push(`${BARBER_BUSINESS_ID_SQL} = ANY($${params.length}::bigint[])`);
+    }
   }
 
   const r = await dbQuery(
@@ -366,7 +390,12 @@ export function assertBarberInScope(scope, row) {
   if (!row) return { ok: false, message: "Barber not found" };
   if (scope.all) return { ok: true };
   const biz = barberBusinessIdNumber(row.business_id);
-  if (!Number.isFinite(biz) || biz !== Number(scope.businessId)) {
+  const ids = Array.isArray(scope.businessIds)
+    ? scope.businessIds.map(Number).filter(Number.isFinite)
+    : Number.isFinite(Number(scope.businessId))
+      ? [Number(scope.businessId)]
+      : [];
+  if (!Number.isFinite(biz) || !ids.includes(biz)) {
     return { ok: false, message: "You cannot manage this barber." };
   }
   return { ok: true };

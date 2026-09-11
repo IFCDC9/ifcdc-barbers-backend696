@@ -666,9 +666,14 @@ function AdminDashboard() {
         </p>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 10, justifyContent: "center", marginBottom: 28 }}>
           {(getStoredUser()?.isSuperAdmin === true || getStoredUser()?.isOwner === true || String(getStoredUser()?.role || "").toLowerCase() === "super_admin") ? (
-            <a href="/admin/manual-booking" style={{ ...goldButton, textDecoration: "none", display: "inline-block" }}>
-              Book for Client
-            </a>
+            <>
+              <a href="/admin/management-team" style={{ ...goldButton, textDecoration: "none", display: "inline-block" }}>
+                Management Team
+              </a>
+              <a href="/admin/manual-booking" style={{ ...goldButton, textDecoration: "none", display: "inline-block" }}>
+                Book for Client
+              </a>
+            </>
           ) : null}
           <a href="/admin/shops" style={{ ...goldButton, textDecoration: "none", display: "inline-block" }}>
             Shops / Locations

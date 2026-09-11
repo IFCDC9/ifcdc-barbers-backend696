@@ -177,8 +177,20 @@ export async function listAdminShops(scope, filters = {}) {
   const where = ["1=1"];
 
   if (!scope.all) {
-    params.push(Number(scope.businessId));
-    where.push(`b.id = $${params.length}::bigint`);
+    const ids = Array.isArray(scope.businessIds)
+      ? scope.businessIds.map(Number).filter(Number.isFinite)
+      : Number.isFinite(Number(scope.businessId))
+        ? [Number(scope.businessId)]
+        : [];
+    if (!ids.length) {
+      where.push(`1=0`);
+    } else if (ids.length === 1) {
+      params.push(ids[0]);
+      where.push(`b.id = $${params.length}::bigint`);
+    } else {
+      params.push(ids);
+      where.push(`b.id = ANY($${params.length}::bigint[])`);
+    }
   }
 
   const shop = String(filters.shop || filters.name || "").trim();

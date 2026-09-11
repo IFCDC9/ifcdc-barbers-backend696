@@ -20,8 +20,16 @@ export default function RequireRole({ roles, children }) {
   if (!role || !token) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
-  if (!allowed.includes(role)) {
-    return <Navigate to="/" replace />;
+  if (u?.isSuperAdmin === true || u?.isOwner === true) {
+    return children;
   }
-  return children;
+  if (allowed.includes(role)) {
+    return children;
+  }
+  // Managers may use shop-scoped admin surfaces (routes that also allow shop_owner).
+  // They must NOT access Super Admin-only pages (admin/super_admin only).
+  if (u?.isManager === true && allowed.includes("shop_owner")) {
+    return children;
+  }
+  return <Navigate to="/" replace />;
 }

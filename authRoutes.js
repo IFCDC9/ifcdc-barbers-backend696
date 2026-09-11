@@ -52,6 +52,24 @@ function signTokenForAppUser(userRow) {
   return jwt.sign(claims, secret, { expiresIn: "30d" });
 }
 
+/** Attach Management Team scope flags for clients (never Super Admin powers). */
+async function withManagementPublicUser(userRow) {
+  const publicUser = publicUserFromAppUser(userRow);
+  try {
+    const { loadActiveManagementContext } = await import("./managementTeamAuth.js");
+    const ctx = await loadActiveManagementContext(userRow.id);
+    if (ctx) {
+      publicUser.isManager = true;
+      publicUser.managementRole = ctx.role;
+      publicUser.managementShopIds = ctx.shopIds;
+      publicUser.managementLocationIds = ctx.locationIds;
+    }
+  } catch {
+    /* management schema may not be ready yet */
+  }
+  return publicUser;
+}
+
 /** Issue HS256 JWT for an `app_users` row (onboarding, auth, etc.). */
 export function issueAppUserJwt(userRow) {
   return signTokenForAppUser(userRow);
@@ -956,7 +974,7 @@ export function createAuthRouter({ sendEmail }) {
 
       const claims = jwtClaimsFromAppUser(user);
       const token = signTokenForAppUser(user);
-      const publicUser = publicUserFromAppUser(user);
+      const publicUser = await withManagementPublicUser(user);
       const redirect = postLoginRedirectFromClaims(claims);
       console.log("[auth] login_success", {
         email: publicUser.email,

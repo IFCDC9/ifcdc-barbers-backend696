@@ -1,8 +1,11 @@
 import express from "express";
 import { createRequire } from "node:module";
 import { resolveAuthPayload } from "./authRoutes.js";
-import { isJwtGlobalSuperScope } from "./authPlatformJwt.js";
 import { dbQuery } from "./db.js";
+import {
+  augmentShopManagementScope,
+  assertShopInManagementScope,
+} from "./managementTeamAuth.js";
 import {
   approveShop,
   deleteAdminShop,
@@ -43,34 +46,11 @@ async function resolveShopManagementScope(req, res) {
     return null;
   }
   req.user = payload;
-
-  if (isJwtGlobalSuperScope(payload)) {
-    return { all: true, actorId: String(payload.id || ""), isSuperAdmin: true };
-  }
-
-  const role = String(payload?.role || "").trim().toLowerCase();
-  if (role === "admin") {
-    return { all: true, actorId: String(payload.id || ""), isSuperAdmin: false };
-  }
-
-  if (role === "shop_owner") {
-    const r = await dbQuery(`SELECT business_id FROM app_users WHERE id = $1::uuid LIMIT 1`, [String(payload.id)]);
-    const bid = r.rows?.[0]?.business_id;
-    const businessId = bid != null && bid !== "" ? Number(bid) : NaN;
-    if (!Number.isFinite(businessId)) {
-      res.status(403).json({ ok: false, message: "Shop owner account is not linked to a business." });
-      return null;
-    }
-    return { all: false, businessId, actorId: String(payload.id || ""), isSuperAdmin: false };
-  }
-
-  res.status(403).json({ ok: false, message: "Access denied" });
-  return null;
+  return augmentShopManagementScope(payload, res);
 }
 
 function assertShopInScope(scope, businessId) {
-  if (scope.all) return true;
-  return Number(scope.businessId) === Number(businessId);
+  return assertShopInManagementScope(scope, businessId);
 }
 
 function requirePlatformAdmin(scope, res) {
