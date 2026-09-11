@@ -15,7 +15,7 @@ export default function AdminHomeScreen({ navigation }: { navigation: Nav }) {
   const { user, isPlatformAdmin, staffRole } = useAuth();
 
   useEffect(() => {
-    if (!isPlatformAdmin && staffRole !== "shop_owner") return;
+    if (!isPlatformAdmin && staffRole !== "shop_owner" && staffRole !== "manager") return;
     void (async () => {
       try {
         const notes = await fetchAdminNotifications(true);
@@ -28,16 +28,28 @@ export default function AdminHomeScreen({ navigation }: { navigation: Nav }) {
     })();
   }, [isPlatformAdmin, staffRole]);
 
-  const title = isPlatformAdmin ? "Platform Admin" : staffRole === "shop_owner" ? "Shop Dashboard" : "Manage";
+  const isManager = staffRole === "manager" || user?.isManager === true;
+  const title = isPlatformAdmin
+    ? "Platform Admin"
+    : staffRole === "shop_owner"
+      ? "Shop Dashboard"
+      : isManager
+        ? "Manager Dashboard"
+        : "Manage";
   const subtitle = isPlatformAdmin
     ? "Manage bookings, barbers, payouts, and platform settings from one place."
-    : "Manage your shop barbers, bookings, services, and schedules.";
+    : isManager
+      ? `Shop Manager · ${String(user?.managementRole || "manager").replace(/_/g, " ")} · scoped access only.`
+      : "Manage your shop barbers, bookings, services, and schedules.";
 
   return (
     <ProfileScreenLayout title={isPlatformAdmin ? "Admin" : "Manage"} subtitle={UX.adminTools} standalone>
       <ProfileCard glow style={styles.hero}>
         <Text style={styles.heroTitle}>{title}</Text>
         {user?.email ? <Text style={styles.heroEmail}>{user.email}</Text> : null}
+        {isManager && Array.isArray(user?.managementShopIds) && user.managementShopIds.length ? (
+          <Text style={styles.heroEmail}>Assigned shops: {user.managementShopIds.join(", ")}</Text>
+        ) : null}
         <Text style={styles.heroCopy}>{subtitle}</Text>
       </ProfileCard>
       <AdminMenuList navigation={navigation} />

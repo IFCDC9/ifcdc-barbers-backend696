@@ -63,6 +63,80 @@ export async function loadActiveManagementContext(userId) {
   };
 }
 
+/**
+ * If this user has no ACTIVE assignment by userId, adopt an ACTIVE/suspended assignment
+ * whose linked account shares the same email (or orphaned invite row), then retarget user_id.
+ * Never touches Super Admin accounts. Never promotes app_users.role.
+ */
+export async function ensureManagementLinkedToUser({ userId, email }) {
+  const uid = String(userId || "").trim();
+  if (!uid) return null;
+
+  const existing = await loadActiveManagementContext(uid);
+  if (existing) return existing;
+
+  const normalized = String(email || "")
+    .trim()
+    .toLowerCase();
+  if (!normalized || isSuperAdminEmail(normalized)) return null;
+
+  // Prefer active assignment already on a different row with this email (should be rare),
+  // or an active assignment whose current user row email matches.
+  const found = await dbQuery(
+    `SELECT ma.id, ma.user_id, ma.status
+     FROM management_assignments ma
+     JOIN app_users u ON u.id = ma.user_id
+     WHERE lower(trim(u.email::text)) = $1
+       AND ma.status IN ('active', 'suspended')
+     ORDER BY
+       CASE ma.status WHEN 'active' THEN 0 ELSE 1 END,
+       ma.updated_at DESC NULLS LAST,
+       ma.created_at DESC
+     LIMIT 1`,
+    [normalized],
+  );
+  const row = found.rows?.[0];
+  if (!row) return null;
+
+  if (String(row.user_id) !== uid) {
+    // Move assignment onto the logging-in account (same email).
+    await dbQuery(
+      `UPDATE management_assignments
+       SET user_id = $1::uuid, updated_at = NOW()
+       WHERE id = $2::uuid`,
+      [uid, row.id],
+    );
+  }
+
+  return loadActiveManagementContext(uid);
+}
+
+export function managementFieldsForPublicUser(ctx) {
+  if (!ctx || ctx.status !== "active") {
+    return {
+      isManager: false,
+      managementRole: null,
+      managementStatus: ctx?.status || null,
+      managementAssignmentId: null,
+      managementShopIds: [],
+      managementLocationIds: [],
+      managerPermissions: null,
+      fullManagerAccess: false,
+    };
+  }
+  return {
+    isManager: true,
+    managementRole: ctx.role,
+    managementStatus: ctx.status,
+    managementAssignmentId: ctx.assignmentId,
+    managementShopIds: ctx.shopIds.slice(),
+    managementLocationIds: ctx.locationIds.slice(),
+    managerPermissions: ctx.permissions,
+    fullManagerAccess:
+      ctx.fullAccess === true || ctx.permissions?.[MANAGEMENT_PERMISSIONS.FULL_MANAGER_ACCESS] === true,
+  };
+}
+
 export function isProtectedSuperAdminUser(userRow) {
   if (!userRow) return false;
   const role = String(userRow.role || "").trim().toLowerCase();

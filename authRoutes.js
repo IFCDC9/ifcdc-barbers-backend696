@@ -56,16 +56,30 @@ function signTokenForAppUser(userRow) {
 async function withManagementPublicUser(userRow) {
   const publicUser = publicUserFromAppUser(userRow);
   try {
-    const { loadActiveManagementContext } = await import("./managementTeamAuth.js");
-    const ctx = await loadActiveManagementContext(userRow.id);
-    if (ctx) {
-      publicUser.isManager = true;
-      publicUser.managementRole = ctx.role;
-      publicUser.managementShopIds = ctx.shopIds;
-      publicUser.managementLocationIds = ctx.locationIds;
+    const {
+      ensureManagementLinkedToUser,
+      loadActiveManagementContext,
+      managementFieldsForPublicUser,
+    } = await import("./managementTeamAuth.js");
+    let ctx = await ensureManagementLinkedToUser({
+      userId: userRow.id,
+      email: userRow.email,
+    });
+    if (!ctx) {
+      ctx = await loadActiveManagementContext(userRow.id);
     }
+    Object.assign(publicUser, managementFieldsForPublicUser(ctx));
   } catch {
-    /* management schema may not be ready yet */
+    Object.assign(publicUser, {
+      isManager: false,
+      managementRole: null,
+      managementStatus: null,
+      managementAssignmentId: null,
+      managementShopIds: [],
+      managementLocationIds: [],
+      managerPermissions: null,
+      fullManagerAccess: false,
+    });
   }
   return publicUser;
 }
@@ -453,7 +467,7 @@ async function loadAppUserForTokenRefresh(userId) {
 async function issueSessionResponse(userRow) {
   const claims = jwtClaimsFromAppUser(userRow);
   const token = signTokenForAppUser(userRow);
-  const publicUser = publicUserFromAppUser(userRow);
+  const publicUser = await withManagementPublicUser(userRow);
   const approval = await resolveUserApprovalState(userRow);
   const redirect = postLoginRedirectFromClaims(claims);
   return {
@@ -679,7 +693,7 @@ export function createAuthRouter({ sendEmail }) {
       const finalUser = refreshed.rows?.[0] || user;
       const claims = jwtClaimsFromAppUser(finalUser);
       const token = signTokenForAppUser(finalUser);
-      const publicUser = publicUserFromAppUser(finalUser);
+      const publicUser = await withManagementPublicUser(finalUser);
       const approval = await resolveUserApprovalState(finalUser);
       console.log("[auth] register_success", {
         email: publicUser.email,
@@ -1181,7 +1195,7 @@ export function createAuthRouter({ sendEmail }) {
       if (!user) {
         return res.status(404).json({ ok: false, error: "user_not_found", message: "Account not found" });
       }
-      const publicUser = publicUserFromAppUser(user);
+      const publicUser = await withManagementPublicUser(user);
       // HubSpot CRM sync — fire-and-forget; never blocks profile updates.
       void import("./hubspotService.js")
         .then((m) =>
@@ -1332,7 +1346,7 @@ export function createAuthRouter({ sendEmail }) {
       if (userByGoogle) {
         const claims = jwtClaimsFromAppUser(userByGoogle);
         const token = signTokenForAppUser(userByGoogle);
-        const publicUser = publicUserFromAppUser(userByGoogle);
+        const publicUser = await withManagementPublicUser(userByGoogle);
         console.log("[auth] google_success", {
           email: publicUser.email,
           role: publicUser.role,
@@ -1365,7 +1379,7 @@ export function createAuthRouter({ sendEmail }) {
         const refreshed = { ...userByEmail, google_id: googleId };
         const claims = jwtClaimsFromAppUser(refreshed);
         const token = signTokenForAppUser(refreshed);
-        const publicUser = publicUserFromAppUser(refreshed);
+        const publicUser = await withManagementPublicUser(refreshed);
         console.log("[auth] google_success", {
           email: publicUser.email,
           role: publicUser.role,
@@ -1399,7 +1413,7 @@ export function createAuthRouter({ sendEmail }) {
       }
       const claims = jwtClaimsFromAppUser(nu);
       const token = signTokenForAppUser(nu);
-      const publicUser = publicUserFromAppUser(nu);
+      const publicUser = await withManagementPublicUser(nu);
       console.log("[auth] google_success", {
         email: publicUser.email,
         role: publicUser.role,
@@ -1490,7 +1504,7 @@ export function createAuthRouter({ sendEmail }) {
       if (userByApple) {
         const claims = jwtClaimsFromAppUser(userByApple);
         const token = signTokenForAppUser(userByApple);
-        const publicUser = publicUserFromAppUser(userByApple);
+        const publicUser = await withManagementPublicUser(userByApple);
         console.log("[auth] apple_success", {
           email: publicUser.email,
           role: publicUser.role,
@@ -1542,7 +1556,7 @@ export function createAuthRouter({ sendEmail }) {
         const refreshed = { ...userByEmail, apple_id: appleId };
         const claims = jwtClaimsFromAppUser(refreshed);
         const token = signTokenForAppUser(refreshed);
-        const publicUser = publicUserFromAppUser(refreshed);
+        const publicUser = await withManagementPublicUser(refreshed);
         console.log("[auth] apple_success", {
           email: publicUser.email,
           role: publicUser.role,
@@ -1576,7 +1590,7 @@ export function createAuthRouter({ sendEmail }) {
       }
       const claims = jwtClaimsFromAppUser(nu);
       const token = signTokenForAppUser(nu);
-      const publicUser = publicUserFromAppUser(nu);
+      const publicUser = await withManagementPublicUser(nu);
       console.log("[auth] apple_success", {
         email: publicUser.email,
         role: publicUser.role,

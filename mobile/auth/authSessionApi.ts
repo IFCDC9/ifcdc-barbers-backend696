@@ -14,6 +14,14 @@ export type JsonAuth = {
     role?: string;
     isOwner?: boolean;
     isSuperAdmin?: boolean;
+    isManager?: boolean;
+    managementRole?: string | null;
+    managementStatus?: string | null;
+    managementAssignmentId?: string | null;
+    managementShopIds?: number[];
+    managementLocationIds?: string[];
+    managerPermissions?: Record<string, boolean> | null;
+    fullManagerAccess?: boolean;
     createdAt?: string | null;
     businessId?: number | null;
     barberId?: number | null;

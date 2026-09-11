@@ -2,13 +2,23 @@ import { decodeJwtPayload } from "../auth/jwtSession";
 import type { AppUser } from "../auth/authSessionApi";
 import { isSuperAdminUser } from "./adminAccess";
 
-export type StaffRole = "super_admin" | "admin" | "shop_owner" | "barber";
+export type StaffRole = "super_admin" | "admin" | "shop_owner" | "barber" | "manager";
+
+/** ACTIVE Management Team assignment (Shop/Platform/Location Manager). */
+export function isActiveManager(user: AppUser | null | undefined): boolean {
+  if (!user) return false;
+  if (user.isManager !== true) return false;
+  const status = String(user.managementStatus || "active").toLowerCase();
+  return status === "active";
+}
 
 export function resolveStaffRole(user: AppUser | null | undefined, token?: string | null): StaffRole | null {
+  if (isSuperAdminUser(user, token)) return "super_admin";
   const role = String(user?.role || "").toLowerCase();
-  if (role === "super_admin" || isSuperAdminUser(user, token)) return "super_admin";
+  if (role === "super_admin") return "super_admin";
   if (role === "admin") return "admin";
   if (role === "shop_owner") return "shop_owner";
+  if (isActiveManager(user)) return "manager";
   if (role === "barber") return "barber";
   if (token) {
     const payload = decodeJwtPayload(token);
@@ -21,10 +31,11 @@ export function resolveStaffRole(user: AppUser | null | undefined, token?: strin
   return null;
 }
 
-/** Show Manage/Admin tab for platform admins and shop owners. */
+/** Show Manage/Admin tab for platform admins, shop owners, and ACTIVE managers. */
 export function hasStaffDashboardAccess(user: AppUser | null | undefined, token?: string | null): boolean {
+  if (isActiveManager(user)) return true;
   const role = resolveStaffRole(user, token);
-  return role === "super_admin" || role === "admin" || role === "shop_owner";
+  return role === "super_admin" || role === "admin" || role === "shop_owner" || role === "manager";
 }
 
 export function canAccessAdminMenuKey(
@@ -32,20 +43,27 @@ export function canAccessAdminMenuKey(
   user: AppUser | null | undefined,
   token?: string | null,
 ): boolean {
+  if (isSuperAdminUser(user, token)) {
+    return true;
+  }
   const role = resolveStaffRole(user, token);
   if (!role) return false;
-  if (key === "manual_booking") {
-    return role === "super_admin" || isSuperAdminUser(user, token);
+
+  // Super Admin–only surfaces
+  if (key === "manual_booking" || key === "sms_delivery" || key === "users") {
+    return false;
   }
-  if (key === "sms_delivery") {
-    return role === "super_admin" || isSuperAdminUser(user, token);
-  }
-  if (role === "super_admin") return true;
+
   if (role === "admin") {
-    return !["users", "manual_booking"].includes(key);
+    return !["users", "manual_booking", "sms_delivery"].includes(key);
   }
-  if (role === "shop_owner") {
-    return ["bookings", "services", "barbers", "shop", "schedule"].includes(key);
+
+  // Shop owners + Management Team managers: scoped operational tools only
+  if (role === "shop_owner" || role === "manager") {
+    return ["bookings", "services", "barbers", "shop", "schedule", "notifications", "analytics", "payout"].includes(
+      key,
+    );
   }
+
   return false;
 }
