@@ -28,6 +28,7 @@ import AdminShops from "./pages/AdminShops.jsx";
 import AdminShopDetail from "./pages/AdminShopDetail.jsx";
 import BarberSettings from "./pages/BarberSettings.jsx";
 import RequireRole from "./components/RequireRole.jsx";
+import AuthSessionHydrate from "./components/AuthSessionHydrate.jsx";
 import Invite from "./pages/Invite.jsx";
 import PublicLegalPage from "./pages/PublicLegalPage.jsx";
 import SmsConsentPage from "./pages/SmsConsentPage.jsx";
@@ -80,6 +81,7 @@ function AppShell() {
     // DO NOT ADD max-w or mx-auto to root layout
     // This breaks full-screen snap behavior
     <div className="app-container">
+      <AuthSessionHydrate />
       <div
         className="ifcdc-tab-accent-bar"
         style={{

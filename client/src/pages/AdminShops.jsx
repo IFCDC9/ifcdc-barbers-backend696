@@ -6,6 +6,7 @@ import { Button } from "../components/ui/Button.jsx";
 import { theme } from "../components/ui/theme.js";
 import { approveAdminShop, fetchAdminShopDashboard, fetchAdminShops, rejectAdminShop } from "../services/api.js";
 import { getStoredToken, getStoredUser } from "../lib/authHeaders.js";
+import { canAccessShopManagement, isPlatformAdmin } from "../lib/staffDashboardAccess.js";
 
 const inputStyle = {
   width: "100%",
@@ -50,7 +51,7 @@ function StatCard({ label, value }) {
 export default function AdminShops() {
   const user = getStoredUser();
   const token = getStoredToken();
-  const isSuper = user?.role === "super_admin" || user?.role === "admin";
+  const isSuper = isPlatformAdmin(user);
 
   const [shop, setShop] = React.useState("");
   const [city, setCity] = React.useState("");
@@ -113,19 +114,21 @@ export default function AdminShops() {
     }
   };
 
-  if (!user || !token || (user.role !== "admin" && user.role !== "super_admin" && user.role !== "shop_owner")) {
+  if (!user || !token || !canAccessShopManagement(user)) {
     return <Navigate to="/login" replace />;
   }
 
   return (
     <Page>
       <PageHeader
-        title="Super Admin Control Center"
-        subtitle={isSuper ? "Shops, subscriptions, and platform access" : "Your shop"}
+        title={isSuper ? "Super Admin Control Center" : "Shop Management"}
+        subtitle={isSuper ? "Shops, subscriptions, and platform access" : "Your assigned shop(s)"}
         right={
-          <Link to="/admin" style={{ color: theme.colors.text, fontWeight: 800 }}>
-            ← Admin
-          </Link>
+          isSuper ? (
+            <Link to="/admin" style={{ color: theme.colors.text, fontWeight: 800 }}>
+              ← Admin
+            </Link>
+          ) : null
         }
       />
 

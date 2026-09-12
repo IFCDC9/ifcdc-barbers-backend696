@@ -6,6 +6,12 @@ import LanguageDropdown from "../components/LanguageDropdown.jsx";
 import { DEFAULT_LANGUAGE, normalizeLocale } from "../lib/languages.js";
 import { currentAppLanguage, setAppLanguage } from "../i18n/index.js";
 import { persistAuthSession, getStoredToken } from "../lib/authHeaders.js";
+import {
+  canAccessShopManagement,
+  isActiveManager,
+  isPlatformAdmin,
+  managementRoleLabel,
+} from "../lib/staffDashboardAccess.js";
 
 function readUser() {
   try {
@@ -108,8 +114,16 @@ export default function Profile() {
   }
 
   const role = String(user.role || "user");
-  const canShop = role === "barber" || role === "shop_owner" || role === "admin" || role === "super_admin";
-  const canPlatformAdmin = role === "admin" || role === "super_admin";
+  const canShop = role === "barber" || canAccessShopManagement(user);
+  const canPlatformAdmin = isPlatformAdmin(user);
+  const managerLabel = managementRoleLabel(user);
+  const accountLabel = managerLabel
+    ? managerLabel
+    : role === "shop_owner"
+      ? "Shop Admin"
+      : role === "user"
+        ? "Customer"
+        : role;
 
   return (
     <div className="ifcdc-profile">
@@ -124,8 +138,7 @@ export default function Profile() {
           <strong>Email:</strong> {user.email || "—"}
         </p>
         <p>
-          <strong>Account:</strong>{" "}
-          {role === "shop_owner" ? "Shop Admin" : role === "user" ? "Customer" : role}
+          <strong>Account:</strong> {accountLabel}
         </p>
       </div>
 
@@ -142,9 +155,16 @@ export default function Profile() {
 
       {canShop ? (
         <>
-          <Link to="/barber-settings" className="ifcdc-book-wizard__cta">
-            Shop settings
-          </Link>
+          {isActiveManager(user) || role === "shop_owner" ? (
+            <Link to="/admin/shops" className="ifcdc-book-wizard__cta">
+              {isActiveManager(user) ? "Manager dashboard" : "Shop management"}
+            </Link>
+          ) : null}
+          {role === "barber" || role === "shop_owner" || isPlatformAdmin(user) ? (
+            <Link to="/barber-settings" className="ifcdc-book-wizard__cta ifcdc-book-wizard__cta--ghost">
+              Shop settings
+            </Link>
+          ) : null}
           {role === "barber" ? (
             <Link to="/profile/schedule" className="ifcdc-book-wizard__cta ifcdc-book-wizard__cta--ghost">
               My schedule

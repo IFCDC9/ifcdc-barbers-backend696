@@ -17,6 +17,7 @@ import {
   putAdminShopTelephony,
 } from "../services/api.js";
 import { getStoredToken, getStoredUser } from "../lib/authHeaders.js";
+import { canAccessShopManagement, isPlatformAdmin } from "../lib/staffDashboardAccess.js";
 
 const inputStyle = {
   width: "100%",
@@ -43,7 +44,7 @@ export default function AdminShopDetail() {
   const [searchParams] = useSearchParams();
   const user = getStoredUser();
   const token = getStoredToken();
-  const isSuper = user?.role === "super_admin" || user?.role === "admin";
+  const isSuper = isPlatformAdmin(user);
   const editMode = searchParams.get("edit") === "1";
 
   const [detail, setDetail] = React.useState(null);
@@ -114,7 +115,7 @@ export default function AdminShopDetail() {
     void load();
   }, [load]);
 
-  if (!user || !token || (user.role !== "admin" && user.role !== "super_admin" && user.role !== "shop_owner")) {
+  if (!user || !token || !canAccessShopManagement(user)) {
     return <Navigate to="/login" replace />;
   }
 

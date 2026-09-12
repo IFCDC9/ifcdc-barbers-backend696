@@ -1,6 +1,11 @@
 import { NavLink, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { clearAuthSession } from "../lib/authHeaders.js";
+import { clearAuthSession, getStoredUser } from "../lib/authHeaders.js";
+import {
+  canAccessShopManagement,
+  isActiveManager,
+  isPlatformAdmin,
+} from "../lib/staffDashboardAccess.js";
 
 const NAV_ICONS = {
   home: (
@@ -56,17 +61,16 @@ export default function AppNav({ variant = "bottom" }) {
   const navigate = useNavigate();
   const { t } = useTranslation();
 
-  let user = null;
-  try {
-    user = JSON.parse(localStorage.getItem("user"));
-  } catch {
-    user = null;
-  }
+  const user = getStoredUser();
   const isLoggedIn = Boolean(user);
   const role = String(user?.role || "");
-  const canSeePlatformAdmin = role === "super_admin" || role === "admin";
+  const canSeePlatformAdmin = isPlatformAdmin(user);
   const canSeeShopSettings =
-    role === "barber" || role === "shop_owner" || canSeePlatformAdmin;
+    role === "barber" || canAccessShopManagement(user);
+  const manageTo = isActiveManager(user) || role === "shop_owner" ? "/admin/shops" : "/barber-settings";
+  const manageLabel = isActiveManager(user)
+    ? t("web.nav.manage", { defaultValue: "Manage" })
+    : t("web.nav.shop", { defaultValue: "Shop" });
 
   const tabs = [
     { to: "/", icon: NAV_ICONS.home, label: t("web.nav.home", { defaultValue: "Home" }), end: true },
@@ -74,7 +78,7 @@ export default function AppNav({ variant = "bottom" }) {
     { to: "/aura", icon: NAV_ICONS.aura, label: t("web.nav.aura", { defaultValue: "AURA" }) },
     { to: "/profile", icon: NAV_ICONS.profile, label: t("web.nav.profile", { defaultValue: "Profile" }) },
     ...(canSeeShopSettings
-      ? [{ to: "/barber-settings", icon: NAV_ICONS.shop, label: t("web.nav.shop", { defaultValue: "Shop" }) }]
+      ? [{ to: manageTo, icon: NAV_ICONS.shop, label: manageLabel }]
       : []),
     ...(canSeePlatformAdmin
       ? [{ to: "/admin", icon: NAV_ICONS.admin, label: t("web.nav.admin", { defaultValue: "Admin" }) }]

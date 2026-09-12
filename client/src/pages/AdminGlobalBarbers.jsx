@@ -19,6 +19,7 @@ import {
 } from "../services/api.js";
 import ProviderTypeDropdown from "../components/ProviderTypeDropdown.jsx";
 import { providerTypeLabel } from "../lib/providerTypes.js";
+import { canAccessShopManagement, isPlatformAdmin } from "../lib/staffDashboardAccess.js";
 
 const inputStyle = {
   width: "100%",
@@ -163,11 +164,11 @@ export default function AdminGlobalBarbers() {
     }
   };
 
-  if (!user || !token || (user.role !== "admin" && user.role !== "super_admin" && user.role !== "shop_owner")) {
+  if (!user || !token || !canAccessShopManagement(user)) {
     return <Navigate to="/login" replace />;
   }
 
-  const isSuper = user.role === "super_admin" || user.role === "admin";
+  const isSuper = isPlatformAdmin(user);
 
   return (
     <Page>
@@ -175,9 +176,15 @@ export default function AdminGlobalBarbers() {
         title="Barber management"
         subtitle={isSuper ? "Global platform view — all registered barbers" : "Barbers at your shop"}
         right={
-          <Link to="/admin" style={{ color: theme.colors.text, fontWeight: 800 }}>
-            ← Admin
-          </Link>
+          isSuper ? (
+            <Link to="/admin" style={{ color: theme.colors.text, fontWeight: 800 }}>
+              ← Admin
+            </Link>
+          ) : (
+            <Link to="/admin/shops" style={{ color: theme.colors.text, fontWeight: 800 }}>
+              ← Shops
+            </Link>
+          )
         }
       />
 

@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { login } from "../services/api.js";
 import { persistAuthSession } from "../lib/authHeaders.js";
+import { postLoginPath } from "../lib/staffDashboardAccess.js";
 import LanguageDropdown from "../components/LanguageDropdown.jsx";
 import { DEFAULT_LANGUAGE, normalizeLocale } from "../lib/languages.js";
 import { LANG_STORAGE_KEY, setAppLanguage } from "../i18n/index.js";
@@ -72,7 +73,11 @@ export default function Login() {
       setSubmitting(true);
       const data = await login(form.email, form.password);
 
-      const authed = Boolean(data?.token) && (data.success === true || data.ok === true);
+      // Token + user is authoritative; success/ok flags are defensive (API normally sets both).
+      const authed =
+        Boolean(data?.token) &&
+        Boolean(data?.user) &&
+        (data.success === true || data.ok === true || data.requiresVerification !== true);
       if (authed && data.token && data.user) {
         persistAuthSession({ token: data.token, user: data.user });
         const profileLang = normalizeLocale(
@@ -82,15 +87,7 @@ export default function Login() {
           await setAppLanguage(profileLang);
           setLanguage(profileLang);
         }
-        const role = data?.user?.role;
-        navigate(
-          role === "super_admin" || role === "admin"
-            ? "/admin"
-            : role === "shop_owner" || role === "barber"
-              ? "/barber-settings"
-              : "/booking",
-          { replace: true },
-        );
+        navigate(postLoginPath(data.user), { replace: true });
         return;
       }
 
