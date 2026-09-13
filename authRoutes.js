@@ -69,7 +69,8 @@ async function withManagementPublicUser(userRow) {
       ctx = await loadActiveManagementContext(userRow.id);
     }
     Object.assign(publicUser, managementFieldsForPublicUser(ctx));
-  } catch {
+  } catch (e) {
+    console.error("[auth] management context attach failed:", e?.stack || e?.message || e);
     Object.assign(publicUser, {
       isManager: false,
       managementRole: null,
@@ -853,7 +854,7 @@ export function createAuthRouter({ sendEmail }) {
       }
       const found = await dbQuery(
         `SELECT id, name, email, password_hash, role, barber_id, business_id, created_at,
-                phone, phone_e164
+                phone, phone_e164, apple_id, google_id
          FROM app_users
          WHERE lower(trim(email::text)) = $1
          LIMIT 1`,
@@ -876,11 +877,14 @@ export function createAuthRouter({ sendEmail }) {
           req,
           metadata: { reason: "invalid_password" },
         });
+        const oauthHint = Boolean(user.apple_id || user.google_id);
         return res.status(401).json({
           ok: false,
           success: false,
           error: "invalid_password",
-          message: "Wrong password. Try again or use Forgot password.",
+          message: oauthHint
+            ? "Wrong password. If you use Sign in with Apple or Google in the app, tap Forgot password to set a website password for this same account."
+            : "Wrong password. Try again or use Forgot password.",
         });
       }
 

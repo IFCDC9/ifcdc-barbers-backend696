@@ -382,10 +382,19 @@ export async function createManagementAssignment({
   }
 
   const inserted = await dbQuery(
-    `INSERT INTO management_assignments (user_id, role, status, full_access, notes, created_by)
-     VALUES ($1::uuid, $2, 'active', $3, $4, $5::uuid)
+    `INSERT INTO management_assignments (user_id, role, status, full_access, notes, created_by, linked_email)
+     VALUES ($1::uuid, $2, 'active', $3, $4, $5::uuid, $6)
      RETURNING *`,
-    [resolved.user.id, role, Boolean(fullAccess), notes || null, actorUserId || null],
+    [
+      resolved.user.id,
+      role,
+      Boolean(fullAccess),
+      notes || null,
+      actorUserId || null,
+      String(resolved.user.email || "")
+        .trim()
+        .toLowerCase() || null,
+    ],
   );
   const assignment = inserted.rows[0];
   await replaceShopAccess(assignment.id, shopIds);

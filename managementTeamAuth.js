@@ -80,14 +80,16 @@ export async function ensureManagementLinkedToUser({ userId, email }) {
     .toLowerCase();
   if (!normalized || isSuperAdminEmail(normalized)) return null;
 
-  // Prefer active assignment already on a different row with this email (should be rare),
-  // or an active assignment whose current user row email matches.
+  // Match by durable linked_email (survives account delete) or by another user row with this email.
   const found = await dbQuery(
     `SELECT ma.id, ma.user_id, ma.status
      FROM management_assignments ma
-     JOIN app_users u ON u.id = ma.user_id
-     WHERE lower(trim(u.email::text)) = $1
-       AND ma.status IN ('active', 'suspended')
+     LEFT JOIN app_users u ON u.id = ma.user_id
+     WHERE ma.status IN ('active', 'suspended')
+       AND (
+         lower(trim(coalesce(ma.linked_email, ''))) = $1
+         OR lower(trim(u.email::text)) = $1
+       )
      ORDER BY
        CASE ma.status WHEN 'active' THEN 0 ELSE 1 END,
        ma.updated_at DESC NULLS LAST,
@@ -98,13 +100,14 @@ export async function ensureManagementLinkedToUser({ userId, email }) {
   const row = found.rows?.[0];
   if (!row) return null;
 
-  if (String(row.user_id) !== uid) {
-    // Move assignment onto the logging-in account (same email).
+  if (String(row.user_id || "") !== uid) {
     await dbQuery(
       `UPDATE management_assignments
-       SET user_id = $1::uuid, updated_at = NOW()
-       WHERE id = $2::uuid`,
-      [uid, row.id],
+       SET user_id = $1::uuid,
+           linked_email = $2,
+           updated_at = NOW()
+       WHERE id = $3::uuid`,
+      [uid, normalized, row.id],
     );
   }
 

@@ -115,6 +115,19 @@ export async function deleteAppUserAccount(userId) {
 
   await dbQuery(`DELETE FROM pending_user_invites WHERE lower(trim(email)) = $1`, [email]).catch(() => {});
 
+  // Keep Management Team assignment by email so re-register / Apple Sign-In restores manager access.
+  await dbQuery(
+    `UPDATE management_assignments
+     SET user_id = NULL,
+         linked_email = COALESCE(NULLIF(lower(btrim(linked_email)), ''), $2),
+         updated_at = NOW()
+     WHERE user_id = $1::uuid
+       AND status IN ('active', 'suspended')`,
+    [id, email],
+  ).catch((e) => {
+    console.warn("[account-delete] preserve management assignment failed:", e?.message || e);
+  });
+
   await dbQuery(`DELETE FROM app_users WHERE id = $1::uuid`, [id]);
 
   return { ok: true };

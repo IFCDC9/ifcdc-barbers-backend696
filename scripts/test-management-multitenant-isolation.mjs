@@ -35,6 +35,7 @@ import {
 } from "../managementPermissions.js";
 import { hashPassword } from "../authPasswordPolicy.js";
 import { isSuperAdminEmail } from "../rolePolicy.js";
+import { deleteAppUserAccount } from "../accountDeletionService.js";
 
 const stamp = Date.now();
 const CLEANUP = String(process.env.CLEANUP || "1") !== "0";
@@ -235,6 +236,60 @@ const rem = await setManagementAssignmentStatus({
 assert.equal(rem.ok, true);
 assert.equal(await loadActiveManagementContext(mgrB.id), null);
 console.log("[mt-iso] PASS — remove access clears manager context");
+
+// Delete + same-email re-register must restore privileges (linked_email, not CASCADE wipe)
+{
+  const doomed = await createCustomer("rejoinMgr");
+  const doomedEmail = String(doomed.email).toLowerCase();
+  const assignRejoin = await createManagementAssignment({
+    actorUserId: actorId,
+    actorEmail,
+    userId: doomed.id,
+    role: "shop_manager",
+    shopIds: [shopA.businessId],
+    locationIds: [shopA.locationId],
+    permissions: {},
+    fullAccess: true,
+  });
+  assert.equal(assignRejoin.ok, true, assignRejoin.message);
+  created.assignmentIds.push(assignRejoin.assignment.id);
+  const beforeDelete = await loadActiveManagementContext(doomed.id);
+  assert.equal(managementFieldsForPublicUser(beforeDelete).isManager, true);
+
+  const deleted = await deleteAppUserAccount(doomed.id);
+  assert.equal(deleted.ok, true, deleted.message || deleted.error);
+  created.userIds = created.userIds.filter((id) => id !== String(doomed.id));
+  assert.equal(await loadActiveManagementContext(doomed.id), null);
+
+  const orphan = await dbQuery(
+    `SELECT id, user_id, linked_email, status, role
+     FROM management_assignments
+     WHERE id = $1::uuid`,
+    [assignRejoin.assignment.id],
+  );
+  assert.equal(orphan.rows?.[0]?.user_id, null);
+  assert.equal(String(orphan.rows?.[0]?.linked_email || "").toLowerCase(), doomedEmail);
+  assert.equal(orphan.rows?.[0]?.status, "active");
+  assert.equal(orphan.rows?.[0]?.role, "shop_manager");
+
+  const rejoined = await createCustomer("rejoinMgr");
+  assert.equal(String(rejoined.email).toLowerCase(), doomedEmail);
+  assert.notEqual(String(rejoined.id), String(doomed.id));
+
+  const restored = await ensureManagementLinkedToUser({
+    userId: rejoined.id,
+    email: rejoined.email,
+  });
+  const restoredFields = managementFieldsForPublicUser(restored);
+  assert.equal(restoredFields.isManager, true);
+  assert.equal(restoredFields.managementRole, "shop_manager");
+  assert.equal(restoredFields.managementStatus, "active");
+  assert.deepEqual(restoredFields.managementShopIds, [shopA.businessId]);
+  assert.ok(restoredFields.managementLocationIds.includes(shopA.locationId));
+  assert.equal(restoredFields.fullManagerAccess, true);
+  assert.equal(restored.userId, String(rejoined.id));
+  console.log("[mt-iso] PASS — delete + same-email recreate restores shop_manager via linked_email");
+}
 
 // Manager list is Super Admin inventory (multiple managers coexist)
 const team = await listManagementTeam({ includeRemoved: false });

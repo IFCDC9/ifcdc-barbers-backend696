@@ -137,6 +137,45 @@ export async function ensureManagementTeamSchema() {
     `CREATE INDEX IF NOT EXISTS management_activity_log_business_idx ON management_activity_log (business_id)`,
   );
 
+  // Durable email link so Management Team survives account delete + re-register / Apple Sign-In.
+  await dbQuery(`ALTER TABLE management_assignments ADD COLUMN IF NOT EXISTS linked_email TEXT`);
+  await dbQuery(`
+    UPDATE management_assignments ma
+    SET linked_email = lower(trim(u.email::text))
+    FROM app_users u
+    WHERE ma.user_id = u.id
+      AND (ma.linked_email IS NULL OR btrim(ma.linked_email) = '')
+  `);
+  await dbQuery(`ALTER TABLE management_assignments ALTER COLUMN user_id DROP NOT NULL`);
+  const fk = await dbQuery(`
+    SELECT pg_get_constraintdef(oid) AS def
+    FROM pg_constraint
+    WHERE conrelid = 'management_assignments'::regclass
+      AND conname = 'management_assignments_user_id_fkey'
+  `);
+  const fkDef = String(fk.rows?.[0]?.def || "");
+  if (!/ON DELETE SET NULL/i.test(fkDef)) {
+    await dbQuery(
+      `ALTER TABLE management_assignments DROP CONSTRAINT IF EXISTS management_assignments_user_id_fkey`,
+    );
+    await dbQuery(`
+      ALTER TABLE management_assignments
+        ADD CONSTRAINT management_assignments_user_id_fkey
+        FOREIGN KEY (user_id) REFERENCES app_users(id) ON DELETE SET NULL
+    `);
+  }
+  await dbQuery(`
+    CREATE INDEX IF NOT EXISTS management_assignments_linked_email_idx
+    ON management_assignments (lower(linked_email))
+  `);
+  await dbQuery(`
+    CREATE UNIQUE INDEX IF NOT EXISTS management_assignments_one_active_per_email_idx
+    ON management_assignments (lower(linked_email))
+    WHERE status IN ('active','suspended')
+      AND linked_email IS NOT NULL
+      AND btrim(linked_email) <> ''
+  `);
+
   // Backfill one primary location per existing business (idempotent).
   await dbQuery(`
     INSERT INTO shop_locations (business_id, name, address, city, state, is_primary, status)
