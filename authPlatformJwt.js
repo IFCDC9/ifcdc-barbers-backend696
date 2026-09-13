@@ -46,6 +46,11 @@ export function publicUserFromAppUser(user) {
     name: user.full_name ?? user.name,
     email: user.email,
     phone: user.phone ?? null,
+    phoneVerified:
+      user.phone_verified === true ||
+      user.phone_verified === "t" ||
+      user.phone_verified === "true" ||
+      user.phoneVerified === true,
     profileImageUrl: user.profile_image_url ?? user.profileImageUrl ?? null,
     dateOfBirth: user.date_of_birth
       ? String(user.date_of_birth).slice(0, 10)

@@ -106,6 +106,16 @@ async function ensureAppUserPhoneVerificationColumns(dbQuery) {
     `CREATE INDEX IF NOT EXISTS app_users_phone_e164_idx ON app_users (phone_e164)
      WHERE phone_e164 IS NOT NULL`,
   );
+  await dbQuery(`ALTER TABLE app_users ADD COLUMN IF NOT EXISTS phone_enroll_otp_hash TEXT`);
+  await dbQuery(`ALTER TABLE app_users ADD COLUMN IF NOT EXISTS phone_enroll_otp_expires_at TIMESTAMPTZ`);
+  await dbQuery(`ALTER TABLE app_users ADD COLUMN IF NOT EXISTS phone_enroll_phone_e164 TEXT`);
+  await dbQuery(`
+    CREATE UNIQUE INDEX IF NOT EXISTS app_users_verified_phone_e164_uidx
+    ON app_users (phone_e164)
+    WHERE phone_verified IS TRUE
+      AND phone_e164 IS NOT NULL
+      AND btrim(phone_e164) <> ''
+  `);
 }
 
 async function ensureSmsPreferenceColumns(dbQuery) {

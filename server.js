@@ -84,6 +84,7 @@ import { handleTwilioSmsStatusCallback } from "./voiceBookingSms.js";
 import { ensureAuraMemoryTables } from "./auraMemoryMigrations.js";
 import { createAuraChatHistoryRouter } from "./auraChatHistoryRoutes.js";
 import { requireAuth } from "./authRoutes.js";
+import { createPhoneEnrollmentRouter } from "./phoneEnrollmentRoutes.js";
 import { getDeployInfoPayload } from "./deployInfo.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -423,6 +424,9 @@ app.post("/api/auth/refresh", (req, res, next) => {
 });
 app.use("/api/auth", authRouter);
 console.log("[boot] mounted /api/auth", summarizeAuthRouterPaths(authRouter).join(" | ") || "(no routes on stack)");
+const accountPhoneRouter = createPhoneEnrollmentRouter({ requireAuth });
+app.use("/api/account", accountPhoneRouter);
+console.log("[boot] mounted /api/account/phone/request-verification and /api/account/phone/verify");
 
 try {
   const { renderSuperAdminRecoveryPage } = require("./superAdminRecoveryPage.cjs");

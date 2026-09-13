@@ -10,6 +10,7 @@ export type JsonAuth = {
     name?: string;
     email?: string;
     phone?: string | null;
+    phoneVerified?: boolean;
     profileImageUrl?: string | null;
     role?: string;
     isOwner?: boolean;

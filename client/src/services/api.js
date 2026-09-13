@@ -169,6 +169,18 @@ export async function register({
   return data;
 }
 
+function throwForgotPasswordHttpError(res, data) {
+  const err = new Error(data?.message || data?.error || `Request failed (HTTP ${res.status})`);
+  err.status = res.status;
+  err.code = data?.error || null;
+  err.details = {
+    status: res.status,
+    error: data?.error || null,
+    message: typeof data?.message === "string" ? data.message : null,
+  };
+  throw err;
+}
+
 export async function forgotPassword(email) {
   const origin = getApiOrigin();
   const res = await fetch(`${origin}/api/auth/forgot-password`, {
@@ -183,9 +195,25 @@ export async function forgotPassword(email) {
   } catch {
     throw new Error(`Forgot password: server returned non-JSON (HTTP ${res.status}).`);
   }
-  if (!res.ok) {
-    throw new Error(data?.message || data?.error || `Request failed (HTTP ${res.status})`);
+  if (!res.ok) throwForgotPasswordHttpError(res, data);
+  return data;
+}
+
+export async function verifyForgotPasswordCode({ email, code }) {
+  const origin = getApiOrigin();
+  const res = await fetch(`${origin}/api/auth/forgot-password/verify`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ email, code }),
+  });
+  const text = await res.text();
+  let data = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    throw new Error(`Verify code: server returned non-JSON (HTTP ${res.status}).`);
   }
+  if (!res.ok) throwForgotPasswordHttpError(res, data);
   return data;
 }
 

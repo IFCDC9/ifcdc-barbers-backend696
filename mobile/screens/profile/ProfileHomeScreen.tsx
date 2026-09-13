@@ -53,6 +53,7 @@ export default function ProfileHomeScreen() {
 
   const menu: { key: keyof ProfileStackParamList; label: string }[] = [
     { key: "EditProfile", label: t("profile.menuPersonalInfo") },
+    { key: "AddPhone", label: user?.phoneVerified ? "Phone Verified" : "Add Phone" },
     { key: "BookingHistory", label: t("profile.menuBookings") },
     { key: "RateMe", label: "Rate Me" },
     { key: "Rewards", label: "Rewards" },

@@ -5,32 +5,34 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import ProfileScreenLayout from "../../components/ProfileScreenLayout";
 import ProfileCard from "../../components/ProfileCard";
 import GlowButton from "../../components/GlowButton";
+import { useNavigation } from "@react-navigation/native";
+import type { StackNavigationProp } from "@react-navigation/stack";
 import { useAuth } from "../../services/authContext";
 import { patchProfile, uploadProfileAvatar } from "../../services/profileApi";
 import { userFacingApiError } from "../../utils/userFacingApiError";
 import { theme } from "../../constants/theme";
+import type { ProfileStackParamList } from "../../navigation/ProfileStack";
 
 function localAvatarKey(userId: string) {
   return `ifcdc_profile_avatar_${userId}`;
 }
 
 export default function EditProfileScreen() {
+  const navigation = useNavigation<StackNavigationProp<ProfileStackParamList>>();
   const { user, refresh } = useAuth();
   const [name, setName] = useState(user?.name || "");
-  const [phone, setPhone] = useState(user?.phone || "");
   const [avatarUri, setAvatarUri] = useState<string | null>(user?.profileImageUrl || null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     setName(user?.name || "");
-    setPhone(user?.phone || "");
     setAvatarUri(user?.profileImageUrl || null);
     if (user?.id) {
       AsyncStorage.getItem(localAvatarKey(user.id)).then((uri) => {
         if (uri) setAvatarUri(uri);
       });
     }
-  }, [user?.id, user?.name, user?.phone, user?.profileImageUrl]);
+  }, [user?.id, user?.name, user?.profileImageUrl]);
 
   const pickPhoto = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -58,11 +60,9 @@ export default function EditProfileScreen() {
     try {
       const patchBody: {
         name: string;
-        phone: string;
         profileImageUrl?: string | null;
       } = {
         name: name.trim(),
-        phone: phone.replace(/\D/g, ""),
       };
 
       if (avatarUri?.startsWith("file:")) {
@@ -110,13 +110,18 @@ export default function EditProfileScreen() {
         />
 
         <Text style={styles.label}>Phone</Text>
-        <TextInput
-          value={phone}
-          onChangeText={setPhone}
-          style={styles.input}
-          keyboardType="phone-pad"
-          placeholderTextColor="rgba(255,255,255,0.4)"
-          placeholder="10-digit mobile number"
+        <Text style={styles.readOnly}>
+          {user?.phoneVerified
+            ? `Verified${user?.phone ? ` · ••••${String(user.phone).replace(/\D/g, "").slice(-4)}` : ""}`
+            : "No verified phone yet"}
+        </Text>
+        <Text style={styles.hint}>
+          Use Add Phone to send a code and verify a number. Unverified numbers cannot be used for SMS password reset.
+        </Text>
+        <GlowButton
+          label={user?.phoneVerified ? "Manage phone" : "Add Phone"}
+          variant="outline"
+          onPress={() => navigation.navigate("AddPhone")}
         />
 
         <Text style={styles.label}>Email</Text>

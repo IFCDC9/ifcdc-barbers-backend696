@@ -7,6 +7,7 @@ export type AppUser = {
   name?: string;
   email?: string;
   phone?: string | null;
+  phoneVerified?: boolean;
   profileImageUrl?: string | null;
   role?: string;
   isOwner?: boolean;
@@ -119,6 +120,54 @@ export async function patchProfile(body: {
     throw new Error(profileErrorFromResponse(res.status, json, raw));
   }
   return json.user;
+}
+
+async function postAccountPhone<T extends { ok?: boolean; message?: string; error?: string }>(
+  path: string,
+  body: Record<string, string>,
+  fallback: string,
+): Promise<T> {
+  const token = await getAuthToken();
+  const res = await fetch(apiFullUrl(path), {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
+  });
+  const raw = await res.text();
+  let json: T = {} as T;
+  try {
+    json = raw ? (JSON.parse(raw) as T) : ({} as T);
+  } catch {
+    throw new Error(fallback);
+  }
+  if (!res.ok || json.ok === false) {
+    throw new Error(json.message || fallback);
+  }
+  return json;
+}
+
+export async function requestPhoneVerification(phone: string): Promise<{
+  ok: boolean;
+  sent?: boolean;
+  alreadyVerified?: boolean;
+  toMasked?: string;
+  message?: string;
+}> {
+  return postAccountPhone("/api/account/phone/request-verification", { phone }, "Could not send verification code.");
+}
+
+export async function verifyPhoneCode(code: string): Promise<{
+  ok: boolean;
+  phoneVerified?: boolean;
+  toMasked?: string;
+  message?: string;
+  user?: AppUser;
+}> {
+  return postAccountPhone("/api/account/phone/verify", { code }, "Could not verify code.");
 }
 
 export async function fetchMyBookings(): Promise<BookingRow[]> {

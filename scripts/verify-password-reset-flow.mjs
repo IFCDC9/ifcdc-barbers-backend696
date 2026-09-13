@@ -84,7 +84,7 @@ async function localServiceE2E() {
     );
     const userId = ins.rows[0].id;
 
-    const req = await requestPasswordResetForEmail(email, { sendEmail });
+    const req = await requestPasswordResetForEmail(email, { sendEmail, includeResetLink: true });
     if (!req.ok || !req.sent) {
       fail("local service request", JSON.stringify(req));
     } else {

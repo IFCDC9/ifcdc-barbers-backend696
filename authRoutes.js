@@ -4,7 +4,9 @@ import { createRequire } from "node:module";
 import { normalizeEmail } from "./authStore.js";
 import {
   completePasswordResetWithToken,
-  requestPasswordResetForEmail,
+  NEUTRAL_SMS_FORGOT_MESSAGE,
+  requestSmsPasswordReset,
+  verifySmsPasswordResetCode,
 } from "./passwordResetService.js";
 import { dbQuery } from "./db.js";
 import { comparePassword, hashPassword, validatePasswordStrength } from "./authPasswordPolicy.js";
@@ -464,7 +466,7 @@ export function requireAuth(req, res, next) {
 
 async function loadAppUserForTokenRefresh(userId) {
   const found = await dbQuery(
-    `SELECT id, name, email, phone, profile_image_url, role, barber_id, business_id, account_status, created_at
+    `SELECT id, name, email, phone, phone_e164, phone_verified, profile_image_url, role, barber_id, business_id, account_status, created_at
      FROM app_users WHERE id = $1::uuid LIMIT 1`,
     [String(userId)],
   );
@@ -1198,7 +1200,7 @@ export function createAuthRouter({ sendEmail }) {
       params.push(id);
       const updated = await dbQuery(
         `UPDATE app_users SET ${sets.join(", ")} WHERE id = $${i}::uuid
-         RETURNING id, name, email, phone, profile_image_url, date_of_birth, role, barber_id, business_id, preferred_language, created_at`,
+         RETURNING id, name, email, phone, phone_e164, phone_verified, profile_image_url, date_of_birth, role, barber_id, business_id, preferred_language, created_at`,
         params,
       );
       const user = updated.rows?.[0];
@@ -1677,28 +1679,57 @@ export function createAuthRouter({ sendEmail }) {
     }
   });
 
-  const NEUTRAL_RESET_MESSAGE =
-    "If an account exists for that email, a password reset link is on the way.";
-
   router.post("/forgot-password", async (req, res) => {
     try {
       const email = String(req.body?.email || "");
-      const result = await requestPasswordResetForEmail(email, { sendEmail });
+      const result = await requestSmsPasswordReset(email);
 
       if (!result.ok) {
         if (result.error === "email_required") {
           return res.status(400).json({ error: result.error, message: result.message });
         }
-        if (result.error === "email_failed" || result.error === "email_unconfigured") {
-          return res.status(503).json({ error: result.error, message: result.message });
+        if (result.error === "sms_rate_limited" || result.error === "email_rate_limited") {
+          return res.status(429).json({ error: result.error, message: result.message });
         }
         return res.status(500).json({ error: "server_error", message: result.message || "Could not start reset flow" });
       }
 
-      return res.json({ success: true, message: NEUTRAL_RESET_MESSAGE });
+      return res.json({
+        success: true,
+        channel: "sms",
+        message: NEUTRAL_SMS_FORGOT_MESSAGE,
+      });
     } catch (e) {
       console.error("[auth] forgot-password error:", e);
       return res.status(500).json({ error: "server_error", message: "Could not start reset flow" });
+    }
+  });
+
+  router.post("/forgot-password/verify", async (req, res) => {
+    try {
+      const email = String(req.body?.email || "");
+      const code = String(req.body?.code || req.body?.smsCode || "");
+      const result = await verifySmsPasswordResetCode(email, code);
+
+      if (!result.ok) {
+        const codeErr = result.error || "invalid_code";
+        const status =
+          codeErr === "email_required" || codeErr === "code_required"
+            ? 400
+            : codeErr === "locked"
+              ? 429
+              : 400;
+        return res.status(status).json({ error: codeErr, message: result.message });
+      }
+
+      return res.json({
+        success: true,
+        resetToken: result.resetToken,
+        message: "Code verified. Set a new password.",
+      });
+    } catch (e) {
+      console.error("[auth] forgot-password verify error:", e);
+      return res.status(500).json({ error: "server_error", message: "Could not verify code" });
     }
   });
 

@@ -2,6 +2,7 @@ import React from "react";
 import { createStackNavigator } from "@react-navigation/stack";
 import ProfileHomeScreen from "../screens/profile/ProfileHomeScreen";
 import EditProfileScreen from "../screens/profile/EditProfileScreen";
+import AddPhoneScreen from "../screens/profile/AddPhoneScreen";
 import BookingHistoryScreen from "../screens/profile/BookingHistoryScreen";
 import BookingDetailScreen from "../screens/profile/BookingDetailScreen";
 import CancelBookingScreen from "../screens/profile/CancelBookingScreen";
@@ -48,6 +49,7 @@ import type { PaymentStackParamList } from "./paymentStackTypes";
 export type ProfileStackParamList = {
   ProfileHome: undefined;
   EditProfile: undefined;
+  AddPhone: undefined;
   BookingHistory: undefined;
   BookingDetail: { bookingId: string };
   CancelBooking: { bookingId: string };
@@ -104,6 +106,7 @@ export default function ProfileStack() {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="ProfileHome" component={ProfileHomeScreen} />
       <Stack.Screen name="EditProfile" component={EditProfileScreen} />
+      <Stack.Screen name="AddPhone" component={AddPhoneScreen} />
       <Stack.Screen name="BookingHistory" component={BookingHistoryScreen} />
       <Stack.Screen name="BookingDetail" component={BookingDetailScreen} />
       <Stack.Screen name="BookingReview" component={BookingReviewScreen} />
