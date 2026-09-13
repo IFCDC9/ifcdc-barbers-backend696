@@ -30,6 +30,17 @@ async function findAuthUserIdByEmail(email) {
  * Requires app JWT. Returns one-time Supabase credentials for signInWithPassword (authenticated role + RLS).
  */
 router.post("/supabase-bridge", requireAuth, async (req, res) => {
+  // IFCDC login is custom JWT + app_users. auth_bridge is not on production and
+  // must not be created implicitly. Opt-in only for local Realtime experiments.
+  const enabled = String(process.env.ENABLE_SUPABASE_AUTH_BRIDGE || "").trim() === "1"
+  if (!enabled) {
+    res.status(410).json({
+      ok: false,
+      error: "supabase_auth_bridge_disabled",
+      message: "App authentication uses custom JWT + app_users, not Supabase Auth.",
+    })
+    return
+  }
   if (!supabaseService) {
     res.status(503).json({ ok: false, error: "supabase_service_not_configured" })
     return

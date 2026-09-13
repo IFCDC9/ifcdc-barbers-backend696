@@ -291,6 +291,59 @@ console.log("[mt-iso] PASS — remove access clears manager context");
   console.log("[mt-iso] PASS — delete + same-email recreate restores shop_manager via linked_email");
 }
 
+// Removed assignment must NEVER auto-reactivate on re-signup / relink
+{
+  const doomed = await createCustomer("removedNoRestore");
+  const doomedEmail = String(doomed.email).toLowerCase();
+  const assignGone = await createManagementAssignment({
+    actorUserId: actorId,
+    actorEmail,
+    userId: doomed.id,
+    role: "platform_manager",
+    shopIds: [shopA.businessId],
+    locationIds: [shopA.locationId],
+    permissions: {},
+    fullAccess: true,
+  });
+  assert.equal(assignGone.ok, true, assignGone.message);
+  created.assignmentIds.push(assignGone.assignment.id);
+  const removed = await setManagementAssignmentStatus({
+    assignmentId: assignGone.assignment.id,
+    status: "removed",
+    actorUserId: actorId,
+    actorEmail,
+  });
+  assert.equal(removed.ok, true);
+  const blockedRestore = await setManagementAssignmentStatus({
+    assignmentId: assignGone.assignment.id,
+    status: "active",
+    actorUserId: actorId,
+    actorEmail,
+  });
+  assert.equal(blockedRestore.ok, false);
+  assert.equal(blockedRestore.status, 409);
+
+  const deleted = await deleteAppUserAccount(doomed.id);
+  assert.equal(deleted.ok, true, deleted.message || deleted.error);
+  created.userIds = created.userIds.filter((id) => id !== String(doomed.id));
+
+  const rejoined = await createCustomer("removedNoRestore");
+  created.userIds.push(rejoined.id);
+  const linked = await ensureManagementLinkedToUser({
+    userId: rejoined.id,
+    email: rejoined.email,
+  });
+  assert.equal(linked, null);
+  const stillRemoved = await dbQuery(
+    `SELECT status, user_id FROM management_assignments WHERE id = $1::uuid`,
+    [assignGone.assignment.id],
+  );
+  assert.equal(stillRemoved.rows?.[0]?.status, "removed");
+  assert.equal(String(stillRemoved.rows?.[0]?.user_id || ""), "");
+  assert.equal(String(rejoined.email).toLowerCase(), doomedEmail);
+  console.log("[mt-iso] PASS — removed assignment stays removed after delete/re-signup");
+}
+
 // Manager list is Super Admin inventory (multiple managers coexist)
 const team = await listManagementTeam({ includeRemoved: false });
 assert.ok(team.some((m) => m.id === assignA.assignment.id));

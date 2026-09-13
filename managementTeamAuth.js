@@ -67,6 +67,7 @@ export async function loadActiveManagementContext(userId) {
  * If this user has no ACTIVE assignment by userId, adopt an ACTIVE/suspended assignment
  * whose linked account shares the same email (or orphaned invite row), then retarget user_id.
  * Never touches Super Admin accounts. Never promotes app_users.role.
+ * Never matches or updates REMOVED rows — Super Admin must explicitly restore those.
  */
 export async function ensureManagementLinkedToUser({ userId, email }) {
   const uid = String(userId || "").trim();
@@ -80,15 +81,23 @@ export async function ensureManagementLinkedToUser({ userId, email }) {
     .toLowerCase();
   if (!normalized || isSuperAdminEmail(normalized)) return null;
 
+  const targetUser = await dbQuery(
+    `SELECT id, email, role FROM app_users WHERE id = $1::uuid LIMIT 1`,
+    [uid],
+  );
+  if (isProtectedSuperAdminUser(targetUser.rows?.[0])) return null;
+
   // Match by durable linked_email (survives account delete) or by another user row with this email.
+  // REMOVED is excluded so login / Apple / re-signup cannot revive revoked authority.
   const found = await dbQuery(
-    `SELECT ma.id, ma.user_id, ma.status
+    `SELECT ma.id, ma.user_id, ma.status, ma.linked_email
      FROM management_assignments ma
      LEFT JOIN app_users u ON u.id = ma.user_id
      WHERE ma.status IN ('active', 'suspended')
+       AND ma.status <> 'removed'
        AND (
          lower(trim(coalesce(ma.linked_email, ''))) = $1
-         OR lower(trim(u.email::text)) = $1
+         OR (ma.user_id IS NOT NULL AND lower(trim(u.email::text)) = $1)
        )
      ORDER BY
        CASE ma.status WHEN 'active' THEN 0 ELSE 1 END,
@@ -99,33 +108,42 @@ export async function ensureManagementLinkedToUser({ userId, email }) {
   );
   const row = found.rows?.[0];
   if (!row) return null;
+  if (String(row.status || "") === "removed") return null;
 
   if (String(row.user_id || "") !== uid) {
-    await dbQuery(
+    const updated = await dbQuery(
       `UPDATE management_assignments
        SET user_id = $1::uuid,
-           linked_email = $2,
+           linked_email = COALESCE(NULLIF(lower(btrim(linked_email)), ''), $2),
            updated_at = NOW()
-       WHERE id = $3::uuid`,
+       WHERE id = $3::uuid
+         AND status IN ('active', 'suspended')
+         AND status <> 'removed'`,
       [uid, normalized, row.id],
     );
+    if (!updated.rowCount) return null;
   }
 
   return loadActiveManagementContext(uid);
 }
 
+export function emptyManagementPublicFields({ managementStatus = null, managementContextError = false } = {}) {
+  return {
+    isManager: false,
+    managementRole: null,
+    managementStatus,
+    managementAssignmentId: null,
+    managementShopIds: [],
+    managementLocationIds: [],
+    managerPermissions: null,
+    fullManagerAccess: false,
+    managementContextError: managementContextError === true,
+  };
+}
+
 export function managementFieldsForPublicUser(ctx) {
   if (!ctx || ctx.status !== "active") {
-    return {
-      isManager: false,
-      managementRole: null,
-      managementStatus: ctx?.status || null,
-      managementAssignmentId: null,
-      managementShopIds: [],
-      managementLocationIds: [],
-      managerPermissions: null,
-      fullManagerAccess: false,
-    };
+    return emptyManagementPublicFields({ managementStatus: ctx?.status || null });
   }
   return {
     isManager: true,
@@ -137,6 +155,7 @@ export function managementFieldsForPublicUser(ctx) {
     managerPermissions: ctx.permissions,
     fullManagerAccess:
       ctx.fullAccess === true || ctx.permissions?.[MANAGEMENT_PERMISSIONS.FULL_MANAGER_ACCESS] === true,
+    managementContextError: false,
   };
 }
 

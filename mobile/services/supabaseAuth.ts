@@ -2,24 +2,28 @@ import { apiFullUrl } from "../constants/config";
 import { getSupabase } from "../lib/supabase";
 
 export type EnsureSupabaseAuthResult =
-  | { ok: true; mode: "existing" | "bridge" | "anonymous" }
+  | { ok: true; mode: "existing" | "bridge" | "anonymous" | "skipped" }
   | { ok: false; message: string };
 
 /**
- * Ensures Supabase has an authenticated session (required for strict RLS).
- * 1) Reuse persisted session if valid
- * 2) If `appJwt` is set, exchange via POST /api/auth/supabase-bridge → signInWithPassword
- * 3) Else signInAnonymously (enable Anonymous provider in Supabase Dashboard)
+ * Optional Realtime/Storage helper — NOT used for IFCDC login.
+ * App authentication is custom JWT + app_users via the Node API.
+ * Do not call supabase.auth.signIn* for manager/customer login.
  */
 export async function ensureSupabaseAuth(appJwt: string | null): Promise<EnsureSupabaseAuthResult> {
   const sb = getSupabase();
   if (!sb) {
-    return { ok: false, message: "Supabase client not configured" };
+    return { ok: true, mode: "skipped" };
   }
 
   const { data: sessionData } = await sb.auth.getSession();
   if (sessionData.session?.user) {
     return { ok: true, mode: "existing" };
+  }
+
+  const bridgeEnabled = process.env.EXPO_PUBLIC_ENABLE_SUPABASE_AUTH_BRIDGE === "1";
+  if (!bridgeEnabled) {
+    return { ok: true, mode: "skipped" };
   }
 
   if (appJwt) {
@@ -47,18 +51,12 @@ export async function ensureSupabaseAuth(appJwt: string | null): Promise<EnsureS
         }
       }
     } catch {
-      /* fall through to anonymous */
+      /* optional storage session only */
     }
   }
 
-  const { error } = await sb.auth.signInAnonymously();
-  if (error) {
-    return {
-      ok: false,
-      message:
-        error.message ||
-        "Anonymous sign-in failed — enable Anonymous auth in Supabase or sign into the app for JWT bridge.",
-    };
-  }
-  return { ok: true, mode: "anonymous" };
+  return {
+    ok: true,
+    mode: "skipped",
+  };
 }

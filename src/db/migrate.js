@@ -132,7 +132,9 @@ const migrations = [
   },
   {
     name: "create auth_bridge for supabase jwt bridge",
-    sql: `
+    sql: null,
+    skipUnless: "ENABLE_SUPABASE_AUTH_BRIDGE",
+    optionalSql: `
       CREATE TABLE IF NOT EXISTS auth_bridge (
         backend_sub TEXT PRIMARY KEY,
         supabase_user_id UUID NOT NULL UNIQUE,
@@ -163,7 +165,13 @@ const migrations = [
 
 for (const migration of migrations) {
   try {
-    await pool.query(migration.sql)
+    if (migration.skipUnless && String(process.env[migration.skipUnless] || "").trim() !== "1") {
+      console.log(`⏭️  ${migration.name} (skipped — ${migration.skipUnless}!=1; do not create on production)`)
+      continue
+    }
+    const sql = migration.sql || migration.optionalSql
+    if (!sql) continue
+    await pool.query(sql)
     console.log(`✅ ${migration.name}`)
   } catch (e) {
     console.error(`❌ ${migration.name}: ${e.message}`)

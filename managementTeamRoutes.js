@@ -8,6 +8,7 @@ import {
   requireSuperAdminActor,
   validateAssignmentPayload,
   loadActiveManagementContext,
+  ensureManagementLinkedToUser,
 } from "./managementTeamAuth.js";
 import {
   createManagementAssignment,
@@ -254,12 +255,25 @@ export function createManagementTeamRouter() {
     const payload = bearerPayload(req, res);
     if (!payload) return;
     if (!requireSuperAdminActor(payload, res)) return;
+    const existing = await getManagementAssignment(req.params.assignmentId);
+    const restoringRemoved = existing?.status === "removed";
+    const confirmRestore =
+      req.body?.confirmRestore === true || req.body?.allowRestoreRemoved === true;
+    if (restoringRemoved && !confirmRestore) {
+      return res.status(409).json({
+        ok: false,
+        error: "explicit_restore_required",
+        message:
+          "This assignment is removed. Super Admin must send confirmRestore=true to restore it.",
+      });
+    }
     const result = await setManagementAssignmentStatus({
       assignmentId: req.params.assignmentId,
       status: "active",
       actorUserId: payload.id,
       actorEmail: payload.email,
       req,
+      allowRestoreRemoved: restoringRemoved && confirmRestore,
     });
     if (!result.ok) return res.status(result.status || 400).json({ ok: false, message: result.message });
     return res.json({ ok: true, assignment: result.assignment });
@@ -285,7 +299,11 @@ export function createManagementTeamRouter() {
     const payload = bearerPayload(req, res);
     if (!payload) return;
     try {
-      const management = await loadActiveManagementContext(payload.id);
+      const management =
+        (await ensureManagementLinkedToUser({
+          userId: payload.id,
+          email: payload.email,
+        })) || (await loadActiveManagementContext(payload.id));
       return res.json({
         ok: true,
         isSuperAdmin: payload.isSuperAdmin === true,

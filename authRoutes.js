@@ -19,6 +19,12 @@ import {
   provisionShopOwnerSignup,
   resolveUserApprovalState,
 } from "./signupProvisioningService.js";
+import {
+  emptyManagementPublicFields,
+  ensureManagementLinkedToUser,
+  loadActiveManagementContext,
+  managementFieldsForPublicUser,
+} from "./managementTeamAuth.js";
 import { validateSignupPhone } from "./phoneValidation.js";
 import { ensureProviderTypeSchema } from "./providerTypeMigrations.js";
 import {
@@ -53,34 +59,34 @@ function signTokenForAppUser(userRow) {
 }
 
 /** Attach Management Team scope flags for clients (never Super Admin powers). */
+async function attachManagementContext(userRow) {
+  let ctx = await ensureManagementLinkedToUser({
+    userId: userRow.id,
+    email: userRow.email,
+  });
+  if (!ctx) {
+    ctx = await loadActiveManagementContext(userRow.id);
+  }
+  return ctx;
+}
+
 async function withManagementPublicUser(userRow) {
   const publicUser = publicUserFromAppUser(userRow);
   try {
-    const {
-      ensureManagementLinkedToUser,
-      loadActiveManagementContext,
-      managementFieldsForPublicUser,
-    } = await import("./managementTeamAuth.js");
-    let ctx = await ensureManagementLinkedToUser({
-      userId: userRow.id,
-      email: userRow.email,
-    });
-    if (!ctx) {
-      ctx = await loadActiveManagementContext(userRow.id);
-    }
+    let ctx = await attachManagementContext(userRow);
     Object.assign(publicUser, managementFieldsForPublicUser(ctx));
   } catch (e) {
     console.error("[auth] management context attach failed:", e?.stack || e?.message || e);
-    Object.assign(publicUser, {
-      isManager: false,
-      managementRole: null,
-      managementStatus: null,
-      managementAssignmentId: null,
-      managementShopIds: [],
-      managementLocationIds: [],
-      managerPermissions: null,
-      fullManagerAccess: false,
-    });
+    try {
+      const ctx = await attachManagementContext(userRow);
+      Object.assign(publicUser, managementFieldsForPublicUser(ctx));
+    } catch (retryErr) {
+      console.error(
+        "[auth] management context attach retry failed:",
+        retryErr?.stack || retryErr?.message || retryErr,
+      );
+      Object.assign(publicUser, emptyManagementPublicFields({ managementContextError: true }));
+    }
   }
   return publicUser;
 }

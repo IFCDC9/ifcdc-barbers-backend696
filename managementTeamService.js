@@ -39,10 +39,12 @@ async function loadAssignmentRow(assignmentId) {
 async function hydrateAssignment(row) {
   if (!row) return null;
   const [userRes, shopsRes, locsRes, permsRes] = await Promise.all([
-    dbQuery(
-      `SELECT id, name, email, phone, role, account_status FROM app_users WHERE id = $1::uuid LIMIT 1`,
-      [row.user_id],
-    ),
+    row.user_id
+      ? dbQuery(
+          `SELECT id, name, email, phone, role, account_status FROM app_users WHERE id = $1::uuid LIMIT 1`,
+          [row.user_id],
+        )
+      : Promise.resolve({ rows: [] }),
     dbQuery(
       `SELECT msa.business_id, b.name AS shop_name
        FROM manager_shop_access msa
@@ -76,7 +78,7 @@ async function hydrateAssignment(row) {
   const user = userRes.rows?.[0] || null;
   return {
     id: String(row.id),
-    userId: String(row.user_id),
+    userId: row.user_id ? String(row.user_id) : null,
     role: String(row.role),
     roleLabel: MANAGEMENT_ROLE_LABELS[row.role] || row.role,
     status: String(row.status),
@@ -488,6 +490,7 @@ export async function setManagementAssignmentStatus({
   actorUserId,
   actorEmail,
   req = null,
+  allowRestoreRemoved = false,
 }) {
   const before = await getManagementAssignment(assignmentId);
   if (!before) return { ok: false, status: 404, message: "Assignment not found." };
@@ -495,6 +498,17 @@ export async function setManagementAssignmentStatus({
   const next = String(status || "").trim().toLowerCase();
   if (!["active", "suspended", "removed"].includes(next)) {
     return { ok: false, status: 400, message: "Invalid status." };
+  }
+  if (before.user && isProtectedSuperAdminUser(before.user)) {
+    return { ok: false, status: 403, message: "Cannot change Super Admin through management assignments." };
+  }
+  if (before.status === MANAGEMENT_STATUSES.REMOVED && next === "active" && allowRestoreRemoved !== true) {
+    return {
+      ok: false,
+      status: 409,
+      message:
+        "Removed manager assignments cannot be reactivated automatically. Super Admin must explicitly confirm restore.",
+    };
   }
 
   if (next === "suspended") {

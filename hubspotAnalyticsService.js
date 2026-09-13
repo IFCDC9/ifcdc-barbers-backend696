@@ -299,14 +299,7 @@ export async function getHubSpotHqKpis({ days = 30 } = {}) {
     const topS = await dbQuery(
       `WITH mapped AS (
          SELECT
-           COALESCE(
-             b.business_id,
-             CASE
-               WHEN br.business_id ~ '^[1-9][0-9]*$' THEN br.business_id::bigint
-               WHEN lower(coalesce(br.business_id, '')) IN ('default', '0', '') THEN $2::bigint
-               ELSE NULL
-             END
-           ) AS business_id,
+           COALESCE(b.business_id, br.business_id, $2::bigint) AS business_id,
            b.total_paid, b.amount_paid, b.amount_charged, b.total_price, b.amount, b.platform_fee,
            b.is_paid_booking, b.payment_status, b.completed_at, b.created_at
          FROM bookings b

@@ -74,11 +74,12 @@ async function loadManagedUser(userId) {
 
 function canManageTarget(scope, row) {
   if (!row) return false;
+  const role = String(row.role || "").toLowerCase();
+  if (isMasterUserRow(row) || role === "super_admin") return false;
   if (scope.all) return true;
   const targetBiz = row.business_id != null ? Number(row.business_id) : NaN;
   if (!Number.isFinite(targetBiz) || targetBiz !== scope.businessId) return false;
-  const role = String(row.role || "").toLowerCase();
-  if (role === "super_admin" || role === "admin") return false;
+  if (role === "admin") return false;
   return true;
 }
 
@@ -275,6 +276,9 @@ export function createAdminUsersRouter(options = {}) {
       }
 
       const body = req.body || {};
+      if (body.email != null) {
+        return res.status(403).json({ ok: false, message: "Email cannot be changed from this endpoint." });
+      }
       const sets = [];
       const params = [];
       let i = 1;
@@ -304,6 +308,15 @@ export function createAdminUsersRouter(options = {}) {
         if (!ALLOWED_ROLES.includes(role)) {
           return res.status(400).json({ ok: false, message: "Invalid role" });
         }
+        if (role === "super_admin") {
+          return res.status(403).json({
+            ok: false,
+            message: "Super Admin role is restricted to service@ifcdc.org and cannot be granted here.",
+          });
+        }
+        if (isMasterUserRow(existing)) {
+          return res.status(403).json({ ok: false, message: "Master IFCDC account must remain super_admin." });
+        }
         if (!scope.all) {
           if (!SHOP_OWNER_ASSIGNABLE_ROLES.has(role)) {
             return res.status(403).json({ ok: false, message: "You cannot assign that role." });
@@ -314,6 +327,9 @@ export function createAdminUsersRouter(options = {}) {
       }
 
       if (body.status != null) {
+        if (isMasterUserRow(existing)) {
+          return res.status(403).json({ ok: false, message: "Master IFCDC account cannot be suspended." });
+        }
         const status = String(body.status).toLowerCase() === "disabled" ? "disabled" : "active";
         sets.push(`account_status = $${i++}`);
         params.push(status);
