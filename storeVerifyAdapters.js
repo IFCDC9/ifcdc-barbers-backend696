@@ -1,15 +1,15 @@
 /**
- * Store verification adapters. Closed by default unless credentials exist.
- * Never print secrets. Tests inject verifiers.
+ * Store verification adapters. Production always uses App Store Server API + JWS x5c.
+ * Tests may inject mocks only when NODE_TEST / NODE_TEST_CONTEXT is set.
+ * Credential presence never grants entitlements.
  */
 
-function appleCredentialsConfigured() {
-  return Boolean(
-    String(process.env.APPLE_IAP_ISSUER_ID || "").trim() &&
-      String(process.env.APPLE_IAP_KEY_ID || "").trim() &&
-      String(process.env.APPLE_IAP_PRIVATE_KEY || "").trim(),
-  );
-}
+import {
+  appleCredentialsConfigured,
+  fetchAppleSignedTransaction,
+  probeAppleStoreKitAuth,
+} from "./appleStoreKitClient.js";
+import { verifySignedNotificationJws, verifySignedTransactionJws } from "./appleJwsVerifier.js";
 
 function googleCredentialsConfigured() {
   return Boolean(
@@ -18,20 +18,43 @@ function googleCredentialsConfigured() {
   );
 }
 
+function testInjectionAllowed() {
+  return Boolean(process.env.NODE_TEST) || Boolean(process.env.NODE_TEST_CONTEXT);
+}
+
+export function appleVerifierName() {
+  return "app_store_server";
+}
+
 export function storeVerifyStatus() {
   return {
     appleConfigured: appleCredentialsConfigured(),
     googleConfigured: googleCredentialsConfigured(),
-    note: "Production confirm/webhooks require Tessa-provisioned keys. Unconfigured verifiers refuse grants.",
+    appleVerifier: appleVerifierName(),
+    googleVerifier: googleCredentialsConfigured() ? "play_developer_api" : "closed",
+    note: "Grants require verified Apple JWS + App Store Server lookup. Credentials alone never grant.",
   };
 }
 
-export async function defaultAppleVerifySignedPayload() {
-  return { ok: false, error: "apple_credentials_not_configured" };
+export async function defaultAppleVerifyTransactionJws(jws, opts = {}) {
+  const local = verifySignedTransactionJws(jws);
+  if (!local.ok) return local;
+  if (!appleCredentialsConfigured()) {
+    return { ok: false, error: "apple_credentials_not_configured" };
+  }
+  const looked = await fetchAppleSignedTransaction({
+    transactionId: local.txn.transactionId || local.txn.originalTransactionId,
+    environment: local.txn.environment,
+    fetchImpl: opts.fetchImpl || globalThis.fetch,
+  });
+  if (!looked.ok) return looked;
+  const fromApple = verifySignedTransactionJws(looked.signedTransactionInfo);
+  if (!fromApple.ok) return fromApple;
+  return { ok: true, txn: fromApple.txn };
 }
 
-export async function defaultAppleVerifyTransactionJws() {
-  return { ok: false, error: "apple_credentials_not_configured" };
+export async function defaultAppleVerifySignedPayload(signedPayload) {
+  return verifySignedNotificationJws(signedPayload);
 }
 
 export async function defaultGoogleVerifySubscription() {
@@ -43,10 +66,16 @@ export async function defaultGoogleVerifyOneTime() {
 }
 
 export function getStoreVerifiers(overrides = {}) {
+  const inject = testInjectionAllowed();
   return {
-    verifyAppleSignedPayload: overrides.verifyAppleSignedPayload || defaultAppleVerifySignedPayload,
-    verifyAppleTransactionJws: overrides.verifyAppleTransactionJws || defaultAppleVerifyTransactionJws,
-    verifyGoogleSubscription: overrides.verifyGoogleSubscription || defaultGoogleVerifySubscription,
-    verifyGoogleOneTime: overrides.verifyGoogleOneTime || defaultGoogleVerifyOneTime,
+    verifyAppleSignedPayload:
+      (inject && overrides.verifyAppleSignedPayload) || defaultAppleVerifySignedPayload,
+    verifyAppleTransactionJws:
+      (inject && overrides.verifyAppleTransactionJws) || defaultAppleVerifyTransactionJws,
+    verifyGoogleSubscription:
+      (inject && overrides.verifyGoogleSubscription) || defaultGoogleVerifySubscription,
+    verifyGoogleOneTime: (inject && overrides.verifyGoogleOneTime) || defaultGoogleVerifyOneTime,
   };
 }
+
+export { appleCredentialsConfigured, probeAppleStoreKitAuth };

@@ -8,7 +8,7 @@ import { entitlementsLockShopsEnabled, entitlementsMode } from "./entitlementFla
 import {
   BARBER_PLATFORM_FEE_USD,
 } from "./subscriptionTier.js";
-import { PLAN_RANK, catalogPublic, higherPlan, googleAccessProductId } from "./monetizationCatalog.js";
+import { PLAN_RANK, catalogPublic, higherPlan, googleAccessProductId, APPLE_PRODUCTS, GOOGLE_SUB_PRODUCTS } from "./monetizationCatalog.js";
 import { loadActiveManagementContext } from "./managementTeamAuth.js";
 import { SUPER_ADMIN_ONLY_CAPABILITIES } from "./managementPermissions.js";
 
@@ -30,16 +30,15 @@ function isSubLive(row, now = Date.now()) {
 export function mapAppleNotificationToStatus(notificationType, subtype) {
   const t = String(notificationType || "").toUpperCase();
   const s = String(subtype || "").toUpperCase();
-  if (t === "EXPIRED" || t === "GRACE_PERIOD_EXPIRED" || t === "REVOKE") return "expired";
-  if (t === "DID_FAIL_TO_RENEW" && s === "GRACE_PERIOD") return "grace";
+  if (t === "EXPIRED" || t === "GRACE_PERIOD_EXPIRED" || t === "REVOKE" || t === "REFUND") return "expired";
+  if (t === "GRACE_PERIOD" || (t === "DID_FAIL_TO_RENEW" && s === "GRACE_PERIOD")) return "grace";
   if (t === "DID_FAIL_TO_RENEW") return "billing_retry";
   if (t === "DID_CHANGE_RENEWAL_STATUS" && s === "AUTO_RENEW_DISABLED") {
     return { status: "active", cancelAtPeriodEnd: true, autoRenew: false };
   }
-  if (t === "REFUND") return "expired";
+  if (t === "DID_CHANGE_RENEWAL_STATUS") return "active";
   if (t === "DID_CHANGE_RENEWAL_PREF") return "active";
   if (["SUBSCRIBED", "DID_RENEW", "OFFER_REDEEMED", "RENEWAL_EXTENDED"].includes(t)) return "active";
-  if (t === "EXPIRED") return "expired";
   return "active";
 }
 
@@ -202,6 +201,31 @@ export async function loadEntitlementsForUser(user, { dbQuery = defaultDbQuery }
   return snapshot;
 }
 
+const LIVE_MRR_STATUSES = new Set(["trial", "active", "grace", "billing_retry"]);
+
+function listPriceForPlan(planKey, storePlatform) {
+  const apple = APPLE_PRODUCTS[planKey];
+  const google = GOOGLE_SUB_PRODUCTS[planKey];
+  if (String(storePlatform || "").toLowerCase() === "google") {
+    return Number(google?.listPriceUsd || 0);
+  }
+  return Number(apple?.listPriceUsd || google?.listPriceUsd || 0);
+}
+
+/** Production-only MRR. Sandbox / missing environment is excluded (never invented). */
+export function productionMrrFromSubscriptions(rows = [], now = Date.now()) {
+  let mrr = 0;
+  for (const row of rows) {
+    const env = String(row.store_environment || "").toLowerCase();
+    if (env !== "production") continue;
+    const st = String(row.status || "").toLowerCase();
+    if (!LIVE_MRR_STATUSES.has(st)) continue;
+    if (!isSubLive(row, now)) continue;
+    mrr += listPriceForPlan(row.plan_key, row.store_platform);
+  }
+  return Math.round(mrr * 100) / 100;
+}
+
 export async function recordSubscriptionEvent(dbQuery, row) {
   const r = await dbQuery(
     `INSERT INTO subscription_events
@@ -350,6 +374,8 @@ export async function listSubscriptionsForAdmin(dbQuery) {
     appAccess: access.rows || [],
     recentEvents: events.rows || [],
     bookingPlatformFeeUsd: BARBER_PLATFORM_FEE_USD,
+    productionMrrUsd: productionMrrFromSubscriptions(subs.rows || []),
+    sandboxExcludedFromMrr: true,
     legacyTablesPreserved: ["barber_subscriptions", "barber_settings.is_pro", "businesses.trial_*"],
   };
 }

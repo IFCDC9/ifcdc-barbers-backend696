@@ -7,7 +7,8 @@ import { entitlementsMode } from "./entitlementFlags.js";
 import { loadEntitlementsForUser, listSubscriptionsForAdmin } from "./entitlementService.js";
 import { confirmAppleTransaction, processAppleAssnV2 } from "./appleAssnService.js";
 import { confirmGooglePurchase, processGoogleRtdn } from "./googleRtdnService.js";
-import { getStoreVerifiers, storeVerifyStatus } from "./storeVerifyAdapters.js";
+import { getStoreVerifiers, storeVerifyStatus, probeAppleStoreKitAuth } from "./storeVerifyAdapters.js";
+import { appleHealthPublic } from "./appleStoreKitClient.js";
 import { ensureEntitlementSchema } from "./entitlementMigrations.js";
 
 function actorUserId(req) {
@@ -21,6 +22,21 @@ export function createEntitlementRouter(deps = {}) {
 
   router.get("/api/entitlements/catalog", (_req, res) => {
     res.json({ ok: true, mode: entitlementsMode(), catalog: catalogPublic(), verify: storeVerifyStatus() });
+  });
+
+  router.get("/api/billing/apple/health", async (_req, res) => {
+    try {
+      const probe = await probeAppleStoreKitAuth({ fetchImpl: deps.fetchImpl || globalThis.fetch });
+      return res.json(appleHealthPublic(probe));
+    } catch (e) {
+      console.error("[billing/apple/health]", e?.message || e);
+      return res.status(500).json({
+        appleConfigured: false,
+        appleApiAuth: "fail",
+        environment: "unconfigured",
+        errorClass: "health_failed",
+      });
+    }
   });
 
   router.get("/api/entitlements/me", requireAuth, async (req, res) => {
@@ -55,7 +71,8 @@ export function createEntitlementRouter(deps = {}) {
           claimedStatus,
         });
         if (!result.ok) return res.status(400).json(result);
-        return res.json({ ok: true, ...result, clientStatusIgnored: true });
+        const entitlements = await loadEntitlementsForUser(req.user, { dbQuery: query });
+        return res.json({ ok: true, ...result, entitlements, clientStatusIgnored: true });
       }
 
       if (platform === "google") {

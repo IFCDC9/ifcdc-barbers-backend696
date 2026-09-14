@@ -9,7 +9,24 @@ function memoryDb() {
   const rows = [];
   const events = [];
   return async function dbQuery(sql, params) {
-    if (String(sql).includes("INSERT INTO account_subscriptions")) {
+    const text = String(sql);
+    if (text.includes("FROM subscription_events") && text.includes("notification_uuid")) {
+      const uuid = params[0];
+      const found = events.find((e) => e.uuid === uuid);
+      return { rows: found ? [{ id: found.id }] : [] };
+    }
+    if (text.includes("INSERT INTO account_subscriptions")) {
+      const orig = params[7];
+      const existing = rows.find((r) => r.store_original_transaction_id === orig && orig);
+      if (existing) {
+        existing.user_id = params[0] || existing.user_id;
+        existing.business_id = params[1] || existing.business_id;
+        existing.plan_key = params[2];
+        existing.status = params[4];
+        existing.store_product_id = params[6];
+        existing.store_environment = params[9];
+        return { rows: [existing] };
+      }
       const row = {
         id: `sub-${rows.length + 1}`,
         user_id: params[0],
@@ -20,17 +37,23 @@ function memoryDb() {
         store_platform: params[5],
         store_product_id: params[6],
         store_original_transaction_id: params[7],
+        store_environment: params[9],
       };
       rows.push(row);
       return { rows: [row] };
     }
-    if (String(sql).includes("INSERT INTO app_access_entitlements")) {
+    if (text.includes("INSERT INTO app_access_entitlements")) {
       const row = { id: "access-1", user_id: params[0], product_id: params[2], status: "granted" };
       return { rows: [row] };
     }
-    if (String(sql).includes("INSERT INTO subscription_events")) {
-      events.push({ sql, params });
-      return { rows: [{ id: `evt-${events.length}` }] };
+    if (text.includes("INSERT INTO subscription_events")) {
+      const uuid = params[5];
+      if (uuid && events.some((e) => e.uuid === uuid)) {
+        return { rows: [] };
+      }
+      const rec = { id: `evt-${events.length + 1}`, uuid, sql, params };
+      events.push(rec);
+      return { rows: [{ id: rec.id }] };
     }
     return { rows: [] };
   };
@@ -51,6 +74,7 @@ test("never trust frontend status on Apple confirm", async () => {
         originalTransactionId: "orig-1",
         expiresDate: Date.now() + 86400000,
         environment: "Sandbox",
+        bundleId: "com.ifcdc.barbers",
         offerType: 1,
       },
     }),
@@ -63,9 +87,10 @@ test("never trust frontend status on Apple confirm", async () => {
 
 test("Apple confirm rejects unknown product IDs", async () => {
   const result = await confirmAppleTransaction({
+    transactionJws: "aaa.bbb.ccc",
     verifyTransactionJws: async () => ({
       ok: true,
-      txn: { productId: "invented.sku", originalTransactionId: "x" },
+      txn: { productId: "invented.sku", originalTransactionId: "x", bundleId: "com.ifcdc.barbers", environment: "Sandbox" },
     }),
   });
   assert.equal(result.ok, false);
@@ -103,6 +128,8 @@ test("ASSN v2 expire does not delete — status expired", async () => {
           productId: "ifcdc.barbers.shop.monthly",
           originalTransactionId: "orig-shop",
           expiresDate: Date.now() - 1000,
+          bundleId: "com.ifcdc.barbers",
+          environment: "Sandbox",
         }),
       )
         .toString("base64url"),

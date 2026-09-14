@@ -70,8 +70,9 @@ export default function AdminSubscriptions() {
         <p style={{ color: gold, letterSpacing: "0.14em", fontSize: 12, fontWeight: 800 }}>SUPER ADMIN</p>
         <h1 style={{ color: gold, marginTop: 6 }}>Subscriptions</h1>
         <p style={{ color: "#a1a1aa" }}>
-          Observe/sandbox mode: {data?.mode || "—"}. Booking platform fee ${data?.bookingPlatformFeeUsd ?? 0.99} (separate).
-          Historical PayPal pro and barber_subscriptions rows are not deleted.
+          Mode: {data?.mode || "—"}. Booking platform fee ${data?.bookingPlatformFeeUsd ?? 0.99} (separate).
+          Store environment is sandbox vs Production per row. Production MRR (sandbox excluded): $
+          {Number(data?.productionMrrUsd || 0).toFixed(2)}. Historical PayPal pro and barber_subscriptions rows are not deleted.
         </p>
         {error ? <p style={{ color: "#f87171" }}>{error}</p> : null}
         <div style={card}>
@@ -94,6 +95,7 @@ export default function AdminSubscriptions() {
                 <th style={th}>User</th>
                 <th style={th}>Business</th>
                 <th style={th}>Period end</th>
+                <th style={th}>Environment</th>
               </tr>
             </thead>
             <tbody>
@@ -106,12 +108,13 @@ export default function AdminSubscriptions() {
                     <td style={td}>{row.user_id || "—"}</td>
                     <td style={td}>{row.business_id || "—"}</td>
                     <td style={td}>{row.current_period_end || row.trial_ends_at || "—"}</td>
+                    <td style={td}>{row.store_environment || "—"}</td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td style={td} colSpan={6}>
-                    No store-verified rows yet (schema observe mode).
+                  <td style={td} colSpan={7}>
+                    No store-verified rows yet (schema observe mode). Environment is StoreKit/Play sandbox vs Production when a row exists — do not invent MRR.
                   </td>
                 </tr>
               )}
@@ -127,6 +130,7 @@ export default function AdminSubscriptions() {
                 <th style={th}>Platform</th>
                 <th style={th}>Product</th>
                 <th style={th}>Status</th>
+                <th style={th}>Environment</th>
               </tr>
             </thead>
             <tbody>
@@ -137,12 +141,13 @@ export default function AdminSubscriptions() {
                     <td style={td}>{row.platform}</td>
                     <td style={td}>{row.product_id}</td>
                     <td style={td}>{row.status}</td>
+                    <td style={td}>{row.store_environment || "—"}</td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td style={td} colSpan={4}>
-                    No Android access grants yet.
+                  <td style={td} colSpan={5}>
+                    No Android access grants yet. Environment column is sandbox vs production from the store, not estimated MRR.
                   </td>
                 </tr>
               )}

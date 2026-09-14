@@ -4,12 +4,13 @@
  * Tests inject mocks — never hits App Store.
  */
 
-import { planFromAppleProductId } from "./monetizationCatalog.js";
+import { APPLE_BUNDLE_ID, planFromAppleProductId } from "./monetizationCatalog.js";
 import {
   mapAppleNotificationToStatus,
   recordSubscriptionEvent,
   upsertVerifiedSubscription,
 } from "./entitlementService.js";
+import { normalizeAppleEnvironment, subscriptionStatusFromAppleTxn } from "./appleJwsVerifier.js";
 
 function decodeJwtPayloadUnsafe(jws) {
   const parts = String(jws || "").split(".");
@@ -41,12 +42,18 @@ export function appleTransactionFromDecodedNotification(decoded) {
 }
 
 export function verifiedSubscriptionFromAppleTxn(txn, extras = {}) {
+  const bundleId = String(txn?.bundleId || extras.bundleId || "").trim();
+  if (bundleId && bundleId !== APPLE_BUNDLE_ID) {
+    return { ok: false, error: "wrong_bundle" };
+  }
   const productId = String(txn?.productId || extras.productId || "").trim();
   const plan = planFromAppleProductId(productId);
   if (!plan) {
     return { ok: false, error: "unknown_apple_product", productId };
   }
-  const statusMapped = extras.statusMapped || "active";
+  const statusMapped =
+    extras.statusMapped ||
+    (txn?.revoked || txn?.revocationDate ? "expired" : subscriptionStatusFromAppleTxn(txn));
   const status = typeof statusMapped === "string" ? statusMapped : statusMapped.status;
   const cancelAtPeriodEnd =
     typeof statusMapped === "object" ? Boolean(statusMapped.cancelAtPeriodEnd) : Boolean(extras.cancelAtPeriodEnd);
@@ -70,7 +77,7 @@ export function verifiedSubscriptionFromAppleTxn(txn, extras = {}) {
     storePlatform: "apple",
     storeProductId: productId,
     originalTransactionId: String(txn?.originalTransactionId || extras.originalTransactionId || ""),
-    environment: String(txn?.environment || extras.environment || "").toLowerCase() || null,
+    environment: normalizeAppleEnvironment(txn?.environment || extras.environment) || null,
     currentPeriodStart: purchase,
     currentPeriodEnd: expires,
     trialStartedAt: introUsed ? purchase : null,
@@ -109,7 +116,29 @@ export async function processAppleAssnV2({
     return { ok: false, error: "apple_verify_failed", detail: decoded?.error || null };
   }
   const body = decoded.payload || decoded;
-  const { txn } = appleTransactionFromDecodedNotification(body);
+  if (String(body.notificationType || "").toUpperCase() === "TEST") {
+    return { ok: true, notificationType: "TEST", verified: null, subscription: null };
+  }
+  const notificationUuid = String(body.notificationUUID || body.notificationUuid || "").trim() || null;
+  if (notificationUuid && dbQuery) {
+    const prior = await dbQuery(
+      `SELECT id FROM subscription_events
+       WHERE provider = 'apple' AND notification_uuid = $1
+       LIMIT 1`,
+      [notificationUuid],
+    ).catch(() => ({ rows: [] }));
+    if (prior.rows?.[0]) {
+      return {
+        ok: true,
+        duplicate: true,
+        notificationType: body.notificationType,
+        subscription: null,
+        verified: null,
+      };
+    }
+  }
+  const decodedTxn = decoded.txn || appleTransactionFromDecodedNotification(body).txn;
+  const txn = decodedTxn;
   const statusMapped = mapAppleNotificationToStatus(body.notificationType, body.subtype);
   const verified = txn
     ? verifiedSubscriptionFromAppleTxn(txn, {
@@ -119,7 +148,6 @@ export async function processAppleAssnV2({
       })
     : { ok: false, error: "missing_transaction" };
 
-  const notificationUuid = String(body.notificationUUID || body.notificationUuid || "").trim() || null;
   let subRow = null;
   if (verified.ok && dbQuery) {
     subRow = await upsertVerifiedSubscription(dbQuery, verified);
@@ -164,16 +192,25 @@ export async function confirmAppleTransaction({
   if (claimedStatus) {
     /* ignored — never trust frontend status */
   }
+  if (!String(transactionJws || "").trim()) {
+    return { ok: false, error: "missing_signed_transaction" };
+  }
   if (typeof verifyTransactionJws !== "function") {
     return { ok: false, error: "apple_verifier_required" };
   }
   const verifiedJws = await verifyTransactionJws(transactionJws);
   if (!verifiedJws || verifiedJws.ok === false) {
-    return { ok: false, error: "apple_verify_failed" };
+    return { ok: false, error: verifiedJws?.error || "apple_verify_failed" };
   }
   const txn = verifiedJws.txn || verifiedJws.payload || verifiedJws;
+  if (txn?.bundleId && String(txn.bundleId) !== APPLE_BUNDLE_ID) {
+    return { ok: false, error: "wrong_bundle" };
+  }
   const mapped = verifiedSubscriptionFromAppleTxn(txn, { userId, businessId });
   if (!mapped.ok) return mapped;
+  if (!mapped.originalTransactionId) {
+    return { ok: false, error: "missing_original_transaction_id" };
+  }
   if (claimedProductId && String(claimedProductId) !== mapped.storeProductId) {
     return { ok: false, error: "product_mismatch", message: "Client productId does not match verified transaction." };
   }
