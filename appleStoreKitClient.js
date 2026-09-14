@@ -1,7 +1,15 @@
 /**
  * App Store Server API client (JWT ES256). Never logs keys, JWS, or bearer tokens.
+ *
+ * Apple IAP PKCS#8 (.p8) loading — Render Secret File first:
+ *   Secret Files filename: ifcdc-barbers-iap.p8
+ *   Env: APPLE_IAP_PRIVATE_KEY_FILE=/etc/secrets/ifcdc-barbers-iap.p8
+ *   APPLE_IAP_ISSUER_ID and APPLE_IAP_KEY_ID stay as env vars.
+ * APPLE_IAP_PRIVATE_KEY env is fallback ONLY if the file env is unset or the path is missing.
+ * Never log file body / PEM. Paths are safe to log. Never send this to the frontend.
  */
 
+import { readFileSync } from "node:fs";
 import { createPrivateKey } from "node:crypto";
 import jwt from "jsonwebtoken";
 import { APPLE_BUNDLE_ID } from "./monetizationCatalog.js";
@@ -9,11 +17,47 @@ import { APPLE_BUNDLE_ID } from "./monetizationCatalog.js";
 export const APPLE_STOREKIT_SANDBOX = "https://api.storekit-sandbox.apple.com";
 export const APPLE_STOREKIT_PRODUCTION = "https://api.storekit.apple.com";
 
+/** Render Secret File mount convention (set APPLE_IAP_PRIVATE_KEY_FILE to this). */
+export const APPLE_IAP_DEFAULT_PRIVATE_KEY_FILE = "/etc/secrets/ifcdc-barbers-iap.p8";
+export const APPLE_IAP_SECRET_FILE_NAME = "ifcdc-barbers-iap.p8";
+
+/**
+ * Read PKCS#8 material. Prefers APPLE_IAP_PRIVATE_KEY_FILE when that env is set
+ * and the file exists. Reads the complete file (binary → utf8) so PEM newlines
+ * are preserved. Does not flatten whitespace. Never logs the body.
+ */
+export function loadAppleIapPrivateKey() {
+  const filePath = String(process.env.APPLE_IAP_PRIVATE_KEY_FILE || "").trim();
+  if (filePath) {
+    try {
+      const buf = readFileSync(filePath);
+      const raw = Buffer.from(buf).toString("utf8");
+      return { source: "file", raw, path: filePath };
+    } catch (err) {
+      const missing = err?.code === "ENOENT" || err?.code === "ENOTDIR";
+      if (missing) {
+        const envRaw = process.env.APPLE_IAP_PRIVATE_KEY;
+        if (envRaw != null && String(envRaw).trim()) {
+          return { source: "env", raw: String(envRaw), path: filePath, fileMissing: true };
+        }
+        return { source: "none", raw: "", path: filePath, fileMissing: true };
+      }
+      return { source: "file", raw: "", path: filePath, unreadable: true };
+    }
+  }
+  const envRaw = process.env.APPLE_IAP_PRIVATE_KEY;
+  if (envRaw != null && String(envRaw).trim()) {
+    return { source: "env", raw: String(envRaw), path: null };
+  }
+  return { source: "none", raw: "", path: null };
+}
+
 export function appleCredentialsConfigured() {
+  const loaded = loadAppleIapPrivateKey();
   return Boolean(
     String(process.env.APPLE_IAP_ISSUER_ID || "").trim() &&
       String(process.env.APPLE_IAP_KEY_ID || "").trim() &&
-      String(process.env.APPLE_IAP_PRIVATE_KEY || "").trim(),
+      String(loaded.raw || "").trim(),
   );
 }
 
@@ -42,23 +86,38 @@ export function normalizeApplePrivateKey(raw) {
   return s;
 }
 
-/** Classify the IAP key without returning key material. */
-export function inspectAppleSigningKey() {
-  const signingKey = normalizeApplePrivateKey(process.env.APPLE_IAP_PRIVATE_KEY);
-  if (!signingKey) return { ok: false, errorClass: "private_key_missing_after_normalize" };
+function keySourceLabel(loaded) {
+  if (loaded?.source === "file" || loaded?.source === "env") return loaded.source;
+  return "none";
+}
+
+/** Classify the IAP key without returning key material. PKCS#8 EC P-256 only. */
+export function inspectAppleSigningKey(loadedInput = null) {
+  const loaded = loadedInput || loadAppleIapPrivateKey();
+  const keySource = keySourceLabel(loaded);
+  const signingKey = normalizeApplePrivateKey(loaded.raw);
+  if (!signingKey) {
+    return { ok: false, errorClass: "private_key_missing_after_normalize", keySource, keyParse: "fail" };
+  }
   try {
     const keyObj = createPrivateKey(signingKey);
     const keyType = String(keyObj.asymmetricKeyType || "unknown");
     const curve = keyObj.asymmetricKeyDetails?.namedCurve || null;
     if (keyType !== "ec") {
-      return { ok: false, errorClass: `private_key_type_${keyType}_not_ec`, keyType };
+      return {
+        ok: false,
+        errorClass: `private_key_type_${keyType}_not_ec`,
+        keyType,
+        keySource,
+        keyParse: "fail",
+      };
     }
     if (curve && curve !== "prime256v1" && curve !== "P-256") {
-      return { ok: false, errorClass: "private_key_curve_not_p256", keyType, curve };
+      return { ok: false, errorClass: "private_key_curve_not_p256", keyType, curve, keySource, keyParse: "fail" };
     }
-    return { ok: true, keyType, curve: curve || "p256" };
+    return { ok: true, keyType, curve: curve || "p256", keySource, keyParse: "pass" };
   } catch {
-    return { ok: false, errorClass: "private_key_unreadable" };
+    return { ok: false, errorClass: "private_key_unreadable", keySource, keyParse: "fail" };
   }
 }
 
@@ -93,15 +152,20 @@ export function classifyJwtSignError(err) {
 }
 
 export function createAppStoreServerApiJwt() {
+  const loaded = loadAppleIapPrivateKey();
   if (!appleCredentialsConfigured()) {
-    return { ok: false, errorClass: "not_configured" };
+    return { ok: false, errorClass: "not_configured", keySource: keySourceLabel(loaded), keyParse: "fail" };
   }
   const issuerId = String(process.env.APPLE_IAP_ISSUER_ID || "").trim();
   const keyId = String(process.env.APPLE_IAP_KEY_ID || "").trim();
-  const signingKey = normalizeApplePrivateKey(process.env.APPLE_IAP_PRIVATE_KEY);
-  if (!signingKey) return { ok: false, errorClass: "private_key_invalid" };
-  const shape = inspectAppleSigningKey();
-  if (!shape.ok) return { ok: false, errorClass: shape.errorClass };
+  const signingKey = normalizeApplePrivateKey(loaded.raw);
+  if (!signingKey) {
+    return { ok: false, errorClass: "private_key_invalid", keySource: keySourceLabel(loaded), keyParse: "fail" };
+  }
+  const shape = inspectAppleSigningKey(loaded);
+  if (!shape.ok) {
+    return { ok: false, errorClass: shape.errorClass, keySource: shape.keySource, keyParse: "fail" };
+  }
   try {
     const token = jwt.sign(
       { bid: APPLE_BUNDLE_ID },
@@ -115,9 +179,14 @@ export function createAppStoreServerApiJwt() {
         header: { typ: "JWT", alg: "ES256", kid: keyId },
       },
     );
-    return { ok: true, token };
+    return { ok: true, token, keySource: shape.keySource, keyParse: "pass" };
   } catch (err) {
-    return { ok: false, errorClass: classifyJwtSignError(err) };
+    return {
+      ok: false,
+      errorClass: classifyJwtSignError(err),
+      keySource: shape.keySource,
+      keyParse: "fail",
+    };
   }
 }
 
@@ -141,12 +210,16 @@ async function parseAppleJsonSafe(res) {
  * Success is any authenticated response (not 401/403). Never returns tokens.
  */
 export async function probeAppleStoreKitAuth({ fetchImpl = globalThis.fetch } = {}) {
+  const loaded = loadAppleIapPrivateKey();
+  const shape = inspectAppleSigningKey(loaded);
+  const keyMeta = { keySource: keySourceLabel(loaded), keyParse: shape.ok ? "pass" : "fail" };
   if (!appleCredentialsConfigured()) {
     return {
       appleConfigured: false,
       appleApiAuth: "fail",
       environment: "unconfigured",
       errorClass: "not_configured",
+      ...keyMeta,
     };
   }
   const signed = createAppStoreServerApiJwt();
@@ -156,6 +229,7 @@ export async function probeAppleStoreKitAuth({ fetchImpl = globalThis.fetch } = 
       appleApiAuth: "fail",
       environment: "Sandbox",
       errorClass: signed.errorClass,
+      ...keyMeta,
     };
   }
   const headers = {
@@ -173,6 +247,7 @@ export async function probeAppleStoreKitAuth({ fetchImpl = globalThis.fetch } = 
         environment: "Sandbox",
         errorClass: classifyAppleApiHttpStatus(getRes.status, body.errorCode),
         appleErrorCode: body.errorCode ?? null,
+        ...keyMeta,
       };
     }
     if (getRes.status === 405 || getRes.status === 404) {
@@ -185,10 +260,11 @@ export async function probeAppleStoreKitAuth({ fetchImpl = globalThis.fetch } = 
           environment: "Sandbox",
           errorClass: classifyAppleApiHttpStatus(postRes.status, body.errorCode),
           appleErrorCode: body.errorCode ?? null,
+          ...keyMeta,
         };
       }
       if (postRes.ok || postRes.status === 202) {
-        return { appleConfigured: true, appleApiAuth: "pass", environment: "Sandbox" };
+        return { appleConfigured: true, appleApiAuth: "pass", environment: "Sandbox", ...keyMeta };
       }
       const body = await parseAppleJsonSafe(postRes);
       if (postRes.status === 401 || postRes.status === 403) {
@@ -197,24 +273,26 @@ export async function probeAppleStoreKitAuth({ fetchImpl = globalThis.fetch } = 
           appleApiAuth: "fail",
           environment: "Sandbox",
           errorClass: classifyAppleApiHttpStatus(postRes.status, body.errorCode),
+          ...keyMeta,
         };
       }
       /* Authenticated but unexpected status — still proves JWT accepted if not 401/403 */
       if (postRes.status !== 401 && postRes.status !== 403) {
-        return { appleConfigured: true, appleApiAuth: "pass", environment: "Sandbox" };
+        return { appleConfigured: true, appleApiAuth: "pass", environment: "Sandbox", ...keyMeta };
       }
     }
     if (getRes.ok || getRes.status === 202) {
-      return { appleConfigured: true, appleApiAuth: "pass", environment: "Sandbox" };
+      return { appleConfigured: true, appleApiAuth: "pass", environment: "Sandbox", ...keyMeta };
     }
     if (getRes.status !== 401 && getRes.status !== 403) {
-      return { appleConfigured: true, appleApiAuth: "pass", environment: "Sandbox" };
+      return { appleConfigured: true, appleApiAuth: "pass", environment: "Sandbox", ...keyMeta };
     }
     return {
       appleConfigured: true,
       appleApiAuth: "fail",
       environment: "Sandbox",
       errorClass: classifyAppleApiHttpStatus(getRes.status),
+      ...keyMeta,
     };
   } catch (err) {
     const msg = String(err?.name || err?.message || "network_error");
@@ -223,6 +301,7 @@ export async function probeAppleStoreKitAuth({ fetchImpl = globalThis.fetch } = 
       appleApiAuth: "fail",
       environment: "Sandbox",
       errorClass: msg === "TimeoutError" ? "apple_timeout" : "apple_network_error",
+      ...keyMeta,
     };
   }
 }
@@ -277,9 +356,14 @@ export async function fetchAppleSignedTransaction({
 }
 
 export function appleHealthPublic(probe) {
+  const keySource =
+    probe?.keySource === "file" || probe?.keySource === "env" ? probe.keySource : "none";
+  const keyParse = probe?.keyParse === "pass" ? "pass" : "fail";
   return {
     appleConfigured: Boolean(probe?.appleConfigured),
     appleApiAuth: probe?.appleApiAuth === "pass" ? "pass" : "fail",
+    keySource,
+    keyParse,
     environment: probe?.environment || "unconfigured",
     ...(probe?.appleApiAuth === "pass"
       ? {}

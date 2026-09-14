@@ -6,9 +6,13 @@ import {
   verifySignedTransactionJws,
   verifyStoreKitJws,
 } from "../appleJwsVerifier.js";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import {
   appleHealthPublic,
   classifyAppleApiHttpStatus,
+  inspectAppleSigningKey,
   probeAppleStoreKitAuth,
 } from "../appleStoreKitClient.js";
 import { productionMrrFromSubscriptions } from "../entitlementService.js";
@@ -159,8 +163,10 @@ test("Apple health mock HTTP: 401 fail, 200 pass", async () => {
   const prevI = process.env.APPLE_IAP_ISSUER_ID;
   const prevK = process.env.APPLE_IAP_KEY_ID;
   const prevP = process.env.APPLE_IAP_PRIVATE_KEY;
+  const prevF = process.env.APPLE_IAP_PRIVATE_KEY_FILE;
   process.env.APPLE_IAP_ISSUER_ID = "00000000-0000-4000-8000-000000000001";
   process.env.APPLE_IAP_KEY_ID = "ABCDE12345";
+  delete process.env.APPLE_IAP_PRIVATE_KEY_FILE;
   const { generateKeyPairSync } = await import("node:crypto");
   const { privateKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
   process.env.APPLE_IAP_PRIVATE_KEY = privateKey.export({ type: "pkcs8", format: "pem" });
@@ -172,6 +178,8 @@ test("Apple health mock HTTP: 401 fail, 200 pass", async () => {
   assert.equal(failPublic.appleConfigured, true);
   assert.equal(failPublic.appleApiAuth, "fail");
   assert.equal(failPublic.errorClass, "unauthorized");
+  assert.equal(failPublic.keySource, "env");
+  assert.equal(failPublic.keyParse, "pass");
 
   const passProbe = await probeAppleStoreKitAuth({
     fetchImpl: async () => ({ status: 200, ok: true, text: async () => JSON.stringify({ testNotificationToken: "omit-me" }) }),
@@ -179,6 +187,8 @@ test("Apple health mock HTTP: 401 fail, 200 pass", async () => {
   const passPublic = appleHealthPublic(passProbe);
   assert.equal(passPublic.appleApiAuth, "pass");
   assert.equal(passPublic.environment, "Sandbox");
+  assert.equal(passPublic.keySource, "env");
+  assert.equal(passPublic.keyParse, "pass");
   assert.equal("testNotificationToken" in passPublic, false);
 
   if (prevI === undefined) delete process.env.APPLE_IAP_ISSUER_ID;
@@ -187,6 +197,8 @@ test("Apple health mock HTTP: 401 fail, 200 pass", async () => {
   else process.env.APPLE_IAP_KEY_ID = prevK;
   if (prevP === undefined) delete process.env.APPLE_IAP_PRIVATE_KEY;
   else process.env.APPLE_IAP_PRIVATE_KEY = prevP;
+  if (prevF === undefined) delete process.env.APPLE_IAP_PRIVATE_KEY_FILE;
+  else process.env.APPLE_IAP_PRIVATE_KEY_FILE = prevF;
 });
 
 test("flattened PKCS8 EC P-256 PEM still inspects as ec", async () => {
@@ -220,4 +232,99 @@ test("ENTITLEMENTS_ENFORCE and LOCK_SHOPS stay off in this process unless set", 
   assert.equal(entitlementsLockShopsEnabled(), false);
   if (prevE !== undefined) process.env.ENTITLEMENTS_ENFORCE = prevE;
   if (prevL !== undefined) process.env.ENTITLEMENTS_LOCK_SHOPS = prevL;
+});
+
+function restoreAppleKeyEnv(prev) {
+  for (const [key, val] of Object.entries(prev)) {
+    if (val === undefined) delete process.env[key];
+    else process.env[key] = val;
+  }
+}
+
+test("APPLE_IAP_PRIVATE_KEY_FILE is preferred over env PKCS8", async () => {
+  const { generateKeyPairSync } = await import("node:crypto");
+  const { privateKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
+  const pem = privateKey.export({ type: "pkcs8", format: "pem" });
+  const dir = mkdtempSync(path.join(tmpdir(), "apple-iap-"));
+  const filePath = path.join(dir, "ifcdc-barbers-iap.p8");
+  writeFileSync(filePath, pem);
+  const prev = {
+    APPLE_IAP_PRIVATE_KEY: process.env.APPLE_IAP_PRIVATE_KEY,
+    APPLE_IAP_PRIVATE_KEY_FILE: process.env.APPLE_IAP_PRIVATE_KEY_FILE,
+  };
+  try {
+    process.env.APPLE_IAP_PRIVATE_KEY = "-----BEGIN PRIVATE KEY-----\nnot-a-real-key\n-----END PRIVATE KEY-----";
+    process.env.APPLE_IAP_PRIVATE_KEY_FILE = filePath;
+    const shape = inspectAppleSigningKey();
+    assert.equal(shape.keySource, "file");
+    assert.equal(shape.keyParse, "pass");
+    assert.equal(shape.ok, true);
+    assert.equal(shape.keyType, "ec");
+  } finally {
+    restoreAppleKeyEnv(prev);
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("missing APPLE_IAP_PRIVATE_KEY_FILE falls back to env PKCS8", async () => {
+  const { generateKeyPairSync } = await import("node:crypto");
+  const { privateKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
+  const pem = privateKey.export({ type: "pkcs8", format: "pem" });
+  const prev = {
+    APPLE_IAP_PRIVATE_KEY: process.env.APPLE_IAP_PRIVATE_KEY,
+    APPLE_IAP_PRIVATE_KEY_FILE: process.env.APPLE_IAP_PRIVATE_KEY_FILE,
+  };
+  try {
+    process.env.APPLE_IAP_PRIVATE_KEY = pem;
+    process.env.APPLE_IAP_PRIVATE_KEY_FILE = path.join(tmpdir(), "missing-ifcdc-barbers-iap.p8");
+    const shape = inspectAppleSigningKey();
+    assert.equal(shape.keySource, "env");
+    assert.equal(shape.keyParse, "pass");
+    assert.equal(shape.ok, true);
+  } finally {
+    restoreAppleKeyEnv(prev);
+  }
+});
+
+test("invalid secret file fails parse without leaking key material", async () => {
+  const marker = "LEAK_MARKER_NOT_A_KEY_9f3c";
+  const dir = mkdtempSync(path.join(tmpdir(), "apple-iap-bad-"));
+  const filePath = path.join(dir, "ifcdc-barbers-iap.p8");
+  writeFileSync(filePath, `-----BEGIN PRIVATE KEY-----\n${marker}\n-----END PRIVATE KEY-----\n`);
+  const { generateKeyPairSync } = await import("node:crypto");
+  const { privateKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
+  const prev = {
+    APPLE_IAP_ISSUER_ID: process.env.APPLE_IAP_ISSUER_ID,
+    APPLE_IAP_KEY_ID: process.env.APPLE_IAP_KEY_ID,
+    APPLE_IAP_PRIVATE_KEY: process.env.APPLE_IAP_PRIVATE_KEY,
+    APPLE_IAP_PRIVATE_KEY_FILE: process.env.APPLE_IAP_PRIVATE_KEY_FILE,
+  };
+  try {
+    process.env.APPLE_IAP_ISSUER_ID = "00000000-0000-4000-8000-000000000001";
+    process.env.APPLE_IAP_KEY_ID = "ABCDE12345";
+    process.env.APPLE_IAP_PRIVATE_KEY = privateKey.export({ type: "pkcs8", format: "pem" });
+    process.env.APPLE_IAP_PRIVATE_KEY_FILE = filePath;
+    const shape = inspectAppleSigningKey();
+    assert.equal(shape.keySource, "file");
+    assert.equal(shape.keyParse, "fail");
+    assert.equal(shape.ok, false);
+    assert.equal(shape.errorClass, "private_key_unreadable");
+    const publicHealth = appleHealthPublic({
+      appleConfigured: true,
+      appleApiAuth: "fail",
+      keySource: shape.keySource,
+      keyParse: shape.keyParse,
+      environment: "Sandbox",
+      errorClass: shape.errorClass,
+    });
+    const dumped = JSON.stringify(publicHealth);
+    assert.equal(dumped.includes(marker), false);
+    assert.equal(dumped.includes("BEGIN PRIVATE KEY"), false);
+    assert.equal(dumped.includes(filePath), false);
+    assert.equal(publicHealth.keySource, "file");
+    assert.equal(publicHealth.keyParse, "fail");
+  } finally {
+    restoreAppleKeyEnv(prev);
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

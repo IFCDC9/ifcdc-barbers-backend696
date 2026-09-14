@@ -20,6 +20,8 @@ env_backup/
 .vscode/.env
 credentials.json
 mobile/credentials.json
+*.p8
+scripts/local-only/*.p8
 
 # build / cache
 .expo/

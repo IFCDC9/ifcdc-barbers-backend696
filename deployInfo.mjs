@@ -7,6 +7,7 @@ import { readFileSync, existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
+import { loadAppleIapPrivateKey } from "./appleStoreKitClient.js";
 
 const require = createRequire(import.meta.url);
 const { resolvePublicWebOrigin, CANONICAL_PUBLIC_ORIGIN, resolvePayPalCheckoutReturnUrls } = require("./publicSiteConfig.cjs");
@@ -188,6 +189,24 @@ export async function getDeployInfoPayload() {
     viteAdminKeyNote:
       "VITE_ADMIN_API_KEY is a frontend build-time var — confirm it matches ADMIN_SECRET on the web host",
     databaseUrlConfigured: Boolean(String(process.env.DATABASE_URL || "").trim()),
+    entitlements: {
+      enforceEnabled: (() => {
+        const v = String(process.env.ENTITLEMENTS_ENFORCE || "0").trim().toLowerCase();
+        return v === "1" || v === "true" || v === "yes";
+      })(),
+      lockShopsEnabled: (() => {
+        const v = String(process.env.ENTITLEMENTS_LOCK_SHOPS || "0").trim().toLowerCase();
+        return v === "1" || v === "true" || v === "yes";
+      })(),
+      schemaEnsure: String(process.env.ENTITLEMENTS_SCHEMA_ENSURE || "0").trim() === "1",
+      appleIapIssuerPresent: Boolean(String(process.env.APPLE_IAP_ISSUER_ID || "").trim()),
+      appleIapKeyIdPresent: Boolean(String(process.env.APPLE_IAP_KEY_ID || "").trim()),
+      appleIapPrivateKeyPresent: Boolean(String(loadAppleIapPrivateKey().raw || "").trim()),
+      appleIapPrivateKeySource: loadAppleIapPrivateKey().source,
+      googlePlayServiceAccountPresent: Boolean(String(process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON || "").trim()),
+      googlePlayAccessTokenPresent: Boolean(String(process.env.GOOGLE_PLAY_ACCESS_TOKEN || "").trim()),
+      note: "Booleans only. ENTITLEMENTS_ENFORCE must remain 0 until Tessa authorizes gating.",
+    },
     features: {
       paypalFinalizeAlreadyCapturedRecovery: Boolean(captureOrGetCompletedPayPalOrder),
       customerEmailRequiredOnAppStart: paymentFixModulesLoaded,

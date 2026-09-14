@@ -33,6 +33,8 @@ export function createEntitlementRouter(deps = {}) {
       return res.status(500).json({
         appleConfigured: false,
         appleApiAuth: "fail",
+        keySource: "none",
+        keyParse: "fail",
         environment: "unconfigured",
         errorClass: "health_failed",
       });

@@ -28,6 +28,21 @@
 #     HUBSPOT_DEAL_STAGE_COMPLETED, HUBSPOT_DEAL_STAGE_CANCELLED, HUBSPOT_DEAL_STAGE_NO_SHOW
 #   ADMIN_SECRET (must match local .env ADMIN_SECRET / VITE_ADMIN_API_KEY for x-admin-key ops)
 #
+# Monetization / IAP (dashboard only — never commit secrets or .p8 / JSON keys):
+#   ENTITLEMENTS_ENFORCE=0          KEEP OFF. Do not set to 1 in this phase.
+#   ENTITLEMENTS_LOCK_SHOPS=0       KEEP OFF. Do not set to 1.
+#   ENTITLEMENTS_SCHEMA_ENSURE      optional 1 after SQL is applied (schema already applied 2026-09-14)
+#   APPLE_IAP_ISSUER_ID             App Store Connect → Users and Access → Integrations → In-App Purchase → Issuer ID
+#   APPLE_IAP_KEY_ID                same page → In-App Purchase key → Key ID
+#   Apple IAP .p8 via Render Secret File (preferred; do not put PEM in env if the file is mounted):
+#     Secret Files filename: ifcdc-barbers-iap.p8
+#     Env: APPLE_IAP_PRIVATE_KEY_FILE=/etc/secrets/ifcdc-barbers-iap.p8
+#   APPLE_IAP_PRIVATE_KEY           fallback ONLY if the secret file env is unset or the path is missing
+#   GOOGLE_PLAY_SERVICE_ACCOUNT_JSON  Play Console → Setup → API access → service account JSON (or)
+#   GOOGLE_PLAY_ACCESS_TOKEN         short-lived alternative; prefer service account JSON
+#   GOOGLE_ACCESS_PRODUCT_ID         default ifcdc.barbers.access — confirm with Tessa before production
+#   Billing webhooks (already routed in code): POST /api/billing/apple/assn and POST /api/billing/google/rtdn
+#
 # HubSpot must ONLY be configured on this service (ifcdc-barbers-backend696).
 # Do NOT set HUBSPOT_* on ifcdc-barbers-backend696-d8ui — strip with:
 #   RENDER_API_KEY=rnd_... node scripts/render-strip-d8ui-hubspot.mjs --deploy
