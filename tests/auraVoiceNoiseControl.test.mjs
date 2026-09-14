@@ -39,7 +39,7 @@ test("short barge-in fragments are rejected", () => {
     confidenceRaw: 0.95,
     isBargeInCandidate: true,
   });
-  assert.equal(out.action, "reject_prompt");
+  assert.equal(out.action, "silent_listen");
   assert.match(out.reason, /bargein_too_short|irrelevant/);
 });
 
@@ -60,7 +60,7 @@ test("TV dialogue rejected", () => {
     speechText: "Coming up next after the commercial break",
     confidenceRaw: 0.9,
   });
-  assert.equal(out.action, "reject_prompt");
+  assert.equal(out.action, "silent_listen");
 });
 
 test("relevant booking speech accepted at healthy confidence", () => {

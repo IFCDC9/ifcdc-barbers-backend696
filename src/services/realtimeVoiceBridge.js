@@ -4,6 +4,13 @@ import { createRequire } from "module"
 
 const requireCjs = createRequire(import.meta.url)
 const { createMulawSpeechGate } = requireCjs("../../auraVoiceNoiseControl.cjs")
+const {
+  beginCallerTurn,
+  markBargeIn,
+  markPlaybackSpeaking,
+  recordAuraTurn,
+  shouldResumeInterruptedResponse,
+} = requireCjs("../../auraVoiceCallRuntime.cjs")
 
 const OPENAI_REALTIME_MODEL = process.env.OPENAI_REALTIME_MODEL || "gpt-4o-realtime-preview"
 
@@ -69,6 +76,10 @@ export const attachTwilioRealtimeBridge = ({ server, path = "/api/voice/media-st
     let assistantIdleTimer = null
     const speechGate = createMulawSpeechGate()
     let lastVadMode = null
+    let currentResponseId = null
+    let lastSpeechStartedAt = 0
+    let greetedThisStream = false
+    const callKey = () => streamSid || "realtime_pending"
 
     const markAssistantSpeaking = (ms = 1200) => {
       assistantSpeaking = true
@@ -151,22 +162,30 @@ export const attachTwilioRealtimeBridge = ({ server, path = "/api/voice/media-st
           }
         })
         lastVadMode = "listen"
-        sendToOpenAI({
-          type: "response.create",
-          response: {
-            modalities: ["audio", "text"],
-            instructions:
-              "Greet the caller now with a complete professional IFCDC Barbers App greeting as AURA. Ask only one question at the end: how you may help today."
-          }
-        })
+        if (!greetedThisStream) {
+          greetedThisStream = true
+          sendToOpenAI({
+            type: "response.create",
+            response: {
+              modalities: ["audio", "text"],
+              instructions:
+                "Greet the caller now with a complete professional IFCDC Barbers App greeting as AURA. Ask only one question at the end: how you may help today."
+            }
+          })
+        }
       })
 
       openaiWs.on("message", (raw) => {
         const event = safeJsonParse(raw)
         if (!event) return
 
+        if (event.type === "response.created" && event.response?.id) {
+          currentResponseId = event.response.id
+        }
+
         if (event.type === "response.audio.delta" && event.delta && streamSid) {
           markAssistantSpeaking(900)
+          markPlaybackSpeaking(callKey(), true)
           pushVadSession()
           sendToTwilio({
             event: "media",
@@ -179,11 +198,32 @@ export const attachTwilioRealtimeBridge = ({ server, path = "/api/voice/media-st
 
         if (event.type === "response.audio.done" || event.type === "response.done") {
           markAssistantSpeaking(350)
+          markPlaybackSpeaking(callKey(), false)
+          currentResponseId = null
           setTimeout(() => pushVadSession(), 360)
         }
 
+        if (event.type === "response.audio_transcript.done" && event.transcript) {
+          recordAuraTurn(callKey(), { text: String(event.transcript) })
+        }
+
+        if (event.type === "conversation.item.input_audio_transcription.completed" && event.transcript) {
+          beginCallerTurn(callKey(), { speech: String(event.transcript), source: "realtime" })
+        }
+
         if (event.type === "input_audio_buffer.speech_started" && streamSid) {
-          // Only clear playback after sustained near-field speech (energy gate enforces ~300ms while speaking)
+          const t = Date.now()
+          if (t - lastSpeechStartedAt < 400) return
+          lastSpeechStartedAt = t
+          if (assistantSpeaking) {
+            const barge = markBargeIn(callKey(), { turnId: currentResponseId })
+            sendToOpenAI({ type: "response.cancel" })
+            currentResponseId = null
+            if (!shouldResumeInterruptedResponse()) {
+              // Do not response.create the old utterance.
+              void barge
+            }
+          }
           sendToTwilio({ event: "clear", streamSid })
         }
       })

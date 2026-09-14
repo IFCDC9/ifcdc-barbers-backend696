@@ -20,7 +20,7 @@ const {
   isAuraVoiceIntelligencePhase1,
 } = requireCjs("./auraVoiceIntelligenceFlags.cjs");
 const { runVoiceIntelligenceTurn } = requireCjs("./auraVoiceIntelligenceOrchestrator.cjs");
-const { waitingAckPhrase, recordVoiceTiming } = requireCjs("./auraVoiceLatency.cjs");
+const { recordVoiceTiming } = requireCjs("./auraVoiceLatency.cjs");
 const {
   evaluateSpeechInput,
   rememberAssistantSpeech,
@@ -28,6 +28,19 @@ const {
   parseConfidence,
   getNoiseControlStats,
 } = requireCjs("./auraVoiceNoiseControl.cjs");
+const {
+  beginCallerTurn,
+  recordRejectedInput,
+  recordAuraTurn,
+  markPlaybackSpeaking,
+  markBargeIn,
+  mergeBookingInfo,
+  ledgerContextBlock,
+  applyRepeatGuard,
+  rememberReplay,
+  getReplay,
+  runExclusiveTurn,
+} = requireCjs("./auraVoiceCallRuntime.cjs");
 
 const WELCOME_SENTINEL = "__IFCDC_VOICE_WELCOME__";
 const NO_SPEECH_SENTINEL = "__IFCDC_NO_SPEECH__";
@@ -187,7 +200,7 @@ async function openAiVoiceCompletion(userText, langNorm) {
       model,
       messages: [
         { role: "system", content: system },
-        { role: "user", content: String(userText || "").slice(0, 2000) },
+        { role: "user", content: String(userText || "").slice(0, 2800) },
       ],
       max_tokens: 220,
       temperature: 0.65,
@@ -245,7 +258,8 @@ export async function generateAuraReply(userInput, opts = {}) {
       if (hit) {
         core = hit;
       } else {
-        const ai = await openAiVoiceCompletion(raw, L);
+        const ledger = callSid ? ledgerContextBlock(callSid) : "";
+        const ai = await openAiVoiceCompletion(ledger ? `${ledger}\n\nCaller: ${raw}` : raw, L);
         if (ai) {
           core = ai;
         } else {
@@ -260,6 +274,8 @@ export async function generateAuraReply(userInput, opts = {}) {
     }
   }
 
+  const guarded = applyRepeatGuard(callSid, core, { userText: raw });
+  core = guarded.reply;
   const last = getVoiceLastCore(callSid);
   if (last && last === String(core).trim()) {
     core =
@@ -352,6 +368,18 @@ function buildVoiceLoopTwiML(gatherAction, attrs, mainSay, stillHereSay, callSid
     <Say voice="${xmlEscapeAttr(attrs.voice)}" language="${xmlEscapeAttr(attrs.language)}">${mainSay}</Say>
   </Gather>
   <Say voice="${xmlEscapeAttr(attrs.voice)}" language="${xmlEscapeAttr(attrs.language)}">${stillHereSay}</Say>
+  <Redirect method="POST">${gatherAction}</Redirect>
+</Response>`;
+}
+
+/** Keep listening without speaking (noise / echo / barge-in fragment). */
+function buildSilentListenTwiML(gatherAction, callSid = "") {
+  const g = twilioGatherSpeechAttrs(callSid);
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Gather input="speech dtmf" timeout="${g.timeout}" speechTimeout="${g.speechTimeout}" bargeIn="${g.bargeIn}" enhanced="${g.enhanced}" speechModel="${g.speechModel}" method="POST" action="${gatherAction}">
+    <Pause length="1"/>
+  </Gather>
   <Redirect method="POST">${gatherAction}</Redirect>
 </Response>`;
 }
@@ -457,31 +485,40 @@ export function createSimpleAuraVoiceHandlers(opts = {}) {
         confidence != null ? `conf=${confidence}` : "",
       );
 
+      const bargeInCandidate = Boolean(speech) && voiceAlreadyGreeted(callSid);
+      if (bargeInCandidate && callSid) {
+        markBargeIn(callSid);
+      }
+      const turn = callSid
+        ? beginCallerTurn(callSid, {
+            speech: speech || (userInput === WELCOME_SENTINEL || userInput === NO_SPEECH_SENTINEL ? userInput : ""),
+            digits,
+            confidence,
+            source: bargeInCandidate ? "bargein" : "gather",
+          })
+        : { accepted: true, turnId: "", eventId: "", duplicate: false };
       if (callSid) {
         callSessionsPut(callSid, userInput, {
           confidence,
-          bargeInCandidate: Boolean(speech) && voiceAlreadyGreeted(callSid),
+          bargeInCandidate,
           unstable: String(body.UnstableSpeechResult || "").trim() || null,
+          turnId: turn.turnId,
+          eventId: turn.eventId,
+          duplicate: Boolean(turn.duplicate),
         });
       } else {
         console.warn("[aura/flow] MISSING_LEG route=/api/aura/voice reason=no_CallSid_session_not_stored");
       }
 
       res.type("text/xml");
-      // Welcome: skip filler so the professional greeting is the first thing callers hear.
-      // Other turns: speak a short ack immediately while /process does the work (avoids silence).
+      // Welcome + barge-in: redirect only (no filler TTS — filler echoed into STT and sounded like repeats).
       const isWelcome = userInput === WELCOME_SENTINEL;
-      if (isWelcome) {
-        const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Redirect method="POST">${processPath}</Redirect>
-</Response>`;
-        res.send(xml);
+      if (turn.duplicate && turn.replayTwiml) {
+        res.send(turn.replayTwiml);
       } else {
-        const bridgeSay = escapeTwilioSayText(waitingAckPhrase(callSid));
+        // No filler TTS on this hop — avoids echo-into-STT and a second spoken line per turn.
         const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="Polly.Joanna" language="en-US">${bridgeSay}</Say>
   <Redirect method="POST">${processPath}</Redirect>
 </Response>`;
         res.send(xml);
@@ -558,18 +595,32 @@ export function createSimpleAuraVoiceHandlers(opts = {}) {
         stashed = callSessionsTake(callSid);
         userInput = stashed.text;
       }
+      if (stashed.meta?.duplicate && getReplay(callSid)?.twiml) {
+        const replay = getReplay(callSid);
+        res.type("text/xml");
+        res.send(replay.twiml);
+        sent = true;
+        console.log("[aura/turn] replay_duplicate_webhook turnId=", stashed.meta.turnId || replay.turnId);
+        return;
+      }
       if (!String(userInput).trim()) {
+        const replay = getReplay(callSid);
+        if (replay?.twiml && getSimpleBookingStage(callSid) !== STATES.ANYTHING_ELSE) {
+          console.warn("[aura/flow] empty_process_input_replay_last callSid=", callSid || "(none)");
+          res.type("text/xml");
+          res.send(replay.twiml);
+          sent = true;
+          return;
+        }
         if (getSimpleBookingStage(callSid) === STATES.ANYTHING_ELSE) {
           userInput = NO_SPEECH_SENTINEL;
-        } else if (callSid && !(sessionPeek && String(sessionPeek?.text || sessionPeek || "").trim())) {
+        } else {
           console.warn(
-            "[aura/flow] MISSING_LEG route=/api/aura/process reason=callSessions_empty_after_take " +
-              "(Redirect_POST_without_matching_voice_stash?) callSid=" +
+            "[aura/flow] MISSING_LEG route=/api/aura/process reason=empty_input_no_speech " +
+              "callSid=" +
               callSid,
           );
-          userInput = "hello";
-        } else {
-          userInput = "hello";
+          userInput = NO_SPEECH_SENTINEL;
         }
       }
       const speechConfidence =
@@ -591,6 +642,20 @@ export function createSimpleAuraVoiceHandlers(opts = {}) {
         confidence: gate.confidence,
         gateMs: gate.metrics?.gateMs,
       });
+
+      if (gate.action === "silent_listen") {
+        recordRejectedInput(callSid, { text: userInput, reason: gate.reason });
+        res.type("text/xml");
+        res.send(buildSilentListenTwiML(gatherAction, callSid));
+        sent = true;
+        recordVoiceTiming({
+          speechToResponseMs: Date.now() - tRoute,
+          responseGenerationMs: gate.metrics?.gateMs ?? Date.now() - tRoute,
+          totalTurnMs: Date.now() - tRoute,
+        });
+        console.log("[aura/noise] silent_listen", gate.reason, "noisy=", gate.noisyMode);
+        return;
+      }
 
       if (gate.action === "reject_prompt" || gate.action === "confirm_critical") {
         let language = "en";
@@ -614,8 +679,11 @@ export function createSimpleAuraVoiceHandlers(opts = {}) {
         const prompt = escapeTwilioSayText(String(gate.prompt || "Could you please repeat that?"));
         const stillHere = escapeTwilioSayText("I'm still here if you need me.");
         rememberAssistantSpeech(callSid, gate.prompt || "");
+        recordAuraTurn(callSid, { turnId: stashed.meta?.turnId, text: gate.prompt || "" });
+        const gatedXml = buildVoiceLoopTwiML(gatherAction, attrs, prompt, stillHere, callSid);
+        rememberReplay(callSid, { turnId: stashed.meta?.turnId, twiml: gatedXml, reply: gate.prompt || "" });
         res.type("text/xml");
-        res.send(buildVoiceLoopTwiML(gatherAction, attrs, prompt, stillHere, callSid));
+        res.send(gatedXml);
         sent = true;
         recordVoiceTiming({
           speechToResponseMs: Date.now() - tRoute,
@@ -652,63 +720,88 @@ export function createSimpleAuraVoiceHandlers(opts = {}) {
       console.log("[aura/timing] /api/aura/process_settings_ms", Date.now() - tSettings);
 
       const attrs = twilioSayAttributes(language, voiceType);
+      const turnId = stashed.meta?.turnId || "";
 
-      /** Phase 1 intelligence (flagged) — never replaces Twilio Verify / SMS / PayPal. */
-      if (isAuraVoiceIntelligencePhase1()) {
-        try {
-          const fromE164 = String(body.From ?? q.From ?? "").trim();
-          const toE164 = String(body.To ?? q.To ?? "").trim();
-          const intel = await runVoiceIntelligenceTurn({
-            dbQuery,
-            callSid,
-            from: fromE164,
-            to: toE164,
-            userInput,
-            insertVoiceRow,
-            language,
-          });
-          if (intel?.handled && String(intel.reply || "").trim()) {
-            const genMs = Date.now() - tRoute;
-            recordVoiceTiming({
-              speechToResponseMs: genMs,
-              responseGenerationMs: genMs,
-              totalTurnMs: Date.now() - tRoute,
+      const produced = await runExclusiveTurn(callSid || `anon_${tRoute}`, async () => {
+        /** Phase 1 intelligence (flagged) — never replaces Twilio Verify / SMS / PayPal. */
+        if (isAuraVoiceIntelligencePhase1()) {
+          try {
+            const fromE164 = String(body.From ?? q.From ?? "").trim();
+            const toE164 = String(body.To ?? q.To ?? "").trim();
+            const intel = await runVoiceIntelligenceTurn({
+              dbQuery,
+              callSid,
+              from: fromE164,
+              to: toE164,
+              userInput,
+              insertVoiceRow,
+              language,
             });
-            res.type("text/xml");
-            if (intel.afterBookingClose || intel.hangup) {
-              markCallCompleted(callSid);
-              req.session.bookingCompleted = true;
-              const closingSay = escapeTwilioSayText(String(intel.reply).trim());
-              res.send(`<?xml version="1.0" encoding="UTF-8"?>
+            if (intel?.handled && String(intel.reply || "").trim()) {
+              return { kind: "intel", intel };
+            }
+          } catch (intelErr) {
+            console.warn("[aura/voice-intel] turn failed; falling back to legacy:", intelErr?.message || intelErr);
+          }
+        }
+
+        const tBook = Date.now();
+        const bookingOut = await runSimpleBookingTurn({
+          callSid,
+          userInput,
+          language,
+          insertVoiceRow,
+        });
+        console.log("[aura/timing] simple_booking_turn_ms", Date.now() - tBook);
+        return { kind: "booking", bookingOut, tBook };
+      });
+
+      if (produced?.kind === "intel") {
+        const intel = produced.intel;
+        const guarded = applyRepeatGuard(callSid, String(intel.reply).trim(), { userText: userInput });
+        const spoken = guarded.reply;
+        const genMs = Date.now() - tRoute;
+        recordVoiceTiming({
+          speechToResponseMs: genMs,
+          responseGenerationMs: genMs,
+          totalTurnMs: Date.now() - tRoute,
+        });
+        res.type("text/xml");
+        if (intel.afterBookingClose || intel.hangup) {
+          markCallCompleted(callSid);
+          req.session.bookingCompleted = true;
+          mergeBookingInfo(callSid, { confirmed: true });
+          const closingSay = escapeTwilioSayText(spoken);
+          const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say voice="${xmlEscapeAttr(attrs.voice)}" language="${xmlEscapeAttr(attrs.language)}">${closingSay}</Say>
   <Hangup/>
-</Response>`);
-              sent = true;
-              console.log("[aura/flow] twiml=voice_intel_close intent=", intel.intent || "");
-              return;
-            }
-            const safeMain = escapeTwilioSayText(String(intel.reply).trim());
-            const stillHere = escapeTwilioSayText("I'm still here if you need me.");
-            rememberAssistantSpeech(callSid, String(intel.reply).trim());
-            res.send(buildVoiceLoopTwiML(gatherAction, attrs, safeMain, stillHere, callSid));
-            sent = true;
-            console.log("[aura/flow] twiml=voice_intel intent=", intel.intent || "");
-            return;
-          }
-        } catch (intelErr) {
-          console.warn("[aura/voice-intel] turn failed; falling back to legacy:", intelErr?.message || intelErr);
+</Response>`;
+          rememberReplay(callSid, { turnId, twiml: xml, reply: spoken });
+          res.send(xml);
+          sent = true;
+          console.log("[aura/flow] twiml=voice_intel_close intent=", intel.intent || "");
+          return;
         }
+        const safeMain = escapeTwilioSayText(spoken);
+        const stillHere = escapeTwilioSayText("I'm still here if you need me.");
+        rememberAssistantSpeech(callSid, spoken);
+        recordAuraTurn(callSid, { turnId, text: spoken });
+        const xml = buildVoiceLoopTwiML(gatherAction, attrs, safeMain, stillHere, callSid);
+        rememberReplay(callSid, { turnId, twiml: xml, reply: spoken });
+        markPlaybackSpeaking(callSid, true);
+        res.send(xml);
+        sent = true;
+        console.log("[aura/flow] twiml=voice_intel intent=", intel.intent || "");
+        return;
       }
 
-      const tBook = Date.now();
-      const bookingOut = await runSimpleBookingTurn({
-        callSid,
-        userInput,
-        language,
-        insertVoiceRow,
-      });
-      console.log("[aura/timing] simple_booking_turn_ms", Date.now() - tBook);
+      const bookingOut = produced?.bookingOut || {
+        reply: "",
+        stage: "",
+        duplicateExecutionBlocked: false,
+      };
+      const tBook = produced?.tBook || Date.now();
       console.log("STAGE:", bookingOut.stage, bookingOut.bookingLog ? `(${bookingOut.bookingLog})` : "");
       recordVoiceTiming({
         bookingLookupMs: Date.now() - tBook,
@@ -771,7 +864,9 @@ export function createSimpleAuraVoiceHandlers(opts = {}) {
             ? "Hola, estoy aquí. ¿Cómo puedo ayudarte hoy?"
             : "I'm here. How can I help you today?";
       }
-      console.log("REPLY:", reply.slice(0, 400) + (reply.length > 400 ? "…" : ""));
+      const guardedBook = applyRepeatGuard(callSid, reply, { userText: userInput });
+      reply = guardedBook.reply;
+      console.log("REPLY:", reply.slice(0, 400) + (reply.length > 400 ? "…" : ""), guardedBook.suppressed ? "(repeat_guard)" : "");
 
       const safeMain = escapeTwilioSayText(
         reply ||
@@ -786,7 +881,11 @@ export function createSimpleAuraVoiceHandlers(opts = {}) {
       );
 
       rememberAssistantSpeech(callSid, reply);
-      res.send(buildVoiceLoopTwiML(gatherAction, attrs, safeMain, stillHere, callSid));
+      recordAuraTurn(callSid, { turnId, text: reply });
+      markPlaybackSpeaking(callSid, true);
+      const loopXml = buildVoiceLoopTwiML(gatherAction, attrs, safeMain, stillHere, callSid);
+      rememberReplay(callSid, { turnId, twiml: loopXml, reply });
+      res.send(loopXml);
       sent = true;
       console.log("[aura/timing] /api/aura/process_total_ms", Date.now() - tRoute);
       console.log(

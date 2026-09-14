@@ -4,6 +4,10 @@
  */
 
 import { ack } from "./auraVoiceAck.js";
+import { createRequire } from "module";
+
+const requireCjs = createRequire(import.meta.url);
+const { mergeBookingInfo, setPendingQuestion, markQuestionAnswered } = requireCjs("./auraVoiceCallRuntime.cjs");
 
 export const STATES = {
   START: "start",
@@ -150,10 +154,35 @@ function inferService(raw) {
   const t = String(raw || "").trim();
   if (!t) return "";
   const lower = t.toLowerCase();
+  if (/^(hello|hi|hey|yo|thanks|thank you|ok|okay|please)$/i.test(lower)) return "";
   if (/\b(fade|taper|lineup|buzz)\b/.test(lower)) return t.slice(0, 80);
   if (/\b(beard|mustache)\b/.test(lower)) return "Beard trim";
   if (/\b(haircut|cut|trim)\b/.test(lower)) return "Haircut";
   return t.replace(/\s+/g, " ").slice(0, 80);
+}
+
+function syncLedgerFromSession(callSid, session, log) {
+  if (!callSid || !session) return;
+  mergeBookingInfo(callSid, {
+    service: session.data.service,
+    day: session.data.dateYmd || session.data.day,
+    time: session.data.time,
+    name: session.data.name,
+    confirmed: session.completed === true,
+  });
+  const pendingByStep = {
+    [STATES.SERVICE]: "What service should I book?",
+    [STATES.DAY]: "What day works best?",
+    [STATES.TIME]: "What time would you like?",
+    [STATES.NAME]: "What name should I put on the booking?",
+    [STATES.CONFIRM]: "Please say yes to confirm or no to change.",
+  };
+  if (pendingByStep[session.step]) {
+    setPendingQuestion(callSid, pendingByStep[session.step], "book");
+  } else {
+    setPendingQuestion(callSid, "", session.completed ? "booked" : null);
+  }
+  if (log && /→/.test(String(log))) markQuestionAnswered(callSid, String(log));
 }
 
 function looksLikePhoneOnly(s) {
@@ -468,11 +497,12 @@ const NO_SPEECH = "__IFCDC_NO_SPEECH__";
 export async function runSimpleBookingTurn(ctx) {
   const callSid = String(ctx.callSid || "").trim();
   const rawIn = String(ctx.userInput || "").trim();
-  let input = rawIn === WELCOME || rawIn === "hello" ? "" : rawIn;
+  let input = rawIn === WELCOME ? "" : rawIn;
   if (rawIn === NO_SPEECH) input = "no_input";
 
   const out = await handleBooking(callSid, input, ctx.language, ctx.insertVoiceRow);
   const session = getState(callSid);
+  syncLedgerFromSession(callSid, session, out.log);
   return {
     reply: out.reply,
     stage: session ? String(session.step) : "none",

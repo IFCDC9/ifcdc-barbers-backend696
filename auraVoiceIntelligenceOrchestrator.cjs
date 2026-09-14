@@ -188,7 +188,9 @@ async function runVoiceIntelligenceTurn({
   })();
   const owner = Boolean(fromE164 && isOwnerCaller(fromE164));
   const raw = String(userInput || "").trim();
-  const isWelcome = raw === "__IFCDC_VOICE_WELCOME__" || raw.toLowerCase() === "hello";
+  const isWelcome =
+    raw === "__IFCDC_VOICE_WELCOME__" ||
+    (!session.greeted && (raw.toLowerCase() === "hello" || raw.toLowerCase() === "hi"));
   const isSilence = raw === "__IFCDC_NO_SPEECH__";
 
   if (owner && typeof dbQuery === "function") {

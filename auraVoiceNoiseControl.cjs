@@ -23,6 +23,7 @@
  *   AURA_VOICE_NOISE_CONTROL=0
  */
 
+/** @type {Map<string, string[]>} last N assistant utterances (echo / AEC post-STT) */
 const lastAssistantByCall = new Map();
 const pendingConfirmByCall = new Map();
 /** @type {Map<string, { noisy: boolean, lowConfStreak: number, rejectStreak: number, updatedAt: number }>} */
@@ -138,8 +139,21 @@ function getNoiseThresholds(callSid) {
 function rememberAssistantSpeech(callSid, text) {
   const k = String(callSid || "").trim();
   if (!k) return;
-  lastAssistantByCall.set(k, String(text || "").trim().toLowerCase().slice(0, 800));
+  const next = String(text || "").trim().toLowerCase().slice(0, 800);
+  if (!next) return;
+  const prev = lastAssistantByCall.get(k) || [];
+  prev.push(next);
+  while (prev.length > 6) prev.shift();
+  lastAssistantByCall.set(k, prev);
   pruneMap(lastAssistantByCall);
+}
+
+function assistantUtterances(callSid) {
+  const k = String(callSid || "").trim();
+  const v = k ? lastAssistantByCall.get(k) : null;
+  if (Array.isArray(v)) return v;
+  if (typeof v === "string" && v) return [v];
+  return [];
 }
 
 function parseConfidence(raw) {
@@ -171,7 +185,7 @@ function looksLikeBackgroundMedia(text) {
   const t = String(text || "").toLowerCase();
   if (!t.trim()) return false;
   if (
-    /\b(coming up next|stay tuned|commercial break|subscribe|like and subscribe|breaking news|weather forecast|traffic report|now playing|you're listening to|brought to you by|live from|tune in|sportscaster|anchorman|dj)\b/i.test(
+    /\b(coming up next|stay tuned|commercial break|subscribe|like and subscribe|breaking news|weather forecast|traffic report|now playing|you're listening to|brought to you by|live from|tune in|sportscaster|anchorman|dj|volume up|next song|radio station|sportscenter|highlight reel|after these messages)\b/i.test(
       t,
     )
   ) {
@@ -272,10 +286,21 @@ function rejectPrompt(callSid, prompt, reason, confidence, t0, extra = {}) {
     rejected: true,
     backgroundHit: reason === "background_media",
   });
+  const silentReasons = new Set([
+    "echo_overlap",
+    "background_media",
+    "bargein_too_short",
+    "irrelevant_bargein",
+    "bargein_low_confidence",
+    "bargein_missing_confidence_noisy",
+    "fragment",
+    "multi_speaker",
+  ]);
+  const action = silentReasons.has(reason) ? "silent_listen" : "reject_prompt";
   return {
-    action: "reject_prompt",
+    action,
     text: "",
-    prompt,
+    prompt: action === "silent_listen" ? "" : prompt,
     confidence,
     reason,
     noisyMode: st.noisy,
@@ -366,10 +391,12 @@ function evaluateSpeechInput({
     return rejectPrompt(callSid, PROMPTS.repeat, "empty", confidence, t0);
   }
 
-  const lastAsst = sid ? lastAssistantByCall.get(sid) : "";
-  if (lastAsst && overlapRatio(text, lastAsst) >= 0.65 && text.length > 10) {
-    noiseStats.rejectedEcho += 1;
-    return rejectPrompt(callSid, PROMPTS.closer, "echo_overlap", confidence, t0);
+  const lastList = assistantUtterances(sid);
+  for (const lastAsst of lastList) {
+    if (lastAsst && overlapRatio(text, lastAsst) >= 0.62 && text.length > 8) {
+      noiseStats.rejectedEcho += 1;
+      return rejectPrompt(callSid, PROMPTS.closer, "echo_overlap", confidence, t0);
+    }
   }
 
   if (looksLikeBackgroundMedia(text)) {
@@ -587,8 +614,8 @@ function createMulawSpeechGate() {
         return false;
       }
 
-      const listenMargin = envNum("AURA_VOICE_MULAW_LISTEN_MARGIN", 3.5);
-      const bargeMargin = envNum("AURA_VOICE_MULAW_BARGE_MARGIN", 7.5);
+      const listenMargin = envNum("AURA_VOICE_MULAW_LISTEN_MARGIN", 4.2);
+      const bargeMargin = envNum("AURA_VOICE_MULAW_BARGE_MARGIN", 8.5);
       const minEnergy = noiseFloor + (assistantSpeaking ? bargeMargin : listenMargin);
 
       if (energy < minEnergy) {
@@ -598,8 +625,8 @@ function createMulawSpeechGate() {
 
       speechRunMs += FRAME_MS;
       const needMs = assistantSpeaking
-        ? envNum("AURA_VOICE_BARGEIN_SUSTAIN_MS", 300)
-        : envNum("AURA_VOICE_LISTEN_SUSTAIN_MS", 80);
+        ? envNum("AURA_VOICE_BARGEIN_SUSTAIN_MS", 360)
+        : envNum("AURA_VOICE_LISTEN_SUSTAIN_MS", 100);
       if (speechRunMs < needMs) return false;
       return true;
     },
@@ -616,6 +643,7 @@ function shouldForwardMulawFrame(base64Payload, opts = {}) {
 module.exports = {
   evaluateSpeechInput,
   rememberAssistantSpeech,
+  assistantUtterances,
   getNoiseThresholds,
   getNoiseControlStats,
   getVoiceStackReport,
