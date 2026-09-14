@@ -2,6 +2,7 @@
  * App Store Server API client (JWT ES256). Never logs keys, JWS, or bearer tokens.
  */
 
+import { createPrivateKey } from "node:crypto";
 import jwt from "jsonwebtoken";
 import { APPLE_BUNDLE_ID } from "./monetizationCatalog.js";
 
@@ -24,14 +25,41 @@ export function normalizeApplePrivateKey(raw) {
   ) {
     s = s.slice(1, -1).trim();
   }
-  s = s.replace(/\\n/g, "\n").replace(/\r\n/g, "\n").trim();
+  s = s.replace(/\\n/g, "\n").replace(/\\r/g, "").replace(/\r\n/g, "\n").trim();
   if (!s) return "";
+  const block = s.match(/-----BEGIN ([A-Z0-9 ]+)-----([A-Za-z0-9+/=\s]+)-----END \1-----/);
+  if (block) {
+    const type = block[1];
+    const body = block[2].replace(/\s+/g, "");
+    const lines = body.match(/.{1,64}/g) || [body];
+    return `-----BEGIN ${type}-----\n${lines.join("\n")}\n-----END ${type}-----`;
+  }
   if (!s.includes("BEGIN")) {
     const body = s.replace(/\s+/g, "");
     const lines = body.match(/.{1,64}/g) || [body];
-    s = `-----BEGIN PRIVATE KEY-----\n${lines.join("\n")}\n-----END PRIVATE KEY-----`;
+    return `-----BEGIN PRIVATE KEY-----\n${lines.join("\n")}\n-----END PRIVATE KEY-----`;
   }
   return s;
+}
+
+/** Classify the IAP key without returning key material. */
+export function inspectAppleSigningKey() {
+  const signingKey = normalizeApplePrivateKey(process.env.APPLE_IAP_PRIVATE_KEY);
+  if (!signingKey) return { ok: false, errorClass: "private_key_missing_after_normalize" };
+  try {
+    const keyObj = createPrivateKey(signingKey);
+    const keyType = String(keyObj.asymmetricKeyType || "unknown");
+    const curve = keyObj.asymmetricKeyDetails?.namedCurve || null;
+    if (keyType !== "ec") {
+      return { ok: false, errorClass: `private_key_type_${keyType}_not_ec`, keyType };
+    }
+    if (curve && curve !== "prime256v1" && curve !== "P-256") {
+      return { ok: false, errorClass: "private_key_curve_not_p256", keyType, curve };
+    }
+    return { ok: true, keyType, curve: curve || "p256" };
+  } catch {
+    return { ok: false, errorClass: "private_key_unreadable" };
+  }
 }
 
 export function appleApiBaseForEnvironment(environment) {
@@ -72,6 +100,8 @@ export function createAppStoreServerApiJwt() {
   const keyId = String(process.env.APPLE_IAP_KEY_ID || "").trim();
   const signingKey = normalizeApplePrivateKey(process.env.APPLE_IAP_PRIVATE_KEY);
   if (!signingKey) return { ok: false, errorClass: "private_key_invalid" };
+  const shape = inspectAppleSigningKey();
+  if (!shape.ok) return { ok: false, errorClass: shape.errorClass };
   try {
     const token = jwt.sign(
       { bid: APPLE_BUNDLE_ID },

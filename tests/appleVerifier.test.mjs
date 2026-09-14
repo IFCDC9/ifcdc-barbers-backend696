@@ -189,6 +189,23 @@ test("Apple health mock HTTP: 401 fail, 200 pass", async () => {
   else process.env.APPLE_IAP_PRIVATE_KEY = prevP;
 });
 
+test("flattened PKCS8 EC P-256 PEM still inspects as ec", async () => {
+  const { generateKeyPairSync } = await import("node:crypto");
+  const { inspectAppleSigningKey, normalizeApplePrivateKey } = await import("../appleStoreKitClient.js");
+  const { privateKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
+  const pem = privateKey.export({ type: "pkcs8", format: "pem" });
+  const flat = pem.replace(/\n/g, "");
+  const restored = normalizeApplePrivateKey(flat);
+  assert.match(restored, /BEGIN PRIVATE KEY/);
+  const prev = process.env.APPLE_IAP_PRIVATE_KEY;
+  process.env.APPLE_IAP_PRIVATE_KEY = flat;
+  const shape = inspectAppleSigningKey();
+  assert.equal(shape.ok, true);
+  assert.equal(shape.keyType, "ec");
+  if (prev === undefined) delete process.env.APPLE_IAP_PRIVATE_KEY;
+  else process.env.APPLE_IAP_PRIVATE_KEY = prev;
+});
+
 test("401 is unauthorized class not a grant", () => {
   assert.equal(classifyAppleApiHttpStatus(401), "unauthorized");
   assert.equal(classifyAppleApiHttpStatus(403), "forbidden_wrong_key_type");
