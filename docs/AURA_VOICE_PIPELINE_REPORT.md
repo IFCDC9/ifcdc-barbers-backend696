@@ -69,4 +69,5 @@ User/business and operational memory stay in existing Phase 1 stores; they are n
 
 - iOS TestFlight: **not required** (no mobile voice client change; audio still streams via Twilio / optional Media Streams)
 - Same repo serves `ifcdc-barbers-backend696` and `aura-backend` — one `main` commit
-- Commit SHA filled after push
+- Commit: `6ecb5f4a07188d8acd6dc8cebd876c77aa1884fe` (`fix(voice): stop noise/echo turns and duplicate AURA replies`)
+- Build: Render `npm run build` writes `DEPLOY_COMMIT.txt` from `git rev-parse HEAD` on deploy of this SHA
