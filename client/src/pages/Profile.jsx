@@ -6,6 +6,7 @@ import LanguageDropdown from "../components/LanguageDropdown.jsx";
 import { DEFAULT_LANGUAGE, normalizeLocale } from "../lib/languages.js";
 import { currentAppLanguage, setAppLanguage } from "../i18n/index.js";
 import { persistAuthSession, getStoredToken } from "../lib/authHeaders.js";
+import { useAuthSessionGeneration } from "../components/AuthSessionHydrate.jsx";
 import {
   canAccessShopManagement,
   isActiveManager,
@@ -30,6 +31,7 @@ export default function Profile() {
   const [error, setError] = useState(null);
   const [language, setLanguage] = useState(() => currentAppLanguage() || DEFAULT_LANGUAGE);
   const [langSaving, setLangSaving] = useState(false);
+  const sessionGeneration = useAuthSessionGeneration();
 
   useEffect(() => {
     const u = readUser();
@@ -59,7 +61,7 @@ export default function Profile() {
       })
       .catch((e) => setError(e?.message || "Could not load bookings"))
       .finally(() => setLoading(false));
-  }, []);
+  }, [sessionGeneration]);
 
   const syncPreferredLanguage = async (code) => {
     setLanguage(code);

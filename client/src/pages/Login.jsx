@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { login } from "../services/api.js";
 import { persistAuthSession } from "../lib/authHeaders.js";
+import { hydrateAuthSessionFromMe } from "../lib/authMe.js";
 import { postLoginPath } from "../lib/staffDashboardAccess.js";
 import LanguageDropdown from "../components/LanguageDropdown.jsx";
 import { DEFAULT_LANGUAGE, normalizeLocale } from "../lib/languages.js";
@@ -80,18 +81,26 @@ export default function Login() {
         (data.success === true || data.ok === true || data.requiresVerification !== true);
       if (authed && data.token && data.user) {
         persistAuthSession({ token: data.token, user: data.user });
+        const sessionUser =
+          (await hydrateAuthSessionFromMe({
+            token: data.token,
+            fallbackUser: data.user,
+          })) || data.user;
         const profileLang = normalizeLocale(
-          data.user.preferredLanguage || data.user.preferred_language || preservedLang,
+          sessionUser.preferredLanguage || sessionUser.preferred_language || preservedLang,
         );
         if (profileLang) {
           await setAppLanguage(profileLang);
           setLanguage(profileLang);
         }
-        navigate(postLoginPath(data.user), { replace: true });
+        navigate(postLoginPath(sessionUser), { replace: true });
         return;
       }
 
-      setStatus(t("web.authPage.invalidLogin", { defaultValue: "Invalid login" }));
+      setStatus(
+        (typeof data?.message === "string" && data.message.trim()) ||
+          t("web.authPage.invalidLogin", { defaultValue: "Invalid login" }),
+      );
     } catch (err) {
       console.error("LOGIN ERROR:", err);
       setStatus(

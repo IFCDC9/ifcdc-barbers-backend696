@@ -3,7 +3,7 @@
  * Super Admin bypasses all manager scopes. Managers never gain Super Admin powers.
  */
 import { dbQuery } from "./db.js";
-import { isJwtGlobalSuperScope } from "./authPlatformJwt.js";
+import { isJwtGlobalSuperScope, publicUserFromAppUser } from "./authPlatformJwt.js";
 import { isSuperAdminEmail } from "./rolePolicy.js";
 import {
   MANAGEMENT_PERMISSIONS,
@@ -21,7 +21,7 @@ export async function loadActiveManagementContext(userId) {
      FROM management_assignments
      WHERE user_id = $1::uuid
        AND status = 'active'
-     ORDER BY created_at DESC
+     ORDER BY updated_at DESC NULLS LAST, created_at DESC
      LIMIT 1`,
     [String(userId)],
   );
@@ -157,6 +157,17 @@ export function managementFieldsForPublicUser(ctx) {
       ctx.fullAccess === true || ctx.permissions?.[MANAGEMENT_PERMISSIONS.FULL_MANAGER_ACCESS] === true,
     managementContextError: false,
   };
+}
+
+/**
+ * Build the public session user from the current DB assignment.
+ * JWT payload is identity-only — managementRole / shop scope must never come from token claims.
+ */
+export function sessionPublicUserFromDb({ appUser, managementCtx, jwtPayload } = {}) {
+  void jwtPayload;
+  const publicUser = publicUserFromAppUser(appUser);
+  Object.assign(publicUser, managementFieldsForPublicUser(managementCtx));
+  return publicUser;
 }
 
 export function isProtectedSuperAdminUser(userRow) {

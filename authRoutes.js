@@ -25,7 +25,7 @@ import {
   emptyManagementPublicFields,
   ensureManagementLinkedToUser,
   loadActiveManagementContext,
-  managementFieldsForPublicUser,
+  sessionPublicUserFromDb,
 } from "./managementTeamAuth.js";
 import { validateSignupPhone } from "./phoneValidation.js";
 import { ensureProviderTypeSchema } from "./providerTypeMigrations.js";
@@ -72,25 +72,29 @@ async function attachManagementContext(userRow) {
   return ctx;
 }
 
-async function withManagementPublicUser(userRow) {
-  const publicUser = publicUserFromAppUser(userRow);
+async function withManagementPublicUser(userRow, jwtPayload) {
   try {
-    let ctx = await attachManagementContext(userRow);
-    Object.assign(publicUser, managementFieldsForPublicUser(ctx));
+    const ctx = await attachManagementContext(userRow);
+    return sessionPublicUserFromDb({ appUser: userRow, managementCtx: ctx, jwtPayload });
   } catch (e) {
     console.error("[auth] management context attach failed:", e?.stack || e?.message || e);
     try {
       const ctx = await attachManagementContext(userRow);
-      Object.assign(publicUser, managementFieldsForPublicUser(ctx));
+      return sessionPublicUserFromDb({ appUser: userRow, managementCtx: ctx, jwtPayload });
     } catch (retryErr) {
       console.error(
         "[auth] management context attach retry failed:",
         retryErr?.stack || retryErr?.message || retryErr,
       );
+      const publicUser = sessionPublicUserFromDb({
+        appUser: userRow,
+        managementCtx: null,
+        jwtPayload,
+      });
       Object.assign(publicUser, emptyManagementPublicFields({ managementContextError: true }));
+      return publicUser;
     }
   }
-  return publicUser;
 }
 
 /** Issue HS256 JWT for an `app_users` row (onboarding, auth, etc.). */
@@ -473,10 +477,10 @@ async function loadAppUserForTokenRefresh(userId) {
   return found.rows?.[0] || null;
 }
 
-async function issueSessionResponse(userRow) {
+async function issueSessionResponse(userRow, jwtPayload) {
   const claims = jwtClaimsFromAppUser(userRow);
   const token = signTokenForAppUser(userRow);
-  const publicUser = await withManagementPublicUser(userRow);
+  const publicUser = await withManagementPublicUser(userRow, jwtPayload);
   const approval = await resolveUserApprovalState(userRow);
   const redirect = postLoginRedirectFromClaims(claims);
   return {
@@ -1080,7 +1084,7 @@ export function createAuthRouter({ sendEmail }) {
           message: "Account no longer exists.",
         });
       }
-      const session = await issueSessionResponse(user);
+      const session = await issueSessionResponse(user, req.user);
       return res.json(session);
     } catch (e) {
       console.error("[auth] /me error:", e);
@@ -1111,7 +1115,7 @@ export function createAuthRouter({ sendEmail }) {
       if (!user) {
         return res.status(401).json({ ok: false, error: "user_not_found", message: "Account no longer exists." });
       }
-      const session = await issueSessionResponse(user);
+      const session = await issueSessionResponse(user, payload);
       return res.json(session);
     } catch (e) {
       console.error("[auth] /refresh error:", e);

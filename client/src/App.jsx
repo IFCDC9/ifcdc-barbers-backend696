@@ -81,7 +81,7 @@ function AppShell() {
     // DO NOT ADD max-w or mx-auto to root layout
     // This breaks full-screen snap behavior
     <div className="app-container">
-      <AuthSessionHydrate />
+      <AuthSessionHydrate>
       <div
         className="ifcdc-tab-accent-bar"
         style={{
@@ -243,6 +243,7 @@ function AppShell() {
       </div>
 
       <IFCDCGlobalFooter />
+      </AuthSessionHydrate>
     </div>
   );
 }

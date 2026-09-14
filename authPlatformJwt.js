@@ -28,6 +28,8 @@ export function jwtClaimsFromAppUser(user) {
     isSuperAdmin: Boolean(isSuperAdmin),
     businessId,
     barberId,
+    // Management Team role/scope is loaded from management_assignments on every
+    // /login and /me — never baked into long-lived JWT claims.
   };
 }
 

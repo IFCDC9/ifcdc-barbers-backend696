@@ -1,6 +1,7 @@
 import { Navigate, useLocation } from "react-router-dom";
 import { getStoredToken, getStoredUser } from "../lib/authHeaders.js";
 import { isActiveManager, isPlatformAdmin, normalizeRole } from "../lib/staffDashboardAccess.js";
+import { useAuthSessionGeneration } from "./AuthSessionHydrate.jsx";
 
 /** @deprecated Use getStoredUser from ../lib/authHeaders.js */
 export function getStoredUserLegacy() {
@@ -8,6 +9,7 @@ export function getStoredUserLegacy() {
 }
 
 export default function RequireRole({ roles, children }) {
+  useAuthSessionGeneration();
   const location = useLocation();
   const u = getStoredUser();
   const token = getStoredToken();

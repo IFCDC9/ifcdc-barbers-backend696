@@ -52,6 +52,10 @@ await ensureManagementTeamSchema();
   assert.equal(helpers.isPlatformAdmin(manager), false);
   assert.equal(helpers.postLoginPath(manager), "/admin/shops");
   assert.equal(helpers.managementRoleLabel(manager), "Shop Manager");
+  assert.equal(
+    helpers.managementRoleLabel({ ...manager, managementRole: "platform_manager" }),
+    "Platform Manager",
+  );
 
   const suspended = { ...manager, managementStatus: "suspended" };
   assert.equal(helpers.isActiveManager(suspended), false);
@@ -83,7 +87,12 @@ await ensureManagementTeamSchema();
   const fields = managementFieldsForPublicUser(ctx);
 
   assert.equal(fields.isManager, true);
-  assert.equal(String(fields.managementRole || "").toLowerCase(), "shop_manager");
+  assert.ok(
+    ["shop_manager", "platform_manager", "location_manager"].includes(
+      String(fields.managementRole || "").toLowerCase(),
+    ),
+    "managementRole must be a scoped manager role from DB",
+  );
   assert.equal(String(fields.managementStatus || "active").toLowerCase(), "active");
   assert.ok(Array.isArray(fields.managementShopIds) && fields.managementShopIds.length >= 1);
   assert.equal(helpers.postLoginPath({ role: u.role, ...fields }), "/admin/shops");
@@ -135,7 +144,7 @@ if (password) {
   assert.ok(data.user, "user returned");
   assert.equal(data.user.isManager, true);
   assert.equal(String(data.user.role).toLowerCase(), "user");
-  assert.equal(String(data.user.managementRole).toLowerCase(), "shop_manager");
+  assert.equal(String(data.user.managementRole).toLowerCase(), String(fields.managementRole).toLowerCase());
   assert.equal(helpers.postLoginPath(data.user), "/admin/shops");
 
   const me = await fetch(`${API}/api/auth/me`, {
@@ -143,7 +152,7 @@ if (password) {
   });
   const meJson = await me.json();
   assert.equal(meJson.user?.isManager, true);
-  assert.equal(String(meJson.user?.managementRole).toLowerCase(), "shop_manager");
+  assert.equal(String(meJson.user?.managementRole).toLowerCase(), String(fields.managementRole).toLowerCase());
 
   // Super Admin routes stay blocked server-side for managers (management-team list)
   const mt = await fetch(`${API}/api/admin/management-team`, {

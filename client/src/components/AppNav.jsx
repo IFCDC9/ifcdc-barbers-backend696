@@ -1,6 +1,7 @@
 import { NavLink, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { clearAuthSession, getStoredUser } from "../lib/authHeaders.js";
+import { useAuthSessionGeneration } from "./AuthSessionHydrate.jsx";
 import {
   canAccessShopManagement,
   isActiveManager,
@@ -61,6 +62,7 @@ export default function AppNav({ variant = "bottom" }) {
   const navigate = useNavigate();
   const { t } = useTranslation();
 
+  useAuthSessionGeneration();
   const user = getStoredUser();
   const isLoggedIn = Boolean(user);
   const role = String(user?.role || "");
