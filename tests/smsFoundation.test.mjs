@@ -15,6 +15,18 @@ const {
 const { buildBookingSmsBody, shortRef } = require("../smsBookingNotify.cjs");
 const { assertQueueableEmailKind } = require("../pendingEmailDelivery.cjs");
 
+test("security_verify SMS preview never includes message body", () => {
+  const { previewBody } = require("../smsDeliveryService.cjs");
+  assert.equal(previewBody("IFCDC verification code: 123456. Do not share.", "security_verify"), "[redacted security_verify]");
+  assert.match(previewBody("Booking confirmed for Alex", "booking_created"), /Alex/);
+});
+
+test("normalizeToE164 rejects invalid format instead of silently sending", () => {
+  const bad = normalizeToE164("not-a-phone");
+  assert.equal(bad.ok, false);
+  assert.equal(Boolean(bad.error), true);
+});
+
 test("normalizeToE164 accepts +E.164 and US 10-digit", () => {
   assert.equal(normalizeToE164("+15551234567").ok, true);
   assert.equal(normalizeToE164("+15551234567").e164, "+15551234567");

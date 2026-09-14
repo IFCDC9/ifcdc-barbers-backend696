@@ -32,7 +32,10 @@ const CATEGORIES = new Set([
   "system",
 ]);
 
-function previewBody(body) {
+function previewBody(body, category) {
+  if (String(category || "") === "security_verify") {
+    return "[redacted security_verify]";
+  }
   return String(body || "").replace(/\s+/g, " ").trim().slice(0, 240);
 }
 
@@ -92,7 +95,7 @@ async function insertLog(dbQuery, row) {
           row.bookingId || null,
           row.paymentRef || null,
           row.userId || null,
-          previewBody(row.body),
+          previewBody(row.body, row.category),
           row.errorCode != null ? String(row.errorCode) : null,
           row.errorMessage || null,
           row.metadata ? JSON.stringify(row.metadata) : null,
@@ -116,7 +119,7 @@ async function insertLog(dbQuery, row) {
       row.bookingId || null,
       row.paymentRef || null,
       row.userId || null,
-      previewBody(row.body),
+      previewBody(row.body, row.category),
       row.errorCode != null ? String(row.errorCode) : null,
       row.errorMessage || null,
       row.idempotencyKey || null,
@@ -224,7 +227,15 @@ async function sendTransactionalSms(
   }
 
   const phone = normalizeToE164(to);
-  if (!phone.ok) return { ok: false, reason: phone.error };
+  if (!phone.ok) {
+    console.error("[sms] dest normalize failed", {
+      ts: new Date().toISOString(),
+      category: cat,
+      error: phone.error,
+      message: phone.message || null,
+    });
+    return { ok: false, reason: phone.error };
+  }
 
   if (idempotencyKey && typeof dbQuery === "function") {
     try {
@@ -328,10 +339,13 @@ async function sendTransactionalSms(
     const twilioSid = msg.sid || null;
     const createStatus = String(msg.status || "queued").toLowerCase();
     console.log("[sms] twilio create OK", {
+      ts: new Date().toISOString(),
       category: cat,
       bookingId,
       twilioSid,
       status: createStatus,
+      errorCode: msg.errorCode || msg.error_code || null,
+      errorMessage: msg.errorMessage || msg.error_message || null,
       to: maskPhoneForDisplay(phone.e164),
       from: fromE164,
       messagingServiceSid: messagingServiceSid ? `${String(messagingServiceSid).slice(0, 4)}…` : null,
@@ -370,6 +384,7 @@ async function sendTransactionalSms(
     const err = e?.message || String(e);
     const code = e?.code || e?.status || null;
     console.error("[sms] twilio create FAILED", {
+      ts: new Date().toISOString(),
       category: cat,
       bookingId,
       to: maskPhoneForDisplay(phone.e164),
@@ -412,4 +427,5 @@ module.exports = {
   findByIdempotencyKey,
   canSendTransactionalSms,
   isSuccessfulSmsLogStatus,
+  previewBody,
 };
