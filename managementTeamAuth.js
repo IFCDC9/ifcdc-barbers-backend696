@@ -51,16 +51,87 @@ export async function loadActiveManagementContext(userId) {
     permissionMap[MANAGEMENT_PERMISSIONS.FULL_MANAGER_ACCESS] = true;
   }
 
-  return {
+  const ctx = {
     assignmentId: String(assignment.id),
-    userId: String(assignment.user_id),
+    userId: assignment.user_id ? String(assignment.user_id) : null,
     role: String(assignment.role),
     status: String(assignment.status),
     fullAccess: assignment.full_access === true,
     shopIds: (shops.rows || []).map((r) => Number(r.business_id)).filter(Number.isFinite),
     locationIds: (locations.rows || []).map((r) => String(r.location_id)),
     permissions: expandEffectivePermissions(permissionMap),
+    updatedAt: assignment.updated_at ? new Date(assignment.updated_at).toISOString() : null,
   };
+  ctx.version = managementVersionFromContext(ctx);
+  return ctx;
+}
+
+/**
+ * Opaque client-facing stamp: assignment identity + role + status + scope + updatedAt.
+ * Clients compare this instead of trusting a localStorage snapshot.
+ */
+export function managementVersionFromContext(ctx) {
+  if (!ctx) return null;
+  const shops = (ctx.shopIds || [])
+    .map(Number)
+    .filter(Number.isFinite)
+    .slice()
+    .sort((a, b) => a - b)
+    .join(",");
+  const locs = (ctx.locationIds || []).map(String).slice().sort().join(",");
+  const stamp = ctx.updatedAt ? String(ctx.updatedAt) : "";
+  return [
+    ctx.assignmentId || "",
+    ctx.role || "",
+    ctx.status || "",
+    shops,
+    locs,
+    ctx.fullAccess === true ? "1" : "0",
+    stamp,
+  ].join("|");
+}
+
+/** Derive shop IDs from assignment rows (location managers inherit shops from locations). */
+export async function shopIdsForManagementContext(ctx, query = dbQuery) {
+  if (!ctx) return [];
+  let shopIds = Array.isArray(ctx.shopIds) ? ctx.shopIds.slice() : [];
+  if (ctx.role === MANAGEMENT_ROLES.LOCATION_MANAGER && ctx.locationIds?.length) {
+    const locShops = await query(
+      `SELECT DISTINCT business_id FROM shop_locations WHERE id = ANY($1::uuid[])`,
+      [ctx.locationIds],
+    );
+    const derived = (locShops.rows || []).map((r) => Number(r.business_id)).filter(Number.isFinite);
+    shopIds = Array.from(new Set([...shopIds, ...derived]));
+  }
+  return shopIds;
+}
+
+/**
+ * Server-side tenant gate used by management APIs.
+ * Super Admin bypasses. Everyone else: active assignment → shop → optional location → permission.
+ * Never matches on shop name.
+ */
+export function authorizeManagerApiAccess({
+  isSuperAdmin = false,
+  managementCtx = null,
+  businessId = undefined,
+  permissionKey = null,
+} = {}) {
+  if (isSuperAdmin === true) {
+    return { ok: true, status: 200, reason: "super_admin" };
+  }
+  if (!managementCtx || String(managementCtx.status || "") !== "active") {
+    return { ok: false, status: 403, reason: "inactive_or_missing_assignment" };
+  }
+  if (businessId !== undefined && businessId !== null && businessId !== "") {
+    if (!managerCanAccessShop(managementCtx, businessId)) {
+      return { ok: false, status: 403, reason: "shop_not_assigned" };
+    }
+  }
+  if (permissionKey && !managerHasPermission(managementCtx, permissionKey)) {
+    return { ok: false, status: 403, reason: "permission_denied" };
+  }
+  return { ok: true, status: 200, reason: "assigned" };
 }
 
 /**
@@ -137,6 +208,8 @@ export function emptyManagementPublicFields({ managementStatus = null, managemen
     managementLocationIds: [],
     managerPermissions: null,
     fullManagerAccess: false,
+    managementVersion: null,
+    managementUpdatedAt: null,
     managementContextError: managementContextError === true,
   };
 }
@@ -155,6 +228,8 @@ export function managementFieldsForPublicUser(ctx) {
     managerPermissions: ctx.permissions,
     fullManagerAccess:
       ctx.fullAccess === true || ctx.permissions?.[MANAGEMENT_PERMISSIONS.FULL_MANAGER_ACCESS] === true,
+    managementVersion: ctx.version || managementVersionFromContext(ctx),
+    managementUpdatedAt: ctx.updatedAt || null,
     managementContextError: false,
   };
 }
@@ -189,9 +264,11 @@ export async function resolveManagementBusinessScope(user) {
   if (!ctx) {
     return { all: false, businessIds: [], isSuperAdmin: false, management: null };
   }
+  const businessIds = await shopIdsForManagementContext(ctx);
+  ctx.shopIds = businessIds;
   return {
     all: false,
-    businessIds: ctx.shopIds.slice(),
+    businessIds,
     isSuperAdmin: false,
     management: ctx,
   };
@@ -237,20 +314,11 @@ export async function augmentShopManagementScope(payload, res) {
   const ctx = await loadActiveManagementContext(payload?.id);
 
   if (ctx) {
-    if (!ctx.shopIds.length && ctx.role !== MANAGEMENT_ROLES.LOCATION_MANAGER) {
+    const shopIds = await shopIdsForManagementContext(ctx);
+    ctx.shopIds = shopIds;
+    if (!shopIds.length) {
       res.status(403).json({ ok: false, message: "No shops assigned to this manager." });
       return null;
-    }
-    // Location-only managers: derive shops from assigned locations
-    let shopIds = ctx.shopIds.slice();
-    if (ctx.role === MANAGEMENT_ROLES.LOCATION_MANAGER && ctx.locationIds.length) {
-      const locShops = await dbQuery(
-        `SELECT DISTINCT business_id FROM shop_locations WHERE id = ANY($1::uuid[])`,
-        [ctx.locationIds],
-      );
-      const derived = (locShops.rows || []).map((r) => Number(r.business_id)).filter(Number.isFinite);
-      shopIds = Array.from(new Set([...shopIds, ...derived]));
-      ctx.shopIds = shopIds;
     }
     return {
       all: false,

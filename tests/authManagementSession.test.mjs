@@ -7,10 +7,13 @@ import {
 } from "../managementTeamAuth.js";
 import { SUPER_ADMIN_ONLY_CAPABILITIES, hasEffectivePermission } from "../managementPermissions.js";
 
+const USER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const ASSIGNMENT_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+
 test("JWT claims are identity-only and omit managementRole", () => {
   const claims = jwtClaimsFromAppUser({
-    id: "d9f68399-601a-438a-a227-850912c75dd3",
-    email: "laketa47@icloud.com",
+    id: USER_ID,
+    email: "manager.fixture@example.com",
     role: "user",
   });
   assert.equal(claims.role, "user");
@@ -21,10 +24,10 @@ test("JWT claims are identity-only and omit managementRole", () => {
 
 test("/me session user uses current DB managementRole, not stale JWT claim", () => {
   const appUser = {
-    id: "d9f68399-601a-438a-a227-850912c75dd3",
-    email: "laketa47@icloud.com",
+    id: USER_ID,
+    email: "manager.fixture@example.com",
     role: "user",
-    full_name: "Laketa",
+    full_name: "Fixture Manager",
   };
   const staleJwt = {
     id: appUser.id,
@@ -33,14 +36,15 @@ test("/me session user uses current DB managementRole, not stale JWT claim", () 
     isManager: true,
   };
   const ctx = {
-    assignmentId: "a904175f-1573-4306-b0fb-4a19ea0b3b5b",
+    assignmentId: ASSIGNMENT_ID,
     userId: appUser.id,
     role: "platform_manager",
     status: "active",
     fullAccess: true,
-    shopIds: [1],
-    locationIds: ["b67d1301-d799-4040-8113-f971c619a721"],
+    shopIds: [3, 7, 11],
+    locationIds: ["cccccccc-cccc-4ccc-8ccc-cccccccccccc"],
     permissions: { full_manager_access: true },
+    updatedAt: "2026-09-14T12:00:00.000Z",
   };
 
   const fromJwtShape = publicUserFromAppUser(appUser);
@@ -56,21 +60,22 @@ test("/me session user uses current DB managementRole, not stale JWT claim", () 
   assert.equal(session.isManager, true);
   assert.equal(session.managementRole, "platform_manager");
   assert.equal(session.managementStatus, "active");
-  assert.deepEqual(session.managementShopIds, [1]);
+  assert.deepEqual(session.managementShopIds, [3, 7, 11]);
   assert.equal(session.fullManagerAccess, true);
+  assert.ok(session.managementVersion);
   assert.notEqual(session.managementRole, staleJwt.managementRole);
 });
 
 test("inactive assignment clears manager flags even if JWT still says shop_manager", () => {
   const session = sessionPublicUserFromDb({
-    appUser: { id: "u1", email: "a@b.c", role: "user" },
+    appUser: { id: USER_ID, email: "a@example.com", role: "user" },
     managementCtx: {
-      assignmentId: "x",
-      userId: "u1",
+      assignmentId: ASSIGNMENT_ID,
+      userId: USER_ID,
       role: "shop_manager",
       status: "removed",
       fullAccess: false,
-      shopIds: [1],
+      shopIds: [101],
       locationIds: [],
       permissions: {},
     },
@@ -78,26 +83,21 @@ test("inactive assignment clears manager flags even if JWT still says shop_manag
   });
   assert.equal(session.isManager, false);
   assert.equal(session.managementRole, null);
+  assert.equal(session.managementVersion, null);
 });
 
 test("platform manager fields never include Super Admin capabilities", () => {
   const fields = managementFieldsForPublicUser({
-    assignmentId: "a",
-    userId: "u",
+    assignmentId: ASSIGNMENT_ID,
+    userId: USER_ID,
     role: "platform_manager",
     status: "active",
     fullAccess: true,
-    shopIds: [1],
+    shopIds: [3, 7],
     locationIds: [],
     permissions: { full_manager_access: true },
   });
-  const ctx = {
-    status: "active",
-    permissions: fields.managerPermissions,
-    fullAccess: true,
-    shopIds: [1],
-  };
   for (const cap of SUPER_ADMIN_ONLY_CAPABILITIES) {
-    assert.equal(hasEffectivePermission(ctx, cap), false, cap);
+    assert.equal(hasEffectivePermission(fields.managerPermissions, cap), false, cap);
   }
 });

@@ -66,6 +66,11 @@ if (!process.env.DATABASE_URL?.trim()) {
   process.exit(0);
 }
 
+const { refuseProductionDatabaseMutation } = await import("./lib/refuseProductionDatabaseMutation.mjs");
+if (refuseProductionDatabaseMutation("test-management-team-rbac.mjs")) {
+  process.exit(0);
+}
+
 try {
   const migrated = await ensureManagementTeamSchema();
   assert.ok(migrated?.ok);

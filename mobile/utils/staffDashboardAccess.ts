@@ -12,6 +12,16 @@ export function isActiveManager(user: AppUser | null | undefined): boolean {
   return status === "active";
 }
 
+/** Display label for ACTIVE Management Team roles (from /me, never JWT). */
+export function managementRoleLabel(user: AppUser | null | undefined): string | null {
+  if (!isActiveManager(user)) return null;
+  const r = String(user?.managementRole || "").toLowerCase();
+  if (r === "platform_manager") return "Platform Manager";
+  if (r === "location_manager") return "Location Manager";
+  if (r === "shop_manager") return "Shop Manager";
+  return "Manager";
+}
+
 export function resolveStaffRole(user: AppUser | null | undefined, token?: string | null): StaffRole | null {
   if (isSuperAdminUser(user, token)) return "super_admin";
   const role = String(user?.role || "").toLowerCase();

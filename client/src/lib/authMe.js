@@ -1,6 +1,7 @@
 /**
  * GET /api/auth/me — source of truth for managementRole / shop scope.
  * JWT is identity only; never trust a managementRole cached at login.
+ * localStorage is a display cache of the last /me payload, replaced on every hydrate.
  */
 import { getApiOrigin } from "../services/api.js";
 import { clearAuthSession, persistAuthSession } from "./authHeaders.js";
@@ -17,8 +18,14 @@ export async function fetchAuthMe(token, origin = getApiOrigin()) {
   return { res, data };
 }
 
+export function managementVersionOf(user) {
+  if (!user || typeof user !== "object") return "";
+  return String(user.managementVersion || user.managementUpdatedAt || "");
+}
+
 /**
  * Refresh stored session from /me. Returns the current public user, or null if signed out.
+ * Successful /me always overwrites cached management fields (role, shops, version).
  */
 export async function hydrateAuthSessionFromMe({ token, fallbackUser = null } = {}) {
   const bearer = String(token || "").trim();

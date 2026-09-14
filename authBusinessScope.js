@@ -4,7 +4,7 @@
  */
 import { dbQuery } from "./db.js";
 import { isJwtGlobalSuperScope } from "./authPlatformJwt.js";
-import { loadActiveManagementContext } from "./managementTeamAuth.js";
+import { loadActiveManagementContext, shopIdsForManagementContext } from "./managementTeamAuth.js";
 
 /**
  * @param {{ id?: string, role?: string, isSuperAdmin?: boolean }} user — JWT payload
@@ -19,13 +19,18 @@ export async function getBusinessScopeForUser(user) {
   }
 
   const management = await loadActiveManagementContext(user.id);
-  if (management?.shopIds?.length) {
-    return {
-      all: false,
-      businessId: management.shopIds.length === 1 ? management.shopIds[0] : null,
-      businessIds: management.shopIds.slice(),
-      management,
-    };
+  if (management) {
+    const businessIds = await shopIdsForManagementContext(management);
+    management.shopIds = businessIds;
+    if (businessIds.length) {
+      return {
+        all: false,
+        businessId: businessIds.length === 1 ? businessIds[0] : null,
+        businessIds,
+        management,
+      };
+    }
+    return { all: false, businessId: null, businessIds: [], management };
   }
 
   const r = await dbQuery(`SELECT business_id FROM app_users WHERE id = $1::uuid LIMIT 1`, [String(user.id)]);

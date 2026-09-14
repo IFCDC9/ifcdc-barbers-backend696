@@ -315,6 +315,9 @@ export function createManagementTeamRouter() {
               shopIds: management.shopIds,
               locationIds: management.locationIds,
               permissions: management.permissions,
+              fullAccess: management.fullAccess === true,
+              version: management.version || null,
+              updatedAt: management.updatedAt || null,
             }
           : null,
       });

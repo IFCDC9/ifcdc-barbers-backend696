@@ -23,6 +23,8 @@ export type JsonAuth = {
     managementLocationIds?: string[];
     managerPermissions?: Record<string, boolean> | null;
     fullManagerAccess?: boolean;
+    managementVersion?: string | null;
+    managementUpdatedAt?: string | null;
     createdAt?: string | null;
     businessId?: number | null;
     barberId?: number | null;

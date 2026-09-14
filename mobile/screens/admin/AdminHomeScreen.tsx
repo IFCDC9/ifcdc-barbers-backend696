@@ -3,6 +3,7 @@ import { StyleSheet, Text } from "react-native";
 import ProfileScreenLayout from "../../components/ProfileScreenLayout";
 import ProfileCard from "../../components/ProfileCard";
 import { useAuth } from "../../services/authContext";
+import { managementRoleLabel } from "../../utils/staffDashboardAccess";
 import { AdminMenuList } from "./adminMenu";
 import { UX } from "../../utils/uxCopy";
 import { palette, typography } from "../../constants/theme";
@@ -36,10 +37,11 @@ export default function AdminHomeScreen({ navigation }: { navigation: Nav }) {
       : isManager
         ? "Manager Dashboard"
         : "Manage";
+  const roleLabel = managementRoleLabel(user);
   const subtitle = isPlatformAdmin
     ? "Manage bookings, barbers, payouts, and platform settings from one place."
     : isManager
-      ? `Shop Manager · ${String(user?.managementRole || "manager").replace(/_/g, " ")} · scoped access only.`
+      ? `${roleLabel || "Manager"} · scoped access only.`
       : "Manage your shop barbers, bookings, services, and schedules.";
 
   return (

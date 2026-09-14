@@ -12,6 +12,7 @@
  *   node --import ./loadBackendEnv.mjs scripts/test-management-multitenant-isolation.mjs
  *   CLEANUP=1 node --import ./loadBackendEnv.mjs scripts/test-management-multitenant-isolation.mjs
  */
+import { refuseProductionDatabaseMutation } from "./lib/refuseProductionDatabaseMutation.mjs";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import { dbQuery } from "../db.js";
@@ -38,6 +39,9 @@ import { isSuperAdminEmail } from "../rolePolicy.js";
 import { deleteAppUserAccount } from "../accountDeletionService.js";
 
 const stamp = Date.now();
+if (refuseProductionDatabaseMutation("test-management-multitenant-isolation.mjs")) {
+  process.exit(0);
+}
 const CLEANUP = String(process.env.CLEANUP || "1") !== "0";
 const created = {
   businessIds: [],

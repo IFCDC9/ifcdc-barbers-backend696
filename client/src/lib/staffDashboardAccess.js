@@ -47,6 +47,22 @@ export function managementRoleLabel(user) {
   return "Manager";
 }
 
+/** True when /me managementVersion differs from the last cached user. */
+export function managementStateChanged(previousUser, nextUser) {
+  const prev = String(previousUser?.managementVersion || "");
+  const next = String(nextUser?.managementVersion || "");
+  if (prev || next) return prev !== next;
+  return (
+    String(previousUser?.managementRole || "") !== String(nextUser?.managementRole || "") ||
+    String(previousUser?.managementStatus || "") !== String(nextUser?.managementStatus || "")
+  );
+}
+
+export function managementVersionOf(user) {
+  if (!user || typeof user !== "object") return "";
+  return String(user.managementVersion || user.managementUpdatedAt || "");
+}
+
 /**
  * Post-login destination for the website (management-aware).
  * Managers land on shop management — never Super Admin console.

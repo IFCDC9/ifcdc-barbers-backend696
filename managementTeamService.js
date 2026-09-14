@@ -19,6 +19,75 @@ import {
 import { isProtectedSuperAdminUser } from "./managementTeamAuth.js";
 import { logManagementActivity } from "./managementActivityLog.js";
 
+function shopIdsFromHydrated(assignment) {
+  return (assignment?.shops || []).map((s) => Number(s.businessId)).filter(Number.isFinite);
+}
+
+function locationIdsFromHydrated(assignment) {
+  return (assignment?.locations || []).map((l) => String(l.locationId)).filter(Boolean);
+}
+
+/** Compact assignment snapshot for activity-log before/after (stable IDs only). */
+export function assignmentAuditSnapshot(assignment) {
+  if (!assignment) return null;
+  const perms = assignment.permissions && typeof assignment.permissions === "object" ? assignment.permissions : {};
+  const enabled = Object.entries(perms)
+    .filter(([, v]) => v === true)
+    .map(([k]) => k)
+    .sort();
+  return {
+    managerUserId: assignment.userId || assignment.user?.id || null,
+    role: assignment.role || null,
+    status: assignment.status || null,
+    shopIds: shopIdsFromHydrated(assignment),
+    locationIds: locationIdsFromHydrated(assignment),
+    fullAccess: assignment.fullAccess === true,
+    permissions: enabled,
+  };
+}
+
+function arraysEqual(a, b) {
+  const aa = (a || []).map(String).slice().sort();
+  const bb = (b || []).map(String).slice().sort();
+  if (aa.length !== bb.length) return false;
+  return aa.every((v, i) => v === bb[i]);
+}
+
+async function logAssignmentMutation({
+  actorUserId,
+  actorEmail,
+  action,
+  assignmentId,
+  before,
+  after,
+  req = null,
+  extra = {},
+}) {
+  const beforeSnap = assignmentAuditSnapshot(before);
+  const afterSnap = assignmentAuditSnapshot(after);
+  await logManagementActivity({
+    actorUserId,
+    actorEmail,
+    action,
+    recordType: "management_assignment",
+    recordId: assignmentId,
+    beforeValue: beforeSnap,
+    afterValue: afterSnap,
+    metadata: {
+      actorUserId: actorUserId || null,
+      managerUserId: afterSnap?.managerUserId || beforeSnap?.managerUserId || null,
+      oldRole: beforeSnap?.role ?? null,
+      newRole: afterSnap?.role ?? null,
+      oldScope: beforeSnap ? { shopIds: beforeSnap.shopIds, locationIds: beforeSnap.locationIds } : null,
+      newScope: afterSnap ? { shopIds: afterSnap.shopIds, locationIds: afterSnap.locationIds } : null,
+      oldStatus: beforeSnap?.status ?? null,
+      newStatus: afterSnap?.status ?? null,
+      ...extra,
+    },
+    req,
+  });
+}
+
 function generateInvitePassword() {
   const upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
   const lower = "abcdefghjkmnpqrstuvwxyz";
@@ -404,22 +473,15 @@ export async function createManagementAssignment({
   await replacePermissions(assignment.id, permissions, Boolean(fullAccess));
 
   const hydrated = await hydrateAssignment(assignment);
-  await logManagementActivity({
+  await logAssignmentMutation({
     actorUserId,
     actorEmail,
-    actorAssignmentId: null,
     action: "manager_assigned",
-    recordType: "management_assignment",
-    recordId: assignment.id,
-    afterValue: {
-      role,
-      shopIds,
-      locationIds,
-      fullAccess: Boolean(fullAccess),
-      userId: resolved.user.id,
-    },
-    metadata: { createdUser: resolved.created },
+    assignmentId: assignment.id,
+    before: null,
+    after: hydrated,
     req,
+    extra: { createdUser: resolved.created },
   });
 
   return {
@@ -471,16 +533,53 @@ export async function updateManagementAssignment({
   await replacePermissions(assignmentId, nextPerms, nextFull);
 
   const after = await getManagementAssignment(assignmentId);
-  await logManagementActivity({
+  const beforeSnap = assignmentAuditSnapshot(before);
+  const afterSnap = assignmentAuditSnapshot(after);
+  await logAssignmentMutation({
     actorUserId,
     actorEmail,
     action: "manager_updated",
-    recordType: "management_assignment",
-    recordId: assignmentId,
-    beforeValue: before,
-    afterValue: after,
+    assignmentId,
+    before,
+    after,
     req,
   });
+  if (beforeSnap?.role && afterSnap?.role && beforeSnap.role !== afterSnap.role) {
+    await logAssignmentMutation({
+      actorUserId,
+      actorEmail,
+      action: "manager_role_changed",
+      assignmentId,
+      before,
+      after,
+      req,
+    });
+  }
+  if (
+    !arraysEqual(beforeSnap?.shopIds, afterSnap?.shopIds) ||
+    !arraysEqual(beforeSnap?.locationIds, afterSnap?.locationIds)
+  ) {
+    await logAssignmentMutation({
+      actorUserId,
+      actorEmail,
+      action: "manager_scope_changed",
+      assignmentId,
+      before,
+      after,
+      req,
+    });
+  }
+  if (!arraysEqual(beforeSnap?.permissions, afterSnap?.permissions) || beforeSnap?.fullAccess !== afterSnap?.fullAccess) {
+    await logAssignmentMutation({
+      actorUserId,
+      actorEmail,
+      action: "manager_permissions_changed",
+      assignmentId,
+      before,
+      after,
+      req,
+    });
+  }
   return { ok: true, assignment: after };
 }
 
@@ -535,7 +634,7 @@ export async function setManagementAssignmentStatus({
   }
 
   const after = await getManagementAssignment(assignmentId);
-  await logManagementActivity({
+  await logAssignmentMutation({
     actorUserId,
     actorEmail,
     action:
@@ -544,10 +643,9 @@ export async function setManagementAssignmentStatus({
         : next === "removed"
           ? "manager_access_removed"
           : "manager_reactivated",
-    recordType: "management_assignment",
-    recordId: assignmentId,
-    beforeValue: { status: before.status },
-    afterValue: { status: after?.status },
+    assignmentId,
+    before,
+    after,
     req,
   });
   return { ok: true, assignment: after };

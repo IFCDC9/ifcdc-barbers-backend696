@@ -13,11 +13,11 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { dbQuery } from "../db.js";
 import { ensureManagementTeamSchema } from "../managementTeamMigrations.js";
 import {
-  ensureManagementLinkedToUser,
   loadActiveManagementContext,
   managementFieldsForPublicUser,
 } from "../managementTeamAuth.js";
 import { SUPER_ADMIN_ONLY_CAPABILITIES, hasEffectivePermission } from "../managementPermissions.js";
+import { isProductionDatabaseUrl } from "./lib/refuseProductionDatabaseMutation.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const helperPath = path.join(__dirname, "../client/src/lib/staffDashboardAccess.js");
@@ -27,12 +27,14 @@ const API = String(process.env.API_ORIGIN || "https://ifcdc-barbers-backend696.o
   /\/+$/,
   "",
 );
-const lookupEmail = String(process.env.LOOKUP_EMAIL || process.env.MANAGER_EMAIL || "laketa47@icloud.com")
+const lookupEmail = String(process.env.LOOKUP_EMAIL || process.env.MANAGER_EMAIL || "")
   .trim()
   .toLowerCase();
 const password = String(process.env.MANAGER_PASSWORD || "").trim();
 
-await ensureManagementTeamSchema();
+if (!isProductionDatabaseUrl()) {
+  await ensureManagementTeamSchema();
+}
 
 // --- Unit: web helpers (system-level, not Laketa-hardcoded) ---
 {
@@ -72,8 +74,10 @@ await ensureManagementTeamSchema();
   console.log("[web-auth] PASS — helper routing / ACTIVE manager gates");
 }
 
-// --- DB: one account, management-aware session fields ---
-{
+// --- DB: one account, management-aware session fields (read-only; skipped without LOOKUP_EMAIL) ---
+if (!lookupEmail) {
+  console.log("[web-auth] skipped DB lookup (set LOOKUP_EMAIL for a specific account)");
+} else {
   const users = await dbQuery(
     `SELECT id, email, role, name FROM app_users WHERE lower(trim(email)) = $1 LIMIT 3`,
     [lookupEmail],
@@ -82,8 +86,7 @@ await ensureManagementTeamSchema();
   const u = users.rows[0];
   assert.notEqual(String(u.role).toLowerCase(), "shop_owner", "base role must not be shop_owner");
 
-  const linked = await ensureManagementLinkedToUser({ userId: u.id, email: u.email });
-  const ctx = linked || (await loadActiveManagementContext(u.id));
+  const ctx = await loadActiveManagementContext(u.id);
   const fields = managementFieldsForPublicUser(ctx);
 
   assert.equal(fields.isManager, true);
@@ -118,9 +121,15 @@ await ensureManagementTeamSchema();
   console.log(
     JSON.stringify(
       {
-        email: u.email,
+        userId: u.id,
         baseRole: u.role,
-        ...fields,
+        isManager: fields.isManager,
+        managementRole: fields.managementRole,
+        managementStatus: fields.managementStatus,
+        shopCount: fields.managementShopIds.length,
+        locationCount: fields.managementLocationIds.length,
+        fullManagerAccess: fields.fullManagerAccess,
+        managementVersion: fields.managementVersion || null,
         webPostLogin: helpers.postLoginPath({ role: u.role, ...fields }),
         saCapsBlocked: true,
       },
