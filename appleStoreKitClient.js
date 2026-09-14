@@ -5,11 +5,13 @@
  *   Secret Files filename: ifcdc-barbers-iap.p8
  *   Env: APPLE_IAP_PRIVATE_KEY_FILE=/etc/secrets/ifcdc-barbers-iap.p8
  *   APPLE_IAP_ISSUER_ID and APPLE_IAP_KEY_ID stay as env vars.
- * APPLE_IAP_PRIVATE_KEY env is fallback ONLY if the file env is unset or the path is missing.
- * Never log file body / PEM. Paths are safe to log. Never send this to the frontend.
+ * If APPLE_IAP_PRIVATE_KEY_FILE is set, never fall back to APPLE_IAP_PRIVATE_KEY.
+ * Try the env path, /etc/secrets/ifcdc-barbers-iap.p8, and /etc/secrets/<basename>.
+ * Fail with file_not_found or file_unreadable. Never log file body / PEM.
  */
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { basename } from "node:path";
 import { createPrivateKey } from "node:crypto";
 import jwt from "jsonwebtoken";
 import { APPLE_BUNDLE_ID } from "./monetizationCatalog.js";
@@ -20,36 +22,101 @@ export const APPLE_STOREKIT_PRODUCTION = "https://api.storekit.apple.com";
 /** Render Secret File mount convention (set APPLE_IAP_PRIVATE_KEY_FILE to this). */
 export const APPLE_IAP_DEFAULT_PRIVATE_KEY_FILE = "/etc/secrets/ifcdc-barbers-iap.p8";
 export const APPLE_IAP_SECRET_FILE_NAME = "ifcdc-barbers-iap.p8";
+export const APPLE_IAP_SECRETS_DIR = "/etc/secrets";
+
+function uniquePaths(paths) {
+  const out = [];
+  const seen = new Set();
+  for (const p of paths) {
+    const s = String(p || "").trim();
+    if (!s || seen.has(s)) continue;
+    seen.add(s);
+    out.push(s);
+  }
+  return out;
+}
+
+function safeTriedNames(paths) {
+  return uniquePaths(paths.map((p) => basename(String(p || ""))));
+}
 
 /**
- * Read PKCS#8 material. Prefers APPLE_IAP_PRIVATE_KEY_FILE when that env is set
- * and the file exists. Reads the complete file (binary → utf8) so PEM newlines
- * are preserved. Does not flatten whitespace. Never logs the body.
+ * Render may mount a Secret File at the exact FILE path or at /etc/secrets/<name>.
+ * Names only are safe to report; never include file contents.
+ */
+export function appleIapKeyFileCandidates(fileEnv = process.env.APPLE_IAP_PRIVATE_KEY_FILE) {
+  const trimmed = String(fileEnv || "").trim();
+  const base = trimmed ? basename(trimmed) : APPLE_IAP_SECRET_FILE_NAME;
+  return uniquePaths([
+    trimmed,
+    APPLE_IAP_DEFAULT_PRIVATE_KEY_FILE,
+    `${APPLE_IAP_SECRETS_DIR}/${base}`,
+    `${APPLE_IAP_SECRETS_DIR}/${APPLE_IAP_SECRET_FILE_NAME}`,
+  ]);
+}
+
+function emptyFileLoad({ errorClass, exists, pathHint, triedNames }) {
+  return {
+    source: "file",
+    raw: "",
+    path: pathHint || null,
+    keyFileEnvSet: true,
+    keyFileExists: Boolean(exists),
+    fileMissing: errorClass === "file_not_found",
+    unreadable: errorClass === "file_unreadable",
+    errorClass,
+    triedNames,
+  };
+}
+
+/**
+ * Read PKCS#8 material. If APPLE_IAP_PRIVATE_KEY_FILE is set, only file candidates
+ * are used — no silent APPLE_IAP_PRIVATE_KEY fallback. Reads the complete file
+ * (binary → utf8) so PEM newlines are preserved. Never logs the body.
  */
 export function loadAppleIapPrivateKey() {
-  const filePath = String(process.env.APPLE_IAP_PRIVATE_KEY_FILE || "").trim();
-  if (filePath) {
-    try {
-      const buf = readFileSync(filePath);
-      const raw = Buffer.from(buf).toString("utf8");
-      return { source: "file", raw, path: filePath };
-    } catch (err) {
-      const missing = err?.code === "ENOENT" || err?.code === "ENOTDIR";
-      if (missing) {
-        const envRaw = process.env.APPLE_IAP_PRIVATE_KEY;
-        if (envRaw != null && String(envRaw).trim()) {
-          return { source: "env", raw: String(envRaw), path: filePath, fileMissing: true };
-        }
-        return { source: "none", raw: "", path: filePath, fileMissing: true };
+  const fileEnv = String(process.env.APPLE_IAP_PRIVATE_KEY_FILE || "").trim();
+  if (fileEnv) {
+    const candidates = appleIapKeyFileCandidates(fileEnv);
+    const triedNames = safeTriedNames(candidates);
+    let unreadablePath = null;
+    for (const filePath of candidates) {
+      if (!existsSync(filePath)) continue;
+      try {
+        const buf = readFileSync(filePath);
+        const raw = Buffer.from(buf).toString("utf8");
+        return {
+          source: "file",
+          raw,
+          path: filePath,
+          keyFileEnvSet: true,
+          keyFileExists: true,
+          triedNames,
+        };
+      } catch {
+        unreadablePath = filePath;
       }
-      return { source: "file", raw: "", path: filePath, unreadable: true };
     }
+    if (unreadablePath) {
+      return emptyFileLoad({
+        errorClass: "file_unreadable",
+        exists: true,
+        pathHint: unreadablePath,
+        triedNames,
+      });
+    }
+    return emptyFileLoad({
+      errorClass: "file_not_found",
+      exists: false,
+      pathHint: fileEnv,
+      triedNames,
+    });
   }
   const envRaw = process.env.APPLE_IAP_PRIVATE_KEY;
   if (envRaw != null && String(envRaw).trim()) {
-    return { source: "env", raw: String(envRaw), path: null };
+    return { source: "env", raw: String(envRaw), path: null, keyFileEnvSet: false, keyFileExists: false };
   }
-  return { source: "none", raw: "", path: null };
+  return { source: "none", raw: "", path: null, keyFileEnvSet: false, keyFileExists: false };
 }
 
 export function appleCredentialsConfigured() {
@@ -91,13 +158,31 @@ function keySourceLabel(loaded) {
   return "none";
 }
 
+function keyFilePublicMeta(loaded) {
+  const meta = {
+    keyFileEnvSet: Boolean(loaded?.keyFileEnvSet),
+    keyFileExists: Boolean(loaded?.keyFileExists),
+  };
+  if (loaded?.keyFileEnvSet && !loaded?.keyFileExists && Array.isArray(loaded?.triedNames) && loaded.triedNames.length) {
+    meta.keyFileTriedNames = loaded.triedNames;
+  }
+  return meta;
+}
+
 /** Classify the IAP key without returning key material. PKCS#8 EC P-256 only. */
 export function inspectAppleSigningKey(loadedInput = null) {
   const loaded = loadedInput || loadAppleIapPrivateKey();
   const keySource = keySourceLabel(loaded);
+  const fileMeta = keyFilePublicMeta(loaded);
+  if (loaded.errorClass === "file_not_found" || loaded.fileMissing) {
+    return { ok: false, errorClass: "file_not_found", keySource: "file", keyParse: "fail", ...fileMeta };
+  }
+  if (loaded.errorClass === "file_unreadable" || loaded.unreadable) {
+    return { ok: false, errorClass: "file_unreadable", keySource: "file", keyParse: "fail", ...fileMeta };
+  }
   const signingKey = normalizeApplePrivateKey(loaded.raw);
   if (!signingKey) {
-    return { ok: false, errorClass: "private_key_missing_after_normalize", keySource, keyParse: "fail" };
+    return { ok: false, errorClass: "private_key_missing_after_normalize", keySource, keyParse: "fail", ...fileMeta };
   }
   try {
     const keyObj = createPrivateKey(signingKey);
@@ -110,14 +195,15 @@ export function inspectAppleSigningKey(loadedInput = null) {
         keyType,
         keySource,
         keyParse: "fail",
+        ...fileMeta,
       };
     }
     if (curve && curve !== "prime256v1" && curve !== "P-256") {
-      return { ok: false, errorClass: "private_key_curve_not_p256", keyType, curve, keySource, keyParse: "fail" };
+      return { ok: false, errorClass: "private_key_curve_not_p256", keyType, curve, keySource, keyParse: "fail", ...fileMeta };
     }
-    return { ok: true, keyType, curve: curve || "p256", keySource, keyParse: "pass" };
+    return { ok: true, keyType, curve: curve || "p256", keySource, keyParse: "pass", ...fileMeta };
   } catch {
-    return { ok: false, errorClass: "private_key_unreadable", keySource, keyParse: "fail" };
+    return { ok: false, errorClass: "private_key_unreadable", keySource, keyParse: "fail", ...fileMeta };
   }
 }
 
@@ -153,8 +239,18 @@ export function classifyJwtSignError(err) {
 
 export function createAppStoreServerApiJwt() {
   const loaded = loadAppleIapPrivateKey();
+  const fileMeta = keyFilePublicMeta(loaded);
+  if (loaded.errorClass === "file_not_found" || loaded.errorClass === "file_unreadable") {
+    return {
+      ok: false,
+      errorClass: loaded.errorClass,
+      keySource: "file",
+      keyParse: "fail",
+      ...fileMeta,
+    };
+  }
   if (!appleCredentialsConfigured()) {
-    return { ok: false, errorClass: "not_configured", keySource: keySourceLabel(loaded), keyParse: "fail" };
+    return { ok: false, errorClass: "not_configured", keySource: keySourceLabel(loaded), keyParse: "fail", ...fileMeta };
   }
   const issuerId = String(process.env.APPLE_IAP_ISSUER_ID || "").trim();
   const keyId = String(process.env.APPLE_IAP_KEY_ID || "").trim();
@@ -212,7 +308,20 @@ async function parseAppleJsonSafe(res) {
 export async function probeAppleStoreKitAuth({ fetchImpl = globalThis.fetch } = {}) {
   const loaded = loadAppleIapPrivateKey();
   const shape = inspectAppleSigningKey(loaded);
-  const keyMeta = { keySource: keySourceLabel(loaded), keyParse: shape.ok ? "pass" : "fail" };
+  const keyMeta = {
+    keySource: keySourceLabel(loaded),
+    keyParse: shape.ok ? "pass" : "fail",
+    ...keyFilePublicMeta(loaded),
+  };
+  if (shape.errorClass === "file_not_found" || shape.errorClass === "file_unreadable") {
+    return {
+      appleConfigured: false,
+      appleApiAuth: "fail",
+      environment: "unconfigured",
+      errorClass: shape.errorClass,
+      ...keyMeta,
+    };
+  }
   if (!appleCredentialsConfigured()) {
     return {
       appleConfigured: false,
@@ -359,14 +468,22 @@ export function appleHealthPublic(probe) {
   const keySource =
     probe?.keySource === "file" || probe?.keySource === "env" ? probe.keySource : "none";
   const keyParse = probe?.keyParse === "pass" ? "pass" : "fail";
-  return {
+  const out = {
     appleConfigured: Boolean(probe?.appleConfigured),
     appleApiAuth: probe?.appleApiAuth === "pass" ? "pass" : "fail",
+    keyFileEnvSet: Boolean(probe?.keyFileEnvSet),
+    keyFileExists: Boolean(probe?.keyFileExists),
     keySource,
     keyParse,
     environment: probe?.environment || "unconfigured",
-    ...(probe?.appleApiAuth === "pass"
-      ? {}
-      : { errorClass: probe?.errorClass || "unknown" }),
   };
+  if (probe?.appleApiAuth !== "pass") {
+    out.errorClass = probe?.errorClass || "unknown";
+  }
+  if (Array.isArray(probe?.keyFileTriedNames) && probe.keyFileTriedNames.length) {
+    out.keyFileTriedNames = uniquePaths(
+      probe.keyFileTriedNames.map((n) => basename(String(n || ""))),
+    ).slice(0, 8);
+  }
+  return out;
 }

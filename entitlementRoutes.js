@@ -33,6 +33,8 @@ export function createEntitlementRouter(deps = {}) {
       return res.status(500).json({
         appleConfigured: false,
         appleApiAuth: "fail",
+        keyFileEnvSet: Boolean(String(process.env.APPLE_IAP_PRIVATE_KEY_FILE || "").trim()),
+        keyFileExists: false,
         keySource: "none",
         keyParse: "fail",
         environment: "unconfigured",

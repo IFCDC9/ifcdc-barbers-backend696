@@ -11,6 +11,9 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   appleHealthPublic,
+  appleIapKeyFileCandidates,
+  APPLE_IAP_DEFAULT_PRIVATE_KEY_FILE,
+  APPLE_IAP_SECRET_FILE_NAME,
   classifyAppleApiHttpStatus,
   inspectAppleSigningKey,
   probeAppleStoreKitAuth,
@@ -180,6 +183,8 @@ test("Apple health mock HTTP: 401 fail, 200 pass", async () => {
   assert.equal(failPublic.errorClass, "unauthorized");
   assert.equal(failPublic.keySource, "env");
   assert.equal(failPublic.keyParse, "pass");
+  assert.equal(failPublic.keyFileEnvSet, false);
+  assert.equal(failPublic.keyFileExists, false);
 
   const passProbe = await probeAppleStoreKitAuth({
     fetchImpl: async () => ({ status: 200, ok: true, text: async () => JSON.stringify({ testNotificationToken: "omit-me" }) }),
@@ -210,17 +215,30 @@ test("flattened PKCS8 EC P-256 PEM still inspects as ec", async () => {
   const restored = normalizeApplePrivateKey(flat);
   assert.match(restored, /BEGIN PRIVATE KEY/);
   const prev = process.env.APPLE_IAP_PRIVATE_KEY;
+  const prevF = process.env.APPLE_IAP_PRIVATE_KEY_FILE;
   process.env.APPLE_IAP_PRIVATE_KEY = flat;
+  delete process.env.APPLE_IAP_PRIVATE_KEY_FILE;
   const shape = inspectAppleSigningKey();
   assert.equal(shape.ok, true);
   assert.equal(shape.keyType, "ec");
   if (prev === undefined) delete process.env.APPLE_IAP_PRIVATE_KEY;
   else process.env.APPLE_IAP_PRIVATE_KEY = prev;
+  if (prevF === undefined) delete process.env.APPLE_IAP_PRIVATE_KEY_FILE;
+  else process.env.APPLE_IAP_PRIVATE_KEY_FILE = prevF;
 });
 
 test("401 is unauthorized class not a grant", () => {
   assert.equal(classifyAppleApiHttpStatus(401), "unauthorized");
   assert.equal(classifyAppleApiHttpStatus(403), "forbidden_wrong_key_type");
+});
+
+test("Apple IAP file candidates include default and basename mounts", () => {
+  const fileEnv = "/etc/secrets/ifcdc-barbers-iap.p8";
+  const candidates = appleIapKeyFileCandidates(fileEnv);
+  assert.equal(candidates.includes(fileEnv), true);
+  assert.equal(candidates.includes(APPLE_IAP_DEFAULT_PRIVATE_KEY_FILE), true);
+  assert.equal(candidates.includes(`/etc/secrets/${APPLE_IAP_SECRET_FILE_NAME}`), true);
+  assert.equal(candidates.includes(`/etc/secrets/${path.basename(fileEnv)}`), true);
 });
 
 test("ENTITLEMENTS_ENFORCE and LOCK_SHOPS stay off in this process unless set", () => {
@@ -260,14 +278,30 @@ test("APPLE_IAP_PRIVATE_KEY_FILE is preferred over env PKCS8", async () => {
     assert.equal(shape.keyParse, "pass");
     assert.equal(shape.ok, true);
     assert.equal(shape.keyType, "ec");
+    assert.equal(shape.keyFileEnvSet, true);
+    assert.equal(shape.keyFileExists, true);
+    const publicHealth = appleHealthPublic({
+      appleConfigured: true,
+      appleApiAuth: "pass",
+      keySource: shape.keySource,
+      keyParse: shape.keyParse,
+      keyFileEnvSet: shape.keyFileEnvSet,
+      keyFileExists: shape.keyFileExists,
+      environment: "Sandbox",
+    });
+    assert.equal(publicHealth.keySource, "file");
+    assert.equal(publicHealth.keyFileEnvSet, true);
+    assert.equal(publicHealth.keyFileExists, true);
+    assert.equal("errorClass" in publicHealth, false);
   } finally {
     restoreAppleKeyEnv(prev);
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test("missing APPLE_IAP_PRIVATE_KEY_FILE falls back to env PKCS8", async () => {
+test("APPLE_IAP_PRIVATE_KEY_FILE set but missing does not use env fallback", async () => {
   const { generateKeyPairSync } = await import("node:crypto");
+  const { loadAppleIapPrivateKey } = await import("../appleStoreKitClient.js");
   const { privateKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
   const pem = privateKey.export({ type: "pkcs8", format: "pem" });
   const prev = {
@@ -277,10 +311,37 @@ test("missing APPLE_IAP_PRIVATE_KEY_FILE falls back to env PKCS8", async () => {
   try {
     process.env.APPLE_IAP_PRIVATE_KEY = pem;
     process.env.APPLE_IAP_PRIVATE_KEY_FILE = path.join(tmpdir(), "missing-ifcdc-barbers-iap.p8");
-    const shape = inspectAppleSigningKey();
-    assert.equal(shape.keySource, "env");
-    assert.equal(shape.keyParse, "pass");
-    assert.equal(shape.ok, true);
+    const loaded = loadAppleIapPrivateKey();
+    assert.equal(loaded.source, "file");
+    assert.equal(String(loaded.raw || "").trim(), "");
+    assert.equal(loaded.errorClass, "file_not_found");
+    const shape = inspectAppleSigningKey(loaded);
+    assert.equal(shape.keySource, "file");
+    assert.equal(shape.keyParse, "fail");
+    assert.equal(shape.ok, false);
+    assert.equal(shape.errorClass, "file_not_found");
+    assert.equal(shape.keyFileEnvSet, true);
+    assert.equal(shape.keyFileExists, false);
+    const publicHealth = appleHealthPublic({
+      appleConfigured: false,
+      appleApiAuth: "fail",
+      keySource: shape.keySource,
+      keyParse: shape.keyParse,
+      keyFileEnvSet: shape.keyFileEnvSet,
+      keyFileExists: shape.keyFileExists,
+      keyFileTriedNames: loaded.triedNames,
+      environment: "unconfigured",
+      errorClass: shape.errorClass,
+    });
+    assert.equal(publicHealth.keySource, "file");
+    assert.equal(publicHealth.keyFileEnvSet, true);
+    assert.equal(publicHealth.keyFileExists, false);
+    assert.equal(publicHealth.errorClass, "file_not_found");
+    assert.equal(JSON.stringify(publicHealth).includes(pem.slice(0, 20)), false);
+    assert.equal(JSON.stringify(publicHealth).includes("BEGIN PRIVATE KEY"), false);
+    for (const name of publicHealth.keyFileTriedNames || []) {
+      assert.equal(name.includes("/"), false);
+    }
   } finally {
     restoreAppleKeyEnv(prev);
   }
@@ -314,9 +375,13 @@ test("invalid secret file fails parse without leaking key material", async () =>
       appleApiAuth: "fail",
       keySource: shape.keySource,
       keyParse: shape.keyParse,
+      keyFileEnvSet: true,
+      keyFileExists: true,
       environment: "Sandbox",
       errorClass: shape.errorClass,
     });
+    assert.equal(publicHealth.keyFileEnvSet, true);
+    assert.equal(publicHealth.keyFileExists, true);
     const dumped = JSON.stringify(publicHealth);
     assert.equal(dumped.includes(marker), false);
     assert.equal(dumped.includes("BEGIN PRIVATE KEY"), false);
