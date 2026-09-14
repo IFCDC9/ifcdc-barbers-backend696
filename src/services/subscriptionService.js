@@ -38,6 +38,8 @@ export async function getSubscription(barberId) {
 }
 
 export async function startTrial(barberId, days = 7) {
+  const { assertLegacyWriteNotUsed } = await import("../../legacySubscriptionFreeze.js")
+  assertLegacyWriteNotUsed("sevenDayStartTrial")
   await ensureSubscriptionSchema()
   const id = Number(barberId)
   if (!Number.isFinite(id) || id <= 0) throw new Error("invalid_barber_id")
@@ -63,6 +65,8 @@ export async function startTrial(barberId, days = 7) {
 }
 
 export async function activateMonthly(barberId, months = 1) {
+  const { assertLegacyWriteNotUsed } = await import("../../legacySubscriptionFreeze.js")
+  assertLegacyWriteNotUsed("activateMonthly")
   await ensureSubscriptionSchema()
   const id = Number(barberId)
   if (!Number.isFinite(id) || id <= 0) throw new Error("invalid_barber_id")

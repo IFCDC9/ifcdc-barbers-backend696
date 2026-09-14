@@ -24,6 +24,8 @@ import AdminLoyaltyRewards from "./pages/AdminLoyaltyRewards.jsx";
 import AdminAuraKnowledge from "./pages/AdminAuraKnowledge.jsx";
 import AdminSmsDelivery from "./pages/AdminSmsDelivery.jsx";
 import AdminAuraVoice from "./pages/AdminAuraVoice.jsx";
+import AdminSubscriptions from "./pages/AdminSubscriptions.jsx";
+import SubscriptionPlans from "./pages/SubscriptionPlans.jsx";
 import AdminShops from "./pages/AdminShops.jsx";
 import AdminShopDetail from "./pages/AdminShopDetail.jsx";
 import BarberSettings from "./pages/BarberSettings.jsx";
@@ -150,10 +152,26 @@ function AppShell() {
               }
             />
             <Route
+              path="/subscriptions"
+              element={
+                <RequireRole roles={["barber", "shop_owner", "admin", "super_admin", "user"]}>
+                  <SubscriptionPlans />
+                </RequireRole>
+              }
+            />
+            <Route
               path="/admin"
               element={
                 <RequireRole roles={["admin", "super_admin"]}>
                   <Admin />
+                </RequireRole>
+              }
+            />
+            <Route
+              path="/admin/subscriptions"
+              element={
+                <RequireRole roles={["admin", "super_admin"]}>
+                  <AdminSubscriptions />
                 </RequireRole>
               }
             />

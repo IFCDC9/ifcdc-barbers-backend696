@@ -667,6 +667,9 @@ function AdminDashboard() {
         <div style={{ display: "flex", flexWrap: "wrap", gap: 10, justifyContent: "center", marginBottom: 28 }}>
           {(getStoredUser()?.isSuperAdmin === true || getStoredUser()?.isOwner === true || String(getStoredUser()?.role || "").toLowerCase() === "super_admin") ? (
             <>
+              <a href="/admin/subscriptions" style={{ ...goldButton, textDecoration: "none", display: "inline-block" }}>
+                Subscriptions
+              </a>
               <a href="/admin/management-team" style={{ ...goldButton, textDecoration: "none", display: "inline-block" }}>
                 Management Team
               </a>

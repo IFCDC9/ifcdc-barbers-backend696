@@ -95,6 +95,7 @@ export async function handlePaymentsDepositProWebhook(body) {
   }
 
   if (customId.toLowerCase().startsWith("pro:")) {
+    /* Frozen as SaaS: still mirrors barber_settings.is_pro for historical reads. Does not write account_subscriptions. */
     const barberId = Number(customId.slice("pro:".length));
     if (!Number.isFinite(barberId)) return { handled: false };
     if (Math.abs(capturedUsd - 9.99) > 0.02) {

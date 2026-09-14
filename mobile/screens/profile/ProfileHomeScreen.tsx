@@ -52,6 +52,7 @@ export default function ProfileHomeScreen() {
   const resolvedBarberId = user?.barberId != null ? String(user.barberId) : "";
 
   const menu: { key: keyof ProfileStackParamList; label: string }[] = [
+    { key: "Subscription", label: "IFCDC Pro" },
     { key: "EditProfile", label: t("profile.menuPersonalInfo") },
     { key: "AddPhone", label: user?.phoneVerified ? "Phone Verified" : "Add Phone" },
     { key: "BookingHistory", label: t("profile.menuBookings") },

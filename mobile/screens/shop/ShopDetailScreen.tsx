@@ -160,6 +160,12 @@ function ShopDetailInner() {
 
           <View style={styles.actions}>
             <GlowButton
+              label="Shop subscription"
+              variant="outline"
+              onPress={() => navigation.navigate("ShopSubscription" as never)}
+            />
+            <View style={{ height: 10 }} />
+            <GlowButton
               label="Edit Shop"
               variant="outline"
               onPress={() => navigation.navigate("ShopEdit", { businessId, shopName: displayName })}

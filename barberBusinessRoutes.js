@@ -15,9 +15,6 @@ import { isJwtGlobalSuperScope } from "./authPlatformJwt.js";
 import { createRequire } from "node:module";
 import {
   normalizeBillingProvider,
-  normalizeTier,
-  TIER_FREE,
-  validateSubscriptionMonthlyPrice,
 } from "./subscriptionTier.js";
 import { logServiceAudit, logServiceUpdateDiff } from "./serviceAuditLog.js";
 import { writeSecurityAudit } from "./auditSecurity.js";
@@ -1193,31 +1190,23 @@ export function createBarberBusinessRouter({ uploadDir } = {}) {
       const aura_voice_type = String(req.body?.aura_voice_type ?? req.body?.auraVoiceType ?? "").trim();
       const language = String(req.body?.language ?? "").trim();
 
-      const tierRaw = req.body?.subscription_tier ?? req.body?.subscriptionTier;
-      const tierUpdate =
-        tierRaw != null && String(tierRaw).trim() !== "" ? normalizeTier(String(tierRaw)) : null;
-      const nextTier = tierUpdate ?? existing.subscription_tier;
-
-      const subPriceRaw = req.body?.subscription_monthly_price ?? req.body?.subscriptionMonthlyPrice;
-      let priceSqlToken = "noop";
-      if (subPriceRaw === "" || tierUpdate === TIER_FREE) priceSqlToken = "clear";
-      else if (subPriceRaw != null && String(subPriceRaw).trim() !== "") priceSqlToken = String(money(subPriceRaw));
-
-      let nextMonthlyPrice = existing.subscription_monthly_price;
-      if (priceSqlToken === "clear") nextMonthlyPrice = null;
-      else if (priceSqlToken !== "noop") nextMonthlyPrice = money(priceSqlToken);
-      if (normalizeTier(nextTier) === TIER_FREE) nextMonthlyPrice = null;
-
-      const v = validateSubscriptionMonthlyPrice(nextTier, nextMonthlyPrice);
-      if (!v.ok) {
-        return res.status(400).json({ error: "validation", message: v.message || "Invalid subscription price" });
+      /* Legacy self-serve tier/price/billing writes are frozen. Reads still return existing columns. */
+      const tierUpdate = null;
+      const priceSqlToken = "noop";
+      const billingProvRaw = null;
+      const billingSubSql = "noop";
+      if (
+        req.body?.subscription_tier != null ||
+        req.body?.subscriptionTier != null ||
+        req.body?.subscription_monthly_price != null ||
+        req.body?.subscriptionMonthlyPrice != null ||
+        req.body?.billing_provider != null ||
+        req.body?.billingProvider != null ||
+        req.body?.billing_subscription_id != null ||
+        req.body?.billingSubscriptionId != null
+      ) {
+        console.warn("[barber-business] ignoring frozen self-serve subscription writes");
       }
-
-      const billingProvRaw = req.body?.billing_provider ?? req.body?.billingProvider;
-      const billingSubIdRaw = req.body?.billing_subscription_id ?? req.body?.billingSubscriptionId;
-      let billingSubSql = "noop";
-      if (billingSubIdRaw === "") billingSubSql = "clear";
-      else if (billingSubIdRaw != null) billingSubSql = String(billingSubIdRaw).trim() || "clear";
 
       const r = await dbQuery(
         `UPDATE barber_settings SET

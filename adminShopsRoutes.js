@@ -15,7 +15,6 @@ import {
   listAdminShops,
   rejectShop,
   setShopAccountStatus,
-  startShopTrial,
   updateAdminShop,
   updateShopAccessControls,
 } from "./adminShopsService.js";
@@ -308,17 +307,8 @@ export function createAdminShopsRouter() {
   });
 
   router.post("/api/admin/shops/:id/trial/start", async (req, res) => {
-    const scope = await resolveShopManagementScope(req, res);
-    if (!scope) return;
-    if (!requirePlatformAdmin(scope, res)) return;
-    const businessId = Number(req.params.id);
-    try {
-      await startShopTrial(businessId, req.body?.trialDays);
-      const detail = await getAdminShopDetail(businessId);
-      return res.json({ ok: true, ...detail });
-    } catch (e) {
-      return res.status(500).json({ ok: false, message: "Failed to start trial" });
-    }
+    const { legacyWriteFrozenPayload } = await import("./legacySubscriptionFreeze.js");
+    return res.status(410).json(legacyWriteFrozenPayload("fourteenDayShopTrialAsStore"));
   });
 
   router.post("/api/admin/shops/:id/trial/end", async (req, res) => {

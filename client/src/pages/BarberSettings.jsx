@@ -1241,92 +1241,19 @@ export default function BarberSettings() {
                 background: "rgba(255,255,255,0.02)",
               }}
             >
-              <div style={{ fontWeight: 900, color: theme.colors.text, marginBottom: 8 }}>Subscription plan (MVP)</div>
+              <div style={{ fontWeight: 900, color: theme.colors.text, marginBottom: 8 }}>Subscription (legacy mirror)</div>
               <p style={{ fontSize: 13, color: theme.colors.muted, marginBottom: 12 }}>
-                Tier controls AURA and booking deposits. Checkout integration is coming; monthly price is optional
-                until billing is connected.
+                Self-serve Free/Pro/Elite writes are frozen. StoreKit / Play Billing is the source of truth. This
+                screen still shows the stored mirror and does not change App Store or Play products. The $0.99 booking
+                platform fee stays a separate checkout field.
               </p>
-              <label style={{ display: "grid", gap: 6, fontSize: 12, color: theme.colors.muted, fontWeight: 800 }}>
-                Tier
-                <select
-                  style={{ ...inputStyle, cursor: "pointer" }}
-                  value={settings.subscription_tier}
-                  onChange={(e) => {
-                    const subscription_tier = e.target.value;
-                    setSettings({
-                      ...settings,
-                      subscription_tier,
-                      subscription_monthly_price: subscription_tier === "free" ? "" : settings.subscription_monthly_price,
-                    });
-                  }}
-                >
-                  <option value="free">Free — AURA and deposits off</option>
-                  <option value="pro">Pro — $9.99–$19.99/mo (full features)</option>
-                  <option value="elite">Elite — $29.99–$49.99/mo (full features)</option>
-                </select>
-              </label>
-              {settings.subscription_tier !== "free" ? (
-                <label
-                  style={{
-                    display: "grid",
-                    gap: 6,
-                    fontSize: 12,
-                    color: theme.colors.muted,
-                    fontWeight: 800,
-                    marginTop: 10,
-                  }}
-                >
-                  Planned monthly price (USD, optional)
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    style={inputStyle}
-                    placeholder={settings.subscription_tier === "elite" ? "29.99 – 49.99" : "9.99 – 19.99"}
-                    value={settings.subscription_monthly_price}
-                    onChange={(e) => setSettings({ ...settings, subscription_monthly_price: e.target.value })}
-                  />
-                </label>
-              ) : null}
-              <label
-                style={{
-                  display: "grid",
-                  gap: 6,
-                  fontSize: 12,
-                  color: theme.colors.muted,
-                  fontWeight: 800,
-                  marginTop: 10,
-                }}
-              >
-                Billing provider (reserved)
-                <select
-                  style={{ ...inputStyle, cursor: "pointer" }}
-                  value={settings.billing_provider}
-                  onChange={(e) => setSettings({ ...settings, billing_provider: e.target.value })}
-                >
-                  <option value="none">None yet</option>
-                  <option value="stripe">Stripe (future)</option>
-                  <option value="paypal">PayPal (future)</option>
-                </select>
-              </label>
-              <label
-                style={{
-                  display: "grid",
-                  gap: 6,
-                  fontSize: 12,
-                  color: theme.colors.muted,
-                  fontWeight: 800,
-                  marginTop: 10,
-                }}
-              >
-                External subscription id (reserved)
-                <input
-                  style={inputStyle}
-                  placeholder="Set automatically after checkout"
-                  value={settings.billing_subscription_id}
-                  onChange={(e) => setSettings({ ...settings, billing_subscription_id: e.target.value })}
-                />
-              </label>
+              <p style={{ fontSize: 13, color: theme.colors.text, marginBottom: 12 }}>
+                Current mirror: <strong>{settings.subscription_tier || "—"}</strong>
+                {settings.subscription_monthly_price ? ` · $${settings.subscription_monthly_price}` : ""}
+              </p>
+              <Link to="/subscriptions" style={{ color: theme.colors.gold, fontWeight: 800 }}>
+                Open IFCDC Pro plans →
+              </Link>
             </div>
             <p style={{ fontSize: 13, color: theme.colors.muted }}>
               Customers pay the full service price plus the $0.99 IFCDC platform fee at checkout. Partial payments and

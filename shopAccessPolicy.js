@@ -83,6 +83,8 @@ export function effectiveShopAccess(row) {
     }
   }
 
+  /* New IAP entitlements do not lock shops unless ENTITLEMENTS_LOCK_SHOPS=1 (off by default).
+     Existing paid_subscription_required + subscription_status limited-access behavior is unchanged. */
   const subscriptionEnabled = row.subscription_enabled !== false;
   const platformFeesEnabled = row.platform_fees_enabled !== false;
   const websiteAccessEnabled = row.website_access_enabled !== false;

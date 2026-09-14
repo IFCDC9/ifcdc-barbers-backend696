@@ -2,7 +2,8 @@
 import express from "express"
 import db from "../db/db.js"
 import { requireAdmin } from "../middleware/requireAdmin.js"
-import { listSubscriptions, startTrial, activateMonthly } from "../services/subscriptionService.js"
+import { listSubscriptions } from "../services/subscriptionService.js"
+import { legacyWriteFrozenPayload } from "../../legacySubscriptionFreeze.js"
 
 const router = express.Router()
 
@@ -108,25 +109,11 @@ router.get("/subscriptions", requireAdmin, async (req, res) => {
 })
 
 router.post("/subscriptions/:barberId/start-trial", requireAdmin, async (req, res) => {
-  try {
-    const barberId = Number(req.params.barberId)
-    const days = Number(req.body?.days || 7)
-    const row = await startTrial(barberId, days)
-    res.json({ ok: true, subscription: row })
-  } catch (err) {
-    res.status(400).json({ ok: false, error: "start_trial_failed", message: err instanceof Error ? err.message : String(err) })
-  }
+  return res.status(410).json(legacyWriteFrozenPayload("sevenDayStartTrial"))
 })
 
 router.post("/subscriptions/:barberId/activate-monthly", requireAdmin, async (req, res) => {
-  try {
-    const barberId = Number(req.params.barberId)
-    const months = Number(req.body?.months || 1)
-    const row = await activateMonthly(barberId, months)
-    res.json({ ok: true, subscription: row })
-  } catch (err) {
-    res.status(400).json({ ok: false, error: "activate_monthly_failed", message: err instanceof Error ? err.message : String(err) })
-  }
+  return res.status(410).json(legacyWriteFrozenPayload("activateMonthly"))
 })
 
 export default router

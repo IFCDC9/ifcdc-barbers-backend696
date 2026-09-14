@@ -32,6 +32,7 @@
     "test:paypal": "node scripts/verify-paypal-oauth.cjs",
     "test:security": "node tests/securityPolicy.test.mjs",
     "test:management-authz": "node --test tests/authManagementSession.test.mjs tests/managementTeamAuthorization.test.mjs tests/webManagementSession.test.mjs",
+    "test:entitlements": "node --test tests/entitlementsFoundation.test.mjs tests/billingWebhooks.test.mjs tests/legacySubscriptionFreeze.test.mjs",
     "test:loyalty": "node tests/loyaltyEngine.test.mjs",
     "test:aura-phase2": "node --test tests/auraPhase2Flags.test.mjs tests/auraPhase2Tools.test.mjs tests/auraDailyReport.test.mjs tests/auraPhase2Reminders.test.mjs",
     "test:aura-phase3": "node --test tests/auraPhase3Flags.test.mjs tests/auraPhase3Security.test.mjs tests/auraPhase3Knowledge.test.mjs tests/auraPhase3Preferences.test.mjs tests/auraPhase3Waitlist.test.mjs tests/auraPhase3Insights.test.mjs",

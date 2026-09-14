@@ -86,6 +86,7 @@ import { createAuraChatHistoryRouter } from "./auraChatHistoryRoutes.js";
 import { requireAuth } from "./authRoutes.js";
 import { createPhoneEnrollmentRouter } from "./phoneEnrollmentRoutes.js";
 import { getDeployInfoPayload } from "./deployInfo.mjs";
+import { createEntitlementRouter, bootEntitlementSchema } from "./entitlementRoutes.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -728,6 +729,9 @@ console.log(
 app.use("/api/legal", createLegalRouter());
 console.log("[boot] mounted /api/legal (accept, status)");
 
+app.use(createEntitlementRouter());
+console.log("[boot] mounted entitlements + billing (observe/sandbox; ENTITLEMENTS_ENFORCE default 0)");
+
 // Production bookings (Postgres) — replaces in-memory bookingRoutesMinimal.cjs for live payments.
 const bookingsRouter = createBookingsRouter({
   sendBookingEmail: require("./bookingEmail.cjs").sendBookingEmail,
@@ -1316,6 +1320,17 @@ async function startServer() {
     await ensureAdminShopManagementSchema();
     await ensureManagementTeamSchema();
     console.log("[migrate] management team schema: ok");
+    try {
+      const ensureOn = String(process.env.ENTITLEMENTS_SCHEMA_ENSURE || "0").trim() === "1";
+      if (ensureOn) {
+        await bootEntitlementSchema(dbQuery);
+        console.log("[migrate] entitlements schema: ok (IF NOT EXISTS only; no plan rewrites)");
+      } else {
+        console.log("[migrate] entitlements schema skipped (set ENTITLEMENTS_SCHEMA_ENSURE=1 after Tessa approves SQL)");
+      }
+    } catch (entErr) {
+      console.warn("[migrate] entitlements schema skipped:", entErr?.message || entErr);
+    }
     try {
       const aligned = await ensureAppUsersBarberIdTypeAligned();
       if (aligned?.converted) console.log("[migrate] app_users.barber_id aligned to uuid");

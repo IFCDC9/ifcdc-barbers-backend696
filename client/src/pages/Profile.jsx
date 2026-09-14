@@ -157,6 +157,11 @@ export default function Profile() {
 
       {canShop ? (
         <>
+          {role === "barber" || role === "shop_owner" || isPlatformAdmin(user) ? (
+            <Link to="/subscriptions" className="ifcdc-book-wizard__cta">
+              IFCDC Pro
+            </Link>
+          ) : null}
           {isActiveManager(user) || role === "shop_owner" ? (
             <Link to="/admin/shops" className="ifcdc-book-wizard__cta">
               {isActiveManager(user) ? "Manager dashboard" : "Shop management"}
