@@ -1,5 +1,6 @@
 import React from "react";
 import { createStackNavigator } from "@react-navigation/stack";
+import ProfileHomeScreen from "../screens/profile/ProfileHomeScreen";
 import SubscriptionScreen from "../screens/profile/SubscriptionScreen";
 import EditProfileScreen from "../screens/profile/EditProfileScreen";
 import AddPhoneScreen from "../screens/profile/AddPhoneScreen";
