@@ -11,7 +11,6 @@ import {
   GOOGLE_ACCESS_PRODUCT_ID,
   LIST_PRICE_USD,
   PLAN_RANK,
-  PROMO_PLACEHOLDERS,
   displayPrice,
   fetchEntitlementsMe,
   fetchStoreProducts,
@@ -119,7 +118,7 @@ export default function SubscriptionScreen() {
     const result = await purchaseWithPromoOffer(productId, null);
     Alert.alert(
       "Promotional offer",
-      result.message || "confirm App Store Connect promotional offer IDs with Tessa",
+      result.message || "No promotional offer is available for this Apple ID right now.",
     );
   };
 
@@ -138,9 +137,9 @@ export default function SubscriptionScreen() {
           Status: {String(entitlements?.subscriptionStatus || "none")} · Plan: {String(entitlements?.planKey || "none")}
         </Text>
         <Text style={styles.meta}>
-          Mode: {String(entitlements?.mode || "observe_sandbox")} · Booking fee ${String((entitlements as { bookingPlatformFeeUsd?: number } | null)?.bookingPlatformFeeUsd ?? 0.99)}
+          Booking fee ${String((entitlements as { bookingPlatformFeeUsd?: number } | null)?.bookingPlatformFeeUsd ?? 0.99)}
         </Text>
-        {!native ? <Text style={styles.warn}>{notice || "Store prices load live from Apple/Google on a native build."}</Text> : null}
+        {!native ? <Text style={styles.warn}>{notice || "Store prices load live from Apple or Google on a store build."}</Text> : null}
       </ProfileCard>
 
       {loading ? (
@@ -165,10 +164,10 @@ export default function SubscriptionScreen() {
               <Text style={styles.intro}>
                 Intro:{" "}
                 {intro.eligible == null
-                  ? "waiting for StoreKit"
+                  ? "Checking eligibility…"
                   : intro.eligible
-                    ? intro.intro || "eligible"
-                    : "not eligible"}
+                    ? intro.intro || "First month free"
+                    : "Standard price"}
               </Text>
               <GlowButton
                 label={busy === id ? "Working…" : current ? "Current plan" : rankHint}
@@ -176,7 +175,7 @@ export default function SubscriptionScreen() {
                 onPress={() => void onBuy(id)}
               />
               <Pressable onPress={() => void onPromo(id)} hitSlop={8}>
-                <Text style={styles.promo}>Win-back / promo (IDs TBD with Tessa)</Text>
+                <Text style={styles.promo}>Promotional pricing may apply when Apple offers it for your account.</Text>
               </Pressable>
             </ProfileCard>
           );
@@ -188,7 +187,7 @@ export default function SubscriptionScreen() {
           <Text style={styles.planName}>Android app access</Text>
           <Text style={styles.price}>${LIST_PRICE_USD[GOOGLE_ACCESS_PRODUCT_ID].toFixed(2)}</Text>
           <Text style={styles.blurb}>
-            One-time, non-consumable, restorable, account-bound. Product ID `{GOOGLE_ACCESS_PRODUCT_ID}` — confirm with Tessa before production. Not the booking fee.
+            One-time, non-consumable, restorable, account-bound. Separate from the booking fee.
           </Text>
           <GlowButton
             label={busy === GOOGLE_ACCESS_PRODUCT_ID ? "Working…" : "Unlock access"}
@@ -198,9 +197,9 @@ export default function SubscriptionScreen() {
         </ProfileCard>
       ) : (
         <ProfileCard>
-          <Text style={styles.planName}>iOS download price</Text>
+          <Text style={styles.planName}>App Store billing</Text>
           <Text style={styles.blurb}>
-            Paid Apps Agreement must be confirmed by Tessa before the App Store list price can move to $0.99. This screen does not change that list price.
+            Subscriptions are billed through the App Store. Restore purchases if you already subscribed with this Apple ID.
           </Text>
         </ProfileCard>
       )}

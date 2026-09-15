@@ -10,6 +10,9 @@ const PLACEHOLDER = "In-app purchases run on a TestFlight / Play production buil
 test("placeholder string is gone from SubscriptionScreen purchase tap path", () => {
   const src = readFileSync(join(root, "mobile/screens/profile/SubscriptionScreen.tsx"), "utf8");
   assert.doesNotMatch(src, /In-app purchases run on a TestFlight/);
+  assert.doesNotMatch(src, /observe_sandbox/);
+  assert.doesNotMatch(src, /Tessa/);
+  assert.doesNotMatch(src, /waiting for StoreKit/);
   assert.match(src, /const onBuy = async/);
   assert.match(src, /purchaseProduct\(/);
   assert.match(src, /user_cancelled/);
@@ -37,10 +40,10 @@ test("storeBilling uses expo-iap StoreKit APIs and server confirm", () => {
   assert.doesNotMatch(src, /transactionId\s*\|\|/);
 });
 
-test("EAS production app.json includes expo-iap plugin and iOS build 84", () => {
+test("EAS production app.json includes expo-iap plugin and iOS build 85", () => {
   const app = JSON.parse(readFileSync(join(root, "mobile/app.json"), "utf8"));
   assert.equal(app.expo.version, "1.1.12");
-  assert.equal(app.expo.ios.buildNumber, "84");
+  assert.equal(app.expo.ios.buildNumber, "85");
   assert.ok(app.expo.plugins.includes("expo-iap") || app.expo.plugins.some((p) => p === "expo-iap" || p?.[0] === "expo-iap"));
 });
 

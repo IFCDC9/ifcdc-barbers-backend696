@@ -11,6 +11,7 @@ import {
   upsertVerifiedSubscription,
 } from "./entitlementService.js";
 import { normalizeAppleEnvironment, subscriptionStatusFromAppleTxn } from "./appleJwsVerifier.js";
+import { recordBillingMetric } from "./billingMetrics.js";
 
 function decodeJwtPayloadUnsafe(jws) {
   const parts = String(jws || "").split(".");
@@ -103,6 +104,7 @@ export async function processAppleAssnV2({
   bindBusinessId = null,
 }) {
   if (!signedPayload) {
+    recordBillingMetric("webhook_fail", { provider: "apple", errorClass: "missing_signed_payload" });
     return { ok: false, error: "missing_signed_payload" };
   }
 
@@ -113,6 +115,7 @@ export async function processAppleAssnV2({
     return { ok: false, error: "apple_verifier_required", message: "Never trust unsigned ASSN payloads." };
   }
   if (!decoded || decoded.ok === false) {
+    recordBillingMetric("webhook_fail", { provider: "apple", errorClass: decoded?.error || "apple_verify_failed" });
     return { ok: false, error: "apple_verify_failed", detail: decoded?.error || null };
   }
   const body = decoded.payload || decoded;
@@ -128,6 +131,7 @@ export async function processAppleAssnV2({
       [notificationUuid],
     ).catch(() => ({ rows: [] }));
     if (prior.rows?.[0]) {
+      recordBillingMetric("duplicate", { provider: "apple" });
       return {
         ok: true,
         duplicate: true,
@@ -193,25 +197,34 @@ export async function confirmAppleTransaction({
     /* ignored — never trust frontend status */
   }
   if (!String(transactionJws || "").trim()) {
+    recordBillingMetric("verify_fail", { provider: "apple", errorClass: "missing_signed_transaction" });
     return { ok: false, error: "missing_signed_transaction" };
   }
   if (typeof verifyTransactionJws !== "function") {
+    recordBillingMetric("verify_fail", { provider: "apple", errorClass: "apple_verifier_required" });
     return { ok: false, error: "apple_verifier_required" };
   }
   const verifiedJws = await verifyTransactionJws(transactionJws);
   if (!verifiedJws || verifiedJws.ok === false) {
+    recordBillingMetric("verify_fail", { provider: "apple", errorClass: verifiedJws?.error || "apple_verify_failed" });
     return { ok: false, error: verifiedJws?.error || "apple_verify_failed" };
   }
   const txn = verifiedJws.txn || verifiedJws.payload || verifiedJws;
   if (txn?.bundleId && String(txn.bundleId) !== APPLE_BUNDLE_ID) {
+    recordBillingMetric("verify_fail", { provider: "apple", errorClass: "wrong_bundle" });
     return { ok: false, error: "wrong_bundle" };
   }
   const mapped = verifiedSubscriptionFromAppleTxn(txn, { userId, businessId });
-  if (!mapped.ok) return mapped;
+  if (!mapped.ok) {
+    recordBillingMetric("verify_fail", { provider: "apple", errorClass: mapped.error });
+    return mapped;
+  }
   if (!mapped.originalTransactionId) {
+    recordBillingMetric("verify_fail", { provider: "apple", errorClass: "missing_original_transaction_id" });
     return { ok: false, error: "missing_original_transaction_id" };
   }
   if (claimedProductId && String(claimedProductId) !== mapped.storeProductId) {
+    recordBillingMetric("verify_fail", { provider: "apple", errorClass: "product_mismatch" });
     return { ok: false, error: "product_mismatch", message: "Client productId does not match verified transaction." };
   }
   let row = null;

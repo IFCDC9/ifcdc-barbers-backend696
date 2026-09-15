@@ -1,9 +1,13 @@
--- NOT APPLIED TO PRODUCTION (2026-09-14)
+-- APPLIED TO PRODUCTION 2026-09-14 via MCP apply_migration account_subscriptions_entitlements
 -- Project: supabase-emerald-kite (vtkxuagevtiwtoheomjt)
 -- Name: account_subscriptions_entitlements
 -- Additive only: catalog + entitlements + event log.
 -- Does NOT start trials, charge users, rewrite plans, or delete historical subscription rows.
--- Apply only after Tessa approves SQL (same process as phone enrollment).
+-- Rollback: DROP TABLE IF EXISTS only the four NEW tables (never businesses/app_users):
+--   DROP TABLE IF EXISTS public.subscription_events;
+--   DROP TABLE IF EXISTS public.app_access_entitlements;
+--   DROP TABLE IF EXISTS public.account_subscriptions;
+--   DROP TABLE IF EXISTS public.platform_product_catalog;
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 

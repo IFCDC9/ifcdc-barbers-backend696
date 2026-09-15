@@ -1,7 +1,7 @@
 {
   "configVersion": 0,
   "apple": {
-    "version": "1.1.11",
+    "version": "1.1.12",
     "copyright": "2026 IFCDC Barbers",
     "release": {
       "automaticRelease": true
@@ -24,7 +24,7 @@
         "title": "IFCDC Barbers",
         "subtitle": "Book cuts with style photos",
         "privacyPolicyUrl": "https://ifcdcbarbersapp.com/privacy",
-        "releaseNotes": "Version 1.1.10 (Build 78)\n\n• Hebrew language support — עברית (he)\n• Hebrew translations across customer screens (Registration, Sign In, Home, Booking, AURA, Profile, Payments, Rewards, Reviews, SMS)\n• Right-to-left (RTL) layout when Hebrew is selected; English restores LTR\n• Language preference saved across logout, login, and app relaunch",
+        "releaseNotes": "Version 1.1.12 (Build 85)\n\n• IFCDC Barbers Pro Plans — Individual, Shop, and Multi-Location monthly subscriptions billed through the App Store\n• First month free where Apple shows an introductory offer for your Apple ID\n• Restore purchases from Profile → IFCDC Pro\n• Booking appointments, PayPal checkout, and the $0.99 booking fee are unchanged\n• Hebrew, multilingual UI, and AURA assistant",
         "screenshots": {
           "APP_IPAD_PRO_3GEN_129": [
             "store/apple/screenshot/en-US/APP_IPAD_PRO_3GEN_129/iPad Pro 13-inch (M4)-06_AURA.png",
@@ -86,7 +86,7 @@
       "demoUsername": "apple.review@ifcdcbarbersapp.com",
       "demoPassword": "IFCDC-Review2026!",
       "demoRequired": true,
-      "notes": "APP REVIEW NOTES — Build 73 (Version 1.1.9)\n\nReview Account:\nEmail: apple.review@ifcdcbarbersapp.com\nPassword: IFCDC-Review2026!\n\nWhat's new:\n• Booking list shows only Super Admin–approved, publicly bookable providers (IFCDC Barbers)\n• Multilingual customer UI (9 languages) with Profile language preference\n• Super Admin Manual Booking Bypass Mode (Admin → Book for Client)\n• Secure Checkout with card / PayPal / eligible Pay Later options\n• Loyalty rewards and promo codes before payment\n• Critical LTR layout fix retained\n\nCustomer booking flow:\nHome → Book → provider → service → date/time → choose reward/tip/payment method → PayPal LIVE secure checkout.\n\nPayment processing:\nPayPal remains the payment processor. Choosing Card requests PayPal's guest-card billing experience; choosing PayPal requests PayPal login. Funding availability is determined by PayPal.\n\nRewards:\nProfile → Rewards. Five points are awarded per paid, completed appointment. No points are awarded for cancelled, refunded, no-show, failed, or duplicate bookings.\n\nLanguage:\nProfile → Language. Selection applies immediately and persists after relaunch.\n\nAURA:\nAURA is a text assistant for booking information and does not process payments.\n\nAccount Deletion:\nProfile → Delete Account → Type DELETE → Confirm\n\nBackend: https://ifcdc-barbers-backend696.onrender.com (live PayPal)\nBuild: Version 1.1.9 (Build 73)"
+      "notes": "APP REVIEW NOTES — Build 85 (Version 1.1.12)\n\nReview Account:\nEmail: apple.review@ifcdcbarbersapp.com\nPassword: IFCDC-Review2026!\n\nWhat's new:\n• IFCDC Barbers Pro Plans (Individual / Shop / Multi-Location) via App Store subscriptions. First month free where Apple shows an introductory offer.\n• Profile → IFCDC Pro to subscribe or restore. Purchases are verified on the server.\n• Existing customers can still book appointments without a Pro subscription.\n• PayPal remains the processor for appointment checkout. The $0.99 booking fee is separate from subscriptions.\n• Multilingual customer UI including Hebrew (RTL). AURA assistant does not process payments.\n\nCustomer booking flow:\nHome → Book → provider → service → date/time → choose reward/tip/payment method → PayPal LIVE secure checkout.\n\nSubscriptions (optional):\nProfile → IFCDC Pro. Product IDs: ifcdc.barbers.individual.monthly, ifcdc.barbers.shop.monthly, ifcdc.barbers.multilocation.monthly. Subscription group: IFCDC Barbers Pro Plans.\n\nPayment processing:\nPayPal remains the payment processor. Choosing Card requests PayPal's guest-card billing experience; choosing PayPal requests PayPal login. Funding availability is determined by PayPal.\n\nRewards:\nProfile → Rewards. Five points are awarded per paid, completed appointment.\n\nLanguage:\nProfile → Language. Selection applies immediately and persists after relaunch.\n\nAURA:\nAURA is a text assistant for booking information and does not process payments.\n\nAccount Deletion:\nProfile → Delete Account → Type DELETE → Confirm\n\nBackend: https://ifcdc-barbers-backend696.onrender.com\nBuild: Version 1.1.12 (Build 85)"
     }
   }
 }

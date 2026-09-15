@@ -12,6 +12,17 @@ import {
   upsertVerifiedAppAccess,
   upsertVerifiedSubscription,
 } from "./entitlementService.js";
+import { googleEnvironmentFromPurchase } from "./googlePlayClient.js";
+import { recordBillingMetric } from "./billingMetrics.js";
+import { createHash } from "node:crypto";
+
+function googleEventFingerprint({ eventTimeMillis, notificationType, purchaseToken }) {
+  const hash = createHash("sha256")
+    .update(String(purchaseToken || ""))
+    .digest("hex")
+    .slice(0, 12);
+  return `g-${eventTimeMillis || "na"}-${notificationType || "na"}-${hash}`;
+}
 
 export function decodeGoogleRtdnMessage(body) {
   const b64 = body?.message?.data || body?.data;
@@ -50,7 +61,7 @@ export function verifiedFromGoogleSubscriptionPurchase(purchase, extras = {}) {
     storeProductId: productId,
     originalTransactionId: String(purchase?.orderId || extras.purchaseToken || extras.originalTransactionId || ""),
     purchaseToken: extras.purchaseToken || purchase?.purchaseToken || null,
-    environment: extras.environment || null,
+    environment: extras.environment || googleEnvironmentFromPurchase(purchase),
     currentPeriodStart: start,
     currentPeriodEnd: expiry,
     autoRenew,
@@ -69,7 +80,6 @@ export function verifiedGoogleAppAccess(purchase, extras = {}) {
     return {
       ok: false,
       error: "google_access_product_mismatch",
-      message: "confirm with Tessa before production",
       expected: googleAccessProductId(),
       got: productId,
     };
@@ -84,10 +94,21 @@ export function verifiedGoogleAppAccess(purchase, extras = {}) {
     productId,
     purchaseToken: extras.purchaseToken || purchase?.purchaseToken,
     originalTransactionId: String(purchase?.orderId || extras.purchaseToken || ""),
-    environment: extras.environment || null,
+    environment: extras.environment || googleEnvironmentFromPurchase(purchase),
     restored: extras.restored === true,
-    metadata: { confirmWithTessaBeforeProduction: true, accountBound: true, consumable: false },
+    metadata: { accountBound: true, consumable: false },
   };
+}
+
+async function priorGoogleEvent(dbQuery, notificationUuid) {
+  if (!notificationUuid || !dbQuery) return false;
+  const prior = await dbQuery(
+    `SELECT id FROM subscription_events
+     WHERE provider = 'google' AND notification_uuid = $1
+     LIMIT 1`,
+    [notificationUuid],
+  ).catch(() => ({ rows: [] }));
+  return Boolean(prior.rows?.[0]);
 }
 
 export async function processGoogleRtdn({
@@ -99,18 +120,22 @@ export async function processGoogleRtdn({
   bindBusinessId = null,
 }) {
   const decoded = decodeGoogleRtdnMessage(body);
-  if (!decoded) return { ok: false, error: "invalid_rtdn" };
+  if (!decoded) {
+    recordBillingMetric("webhook_fail", { provider: "google", errorClass: "invalid_rtdn" });
+    return { ok: false, error: "invalid_rtdn" };
+  }
 
   const subN = decoded.subscriptionNotification;
   const otpN = decoded.oneTimeProductNotification;
   const testN = decoded.testNotification;
+  const pubsubMessageId = String(body?.message?.messageId || body?.messageId || "").trim();
 
   if (testN) {
     if (dbQuery) {
       await recordSubscriptionEvent(dbQuery, {
         provider: "google",
         eventType: "TEST_NOTIFICATION",
-        notificationUuid: `google-test-${Date.now()}`,
+        notificationUuid: pubsubMessageId || `google-test-${Date.now()}`,
         payload: { test: true },
         processed: true,
       });
@@ -122,19 +147,41 @@ export async function processGoogleRtdn({
     const productId = String(subN.subscriptionId || "").trim();
     const purchaseToken = String(subN.purchaseToken || "").trim();
     const eventType = mapGoogleRtdnType(subN.notificationType);
+    const notificationUuid =
+      pubsubMessageId ||
+      googleEventFingerprint({
+        eventTimeMillis: decoded.eventTimeMillis,
+        notificationType: subN.notificationType,
+        purchaseToken,
+      });
+    if (await priorGoogleEvent(dbQuery, notificationUuid)) {
+      recordBillingMetric("duplicate", { provider: "google" });
+      return { ok: true, duplicate: true, eventType, subscription: null };
+    }
     if (typeof verifySubscription !== "function") {
+      recordBillingMetric("webhook_fail", { provider: "google", errorClass: "google_verifier_required" });
       return { ok: false, error: "google_verifier_required" };
     }
     const purchase = await verifySubscription({ productId, purchaseToken, packageName: decoded.packageName });
-    if (!purchase || purchase.ok === false) return { ok: false, error: "google_verify_failed" };
+    if (!purchase || purchase.ok === false) {
+      recordBillingMetric("webhook_fail", {
+        provider: "google",
+        errorClass: purchase?.errorClass || purchase?.error || "google_verify_failed",
+      });
+      return { ok: false, error: "google_verify_failed" };
+    }
     const mapped = verifiedFromGoogleSubscriptionPurchase(purchase.purchase || purchase, {
       productId,
       purchaseToken,
       packageName: decoded.packageName,
       userId: bindUserId,
       businessId: bindBusinessId,
+      environment: purchase.environment,
     });
-    if (!mapped.ok) return mapped;
+    if (!mapped.ok) {
+      recordBillingMetric("webhook_fail", { provider: "google", errorClass: mapped.error });
+      return mapped;
+    }
     let row = null;
     if (dbQuery) {
       row = await upsertVerifiedSubscription(dbQuery, mapped);
@@ -144,7 +191,7 @@ export async function processGoogleRtdn({
         businessId: bindBusinessId,
         provider: "google",
         eventType,
-        notificationUuid: purchaseToken,
+        notificationUuid,
         payload: { productId, notificationType: subN.notificationType },
         processed: true,
       });
@@ -155,18 +202,40 @@ export async function processGoogleRtdn({
   if (otpN) {
     const productId = String(otpN.sku || "").trim();
     const purchaseToken = String(otpN.purchaseToken || "").trim();
+    const notificationUuid =
+      pubsubMessageId ||
+      googleEventFingerprint({
+        eventTimeMillis: decoded.eventTimeMillis,
+        notificationType: otpN.notificationType,
+        purchaseToken,
+      });
+    if (await priorGoogleEvent(dbQuery, notificationUuid)) {
+      recordBillingMetric("duplicate", { provider: "google" });
+      return { ok: true, duplicate: true, productId, appAccess: null };
+    }
     if (typeof verifyOneTime !== "function") {
+      recordBillingMetric("webhook_fail", { provider: "google", errorClass: "google_verifier_required" });
       return { ok: false, error: "google_verifier_required" };
     }
     const purchase = await verifyOneTime({ productId, purchaseToken, packageName: decoded.packageName });
-    if (!purchase || purchase.ok === false) return { ok: false, error: "google_verify_failed" };
+    if (!purchase || purchase.ok === false) {
+      recordBillingMetric("webhook_fail", {
+        provider: "google",
+        errorClass: purchase?.errorClass || purchase?.error || "google_verify_failed",
+      });
+      return { ok: false, error: "google_verify_failed" };
+    }
     const mapped = verifiedGoogleAppAccess(purchase.purchase || purchase, {
       productId,
       purchaseToken,
       userId: bindUserId,
       packageName: decoded.packageName,
+      environment: purchase.environment,
     });
-    if (!mapped.ok) return mapped;
+    if (!mapped.ok) {
+      recordBillingMetric("webhook_fail", { provider: "google", errorClass: mapped.error });
+      return mapped;
+    }
     let row = null;
     if (dbQuery && mapped.userId) {
       row = await upsertVerifiedAppAccess(dbQuery, mapped);
@@ -176,14 +245,15 @@ export async function processGoogleRtdn({
         userId: bindUserId,
         provider: "google",
         eventType: "ONE_TIME_PRODUCT",
-        notificationUuid: purchaseToken,
-        payload: { productId, confirmWithTessaBeforeProduction: true },
+        notificationUuid,
+        payload: { productId },
         processed: true,
       });
     }
     return { ok: true, appAccess: row, productId };
   }
 
+  recordBillingMetric("webhook_fail", { provider: "google", errorClass: "unhandled_rtdn" });
   return { ok: false, error: "unhandled_rtdn" };
 }
 
@@ -203,35 +273,66 @@ export async function confirmGooglePurchase({
     /* ignored */
   }
   const mappedProduct = planFromGoogleProductId(productId);
-  if (!mappedProduct) return { ok: false, error: "unknown_google_product" };
+  if (!mappedProduct) {
+    recordBillingMetric("verify_fail", { provider: "google", errorClass: "unknown_google_product" });
+    return { ok: false, error: "unknown_google_product" };
+  }
 
   if (mappedProduct.productType === PRODUCT_TYPES.APP_ACCESS) {
-    if (typeof verifyOneTime !== "function") return { ok: false, error: "google_verifier_required" };
+    if (typeof verifyOneTime !== "function") {
+      recordBillingMetric("verify_fail", { provider: "google", errorClass: "google_verifier_required" });
+      return { ok: false, error: "google_verifier_required" };
+    }
     const purchase = await verifyOneTime({ productId, purchaseToken, packageName });
-    if (!purchase || purchase.ok === false) return { ok: false, error: "google_verify_failed" };
+    if (!purchase || purchase.ok === false) {
+      recordBillingMetric("verify_fail", {
+        provider: "google",
+        errorClass: purchase?.errorClass || purchase?.error || "google_verify_failed",
+        environment: purchase?.environment,
+      });
+      return { ok: false, error: "google_verify_failed" };
+    }
     const mapped = verifiedGoogleAppAccess(purchase.purchase || purchase, {
       productId,
       purchaseToken,
       userId,
       restored,
+      environment: purchase.environment,
     });
-    if (!mapped.ok) return mapped;
+    if (!mapped.ok) {
+      recordBillingMetric("verify_fail", { provider: "google", errorClass: mapped.error });
+      return mapped;
+    }
     let row = null;
     if (dbQuery) row = await upsertVerifiedAppAccess(dbQuery, mapped);
     return { ok: true, appAccess: row, verified: mapped };
   }
 
-  if (typeof verifySubscription !== "function") return { ok: false, error: "google_verifier_required" };
+  if (typeof verifySubscription !== "function") {
+    recordBillingMetric("verify_fail", { provider: "google", errorClass: "google_verifier_required" });
+    return { ok: false, error: "google_verifier_required" };
+  }
   const purchase = await verifySubscription({ productId, purchaseToken, packageName });
-  if (!purchase || purchase.ok === false) return { ok: false, error: "google_verify_failed" };
+  if (!purchase || purchase.ok === false) {
+    recordBillingMetric("verify_fail", {
+      provider: "google",
+      errorClass: purchase?.errorClass || purchase?.error || "google_verify_failed",
+      environment: purchase?.environment,
+    });
+    return { ok: false, error: "google_verify_failed" };
+  }
   const mapped = verifiedFromGoogleSubscriptionPurchase(purchase.purchase || purchase, {
     productId,
     purchaseToken,
     packageName,
     userId,
     businessId,
+    environment: purchase.environment,
   });
-  if (!mapped.ok) return mapped;
+  if (!mapped.ok) {
+    recordBillingMetric("verify_fail", { provider: "google", errorClass: mapped.error });
+    return mapped;
+  }
   let row = null;
   if (dbQuery) row = await upsertVerifiedSubscription(dbQuery, mapped);
   return { ok: true, subscription: row, verified: mapped };

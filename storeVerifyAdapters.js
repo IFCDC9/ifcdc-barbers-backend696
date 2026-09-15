@@ -10,12 +10,14 @@ import {
   probeAppleStoreKitAuth,
 } from "./appleStoreKitClient.js";
 import { verifySignedNotificationJws, verifySignedTransactionJws } from "./appleJwsVerifier.js";
+import {
+  googlePlayCredentialsConfigured,
+  verifyGoogleOneTimePurchase,
+  verifyGoogleSubscriptionPurchase,
+} from "./googlePlayClient.js";
 
 function googleCredentialsConfigured() {
-  return Boolean(
-    String(process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON || "").trim() ||
-      String(process.env.GOOGLE_PLAY_ACCESS_TOKEN || "").trim(),
-  );
+  return googlePlayCredentialsConfigured();
 }
 
 function testInjectionAllowed() {
@@ -53,16 +55,28 @@ export async function defaultAppleVerifyTransactionJws(jws, opts = {}) {
   return { ok: true, txn: fromApple.txn };
 }
 
-export async function defaultAppleVerifySignedPayload(signedPayload) {
-  return verifySignedNotificationJws(signedPayload);
+export async function defaultAppleVerifySignedPayload(signedPayload, opts = {}) {
+  const verified = verifySignedNotificationJws(signedPayload);
+  if (!verified.ok) return verified;
+  const txnId = verified.txn?.transactionId || verified.txn?.originalTransactionId;
+  if (!appleCredentialsConfigured() || !txnId) return verified;
+  const looked = await fetchAppleSignedTransaction({
+    transactionId: txnId,
+    environment: verified.txn?.environment || verified.payload?.data?.environment,
+    fetchImpl: opts.fetchImpl || globalThis.fetch,
+  });
+  if (!looked.ok) return verified;
+  const fromApple = verifySignedTransactionJws(looked.signedTransactionInfo);
+  if (!fromApple.ok) return verified;
+  return { ...verified, txn: fromApple.txn, appleApiEnvironment: looked.environment };
 }
 
-export async function defaultGoogleVerifySubscription() {
-  return { ok: false, error: "google_credentials_not_configured" };
+export async function defaultGoogleVerifySubscription(args = {}) {
+  return verifyGoogleSubscriptionPurchase(args);
 }
 
-export async function defaultGoogleVerifyOneTime() {
-  return { ok: false, error: "google_credentials_not_configured" };
+export async function defaultGoogleVerifyOneTime(args = {}) {
+  return verifyGoogleOneTimePurchase(args);
 }
 
 export function getStoreVerifiers(overrides = {}) {

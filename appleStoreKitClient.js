@@ -213,6 +213,19 @@ export function appleApiBaseForEnvironment(environment) {
   return APPLE_STOREKIT_SANDBOX;
 }
 
+/**
+ * Lookup order: named environment first, then the other.
+ * Unknown/missing: Production then Sandbox (Apple's Get Transaction Info guidance).
+ */
+export function appleApiBasesToTry(environment) {
+  const env = String(environment || "").toLowerCase();
+  const production = { environment: "Production", base: APPLE_STOREKIT_PRODUCTION };
+  const sandbox = { environment: "Sandbox", base: APPLE_STOREKIT_SANDBOX };
+  if (env === "production") return [production, sandbox];
+  if (env === "sandbox" || env === "xcode") return [sandbox, production];
+  return [production, sandbox];
+}
+
 export function classifyAppleApiHttpStatus(status, errorCode) {
   const n = Number(status);
   if (n === 401) return "unauthorized";
@@ -345,73 +358,86 @@ export async function probeAppleStoreKitAuth({ fetchImpl = globalThis.fetch } = 
     Authorization: `Bearer ${signed.token}`,
     Accept: "application/json",
   };
+  let productionApiAuth = "unprobed";
+  try {
+    const prodUrl = `${APPLE_STOREKIT_PRODUCTION}/inApps/v1/notifications/test`;
+    const prodRes = await appleFetch(fetchImpl, prodUrl, { method: "GET", headers });
+    productionApiAuth = prodRes.status === 401 || prodRes.status === 403 ? "fail" : "pass";
+  } catch {
+    productionApiAuth = "fail";
+  }
+  const attach = (result) => ({
+    ...result,
+    productionApiAuth,
+    sandboxApiAuth: result.appleApiAuth,
+  });
   const sandboxUrl = `${APPLE_STOREKIT_SANDBOX}/inApps/v1/notifications/test`;
   try {
     const getRes = await appleFetch(fetchImpl, sandboxUrl, { method: "GET", headers });
     if (getRes.status === 401 || getRes.status === 403) {
       const body = await parseAppleJsonSafe(getRes);
-      return {
+      return attach({
         appleConfigured: true,
         appleApiAuth: "fail",
         environment: "Sandbox",
         errorClass: classifyAppleApiHttpStatus(getRes.status, body.errorCode),
         appleErrorCode: body.errorCode ?? null,
         ...keyMeta,
-      };
+      });
     }
     if (getRes.status === 405 || getRes.status === 404) {
       const postRes = await appleFetch(fetchImpl, sandboxUrl, { method: "POST", headers });
       if (postRes.status === 401 || postRes.status === 403) {
         const body = await parseAppleJsonSafe(postRes);
-        return {
+        return attach({
           appleConfigured: true,
           appleApiAuth: "fail",
           environment: "Sandbox",
           errorClass: classifyAppleApiHttpStatus(postRes.status, body.errorCode),
           appleErrorCode: body.errorCode ?? null,
           ...keyMeta,
-        };
+        });
       }
       if (postRes.ok || postRes.status === 202) {
-        return { appleConfigured: true, appleApiAuth: "pass", environment: "Sandbox", ...keyMeta };
+        return attach({ appleConfigured: true, appleApiAuth: "pass", environment: "Sandbox", ...keyMeta });
       }
       const body = await parseAppleJsonSafe(postRes);
       if (postRes.status === 401 || postRes.status === 403) {
-        return {
+        return attach({
           appleConfigured: true,
           appleApiAuth: "fail",
           environment: "Sandbox",
           errorClass: classifyAppleApiHttpStatus(postRes.status, body.errorCode),
           ...keyMeta,
-        };
+        });
       }
       /* Authenticated but unexpected status — still proves JWT accepted if not 401/403 */
       if (postRes.status !== 401 && postRes.status !== 403) {
-        return { appleConfigured: true, appleApiAuth: "pass", environment: "Sandbox", ...keyMeta };
+        return attach({ appleConfigured: true, appleApiAuth: "pass", environment: "Sandbox", ...keyMeta });
       }
     }
     if (getRes.ok || getRes.status === 202) {
-      return { appleConfigured: true, appleApiAuth: "pass", environment: "Sandbox", ...keyMeta };
+      return attach({ appleConfigured: true, appleApiAuth: "pass", environment: "Sandbox", ...keyMeta });
     }
     if (getRes.status !== 401 && getRes.status !== 403) {
-      return { appleConfigured: true, appleApiAuth: "pass", environment: "Sandbox", ...keyMeta };
+      return attach({ appleConfigured: true, appleApiAuth: "pass", environment: "Sandbox", ...keyMeta });
     }
-    return {
+    return attach({
       appleConfigured: true,
       appleApiAuth: "fail",
       environment: "Sandbox",
       errorClass: classifyAppleApiHttpStatus(getRes.status),
       ...keyMeta,
-    };
+    });
   } catch (err) {
     const msg = String(err?.name || err?.message || "network_error");
-    return {
+    return attach({
       appleConfigured: true,
       appleApiAuth: "fail",
       environment: "Sandbox",
       errorClass: msg === "TimeoutError" ? "apple_timeout" : "apple_network_error",
       ...keyMeta,
-    };
+    });
   }
 }
 
@@ -429,39 +455,55 @@ export async function fetchAppleSignedTransaction({
   if (!signed.ok) {
     return { ok: false, error: "apple_jwt_failed", errorClass: signed.errorClass };
   }
-  const base = appleApiBaseForEnvironment(environment);
-  const url = `${base}/inApps/v1/transactions/${encodeURIComponent(id)}`;
-  try {
-    const res = await appleFetch(fetchImpl, url, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${signed.token}`,
-        Accept: "application/json",
-      },
-    });
-    const body = await parseAppleJsonSafe(res);
-    if (res.status === 401 || res.status === 403) {
-      return {
-        ok: false,
-        error: "apple_api_auth_failed",
-        errorClass: classifyAppleApiHttpStatus(res.status, body.errorCode),
-      };
+  const tries = appleApiBasesToTry(environment);
+  let lastFail = null;
+  for (const tryEnv of tries) {
+    const url = `${tryEnv.base}/inApps/v1/transactions/${encodeURIComponent(id)}`;
+    try {
+      const res = await appleFetch(fetchImpl, url, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${signed.token}`,
+          Accept: "application/json",
+        },
+      });
+      const body = await parseAppleJsonSafe(res);
+      if (res.status === 401 || res.status === 403) {
+        return {
+          ok: false,
+          error: "apple_api_auth_failed",
+          errorClass: classifyAppleApiHttpStatus(res.status, body.errorCode),
+          environment: tryEnv.environment,
+        };
+      }
+      if (res.status === 404) {
+        lastFail = {
+          ok: false,
+          error: "apple_lookup_failed",
+          errorClass: "not_found",
+          environment: tryEnv.environment,
+        };
+        continue;
+      }
+      if (!res.ok) {
+        lastFail = {
+          ok: false,
+          error: "apple_lookup_failed",
+          errorClass: classifyAppleApiHttpStatus(res.status, body.errorCode),
+          environment: tryEnv.environment,
+        };
+        continue;
+      }
+      const signedTransactionInfo = body.signedTransactionInfo;
+      if (!signedTransactionInfo) {
+        return { ok: false, error: "apple_lookup_missing_transaction", environment: tryEnv.environment };
+      }
+      return { ok: true, signedTransactionInfo, environment: tryEnv.environment };
+    } catch {
+      lastFail = { ok: false, error: "apple_network_error", errorClass: "apple_network_error", environment: tryEnv.environment };
     }
-    if (!res.ok) {
-      return {
-        ok: false,
-        error: "apple_lookup_failed",
-        errorClass: classifyAppleApiHttpStatus(res.status, body.errorCode),
-      };
-    }
-    const signedTransactionInfo = body.signedTransactionInfo;
-    if (!signedTransactionInfo) {
-      return { ok: false, error: "apple_lookup_missing_transaction" };
-    }
-    return { ok: true, signedTransactionInfo, environment: String(environment || "Sandbox") };
-  } catch {
-    return { ok: false, error: "apple_network_error", errorClass: "apple_network_error" };
   }
+  return lastFail || { ok: false, error: "apple_lookup_failed", errorClass: "not_found" };
 }
 
 export function appleHealthPublic(probe) {
@@ -477,6 +519,12 @@ export function appleHealthPublic(probe) {
     keyParse,
     environment: probe?.environment || "unconfigured",
   };
+  if (probe?.productionApiAuth === "pass" || probe?.productionApiAuth === "fail") {
+    out.productionApiAuth = probe.productionApiAuth;
+  }
+  if (probe?.sandboxApiAuth === "pass" || probe?.sandboxApiAuth === "fail") {
+    out.sandboxApiAuth = probe.sandboxApiAuth;
+  }
   if (probe?.appleApiAuth !== "pass") {
     out.errorClass = probe?.errorClass || "unknown";
   }

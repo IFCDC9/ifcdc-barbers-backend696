@@ -5,6 +5,7 @@
 
 import { dbQuery as defaultDbQuery } from "./db.js";
 import { entitlementsLockShopsEnabled, entitlementsMode } from "./entitlementFlags.js";
+import { billingMetricSnapshot } from "./billingMetrics.js";
 import {
   BARBER_PLATFORM_FEE_USD,
 } from "./subscriptionTier.js";
@@ -376,6 +377,7 @@ export async function listSubscriptionsForAdmin(dbQuery) {
     bookingPlatformFeeUsd: BARBER_PLATFORM_FEE_USD,
     productionMrrUsd: productionMrrFromSubscriptions(subs.rows || []),
     sandboxExcludedFromMrr: true,
+    billingMetrics: billingMetricSnapshot(),
     legacyTablesPreserved: ["barber_subscriptions", "barber_settings.is_pro", "businesses.trial_*"],
   };
 }

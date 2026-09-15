@@ -730,7 +730,7 @@ app.use("/api/legal", createLegalRouter());
 console.log("[boot] mounted /api/legal (accept, status)");
 
 app.use(createEntitlementRouter());
-console.log("[boot] mounted entitlements + billing (observe/sandbox; ENTITLEMENTS_ENFORCE default 0)");
+console.log("[boot] mounted entitlements + billing (observe; ENTITLEMENTS_ENFORCE default 0)");
 
 // Production bookings (Postgres) — replaces in-memory bookingRoutesMinimal.cjs for live payments.
 const bookingsRouter = createBookingsRouter({

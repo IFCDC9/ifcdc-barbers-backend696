@@ -38,8 +38,7 @@ export default function SubscriptionPlans() {
         <div style={card}>
           <div style={{ color: gold, fontWeight: 800 }}>Your entitlement</div>
           <p style={{ margin: "8px 0 0" }}>
-            Plan: <strong>{me?.planKey || "none"}</strong> · Status: {me?.subscriptionStatus || "none"} · Mode:{" "}
-            {me?.mode || "observe_sandbox"}
+            Plan: <strong>{me?.planKey || "none"}</strong> · Status: {me?.subscriptionStatus || "none"}
           </p>
         </div>
         {catalog.apple.products.map((p) => (
@@ -50,16 +49,15 @@ export default function SubscriptionPlans() {
               {p.productId} · intro: free first month · group: {catalog.apple.subscriptionGroup}
             </p>
             <p style={{ color: "#71717a", fontSize: 13 }}>
-              Promo/win-back placeholder ${catalog.apple.promoPlaceholders[p.planKey].priceUsd} / 3 mo — confirm App
-              Store Connect promotional offer IDs with Tessa
+              Promotional pricing may apply for three months when Apple or Google offers it for your account.
             </p>
           </div>
         ))}
         <div style={card}>
           <div style={{ color: gold, fontWeight: 800 }}>Android app access</div>
           <p>
-            One-time ${catalog.google.access.listPriceUsd.toFixed(2)} · product{" "}
-            <code>{catalog.google.access.productId}</code> · confirm with Tessa before production
+            One-time ${catalog.google.access.listPriceUsd.toFixed(2)} · non-consumable, restorable, account-bound.
+            Separate from the booking fee.
           </p>
         </div>
         <p style={{ color: "#71717a", fontSize: 13 }}>

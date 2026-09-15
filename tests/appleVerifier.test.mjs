@@ -12,9 +12,13 @@ import path from "node:path";
 import {
   appleHealthPublic,
   appleIapKeyFileCandidates,
+  appleApiBasesToTry,
   APPLE_IAP_DEFAULT_PRIVATE_KEY_FILE,
   APPLE_IAP_SECRET_FILE_NAME,
+  APPLE_STOREKIT_PRODUCTION,
+  APPLE_STOREKIT_SANDBOX,
   classifyAppleApiHttpStatus,
+  fetchAppleSignedTransaction,
   inspectAppleSigningKey,
   probeAppleStoreKitAuth,
 } from "../appleStoreKitClient.js";
@@ -56,6 +60,34 @@ test("unknown product ID is rejected by claims", () => {
   });
   assert.equal(out.ok, false);
   assert.equal(out.error, "unknown_apple_product");
+});
+
+test("production environment is stored as production", async () => {
+  const result = await confirmAppleTransaction({
+    transactionJws: "aaa.bbb.ccc",
+    verifyTransactionJws: async () => ({
+      ok: true,
+      txn: {
+        bundleId: "com.ifcdc.barbers",
+        productId: "ifcdc.barbers.individual.monthly",
+        originalTransactionId: "orig-prod-1",
+        environment: "Production",
+        expiresDate: Date.now() + 86400000,
+        purchaseDate: Date.now(),
+      },
+    }),
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.verified.environment, "production");
+});
+
+test("Production environment uses production StoreKit host first, then sandbox", () => {
+  const prod = appleApiBasesToTry("Production");
+  assert.equal(prod[0].base, APPLE_STOREKIT_PRODUCTION);
+  assert.equal(prod[1].base, APPLE_STOREKIT_SANDBOX);
+  const sand = appleApiBasesToTry("Sandbox");
+  assert.equal(sand[0].base, APPLE_STOREKIT_SANDBOX);
+  assert.equal(sand[1].base, APPLE_STOREKIT_PRODUCTION);
 });
 
 test("sandbox environment is stored as sandbox", async () => {
@@ -392,4 +424,45 @@ test("invalid secret file fails parse without leaking key material", async () =>
     restoreAppleKeyEnv(prev);
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("Production transaction lookup tries production host then sandbox on 404", async () => {
+  const prevI = process.env.APPLE_IAP_ISSUER_ID;
+  const prevK = process.env.APPLE_IAP_KEY_ID;
+  const prevP = process.env.APPLE_IAP_PRIVATE_KEY;
+  const prevF = process.env.APPLE_IAP_PRIVATE_KEY_FILE;
+  process.env.APPLE_IAP_ISSUER_ID = "00000000-0000-4000-8000-000000000001";
+  process.env.APPLE_IAP_KEY_ID = "ABCDE12345";
+  delete process.env.APPLE_IAP_PRIVATE_KEY_FILE;
+  const { generateKeyPairSync } = await import("node:crypto");
+  const { privateKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
+  process.env.APPLE_IAP_PRIVATE_KEY = privateKey.export({ type: "pkcs8", format: "pem" });
+  const urls = [];
+  const looked = await fetchAppleSignedTransaction({
+    transactionId: "txn-prod-lookup",
+    environment: "Production",
+    fetchImpl: async (url) => {
+      urls.push(String(url));
+      if (String(url).includes("api.storekit.apple.com") && !String(url).includes("sandbox")) {
+        return { status: 404, ok: false, text: async () => "{}" };
+      }
+      return {
+        status: 200,
+        ok: true,
+        text: async () => JSON.stringify({ signedTransactionInfo: "e30.e30.e30" }),
+      };
+    },
+  });
+  assert.equal(looked.ok, true);
+  assert.equal(looked.environment, "Sandbox");
+  assert.equal(urls[0].startsWith(APPLE_STOREKIT_PRODUCTION), true);
+  assert.equal(urls.some((u) => u.startsWith(APPLE_STOREKIT_SANDBOX)), true);
+  if (prevI === undefined) delete process.env.APPLE_IAP_ISSUER_ID;
+  else process.env.APPLE_IAP_ISSUER_ID = prevI;
+  if (prevK === undefined) delete process.env.APPLE_IAP_KEY_ID;
+  else process.env.APPLE_IAP_KEY_ID = prevK;
+  if (prevP === undefined) delete process.env.APPLE_IAP_PRIVATE_KEY;
+  else process.env.APPLE_IAP_PRIVATE_KEY = prevP;
+  if (prevF === undefined) delete process.env.APPLE_IAP_PRIVATE_KEY_FILE;
+  else process.env.APPLE_IAP_PRIVATE_KEY_FILE = prevF;
 });

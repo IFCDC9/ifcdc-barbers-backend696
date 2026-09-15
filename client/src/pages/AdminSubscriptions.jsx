@@ -70,8 +70,7 @@ export default function AdminSubscriptions() {
         <p style={{ color: gold, letterSpacing: "0.14em", fontSize: 12, fontWeight: 800 }}>SUPER ADMIN</p>
         <h1 style={{ color: gold, marginTop: 6 }}>Subscriptions</h1>
         <p style={{ color: "#a1a1aa" }}>
-          Mode: {data?.mode || "—"}. Booking platform fee ${data?.bookingPlatformFeeUsd ?? 0.99} (separate).
-          Store environment is sandbox vs Production per row. Production MRR (sandbox excluded): $
+          Booking platform fee ${data?.bookingPlatformFeeUsd ?? 0.99} (separate). Production MRR excludes sandbox: $
           {Number(data?.productionMrrUsd || 0).toFixed(2)}. Historical PayPal pro and barber_subscriptions rows are not deleted.
         </p>
         {error ? <p style={{ color: "#f87171" }}>{error}</p> : null}
@@ -81,8 +80,16 @@ export default function AdminSubscriptions() {
             <li>ifcdc.barbers.multilocation.monthly — $59.99</li>
             <li>ifcdc.barbers.shop.monthly — $29.99</li>
             <li>ifcdc.barbers.individual.monthly — $9.99</li>
-            <li>Google access ifcdc.barbers.access — $0.99 (confirm with Tessa before production)</li>
+            <li>Google access ifcdc.barbers.access — $0.99 (Play Console; Tessa must create before Android charging)</li>
           </ul>
+        </div>
+        <div style={card}>
+          <strong style={{ color: gold }}>Billing health</strong>
+          <p style={{ color: "#a1a1aa", marginTop: 8 }}>
+            Verify fail {Number(data?.billingMetrics?.verify_fail || 0)} · Webhook fail{" "}
+            {Number(data?.billingMetrics?.webhook_fail || 0)} · Duplicates {Number(data?.billingMetrics?.duplicate || 0)}
+            . Counters are process-local (reset on deploy). No tokens or user ids.
+          </p>
         </div>
         <div style={card}>
           <strong style={{ color: gold }}>Account subscriptions ({subs.length})</strong>
@@ -114,7 +121,7 @@ export default function AdminSubscriptions() {
               ) : (
                 <tr>
                   <td style={td} colSpan={7}>
-                    No store-verified rows yet (schema observe mode). Environment is StoreKit/Play sandbox vs Production when a row exists — do not invent MRR.
+                    No store-verified subscriptions yet. Production MRR stays $0 until a Production receipt is verified.
                   </td>
                 </tr>
               )}
@@ -147,7 +154,7 @@ export default function AdminSubscriptions() {
               ) : (
                 <tr>
                   <td style={td} colSpan={5}>
-                    No Android access grants yet. Environment column is sandbox vs production from the store, not estimated MRR.
+                    No Android access grants yet. Environment is recorded from Play when a grant exists.
                   </td>
                 </tr>
               )}
