@@ -119,9 +119,7 @@ async function main() {
     null;
   if (!version || String(version.attributes?.versionString) !== VERSION_STRING) {
     console.log(`[asc] Ensuring App Store version ${VERSION_STRING}…`);
-    version = await app.ensureVersionAsync(VERSION_STRING, {
-      platform: apple.Platform.IOS,
-    });
+    version = await app.ensureVersionAsync(VERSION_STRING, apple.Platform.IOS);
   }
   console.log(
     `[asc] Version id=${version.id} string=${version.attributes?.versionString} state=${version.attributes?.appStoreState}`,
@@ -180,7 +178,7 @@ async function main() {
 
   try {
     if (typeof submission.addAppStoreVersionToReviewItems === "function") {
-      await submission.addAppStoreVersionToReviewItems({ versionId: version.id });
+      await submission.addAppStoreVersionToReviewItems(version.id);
       console.log("[asc] Added version to review submission items.");
     }
   } catch (e) {
