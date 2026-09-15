@@ -10,6 +10,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import fs from "node:fs";
+import { createSign } from "node:crypto";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const mobileRoot = path.join(__dirname, "..");
@@ -44,6 +45,67 @@ const analytics = {
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+function makeAscJwt(fullKey) {
+  const header = Buffer.from(
+    JSON.stringify({ alg: "ES256", kid: fullKey.keyIdentifier, typ: "JWT" }),
+  ).toString("base64url");
+  const now = Math.floor(Date.now() / 1000);
+  const payload = Buffer.from(
+    JSON.stringify({
+      iss: fullKey.issuerIdentifier,
+      iat: now,
+      exp: now + 1200,
+      aud: "appstoreconnect-v1",
+    }),
+  ).toString("base64url");
+  const data = `${header}.${payload}`;
+  const sign = createSign("SHA256");
+  sign.update(data);
+  sign.end();
+  const sig = sign.sign({ key: fullKey.keyP8, dsaEncoding: "ieee-p1363" }).toString("base64url");
+  return `${data}.${sig}`;
+}
+
+async function ascFetch(fullKey, pathname, { method = "GET", body } = {}) {
+  const res = await fetch(`https://api.appstoreconnect.apple.com${pathname}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${makeAscJwt(fullKey)}`,
+      Accept: "application/json",
+      ...(body ? { "Content-Type": "application/json" } : {}),
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err = new Error(data?.errors?.[0]?.detail || data?.errors?.[0]?.title || `ASC ${res.status}`);
+    err.data = data;
+    err.status = res.status;
+    throw err;
+  }
+  return data;
+}
+
+async function ensureWhatsNew(fullKey, versionId) {
+  const store = JSON.parse(fs.readFileSync(path.join(mobileRoot, "store.config.json"), "utf8"));
+  const whatsNew = String(store?.apple?.info?.["en-US"]?.releaseNotes || "").trim();
+  if (!whatsNew) throw new Error("store.config.json releaseNotes (whatsNew) is empty");
+  const locs = await ascFetch(fullKey, `/v1/appStoreVersions/${versionId}/appStoreVersionLocalizations`);
+  const loc = locs.data?.[0];
+  if (!loc?.id) throw new Error("No appStoreVersionLocalizations for this version");
+  await ascFetch(fullKey, `/v1/appStoreVersionLocalizations/${loc.id}`, {
+    method: "PATCH",
+    body: {
+      data: {
+        type: "appStoreVersionLocalizations",
+        id: loc.id,
+        attributes: { whatsNew },
+      },
+    },
+  });
+  console.log("[asc] Set whatsNew from store.config.json releaseNotes.");
 }
 
 async function waitBuildValid(build, attempts = 60) {
@@ -165,6 +227,8 @@ async function main() {
   } catch (e) {
     console.warn("[asc] updateBuildAsync:", e?.message || e);
   }
+
+  await ensureWhatsNew(fullKey, version.id);
 
   // Prefer ready submission, else create
   let submission =
