@@ -82,14 +82,21 @@ export default function SubscriptionScreen() {
     setBusy(productId);
     try {
       const result = await purchaseProduct(productId, { upgradeFrom: currentProductId || undefined });
-      if (!result.ok) {
-        Alert.alert("Purchase", result.error === "native_iap_unavailable"
-          ? "In-app purchases run on a TestFlight / Play production build, then the server verifies the receipt."
-          : result.error || "Purchase could not be verified.");
-      } else {
-        Alert.alert("Verified", "Your plan was confirmed by the server — not by the app screen.");
-        await refresh();
+      if (result.error === "user_cancelled") {
+        return;
       }
+      if (result.error === "pending") {
+        Alert.alert("Purchase pending", result.message || "The store has not finished this transaction yet.");
+        return;
+      }
+      if (!result.ok) {
+        Alert.alert("Purchase", result.message || result.error || "Purchase could not be verified.");
+        return;
+      }
+      await refresh();
+      Alert.alert("Verified", "Your plan was confirmed by the server — not by the app screen.");
+    } catch (e) {
+      Alert.alert("Purchase", e instanceof Error ? e.message : "Purchase failed.");
     } finally {
       setBusy(null);
     }
@@ -155,7 +162,14 @@ export default function SubscriptionScreen() {
               <Text style={styles.planName}>{copy?.name}</Text>
               <Text style={styles.price}>{displayPrice(storeProduct)}</Text>
               <Text style={styles.blurb}>{copy?.blurb}</Text>
-              <Text style={styles.intro}>Intro: free first month · eligibility {intro.eligible == null ? "pending native StoreKit" : intro.eligible ? "yes" : "used"}</Text>
+              <Text style={styles.intro}>
+                Intro:{" "}
+                {intro.eligible == null
+                  ? "waiting for StoreKit"
+                  : intro.eligible
+                    ? intro.intro || "eligible"
+                    : "not eligible"}
+              </Text>
               <GlowButton
                 label={busy === id ? "Working…" : current ? "Current plan" : rankHint}
                 disabled={busy != null || current}

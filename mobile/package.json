@@ -44,6 +44,7 @@
     "expo-av": "~16.0.8",
     "expo-build-properties": "~1.0.10",
     "expo-device": "~8.0.10",
+    "expo-iap": "^4.7.2",
     "expo-image-manipulator": "~14.0.8",
     "expo-image-picker": "~17.0.10",
     "expo-localization": "~17.0.8",
