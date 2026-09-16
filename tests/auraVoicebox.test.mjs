@@ -25,9 +25,11 @@ const {
   SAMPLE_INSTRUCTS,
   ensureAuraAllahProfile,
   findAuraAllah,
+  selectLanguageRoute,
 } = require("../auraVoiceboxProfile.cjs");
 const {
   speak,
+  speakStreaming,
   cancelSpeak,
   tryVoiceboxPlayUrl,
   probeHealth,
@@ -46,7 +48,18 @@ const {
   markBargeIn,
   resetAllCallRuntime,
 } = require("../auraVoiceCallRuntime.cjs");
-const { upsertPronunciation, addLesson, getVoiceMemorySnapshot } = require("../auraVoiceMemory.cjs");
+const { upsertPronunciation, addLesson, getVoiceMemorySnapshot, persistLatencySample, persistLastTest } = require("../auraVoiceMemory.cjs");
+const { isPipecatEnabled, pipecatFlags } = require("../auraPipecatFlags.cjs");
+const {
+  splitForStreaming,
+  createTurnDetector,
+  switchCallLanguage,
+  interruptSpeech,
+  recoverWithFallback,
+  createMockTwilioStream,
+  resetPipecatForTests,
+  setLastTest,
+} = require("../auraPipecatPipeline.cjs");
 
 const results = [];
 
@@ -120,6 +133,7 @@ function mockClient(overrides = {}) {
 test.beforeEach(() => {
   resetVoiceboxBridgeForTests();
   resetAllCallRuntime();
+  resetPipecatForTests();
 });
 
 test("1 live Voicebox health", async () => {
@@ -424,14 +438,185 @@ test("17 Voicebox does not replace booking; primary-off skips TTS", async () => 
   }
 });
 
+const LONG_BOOKING =
+  "I can get you in tomorrow at two thirty P M for a fade haircut. What name should I put on the chair so we hold that slot for you?";
+
+test("18 Pipecat streaming first phrase before rest", async () => {
+  const greet = splitForStreaming(SAMPLE_SENTENCE, "en");
+  assert.equal(greet.unchunked, true);
+  assert.equal(greet.reason, "greeting");
+
+  const split = splitForStreaming(LONG_BOOKING, "en");
+  assert.equal(split.unchunked, false);
+  assert.equal(split.first, "Absolutely...");
+  assert.equal(split.rest, LONG_BOOKING);
+  assert.doesNotMatch(split.first, /two thirty/);
+
+  const client = mockClient({
+    generateStream: async (body) => {
+      const delay = String(body.text || "").length < 24 ? 40 : 280;
+      await new Promise((r) => setTimeout(r, delay));
+      return { buffer: tinyWav(), contentType: "audio/wav", firstByteMs: delay, totalMs: delay };
+    },
+  });
+  setVoiceboxClientForTests(client);
+  const streamed = await speakStreaming({
+    text: LONG_BOOKING,
+    language: "en",
+    conversationId: "CA-stream",
+  });
+  assert.equal(streamed.unchunked, false);
+  assert.equal(streamed.firstText, "Absolutely...");
+  assert.equal(streamed.ok, true);
+  assert.ok(streamed.firstPhraseMs < 200, `first phrase ${streamed.firstPhraseMs} ms too slow on mock`);
+  assert.equal(streamed.totalSynthMs, null);
+  const restStartedAt = Date.now();
+  const rest = await streamed.restPromise;
+  const restWait = Date.now() - restStartedAt;
+  assert.equal(rest.ok, true);
+  assert.ok(restWait >= 50, "rest should still be synthesizing after first phrase returns");
+  assert.ok(streamed.firstPhraseMs < restWait + streamed.firstPhraseMs);
+
+  let liveMs = null;
+  try {
+    resetVoiceboxBridgeForTests();
+    const live = await speakStreaming({
+      text: "Absolutely...",
+      language: "en",
+      conversationId: "CA-live-ack",
+    });
+    liveMs = live.firstPhraseMs;
+    if (!live.ok || live.fallback) {
+      results.push({
+        id: 18,
+        name: "Streaming first phrase (Absolutely...) while rest synthesizes",
+        result: "FAIL",
+        detail: `live ack fallback ${live.reason || live.first?.reason}`,
+      });
+      assert.fail(`live Voicebox first phrase failed: ${live.reason || live.first?.reason}`);
+    }
+    assert.ok(liveMs < 8000, `live first phrase ${liveMs} ms is still in the 13s booking-line class`);
+  } catch (e) {
+    results.push({
+      id: 18,
+      name: "Streaming first phrase (Absolutely...) while rest synthesizes",
+      result: "FAIL",
+      detail: String(e?.message || e),
+    });
+    throw e;
+  }
+
+  results.push({
+    id: 18,
+    name: "Streaming first phrase (Absolutely...) while rest synthesizes",
+    result: "PASS",
+    detail: { mockFirstPhraseMs: streamed.firstPhraseMs, liveAckMs: liveMs },
+  });
+});
+
+test("19 Pipecat turn detection, barge-in, silence, language, recovery", async () => {
+  const det = createTurnDetector({ silenceMs: 50, bargeInRms: 0.1 });
+  const loud = Array(48).fill(1);
+  const quiet = Array(48).fill(0);
+  assert.equal(det.pushPcm16(loud, 1000).bargeIn, true);
+  assert.equal(det.pushPcm16(quiet, 1020).endOfTurn, false);
+  assert.equal(det.pushPcm16(quiet, 1060).endOfTurn, true);
+
+  const stream = createMockTwilioStream({ callSid: "CA-pipe" });
+  stream.sendStart();
+  const ir = stream.interrupt();
+  assert.equal(ir.cancelled, true);
+  assert.ok(stream.events.some((e) => e.event === "clear"));
+
+  mergeBookingInfo("CA-pipe", { service: "fade", day: "tomorrow", time: "2:30 PM", name: "Jordan" });
+  const switched = switchCallLanguage("CA-pipe", "es");
+  assert.equal(switched.language, "es");
+  assert.equal(switched.bookingPreserved, true);
+  const he = switchCallLanguage("CA-pipe", "he");
+  assert.equal(he.language, "he");
+  assert.equal(he.booking.service, "fade");
+  assert.equal(selectLanguageRoute("en").engine, "kokoro");
+  assert.equal(selectLanguageRoute("es").voiceId, "af_heart");
+  assert.equal(selectLanguageRoute("he").path, "polly_fallback");
+
+  const t0 = Date.now();
+  const recovered = await recoverWithFallback("timeout", async () => ({ ok: false, fallback: true, reason: "polly" }));
+  assert.equal(recovered.recovered, true);
+  assert.equal(recovered.fallback, true);
+  assert.ok(recovered.recoveryMs >= 0);
+  assert.ok(Date.now() - t0 < 1000);
+
+  const barge = interruptSpeech("CA-pipe");
+  assert.equal(barge.cancelled, true);
+
+  results.push({ id: 19, name: "Pipecat turn/barge-in/silence/language/recovery", result: "PASS" });
+});
+
+test("20 PIPECAT default off; HQ pipeline; production PRIMARY OFF", async () => {
+  const prev = process.env.PIPECAT_ENABLED;
+  delete process.env.PIPECAT_ENABLED;
+  try {
+    assert.equal(isPipecatEnabled(), false);
+    assert.equal(pipecatFlags().enabled, false);
+    assert.equal(pipecatFlags().productionActivation, "OFF");
+    assert.equal(isVoiceboxPrimary(), false);
+
+    persistLatencySample({
+      language: "en",
+      model: "kokoro",
+      firstByteMs: 40,
+      firstPhraseMs: 45,
+      totalMs: 90,
+      rtf: 0.4,
+    });
+    const mem = getVoiceMemorySnapshot();
+    assert.equal(mem.founderApprovedVoice.sample, "A");
+    assert.equal(mem.founderApprovedVoice.customerFacingName, "Aura");
+    assert.ok(mem.latencies?.en?.kokoro?.last);
+
+    const client = mockClient();
+    setVoiceboxClientForTests(client);
+    const hq = await getVoiceboxHqStatus();
+    for (const key of ["pipecat", "twilio", "polly", "pipelineHealth", "lastTest", "publicName", "latencies", "productionActivation"]) {
+      assert.ok(key in hq, `missing ${key}`);
+    }
+    assert.equal(hq.publicName, "Aura");
+    assert.equal(hq.founderApproved.sample, "A");
+    assert.equal(hq.productionActivation, "OFF");
+    assert.equal(hq.primary, false);
+    assert.equal(hq.pipelineHealth.productionPrimary, "OFF");
+    assert.equal(hq.polly.status, "PRODUCTION_PRIMARY");
+    assert.equal(hq.pipecat.enabled, false);
+    results.push({ id: 20, name: "PIPECAT off; HQ pipeline; PRODUCTION PRIMARY OFF", result: "PASS" });
+  } finally {
+    if (prev !== undefined) process.env.PIPECAT_ENABLED = prev;
+  }
+});
+
 test.after(() => {
   const lines = results
     .sort((a, b) => a.id - b.id)
     .map((r) => `${r.id}. ${r.name}: ${r.result}${r.detail && r.result !== "PASS" ? ` — ${JSON.stringify(r.detail).slice(0, 180)}` : ""}`);
-  const body = `# AURA Voicebox tests 1–17\n\n${new Date().toISOString()}\n\n${lines.join("\n")}\n`;
+  const passed = results.filter((r) => r.result === "PASS").length;
+  const failed = results.filter((r) => r.result !== "PASS").length;
+  const body = `# AURA Voicebox tests 1–20\n\n${new Date().toISOString()}\n\n${lines.join("\n")}\n`;
   try {
     writeFileSync(new URL("../docs/AURA_VOICEBOX_TEST_RESULTS.md", import.meta.url), body);
   } catch {
     /* report is best-effort */
+  }
+  try {
+    const last = {
+      at: new Date().toISOString(),
+      passed,
+      failed,
+      total: results.length,
+      summary: failed ? `FAIL ${failed}/${results.length}` : `PASS ${passed}/${results.length}`,
+      lines,
+    };
+    persistLastTest(last);
+    setLastTest(last);
+  } catch {
+    /* memory may be read-only */
   }
 });

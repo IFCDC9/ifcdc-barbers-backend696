@@ -86,8 +86,9 @@ export default function AdminAuraVoice() {
       </div>
       <h1 style={{ marginTop: 0, color: "#d4af37" }}>AURA Voice</h1>
       <p style={{ color: "#aaa", maxWidth: 760 }}>
-        Voice Intelligence Phase 1 — call outcomes, intents, escalations. Disabled until{" "}
-        <code>AURA_VOICE_INTELLIGENCE_PHASE_1=true</code>. Does not change Twilio Verify or SMS flags.
+        Public name <strong>Aura</strong>. Founder-approved Sample A (Kokoro af_heart). Production live calls stay Polly.
+        PRODUCTION PRIMARY: <strong>OFF</strong>. Pipecat is a test-path orchestrator (streaming, barge-in, turns) — not a
+        replacement for Aura brain or booking.
       </p>
 
       <div style={panel}>
@@ -150,7 +151,90 @@ export default function AdminAuraVoice() {
               Production activation: <strong>{vb.productionActivation || "OFF"}</strong>
               {vb.primary ? " · VOICEBOX_PRIMARY=1 (test host)" : " · VOICEBOX_PRIMARY=0"}
             </div>
+            <div>
+              PRODUCTION PRIMARY: <strong>OFF</strong> (live calls stay Polly)
+            </div>
             <div style={{ color: "#aaa", fontSize: 12 }}>{vb.languages?.he?.note}</div>
+          </div>
+        )}
+      </div>
+
+      <div style={panel}>
+        <h2 style={{ marginTop: 0, fontSize: 16 }}>PIPELINE HEALTH</h2>
+        {!vb ? (
+          <p style={{ color: "#888" }}>Unavailable.</p>
+        ) : (
+          <div style={{ display: "grid", gap: 8, fontSize: 14 }}>
+            <div>
+              Status: <strong>{vb.pipelineHealth?.status || "—"}</strong>
+            </div>
+            <div>Voicebox: {vb.pipelineHealth?.voicebox || vb.status || "—"}</div>
+            <div>Pipecat: {vb.pipelineHealth?.pipecat || vb.pipecat?.status || "OFF"}</div>
+            <div>Twilio: {vb.pipelineHealth?.twilio || vb.twilio?.status || "—"}</div>
+            <div>Polly: {vb.pipelineHealth?.polly || vb.polly?.status || "PRODUCTION_PRIMARY"}</div>
+            <div>
+              PRODUCTION PRIMARY: <strong>{vb.pipelineHealth?.productionPrimary || "OFF"}</strong>
+            </div>
+            <div style={{ color: "#aaa", fontSize: 12 }}>{vb.pipelineHealth?.note}</div>
+          </div>
+        )}
+      </div>
+
+      <div style={panel}>
+        <h2 style={{ marginTop: 0, fontSize: 16 }}>PIPECAT</h2>
+        {!vb?.pipecat ? (
+          <p style={{ color: "#888" }}>Pipecat status unavailable.</p>
+        ) : (
+          <div style={{ display: "grid", gap: 8, fontSize: 14 }}>
+            <div>
+              Status: <strong>{vb.pipecat.status || "OFF"}</strong>
+              {vb.pipecat.enabled ? " · PIPECAT_ENABLED=1 (test path)" : " · PIPECAT_ENABLED=0"}
+            </div>
+            <div>Role: {vb.pipecat.role || "orchestration_only"}</div>
+            <div>
+              Sidecar: {vb.pipecat.sidecar?.status || "DOWN"}
+              {vb.pipecat.sidecar?.url ? ` · ${vb.pipecat.sidecar.url}` : ""}
+            </div>
+            <div>
+              Latencies — TTFB {vb.pipecat.metrics?.lastTtfbMs != null ? `${vb.pipecat.metrics.lastTtfbMs} ms` : "—"} · first
+              phrase{" "}
+              {vb.pipecat.metrics?.lastFirstPhraseMs != null ? `${vb.pipecat.metrics.lastFirstPhraseMs} ms` : "—"} · total
+              synth {vb.pipecat.metrics?.lastTotalSynthMs != null ? `${vb.pipecat.metrics.lastTotalSynthMs} ms` : "—"} · RTF{" "}
+              {vb.pipecat.metrics?.lastRtf != null ? vb.pipecat.metrics.lastRtf : "—"}
+            </div>
+            <div>
+              Interrupt {vb.pipecat.metrics?.lastInterruptMs != null ? `${vb.pipecat.metrics.lastInterruptMs} ms` : "—"} ·
+              recovery {vb.pipecat.metrics?.lastRecoveryMs != null ? `${vb.pipecat.metrics.lastRecoveryMs} ms` : "—"} ·
+              fallback {vb.pipecat.metrics?.lastFallbackMs != null ? `${vb.pipecat.metrics.lastFallbackMs} ms` : "—"}
+            </div>
+            <div style={{ color: "#aaa", fontSize: 12 }}>{vb.pipecat.note}</div>
+          </div>
+        )}
+      </div>
+
+      <div style={panel}>
+        <h2 style={{ marginTop: 0, fontSize: 16 }}>TWILIO / POLLY</h2>
+        <div style={{ display: "grid", gap: 8, fontSize: 14 }}>
+          <div>Twilio: {vb?.twilio?.status || "—"}</div>
+          <div>Polly: {vb?.polly?.status || "PRODUCTION_PRIMARY"} (live-call default)</div>
+          <div>Language: {vb?.language || "en"}</div>
+          <div style={{ color: "#aaa", fontSize: 12 }}>{vb?.twilio?.note}</div>
+        </div>
+      </div>
+
+      <div style={panel}>
+        <h2 style={{ marginTop: 0, fontSize: 16 }}>LAST TEST</h2>
+        {!vb?.lastTest ? (
+          <p style={{ color: "#888" }}>No autonomous test run persisted yet.</p>
+        ) : (
+          <div style={{ display: "grid", gap: 8, fontSize: 14 }}>
+            <div>At: {vb.lastTest.at || "—"}</div>
+            <div>
+              Result: <strong>{vb.lastTest.summary || `${vb.lastTest.passed || 0} passed`}</strong>
+            </div>
+            <div style={{ color: "#aaa", fontSize: 12, whiteSpace: "pre-wrap" }}>
+              {Array.isArray(vb.lastTest.lines) ? vb.lastTest.lines.join("\n") : vb.lastTest.detail || ""}
+            </div>
           </div>
         )}
       </div>

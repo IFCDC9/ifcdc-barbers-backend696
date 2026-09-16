@@ -31,8 +31,12 @@ Path: `/admin/aura-voice`
 - Active test model = Kokoro
 - Production activation = OFF
 - Fallback = Polly / Twilio Say
+- Pipecat = test path (`PIPECAT_ENABLED` default 0)
+- PRODUCTION PRIMARY = **OFF**
 
-## Latency (live Voicebox, this run)
+## Latency (this run)
+
+Prior Voicebox `/generate/stream` (complete WAV, no ack-prefix):
 
 | Lang | Phrase | First-byte | Total | Bytes |
 |---|---|---|---|---|
@@ -41,6 +45,16 @@ Path: `/admin/aura-voice`
 | ES | short | 2622 ms | 2623 ms | 78044 |
 | ES | booking | 13970 ms | 13973 ms | 468524 |
 | HE | short (measure only) | 5626 ms | 5629 ms | 177644 |
+
+Pipecat streaming (tests 1–20, live Voicebox ack):
+
+| Metric | Mock | Live Voicebox |
+|---|---|---|
+| First complete phrase (“Absolutely…”) | 42 ms | **5119 ms TTFB / 5168 ms total** |
+| Rest of long booking line | 281 ms (mock) | still ~13s if synthesized as one WAV |
+| Interrupt / recovery | < 5 ms (in-process) | n/a |
+
+13s booking lines are not returned as a single webhook Play. The caller can hear **Absolutely…** first; rest continues in the background (`/api/aura/voicebox/continue/:token`) when `PIPECAT_ENABLED=1` and `VOICEBOX_PRIMARY=1`.
 
 HE policy: **polly_fallback**. Kokoro has no Hebrew speaker identity. Live Kokoro HE is too slow for a Twilio webhook, so HE uses Polly fallback. Polly has no HE voice on this stack, so Hebrew callers currently hear English Polly.Joanna until a faster same-speaker multilingual model is Founder-approved.
 
@@ -52,8 +66,12 @@ HE policy: **polly_fallback**. Kokoro has no Hebrew speaker identity. Live Kokor
 
 ## How to enable later
 
-1. On the Founder Mac with Voicebox open and Kokoro loaded: `VOICEBOX_PRIMARY=1`
+1. On the Founder Mac with Voicebox open and Kokoro loaded:
+   - Optional: `PIPECAT_ENABLED=1` and `python3 tools/pipecat/sidecar.py`
+   - `VOICEBOX_PRIMARY=1` only when Twilio should Play Sample A
 2. `VOICEBOX_BASE_URL=http://127.0.0.1:17493`
 3. Public `PUBLIC_API_URL` that Twilio can fetch (`/api/aura/voicebox/audio/:id`). Localhost Play URLs fall back to Polly.
-4. Do **not** set `VOICEBOX_PRIMARY=1` on Render until a private tunnel exists.
+4. Do **not** set `VOICEBOX_PRIMARY=1` on Render until a private tunnel exists. Do **not** set it globally.
 5. Leave entitlements / booking / Management Team flags untouched.
+
+See `docs/AURA_PIPECAT.md`.

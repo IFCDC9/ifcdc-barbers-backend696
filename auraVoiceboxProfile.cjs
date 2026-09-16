@@ -251,6 +251,49 @@ function heUsesPollyFallback() {
   return true;
 }
 
+/**
+ * Fastest verified-natural engine per language while keeping Sample A identity.
+ * HE is Polly fallback — do not force slow Kokoro Hebrew into production.
+ */
+function selectLanguageRoute(language) {
+  const s = String(language || "en").toLowerCase().split(/[-_]/)[0];
+  const lang = s === "iw" ? "he" : s;
+  if (lang === "he") {
+    return {
+      language: "he",
+      engine: "polly",
+      model: "Polly.Joanna",
+      voiceId: "Polly.Joanna",
+      sameSpeaker: false,
+      path: "polly_fallback",
+      fallback: "polly",
+      note: LANGUAGE_STATUS.he.note,
+    };
+  }
+  if (lang === "es") {
+    return {
+      language: "es",
+      engine: "kokoro",
+      model: "kokoro",
+      voiceId: KOKORO_CHARACTER_PRESET,
+      sameSpeaker: true,
+      path: "voicebox_kokoro_af_heart",
+      fallback: "polly",
+      note: LANGUAGE_STATUS.es.note,
+    };
+  }
+  return {
+    language: "en",
+    engine: "kokoro",
+    model: "kokoro",
+    voiceId: KOKORO_CHARACTER_PRESET,
+    sameSpeaker: true,
+    path: "voicebox_kokoro_af_heart",
+    fallback: "polly",
+    note: LANGUAGE_STATUS.en.note,
+  };
+}
+
 module.exports = {
   AURA_PUBLIC_NAME,
   AURA_ALLAH_NAME,
@@ -279,4 +322,5 @@ module.exports = {
   findAuraAllah,
   ensureAuraAllahProfile,
   heUsesPollyFallback,
+  selectLanguageRoute,
 };

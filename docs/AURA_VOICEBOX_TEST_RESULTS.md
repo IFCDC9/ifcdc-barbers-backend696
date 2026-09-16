@@ -1,6 +1,6 @@
-# AURA Voicebox tests 1–17
+# AURA Voicebox tests 1–20
 
-2026-09-16T15:23:34.462Z
+2026-09-16T17:45:16.859Z
 
 1. Live Voicebox GET /health: PASS
 2. VOICEBOX_PRIMARY default 0: PASS
@@ -19,3 +19,6 @@
 15. Per-conversation queue: PASS
 16. HQ VOICEBOX STATUS fields: PASS
 17. Booking unchanged; primary off uses Polly: PASS
+18. Streaming first phrase (Absolutely...) while rest synthesizes: PASS
+19. Pipecat turn/barge-in/silence/language/recovery: PASS
+20. PIPECAT off; HQ pipeline; PRODUCTION PRIMARY OFF: PASS

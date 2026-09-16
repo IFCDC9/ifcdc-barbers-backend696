@@ -18,6 +18,7 @@ const {
   findAuraAllah,
   runtimeInstruct,
   heUsesPollyFallback,
+  selectLanguageRoute,
 } = require("./auraVoiceboxProfile.cjs");
 const { prepareSpokenText } = require("./auraVoicePronunciation.cjs");
 const {
@@ -25,7 +26,24 @@ const {
   getLastLesson,
   getVoiceMemorySnapshot,
   persistFounderApprovedVoice,
+  persistLatencySample,
+  getPersistedLastTest,
 } = require("./auraVoiceMemory.cjs");
+const { isPipecatEnabled } = require("./auraPipecatFlags.cjs");
+const {
+  splitForStreaming,
+  storePendingRest,
+  takePendingRest,
+  getPendingRest,
+  recordStreamMetrics,
+  rtfFor,
+  getPipecatHqStatus,
+  getPipelineHealth,
+  getLastTest,
+  setLastTest,
+  twilioHqStatus,
+  pollyHqStatus,
+} = require("./auraPipecatPipeline.cjs");
 
 const MAX_CACHE = 40;
 const audioCache = new Map();
@@ -39,6 +57,7 @@ const stats = {
   lastLatencyMs: null,
   lastFirstByteMs: null,
   lastTotalMs: null,
+  lastFirstPhraseMs: null,
   lastFallbackReason: null,
   lastEngine: null,
   lastProfileId: null,
@@ -82,6 +101,7 @@ function resetVoiceboxBridgeForTests() {
   stats.lastLatencyMs = null;
   stats.lastFirstByteMs = null;
   stats.lastTotalMs = null;
+  stats.lastFirstPhraseMs = null;
   stats.lastFallbackReason = null;
   stats.lastEngine = null;
   stats.lastProfileId = null;
@@ -375,12 +395,25 @@ async function speak(opts = {}) {
     stats.lastLatencyMs = Date.now() - started;
     stats.lastFirstByteMs = result.firstByteMs ?? stats.lastLatencyMs;
     stats.lastTotalMs = result.totalMs ?? stats.lastLatencyMs;
+    stats.lastFirstPhraseMs = result.firstPhraseMs ?? stats.lastFirstByteMs;
     stats.lastEngine = result.engine;
     stats.lastProfileId = result.profileId;
     stats.lastLanguage = result.language;
     stats.lastOkAt = new Date().toISOString();
     stats.lastFallbackReason = null;
     stats.lastError = null;
+    try {
+      persistLatencySample({
+        language: result.language,
+        model: result.model || result.engine,
+        firstByteMs: stats.lastFirstByteMs,
+        firstPhraseMs: stats.lastFirstPhraseMs,
+        totalMs: stats.lastTotalMs,
+        rtf: rtfFor(result.audio, stats.lastTotalMs),
+      });
+    } catch {
+      /* memory file may be read-only */
+    }
     console.log("[aura/voicebox] speak ok", {
       ms: stats.lastLatencyMs,
       firstByteMs: stats.lastFirstByteMs,
@@ -396,6 +429,107 @@ async function speak(opts = {}) {
     stats.lastLatencyMs = Date.now() - started;
     return { ok: false, fallback: true, reason, error: String(e?.message || e).slice(0, 180) };
   }
+}
+
+/**
+ * Pipecat streaming speak: first complete phrase (e.g. "Absolutely...") is
+ * synthesized and returned without waiting for the rest of a long booking
+ * line. Rest continues in the background. Gated by PIPECAT_ENABLED for the
+ * Twilio Play path; tests may call this directly.
+ */
+async function speakStreaming(opts = {}) {
+  const started = Date.now();
+  const language = mapLanguage(opts.language);
+  const split = splitForStreaming(opts.text, language);
+
+  if (split.unchunked || !split.rest) {
+    const one = await speak({ ...opts, language });
+    const firstPhraseMs = Date.now() - started;
+    const ttfbMs = one.firstByteMs ?? firstPhraseMs;
+    recordStreamMetrics({
+      ttfbMs,
+      firstPhraseMs,
+      totalSynthMs: one.totalMs ?? firstPhraseMs,
+      rtf: rtfFor(one.audio, one.totalMs ?? firstPhraseMs),
+      language,
+    });
+    return {
+      ok: Boolean(one.ok),
+      fallback: Boolean(one.fallback),
+      unchunked: true,
+      reason: split.reason,
+      first: one,
+      rest: null,
+      restPromise: Promise.resolve(null),
+      ttfbMs,
+      firstPhraseMs,
+      totalSynthMs: one.totalMs ?? firstPhraseMs,
+      rtf: rtfFor(one.audio, one.totalMs ?? firstPhraseMs),
+      language,
+      firstText: split.first,
+      restText: "",
+    };
+  }
+
+  const first = await speak({
+    ...opts,
+    text: split.first,
+    language,
+    conversationId: `${opts.conversationId || "stream"}:first`,
+  });
+  const firstPhraseMs = Date.now() - started;
+  const ttfbMs = first.firstByteMs ?? firstPhraseMs;
+  recordStreamMetrics({ ttfbMs, firstPhraseMs, language });
+
+  const restPromise = speak({
+    ...opts,
+    text: split.rest,
+    language,
+    conversationId: `${opts.conversationId || "stream"}:rest`,
+  }).then((rest) => {
+    const totalSynthMs = Date.now() - started;
+    const rtf = rtfFor(rest?.audio, rest?.totalMs ?? totalSynthMs);
+    recordStreamMetrics({ totalSynthMs, rtf, language });
+    try {
+      persistLatencySample({
+        language,
+        model: rest?.model || first.model || "kokoro",
+        firstByteMs: ttfbMs,
+        firstPhraseMs,
+        totalMs: totalSynthMs,
+        rtf,
+      });
+    } catch {
+      /* ignore */
+    }
+    return rest;
+  });
+
+  const token = `pc_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+  storePendingRest(token, {
+    conversationId: String(opts.conversationId || ""),
+    language,
+    restPromise,
+    first,
+    gatherAction: opts.gatherAction || null,
+  });
+
+  return {
+    ok: Boolean(first.ok),
+    fallback: Boolean(first.fallback),
+    unchunked: false,
+    reason: split.reason,
+    first,
+    rest: null,
+    restPromise,
+    continueToken: token,
+    ttfbMs,
+    firstPhraseMs,
+    totalSynthMs: null,
+    language,
+    firstText: split.first,
+    restText: split.rest,
+  };
 }
 
 async function cancelSpeak(conversationId) {
@@ -437,6 +571,47 @@ async function tryVoiceboxPlayUrl(opts = {}) {
   if (mapLanguage(opts.language) === "he" && heUsesPollyFallback()) {
     return { used: false, url: null, reason: "hebrew_kokoro_too_slow", fallback: true };
   }
+  if (isPipecatEnabled()) {
+    const streamed = await speakStreaming(opts);
+    if (!streamed.ok || !streamed.first?.generationId) {
+      return { used: false, url: null, reason: streamed.first?.reason || streamed.reason || "speak_failed", fallback: true };
+    }
+    const firstUrl = publicAudioUrl(streamed.first.generationId);
+    if (!firstUrl) {
+      recordFallback("no_public_audio_url");
+      return {
+        used: false,
+        url: null,
+        reason: "no_public_audio_url",
+        fallback: true,
+        generationId: streamed.first.generationId,
+      };
+    }
+    if (streamed.unchunked || !streamed.continueToken) {
+      return {
+        used: true,
+        url: firstUrl,
+        urls: [firstUrl],
+        generationId: streamed.first.generationId,
+        latencyMs: streamed.firstPhraseMs,
+        firstPhraseMs: streamed.firstPhraseMs,
+        ttfbMs: streamed.ttfbMs,
+      };
+    }
+    const continueUrl = publicContinueUrl(streamed.continueToken, opts);
+    return {
+      used: true,
+      url: firstUrl,
+      urls: [firstUrl],
+      continueUrl,
+      continueToken: streamed.continueToken,
+      generationId: streamed.first.generationId,
+      latencyMs: streamed.firstPhraseMs,
+      firstPhraseMs: streamed.firstPhraseMs,
+      ttfbMs: streamed.ttfbMs,
+      streaming: true,
+    };
+  }
   const result = await speak(opts);
   if (!result.ok || !result.generationId) {
     return { used: false, url: null, reason: result.reason || "speak_failed", fallback: true };
@@ -447,6 +622,18 @@ async function tryVoiceboxPlayUrl(opts = {}) {
     return { used: false, url: null, reason: "no_public_audio_url", fallback: true, generationId: result.generationId };
   }
   return { used: true, url, generationId: result.generationId, latencyMs: stats.lastLatencyMs };
+}
+
+function publicContinueUrl(token, opts = {}) {
+  const base = String(process.env.PUBLIC_API_URL || "").trim().replace(/\/$/, "");
+  if (!base || !token) return null;
+  if (/localhost|127\.0\.0\.1/i.test(base)) return null;
+  const qs = new URLSearchParams();
+  if (opts.gatherAction) qs.set("gather", String(opts.gatherAction));
+  if (opts.language) qs.set("language", String(opts.language));
+  if (opts.conversationId) qs.set("callSid", String(opts.conversationId));
+  const q = qs.toString();
+  return `${base}/api/aura/voicebox/continue/${encodeURIComponent(token)}${q ? `?${q}` : ""}`;
 }
 
 async function getVoiceboxHqStatus() {
@@ -473,7 +660,16 @@ async function getVoiceboxHqStatus() {
   }
   const mem = getVoiceMemorySnapshot();
   const approved = mem.founderApprovedVoice || FOUNDER_APPROVED_VOICE;
-  return {
+  let pipecat = null;
+  try {
+    pipecat = await getPipecatHqStatus();
+  } catch (e) {
+    pipecat = { status: "ERROR", error: String(e?.message || e).slice(0, 120) };
+  }
+  const twilio = twilioHqStatus();
+  const polly = pollyHqStatus();
+  const persistedTest = mem.lastTest || getLastTest() || getPersistedLastTest();
+  const hq = {
     status: !health.reachable ? "DOWN" : health.ok ? (flags.primary ? "PRIMARY" : "STANDBY") : "UNHEALTHY",
     primary: flags.primary,
     productionActivation: "OFF",
@@ -490,10 +686,14 @@ async function getVoiceboxHqStatus() {
     language: stats.lastLanguage || "en",
     latencyMs: stats.lastLatencyMs,
     firstByteMs: stats.lastFirstByteMs,
+    firstPhraseMs: stats.lastFirstPhraseMs,
     totalMs: stats.lastTotalMs,
+    latencies: mem.latencies || {},
     fallback: stats.lastFallbackReason || "polly",
     lastLesson: getLastLesson(),
+    lastTest: persistedTest,
     lastError: stats.lastError,
+    publicName: AURA_PUBLIC_NAME,
     gpu: health.health
       ? { available: health.health.gpu_available, backend: health.health.backend_type, variant: health.health.backend_variant }
       : null,
@@ -503,6 +703,8 @@ async function getVoiceboxHqStatus() {
       lessonCount: mem.lessonCount,
       lastLesson: mem.lastLesson,
       founderApprovedVoice: approved,
+      latencies: mem.latencies || {},
+      lastTest: persistedTest,
     },
     founderApproved: {
       sample: "A",
@@ -511,6 +713,7 @@ async function getVoiceboxHqStatus() {
       model: "kokoro",
       profileName: AURA_ALLAH_NAME,
       customerFacingName: AURA_PUBLIC_NAME,
+      publicName: AURA_PUBLIC_NAME,
       profileId: profile?.id || approved.profileId || null,
       instruct: SAMPLE_A_INSTRUCT,
       speed: 1.0,
@@ -524,12 +727,22 @@ async function getVoiceboxHqStatus() {
       loaded: engine.loaded,
     },
     languages: LANGUAGE_STATUS,
+    pipecat,
+    twilio,
+    polly,
     stats: { ...stats },
     enablement:
-      "Tessa: set VOICEBOX_PRIMARY=1 on the host that can reach Voicebox (Founder Mac or a documented tunnel). Leave 0 on Render until then. Polly/Twilio Say remains automatic fallback. Founder-approved Sample A is the test identity only.",
+      "Tessa later: (1) PIPECAT_ENABLED=1 on the Founder Mac with Voicebox + optional `python3 tools/pipecat/sidecar.py`. (2) VOICEBOX_PRIMARY=1 only on a host that can reach Voicebox. Leave both 0 on Render until a private tunnel exists. Polly remains production primary. Sample A is the test identity only.",
     tunnel:
       "Render cannot reach 127.0.0.1 on the Founder Mac. To try primary from Render, run a private tunnel and set VOICEBOX_BASE_URL to that URL. Default path is local/HQ + Polly fallback.",
   };
+  hq.pipelineHealth = getPipelineHealth({
+    voicebox: hq,
+    pipecat,
+    twilio,
+    polly,
+  });
+  return hq;
 }
 
 let prewarmPromise = null;
@@ -552,6 +765,7 @@ async function prewarmVoicebox() {
 
 module.exports = {
   speak,
+  speakStreaming,
   cancelSpeak,
   tryVoiceboxPlayUrl,
   probeHealth,
@@ -560,10 +774,13 @@ module.exports = {
   getCachedAudio,
   cacheAudio,
   publicAudioUrl,
+  publicContinueUrl,
   mapLanguage,
   isValidAudio,
   setVoiceboxClientForTests,
   resetVoiceboxBridgeForTests,
+  takePendingRest,
+  getPendingRest,
   getVoiceboxStats: () => ({ ...stats }),
 };
 

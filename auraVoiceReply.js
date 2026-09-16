@@ -52,6 +52,8 @@ const { tryVoiceboxPlayUrl } = requireCjs("./auraVoiceboxBridge.cjs");
 const { prepareSpokenText } = requireCjs("./auraVoicePronunciation.cjs");
 const { AURA_ALLAH_NAME } = requireCjs("./auraVoiceboxProfile.cjs");
 
+const streamingContinueByCall = new Map();
+
 const WELCOME_SENTINEL = "__IFCDC_VOICE_WELCOME__";
 const NO_SPEECH_SENTINEL = "__IFCDC_NO_SPEECH__";
 
@@ -371,6 +373,12 @@ async function safeGenerateReply(input, opts = {}) {
 }
 
 function utteranceXml(attrs, escapedText, playUrl = null) {
+  if (Array.isArray(playUrl)) {
+    return playUrl
+      .filter(Boolean)
+      .map((u) => `<Play>${xmlEscapeAttr(u)}</Play>`)
+      .join("\n    ");
+  }
   if (playUrl) return `<Play>${xmlEscapeAttr(playUrl)}</Play>`;
   return `<Say voice="${xmlEscapeAttr(attrs.voice)}" language="${xmlEscapeAttr(attrs.language)}">${escapedText}</Say>`;
 }
@@ -383,12 +391,37 @@ async function voiceboxOrPollyUtterance(attrs, rawText, escapedText, { callSid, 
     conversationId: callSid,
     voiceProfile: AURA_ALLAH_NAME,
   });
+  if (attempt.streaming && attempt.continueToken && callSid) {
+    streamingContinueByCall.set(String(callSid), {
+      token: attempt.continueToken,
+      language,
+    });
+  }
+  if (attempt.used && attempt.urls?.length) return utteranceXml(attrs, escapedText, attempt.urls);
   if (attempt.used && attempt.url) return utteranceXml(attrs, escapedText, attempt.url);
   return utteranceXml(attrs, escapedText, null);
 }
 
 function buildVoiceLoopTwiML(gatherAction, attrs, mainInner, stillHereInner, callSid = "") {
   const g = twilioGatherSpeechAttrs(callSid);
+  const pending = callSid ? streamingContinueByCall.get(String(callSid)) : null;
+  if (pending?.token) {
+    streamingContinueByCall.delete(String(callSid));
+    const base = getPublicApiBaseUrl();
+    if (base && !/localhost|127\.0\.0\.1/i.test(base)) {
+      const qs = new URLSearchParams({
+        gather: String(gatherAction || ""),
+        callSid: String(callSid),
+        language: String(pending.language || "en"),
+      });
+      const cont = `${base}/api/aura/voicebox/continue/${encodeURIComponent(pending.token)}?${qs.toString()}`;
+      return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  ${mainInner}
+  <Redirect method="POST">${cont}</Redirect>
+</Response>`;
+    }
+  }
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Gather input="speech dtmf" timeout="${g.timeout}" speechTimeout="${g.speechTimeout}" bargeIn="${g.bargeIn}" enhanced="${g.enhanced}" speechModel="${g.speechModel}" method="POST" action="${gatherAction}">

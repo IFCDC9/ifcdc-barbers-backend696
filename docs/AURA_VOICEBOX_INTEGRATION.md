@@ -48,38 +48,49 @@ Kokoro presets cover EN and ES with the **same speaker** (`af_heart`) as closely
 - HQ: `/admin/aura-voice` (Founder-approved voice = A / `af_heart`, production activation OFF)
 - Source wav (not in git): `~/Documents/ifcdc-aura-voice-samples/round2/aura-allah-A.wav`
 
-## Tests 1–17
+## Tests 1–20
 
-Run `node --test tests/auraVoicebox.test.mjs`. Live Voicebox health is used for tests 1 and 3. Timeout/outage/invalid-audio use a mock client. Latency harness: `node scripts/measure-aura-founder-voice.mjs` (writes wavs under `~/Documents`, not git).
+Run `node --test tests/auraVoicebox.test.mjs`. Live Voicebox health is used for tests 1, 3, and 18 (first-phrase ack). Timeout/outage/invalid-audio use a mock client. Latency harness: `node scripts/measure-aura-founder-voice.mjs` (writes wavs under `~/Documents`, not git).
+
+18. Streaming starts **“Absolutely…”** while the rest of a long booking line synthesizes (greeting is not chopped).
+19. Pipecat turn detection, barge-in, silence, language switch (ledger kept), recovery/fallback.
+20. `PIPECAT_ENABLED` default 0; HQ shows Pipecat/Twilio/Polly/pipeline/last test; PRODUCTION PRIMARY OFF.
 
 ## How Tessa enables Voicebox primary
 
-1. On the **Founder Mac** (Voicebox open, a multilingual model downloaded and loaded):
-   - `VOICEBOX_PRIMARY=1`
+1. On the **Founder Mac** (Voicebox open, Kokoro loaded):
+   - Optional test path: `PIPECAT_ENABLED=1` and `python3 tools/pipecat/sidecar.py`
+   - `VOICEBOX_PRIMARY=1` only when Twilio should `<Play>` Sample A
    - `VOICEBOX_BASE_URL=http://127.0.0.1:17493` (default)
    - Restart the local API
 2. Twilio `<Play>` needs a **public** `PUBLIC_API_URL` that can fetch `/api/aura/voicebox/audio/:id`. Localhost Play URLs are rejected and **fall back to Polly**.
 3. **Do not** set `VOICEBOX_PRIMARY=1` on Render until there is a **documented private tunnel** from Render → Founder Mac, and `VOICEBOX_BASE_URL` is that tunnel URL. Default Render path is Polly.
 4. Leave `ENTITLEMENTS_ENFORCE=0` unless Tessa separately authorizes it. This work does not touch entitlements.
 
+See `docs/AURA_PIPECAT.md`.
+
 ## Files
 
 - `auraVoiceboxFlags.cjs` — `VOICEBOX_PRIMARY` default 0
+- `auraPipecatFlags.cjs` — `PIPECAT_ENABLED` default 0
+- `auraPipecatPipeline.cjs` / `auraPipecatTwilio.cjs` / `tools/pipecat/sidecar.py`
 - `auraVoiceboxClient.cjs` — real HTTP client
-- `auraVoiceboxBridge.cjs` — `speak()`, health, queue, cancel, stream, fallback
+- `auraVoiceboxBridge.cjs` — `speak()`, `speakStreaming()`, health, queue, cancel, stream, fallback
 - `auraVoiceboxProfile.cjs` — engine ranking + AURA founder-approved body
-- `auraVoiceboxRoutes.cjs` — audio + HQ memory
+- `auraVoiceboxRoutes.cjs` — audio + continue + HQ memory
 - `auraVoicePronunciation.cjs` / `auraVoiceMemory.cjs`
 - `auraVoiceReply.js` / `auraVoiceCallRuntime.cjs` / `auraLocale.js` — Gather path extended
-- `client/src/pages/AdminAuraVoice.jsx` / `frontend/src/pages/AdminAuraVoice.jsx` — Founder-approved + VOICEBOX STATUS
+- `client/src/pages/AdminAuraVoice.jsx` / `frontend/src/pages/AdminAuraVoice.jsx` — Founder-approved + Voicebox/Pipecat/Twilio/Polly + PRODUCTION PRIMARY OFF
 - `tests/auraVoicebox.test.mjs`
 - `scripts/measure-aura-founder-voice.mjs`
+- `docs/AURA_PIPECAT.md`
 
 ## Remaining limits
 
 - Gather still has no raw PCM / true AEC; barge-in is Twilio + cancel of Voicebox stream/jobs
 - Polly fallback cannot speak Hebrew (no Polly HE voice on this stack)
 - Kokoro HE is too slow / not the same speaker → HE uses Polly fallback (English Joanna)
-- `/generate/stream` typically delivers a complete WAV, so first-byte can be close to total; Twilio Play still needs a finished URL
+- `/generate/stream` typically delivers a complete WAV, so first-byte can be close to total; Pipecat ack-prefix is what makes the first *phrase* fast
 - Render cannot reach Founder Mac Voicebox without a tunnel
 - Voice memory is file-backed (`data/aura-voice-memory.json`), not production Postgres (schema freeze)
+- Full `pipecat-ai` 1.6+ needs Python 3.11+; this Mac has 3.9 so the sidecar runs stdlib VAD unless 3.11 is installed

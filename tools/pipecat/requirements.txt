@@ -1,0 +1,4 @@
+# Optional Founder-Mac sidecar. pipecat-ai 1.6+ needs Python 3.11+.
+# The Node pipeline does not require this package. Sidecar still serves
+# /health with stdlib if the import fails.
+pipecat-ai>=0.0.82

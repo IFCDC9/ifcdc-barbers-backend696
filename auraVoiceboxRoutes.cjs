@@ -4,9 +4,17 @@
  */
 
 const express = require("express");
-const { getCachedAudio, getVoiceboxHqStatus, speak, probeHealth } = require("./auraVoiceboxBridge.cjs");
+const { getCachedAudio, getVoiceboxHqStatus, speak, probeHealth, takePendingRest, publicAudioUrl } = require("./auraVoiceboxBridge.cjs");
 const { upsertPronunciation, addLesson, getVoiceMemorySnapshot, listPronunciations } = require("./auraVoiceMemory.cjs");
 const { isVoiceboxPrimary } = require("./auraVoiceboxFlags.cjs");
+
+function escapeXml(s) {
+  return String(s || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
 
 function createAuraVoiceboxRouter(deps = {}) {
   const { resolveAuthPayload, isSuperAdminEmail } = deps;
@@ -51,6 +59,49 @@ function createAuraVoiceboxRouter(deps = {}) {
     res.set("Content-Type", hit.contentType || "audio/wav");
     res.set("Cache-Control", "no-store");
     res.send(hit.buffer);
+  });
+
+  /** Twilio Redirect after first-phrase Play. Does not book. Polly fallback if rest fails. */
+  router.all("/continue/:token", async (req, res) => {
+    const token = String(req.params.token || "").trim();
+    const pending = takePendingRest(token);
+    const gather = String(req.query.gather || req.body?.gather || "").trim();
+    const language = String(req.query.language || pending?.language || "en");
+    const callSid = String(req.query.callSid || pending?.conversationId || "").trim();
+    let rest = null;
+    try {
+      if (pending?.restPromise) {
+        rest = await Promise.race([
+          pending.restPromise,
+          new Promise((_, reject) => {
+            setTimeout(() => reject(new Error("rest_timeout")), 12000);
+          }),
+        ]);
+      }
+    } catch (e) {
+      console.warn("[aura/voicebox] continue rest fallback:", e?.message || e);
+    }
+    const playUrl = rest?.ok && rest.generationId ? publicAudioUrl(rest.generationId) : null;
+    const say =
+      language === "es"
+        ? "Sigo aquí. Dime el día y la hora."
+        : language === "he"
+          ? "אני כאן. אפשר להמשיך עם ההזמנה."
+          : "I'm here. Tell me the day and time that works.";
+    const inner = playUrl
+      ? `<Play>${escapeXml(playUrl)}</Play>`
+      : `<Say voice="Polly.Joanna" language="${language === "es" ? "es-ES" : "en-US"}">${escapeXml(say)}</Say>`;
+    const action = gather || "/api/aura/process";
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Gather input="speech dtmf" timeout="4" speechTimeout="auto" bargeIn="true" method="POST" action="${escapeXml(action)}">
+    ${inner}
+  </Gather>
+  <Redirect method="POST">${escapeXml(action)}</Redirect>
+</Response>`;
+    void callSid;
+    res.type("text/xml");
+    res.send(xml);
   });
 
   router.get("/status", async (_req, res) => {

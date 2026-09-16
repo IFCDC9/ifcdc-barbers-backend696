@@ -31,12 +31,14 @@ function canonicalFounderApproved(extra = {}) {
 
 function emptyStore() {
   return {
-    version: 2,
+    version: 3,
     pronunciations: [],
     lessons: [],
     lastLesson: null,
     updatedAt: null,
     founderApprovedVoice: canonicalFounderApproved(),
+    latencies: {},
+    lastTest: null,
   };
 }
 
@@ -50,6 +52,8 @@ function readStore() {
       ...parsed,
       pronunciations: Array.isArray(parsed.pronunciations) ? parsed.pronunciations : [],
       lessons: Array.isArray(parsed.lessons) ? parsed.lessons : [],
+      latencies: parsed.latencies && typeof parsed.latencies === "object" ? parsed.latencies : {},
+      lastTest: parsed.lastTest && typeof parsed.lastTest === "object" ? parsed.lastTest : null,
       founderApprovedVoice: canonicalFounderApproved(parsed.founderApprovedVoice || {}),
     };
   } catch {
@@ -136,6 +140,51 @@ function getFounderApprovedVoice() {
   return canonicalFounderApproved(store.founderApprovedVoice || {});
 }
 
+function persistLatencySample(partial = {}) {
+  const language = String(partial.language || "en").toLowerCase().split(/[-_]/)[0] || "en";
+  const model = String(partial.model || partial.engine || "kokoro").trim() || "kokoro";
+  const store = readStore();
+  if (!store.latencies || typeof store.latencies !== "object") store.latencies = {};
+  if (!store.latencies[language]) store.latencies[language] = {};
+  if (!store.latencies[language][model]) store.latencies[language][model] = { samples: [], last: null };
+  const row = {
+    firstByteMs: numOrNull(partial.firstByteMs),
+    firstPhraseMs: numOrNull(partial.firstPhraseMs),
+    totalMs: numOrNull(partial.totalMs ?? partial.totalSynthMs),
+    rtf: numOrNull(partial.rtf),
+    interruptMs: numOrNull(partial.interruptMs),
+    recoveryMs: numOrNull(partial.recoveryMs),
+    fallbackMs: numOrNull(partial.fallbackMs),
+    at: new Date().toISOString(),
+  };
+  const bucket = store.latencies[language][model];
+  bucket.samples.push(row);
+  while (bucket.samples.length > 20) bucket.samples.shift();
+  bucket.last = row;
+  writeStore(store);
+  return row;
+}
+
+function numOrNull(v) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function persistLastTest(row) {
+  const store = readStore();
+  store.lastTest = row && typeof row === "object" ? { ...row, at: row.at || new Date().toISOString() } : null;
+  writeStore(store);
+  return store.lastTest;
+}
+
+function getLatencies() {
+  return readStore().latencies || {};
+}
+
+function getPersistedLastTest() {
+  return readStore().lastTest || null;
+}
+
 function getVoiceMemorySnapshot() {
   const approved = persistFounderApprovedVoice();
   const store = readStore();
@@ -145,6 +194,8 @@ function getVoiceMemorySnapshot() {
     lastLesson: store.lastLesson,
     pronunciations: store.pronunciations,
     founderApprovedVoice: approved,
+    latencies: store.latencies || {},
+    lastTest: store.lastTest || null,
     updatedAt: store.updatedAt,
     path: memoryPath(),
   };
@@ -167,4 +218,8 @@ module.exports = {
   persistFounderApprovedVoice,
   getFounderApprovedVoice,
   canonicalFounderApproved,
+  persistLatencySample,
+  persistLastTest,
+  getLatencies,
+  getPersistedLastTest,
 };
