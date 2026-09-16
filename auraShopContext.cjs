@@ -304,7 +304,7 @@ async function resolveInboundShopContext(dbQuery, { to, from, preferredShopId } 
 
 /** Full professional IFCDC / AURA greetings — never short openers like "Hello?" or "How can I help?" alone. */
 const GENERAL_IFCDC_GREETING =
-  "Thank you for calling the IFCDC Barbers App. This is AURA, your virtual assistant. I'm here to help you schedule appointments, answer questions, and assist with our services. How may I help you today?";
+  "Hi, this is Aura, your virtual assistant. Thank you for calling the IFCDC Barbers App. I'm here to help you schedule appointments, answer questions, and assist with our services. How may I help you today?";
 
 function buildShopGreeting({ shop, platformShared, founder, needsShopSelection, inactive } = {}) {
   if (founder) {
@@ -312,7 +312,7 @@ function buildShopGreeting({ shop, platformShared, founder, needsShopSelection, 
       const { FOUNDER_GREETING } = require("./auraFounderIdentity.cjs");
       return FOUNDER_GREETING;
     } catch {
-      return "Welcome back, Mister Allah. This is AURA. I hope you're having a great day. I have the latest IFCDC Barbers App operational updates ready, including today's schedule, bookings, cancellations, reschedules, payment updates, and system activity. How may I assist you today?";
+      return "Welcome back, Mister Allah. This is Aura. I hope you're having a great day. I have the latest IFCDC Barbers App operational updates ready, including today's schedule, bookings, cancellations, reschedules, payment updates, and system activity. How may I assist you today?";
     }
   }
   if (inactive && shop) {
@@ -322,7 +322,7 @@ function buildShopGreeting({ shop, platformShared, founder, needsShopSelection, 
     if (shop.customGreeting && String(shop.customGreeting).trim()) {
       return String(shop.customGreeting).trim();
     }
-    return `Thank you for calling ${shop.shopName}, powered by the IFCDC Barbers App. This is AURA. How may I assist you today?`;
+    return `Hi, this is Aura. Thank you for calling ${shop.shopName}, powered by the IFCDC Barbers App. How may I assist you today?`;
   }
   // Shared / multi-shop: full professional greeting first; shop selection is a follow-up turn.
   if (platformShared || needsShopSelection) {

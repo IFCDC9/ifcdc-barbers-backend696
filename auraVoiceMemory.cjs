@@ -23,6 +23,7 @@ function canonicalFounderApproved(extra = {}) {
     voiceboxPrimary: 0,
     profileId: extra.profileId || extra.profile_id || FOUNDER_APPROVED_VOICE.profileId || null,
     profileName: extra.profileName || FOUNDER_APPROVED_VOICE.name,
+    customerFacingName: FOUNDER_APPROVED_VOICE.customerFacingName || "Aura",
     voiceId: FOUNDER_APPROVED_VOICE.voiceId,
     persistedAt: extra.persistedAt || null,
   };

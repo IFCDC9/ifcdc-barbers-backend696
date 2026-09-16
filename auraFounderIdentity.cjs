@@ -24,7 +24,7 @@ const FOUNDER_IDENTITY = Object.freeze({
 
 /** Spoken founder greeting — always play in full before continuing. */
 const FOUNDER_GREETING =
-  "Welcome back, Mister Allah. This is AURA. I hope you're having a great day. I have the latest IFCDC Barbers App operational updates ready, including today's schedule, bookings, cancellations, reschedules, payment updates, and system activity. How may I assist you today?";
+  "Welcome back, Mister Allah. This is Aura. I hope you're having a great day. I have the latest IFCDC Barbers App operational updates ready, including today's schedule, bookings, cancellations, reschedules, payment updates, and system activity. How may I assist you today?";
 
 function founderPhoneE164() {
   const configured = getAuraOwnerAdminE164();

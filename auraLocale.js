@@ -138,7 +138,7 @@ const VOICE = {
     time_keypad_reprompt: "Pick 1 for morning, 2 for afternoon, 3 for early evening — or just tell me a time.",
     locked_timing_name: "You're locked in for timing — what name should I put on the chair?",
     thanks_calling_opener:
-      "Thanks for calling Imperial Foundation CDC Barbers. Tell me what you need today and I'll help you.",
+      "Hi, this is Aura. Thanks for calling Imperial Foundation CDC Barbers. Tell me what you need today and I'll help you.",
     listening_booking: "I'm listening — go ahead whenever you're ready.",
     listening_idle: "I'm listening — tell me what you need.",
     confirmation_sent: "Got you. I just sent that confirmation to your phone.",
@@ -179,7 +179,7 @@ const VOICE = {
     time_keypad_reprompt: "Presione 1 para mañana, 2 para tarde, 3 para al anochecer — o diga la hora.",
     locked_timing_name: "Horario anotado. ¿A qué nombre pongo la cita?",
     thanks_calling_opener:
-      "Gracias por llamar a Imperial Foundation CDC Barbers. Dígame qué necesita hoy y le ayudo.",
+      "Hola, soy Aura. Gracias por llamar a Imperial Foundation CDC Barbers. Dígame qué necesita hoy y le ayudo.",
     listening_booking: "Le escucho — adelante cuando quiera.",
     listening_idle: "Le escucho — dígame qué necesita.",
     confirmation_sent: "Listo. Acabo de enviarle esa confirmación a su teléfono.",

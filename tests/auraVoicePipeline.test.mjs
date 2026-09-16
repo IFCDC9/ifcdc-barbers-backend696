@@ -103,10 +103,10 @@ test("barge-in marks interrupted and never auto-resumes old response", () => {
 });
 
 test("echo of own TTS is silent_listen", () => {
-  rememberAssistantSpeech("CA7", "Thank you for calling the IFCDC Barbers App. This is AURA.");
+  rememberAssistantSpeech("CA7", "Hi, this is Aura. Thank you for calling the IFCDC Barbers App.");
   const out = evaluateSpeechInput({
     callSid: "CA7",
-    speechText: "Thank you for calling the IFCDC Barbers App. This is AURA.",
+    speechText: "Hi, this is Aura. Thank you for calling the IFCDC Barbers App.",
     confidenceRaw: 0.95,
   });
   assert.equal(out.reason, "echo_overlap");

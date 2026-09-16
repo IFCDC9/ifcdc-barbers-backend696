@@ -14,11 +14,17 @@ const { isVoiceboxPrimary, voiceboxFlags } = require("../auraVoiceboxFlags.cjs")
 const { createVoiceboxClient } = require("../auraVoiceboxClient.cjs");
 const {
   AURA_ALLAH_NAME,
+  AURA_PUBLIC_NAME,
   FOUNDER_APPROVED_VOICE,
   SAMPLE_A_INSTRUCT,
+  SAMPLE_SENTENCE,
+  SAMPLE_SENTENCE_ES,
+  SAMPLE_SENTENCE_HE,
   selectBestLocalEngine,
   auraAllahCreateBody,
   SAMPLE_INSTRUCTS,
+  ensureAuraAllahProfile,
+  findAuraAllah,
 } = require("../auraVoiceboxProfile.cjs");
 const {
   speak,
@@ -143,35 +149,31 @@ test("2 VOICEBOX_PRIMARY defaults off", () => {
   }
 });
 
-test("3 AURA ALLAH profile is designed/preset not cloned", async () => {
+test("3 AURA founder-approved profile is designed/preset not cloned", async () => {
   let liveOk = false;
   try {
     const live = createVoiceboxClient();
-    const profiles = await live.listProfiles();
-    const existing = (profiles || []).find((p) => p.name === AURA_ALLAH_NAME);
-    if (existing) {
-      assert.notEqual(existing.voice_type, "cloned");
-      liveOk = true;
-      results.push({ id: 3, name: "AURA ALLAH profile not cloned", result: "PASS", detail: existing.voice_type });
-      return;
-    }
     const models = await live.modelsStatus();
     const engine = selectBestLocalEngine(models);
-    const created = await live.createProfile(auraAllahCreateBody(engine));
-    assert.equal(created.name, AURA_ALLAH_NAME);
-    assert.notEqual(created.voice_type, "cloned");
+    const { profile } = await ensureAuraAllahProfile(live, engine);
+    assert.equal(profile.name, AURA_ALLAH_NAME);
+    assert.doesNotMatch(profile.name, /ALLAH/i);
+    assert.notEqual(profile.voice_type, "cloned");
     liveOk = true;
-    results.push({ id: 3, name: "AURA ALLAH profile created (not cloned)", result: "PASS", detail: created.voice_type });
+    results.push({ id: 3, name: "AURA founder-approved profile not cloned", result: "PASS", detail: profile.voice_type });
+    return;
   } catch (e) {
     const client = mockClient();
     setVoiceboxClientForTests(client);
+    const existing = findAuraAllah(await client.listProfiles());
     const body = auraAllahCreateBody(selectBestLocalEngine(await client.modelsStatus()));
+    assert.equal(body.name, AURA_ALLAH_NAME);
     assert.notEqual(body.voice_type, "cloned");
     results.push({
       id: 3,
-      name: "AURA ALLAH profile not cloned",
+      name: "AURA founder-approved profile not cloned",
       result: "FAIL",
-      detail: `live create failed (${e?.message || e}); mock body voice_type=${body.voice_type}`,
+      detail: `live create failed (${e?.message || e}); mock body voice_type=${body.voice_type}; existing=${existing?.name || "none"}`,
     });
     assert.fail(`live profile step failed: ${e?.message || e}`);
   }
@@ -182,9 +184,9 @@ test("4 speak() maps to real Voicebox generate fields", async () => {
   const client = mockClient();
   setVoiceboxClientForTests(client);
   const out = await speak({
-    text: "Hello from Aura Allah at IFCDC.",
+    text: "Hello from Aura at IFCDC.",
     language: "en",
-    voiceProfile: "AURA ALLAH",
+    voiceProfile: AURA_ALLAH_NAME,
     emotionalTone: "warm and confident",
     speed: "slow",
     conversationId: "map-1",
@@ -310,13 +312,20 @@ test("12 outage → fallback, no dropped call", async () => {
   results.push({ id: 12, name: "Outage fallback (no dropped call)", result: "PASS" });
 });
 
-test("13 pronunciation dictionary IFCDC + AURA Allah", () => {
+test("13 pronunciation dictionary IFCDC + Aura / time", () => {
+  assert.match(SAMPLE_SENTENCE, /^Hi, this is Aura\b/);
+  assert.doesNotMatch(SAMPLE_SENTENCE, /Allah/i);
+  assert.match(SAMPLE_SENTENCE_ES, /\bsoy Aura\b/);
+  assert.doesNotMatch(SAMPLE_SENTENCE_ES, /Allah/i);
+  assert.match(SAMPLE_SENTENCE_HE, /כאן Aura/);
+  assert.doesNotMatch(SAMPLE_SENTENCE_HE, /Allah/i);
   const spoken = prepareSpokenText("Welcome to IFCDC. This is AURA ALLAH. Your time is 2:30 PM.", { language: "en" });
   assert.match(spoken, /I F C D C/);
-  assert.match(spoken, /Aura Allah/i);
+  assert.match(spoken, /\bAura\b/);
+  assert.doesNotMatch(spoken, /Allah/i);
   assert.match(spoken, /two thirty P M/i);
   assert.doesNotMatch(spoken, /\bIFCDC\b/);
-  results.push({ id: 13, name: "Pronunciation IFCDC / AURA Allah / time", result: "PASS" });
+  results.push({ id: 13, name: "Pronunciation IFCDC / Aura / time", result: "PASS" });
 });
 
 test("14 barge-in cancels inflight Voicebox generation", async () => {
@@ -386,9 +395,15 @@ test("16 HQ status payload fields", async () => {
   assert.equal(hq.primary, false);
   assert.equal(hq.founderApproved.sample, "A");
   assert.equal(hq.founderApproved.voiceId, "af_heart");
+  assert.equal(hq.founderApproved.profileName, AURA_ALLAH_NAME);
+  assert.equal(hq.founderApproved.customerFacingName, "Aura");
+  assert.equal(AURA_PUBLIC_NAME, "Aura");
+  assert.doesNotMatch(hq.founderApproved.profileName, /ALLAH/i);
   assert.equal(hq.founderApproved.productionActivation, "OFF");
   assert.ok(getVoiceMemorySnapshot().lastLesson);
   assert.equal(getVoiceMemorySnapshot().founderApprovedVoice.voiceId, "af_heart");
+  assert.equal(getVoiceMemorySnapshot().founderApprovedVoice.customerFacingName, "Aura");
+  assert.doesNotMatch(String(getVoiceMemorySnapshot().founderApprovedVoice.name || ""), /ALLAH/i);
   assert.equal(FOUNDER_APPROVED_VOICE.instruct, SAMPLE_A_INSTRUCT);
   results.push({ id: 16, name: "HQ VOICEBOX STATUS fields", result: "PASS", detail: hq.status });
 });

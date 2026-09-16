@@ -74,10 +74,10 @@ test("relevant booking speech accepted at healthy confidence", () => {
 });
 
 test("echo overlap still rejected", () => {
-  rememberAssistantSpeech("CA_echo2", "Thank you for calling the IFCDC Barbers App. This is AURA.");
+  rememberAssistantSpeech("CA_echo2", "Hi, this is Aura. Thank you for calling the IFCDC Barbers App.");
   const out = evaluateSpeechInput({
     callSid: "CA_echo2",
-    speechText: "Thank you for calling the IFCDC Barbers App. This is AURA.",
+    speechText: "Hi, this is Aura. Thank you for calling the IFCDC Barbers App.",
     confidenceRaw: 0.95,
   });
   assert.equal(out.reason, "echo_overlap");

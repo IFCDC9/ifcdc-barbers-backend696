@@ -1,5 +1,5 @@
 /**
- * Generate AURA ALLAH samples A–E (same sentence, five instructs).
+ * Generate AURA founder-approved samples A–E (same sentence, five instructs).
  * Writes audio outside git: ~/Documents/ifcdc-aura-voice-samples/
  * Does not clone. Does not enable VOICEBOX_PRIMARY.
  */
@@ -71,7 +71,7 @@ async function main() {
   writeFileSync(join(OUT_DIR, "README.json"), JSON.stringify(report, null, 2));
   const failed = Object.values(report.samples).filter((s) => !s.ok).length;
   process.exitCode = failed ? 2 : 0;
-  console.log(`AURA ALLAH samples for ${AURA_ALLAH_NAME} → ${OUT_DIR}`);
+  console.log(`AURA founder-approved samples for ${AURA_ALLAH_NAME} → ${OUT_DIR}`);
 }
 
 main().catch((e) => {

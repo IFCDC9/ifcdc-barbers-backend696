@@ -1,18 +1,22 @@
 /**
- * Voicebox engines / models / AURA ALLAH profile.
+ * Voicebox engines / models / AURA founder-approved profile.
+ * Public display name is AURA — FOUNDER APPROVED V1. Customer-facing spoken
+ * name is Aura. Internal symbols (AURA_ALLAH_*) stay for stable refs.
  * Founder-approved identity is Sample A (Kokoro af_heart). Qwen may be
  * downloaded on the Mac — it is NOT the approved speaker. Production live
  * calls stay Polly until VOICEBOX_PRIMARY=1 (default 0).
  */
 
+const AURA_PUBLIC_NAME = "Aura";
 const AURA_ALLAH_LEGACY_NAME = "AURA ALLAH";
-const AURA_ALLAH_NAME = "AURA ALLAH — FOUNDER APPROVED V1";
+const AURA_ALLAH_PREVIOUS_NAME = "AURA ALLAH — FOUNDER APPROVED V1";
+const AURA_ALLAH_NAME = "AURA — FOUNDER APPROVED V1";
 
 const AURA_DESIGN_PROMPT =
   "A warm, soft, confident woman in her late twenties. Mature-youthful, conversational, never cartoonish, never caricature, never ethnic stereotype. Clear phone receptionist energy: kind, steady, and human.";
 
 const AURA_PERSONALITY =
-  "You are AURA Allah. Warm, soft, confident, conversational. Never caricature or stereotype. Same person in every language.";
+  "You are Aura. Warm, soft, confident, conversational. Never caricature or stereotype. Same person in every language.";
 
 /** Exact Sample A (round2) instruct. Do not shorten. */
 const SAMPLE_A_INSTRUCT =
@@ -34,6 +38,7 @@ const FOUNDER_APPROVED_VOICE = {
   round: "round2",
   version: "V1",
   name: AURA_ALLAH_NAME,
+  customerFacingName: AURA_PUBLIC_NAME,
   engine: "kokoro",
   model: "kokoro",
   voiceId: KOKORO_CHARACTER_PRESET,
@@ -158,7 +163,7 @@ function auraAllahCreateBody(engineChoice) {
   return {
     name: AURA_ALLAH_NAME,
     description:
-      "AURA ALLAH — FOUNDER APPROVED V1. Sample A (round2) Kokoro af_heart. Test identity only. Production live calls stay Polly until VOICEBOX_PRIMARY=1.",
+      "AURA — FOUNDER APPROVED V1. Sample A (round2) Kokoro af_heart. Test identity only. Production live calls stay Polly until VOICEBOX_PRIMARY=1.",
     language: "en",
     voice_type: "preset",
     preset_engine: "kokoro",
@@ -173,10 +178,21 @@ function profileCreatePayload(engineChoice) {
   return auraAllahCreateBody(engineChoice);
 }
 
+function normalizeProfileName(name) {
+  return String(name || "").trim().replace(/\s+/g, " ");
+}
+
+function isAuraAllahProfileName(name) {
+  const n = normalizeProfileName(name);
+  return n === AURA_ALLAH_NAME || n === AURA_ALLAH_PREVIOUS_NAME || n === AURA_ALLAH_LEGACY_NAME;
+}
+
 function findAuraAllah(profiles) {
   const list = Array.isArray(profiles) ? profiles : [];
   return (
-    list.find((p) => String(p?.name || "").trim() === AURA_ALLAH_NAME) ||
+    list.find((p) => normalizeProfileName(p?.name) === AURA_ALLAH_NAME) ||
+    list.find((p) => normalizeProfileName(p?.name) === AURA_ALLAH_PREVIOUS_NAME) ||
+    list.find((p) => normalizeProfileName(p?.name) === AURA_ALLAH_LEGACY_NAME) ||
     null
   );
 }
@@ -223,15 +239,23 @@ const SAMPLE_INSTRUCTS = {
 };
 
 const SAMPLE_SENTENCE =
-  "Hi, this is Aura Allah at Imperial Foundation C D C Barbers. I can help you book a haircut — just tell me the day and time that works.";
+  "Hi, this is Aura at Imperial Foundation C D C Barbers. I can help you book a haircut — just tell me the day and time that works.";
+
+const SAMPLE_SENTENCE_ES =
+  "Hola, soy Aura en Imperial Foundation C D C Barbers. Puedo ayudarte a reservar un corte — dime el día y la hora que te sirve.";
+
+const SAMPLE_SENTENCE_HE =
+  "שלום, כאן Aura. אני יכולה לעזור לך לקבוע תור.";
 
 function heUsesPollyFallback() {
   return true;
 }
 
 module.exports = {
+  AURA_PUBLIC_NAME,
   AURA_ALLAH_NAME,
   AURA_ALLAH_LEGACY_NAME,
+  AURA_ALLAH_PREVIOUS_NAME,
   AURA_DESIGN_PROMPT,
   AURA_PERSONALITY,
   ENGINE_CANDIDATES,
@@ -243,12 +267,15 @@ module.exports = {
   SAMPLE_A_RUNTIME_EXTRAS,
   SAMPLE_INSTRUCTS,
   SAMPLE_SENTENCE,
+  SAMPLE_SENTENCE_ES,
+  SAMPLE_SENTENCE_HE,
   selectBestLocalEngine,
   selectCanonicalEngine,
   presetForEngine,
   runtimeInstruct,
   auraAllahCreateBody,
   profileCreatePayload,
+  isAuraAllahProfileName,
   findAuraAllah,
   ensureAuraAllahProfile,
   heUsesPollyFallback,

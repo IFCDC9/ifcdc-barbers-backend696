@@ -1,6 +1,6 @@
-# AURA ALLAH — FOUNDER APPROVED V1
+# AURA — FOUNDER APPROVED V1
 
-Updated: 2026-09-16T15:09:34.573Z
+Updated: 2026-09-16T15:23:34.462Z
 
 Founder approved Sample A as AURA voice direction. Production live calls stay Polly. `VOICEBOX_PRIMARY` remains **0 / OFF**.
 
@@ -16,10 +16,12 @@ Founder approved Sample A as AURA voice direction. Production live calls stay Po
 
 ## Voicebox profile
 
-- Name: **AURA ALLAH — FOUNDER APPROVED V1**
+- Name: **AURA — FOUNDER APPROVED V1**
+- Customer-facing: **Aura**
+- Greeting: **Hi, this is Aura…** (never “Aura Allah”)
 - Id: `b33b369d-4804-457a-a847-8dc9e4bb7d18`
 - Type: preset · kokoro / af_heart
-- Created this run: false · updated: false
+- Created this run: false · updated: true (display rename in place; voice ID unchanged)
 
 ## HQ
 

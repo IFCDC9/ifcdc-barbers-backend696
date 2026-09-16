@@ -102,7 +102,7 @@ function createAuraVoiceboxRouter(deps = {}) {
     if (!requireSuperAdmin(req, res)) return;
     try {
       const result = await speak({
-        text: req.body?.text || "Hi, this is Aura Allah.",
+        text: req.body?.text || "Hi, this is Aura.",
         language: req.body?.language || "en",
         emotionalTone: req.body?.emotionalTone,
         speed: req.body?.speed,

@@ -110,6 +110,8 @@ test("dynamic greetings differ by shop vs shared", () => {
   assert.match(shopGreet, /Red Bank Cuts/);
   assert.match(shopGreet, /powered by the IFCDC Barbers App/i);
   assert.match(shopGreet, /How may I assist you today/i);
+  assert.match(shopGreet, /^Hi, this is Aura\b/);
+  assert.doesNotMatch(shopGreet, /Allah/i);
 
   const shared = buildShopGreeting({ platformShared: true, needsShopSelection: true });
   assert.match(shared, /virtual assistant/i);

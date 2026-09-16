@@ -50,6 +50,7 @@ const {
 } = requireCjs("./auraVoiceCallRuntime.cjs");
 const { tryVoiceboxPlayUrl } = requireCjs("./auraVoiceboxBridge.cjs");
 const { prepareSpokenText } = requireCjs("./auraVoicePronunciation.cjs");
+const { AURA_ALLAH_NAME } = requireCjs("./auraVoiceboxProfile.cjs");
 
 const WELCOME_SENTINEL = "__IFCDC_VOICE_WELCOME__";
 const NO_SPEECH_SENTINEL = "__IFCDC_NO_SPEECH__";
@@ -57,7 +58,7 @@ const NO_SPEECH_SENTINEL = "__IFCDC_NO_SPEECH__";
 const VOICE_GUIDE_EN = " You can say book, services, or ask a question.";
 const VOICE_GUIDE_ES = " Puedes decir reserva, servicios, o hacer una pregunta.";
 
-const VOICE_SYSTEM_BASE = `You are AURA, a confident, intelligent assistant for Imperial Foundation CDC (never say the letters I-F-C-D-C as one mumbled acronym; say the full name or "Imperial Foundation CDC").
+const VOICE_SYSTEM_BASE = `You are Aura, a confident, intelligent assistant for Imperial Foundation CDC (never say the letters I-F-C-D-C as one mumbled acronym; say the full name or "Imperial Foundation CDC"). Never say "Aura Allah". Introduce yourself as Aura.
 Speak clearly, avoid repeating yourself, guide the user, and always move the conversation forward.
 Ask only one follow-up question at a time.
 Help with bookings, services, and pricing without sounding robotic.
@@ -240,14 +241,14 @@ export async function generateAuraReply(userInput, opts = {}) {
   if (!raw) {
     core =
       L === "es"
-        ? "Gracias por llamar a la aplicación IFCDC Barbers. Soy AURA, tu asistente virtual. Estoy aquí para ayudarte a agendar citas, responder preguntas y asistirte con nuestros servicios. ¿En qué puedo ayudarte hoy?"
-        : "Thank you for calling the IFCDC Barbers App. This is AURA, your virtual assistant. I'm here to help you schedule appointments, answer questions, and assist with our services. How may I help you today?";
+        ? "Hola, soy Aura, tu asistente virtual. Gracias por llamar a la aplicación IFCDC Barbers. Estoy aquí para ayudarte a agendar citas, responder preguntas y asistirte con nuestros servicios. ¿En qué puedo ayudarte hoy?"
+        : "Hi, this is Aura, your virtual assistant. Thank you for calling the IFCDC Barbers App. I'm here to help you schedule appointments, answer questions, and assist with our services. How may I help you today?";
     skipGuide = true;
   } else if (raw === WELCOME_SENTINEL) {
     core =
       L === "es"
-        ? "Gracias por llamar a la aplicación IFCDC Barbers. Soy AURA, tu asistente virtual. Estoy aquí para ayudarte a agendar citas, responder preguntas y asistirte con nuestros servicios. ¿En qué puedo ayudarte hoy?"
-        : "Thank you for calling the IFCDC Barbers App. This is AURA, your virtual assistant. I'm here to help you schedule appointments, answer questions, and assist with our services. How may I help you today?";
+        ? "Hola, soy Aura, tu asistente virtual. Gracias por llamar a la aplicación IFCDC Barbers. Estoy aquí para ayudarte a agendar citas, responder preguntas y asistirte con nuestros servicios. ¿En qué puedo ayudarte hoy?"
+        : "Hi, this is Aura, your virtual assistant. Thank you for calling the IFCDC Barbers App. I'm here to help you schedule appointments, answer questions, and assist with our services. How may I help you today?";
     skipGuide = true;
   } else if (raw === NO_SPEECH_SENTINEL) {
     core =
@@ -380,7 +381,7 @@ async function voiceboxOrPollyUtterance(attrs, rawText, escapedText, { callSid, 
     text: prepared,
     language,
     conversationId: callSid,
-    voiceProfile: "AURA ALLAH — FOUNDER APPROVED V1",
+    voiceProfile: AURA_ALLAH_NAME,
   });
   if (attempt.used && attempt.url) return utteranceXml(attrs, escapedText, attempt.url);
   return utteranceXml(attrs, escapedText, null);

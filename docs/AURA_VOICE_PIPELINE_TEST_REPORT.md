@@ -35,8 +35,8 @@ It does **not** claim live microphone, television, or PSTN results.
 
 - Physically tested: **no**
 - Injected events:
-  - `{"kind":"assistant_tts","text":"Thank you for calling the IFCDC Barbers App. This is AURA."}`
-  - `{"kind":"transcript_echo","text":"Thank you for calling the IFCDC Barbers App. This is AURA.","confidence":0.94}`
+  - `{"kind":"assistant_tts","text":"Hi, this is Aura. Thank you for calling the IFCDC Barbers App."}`
+  - `{"kind":"transcript_echo","text":"Hi, this is Aura. Thank you for calling the IFCDC Barbers App.","confidence":0.94}`
 - Result: `{"gate":"silent_listen","reason":"echo_overlap","auraSpoke":false}`
 - Notes: Simulated loopback of last assistant line. No analog handset echo.
 

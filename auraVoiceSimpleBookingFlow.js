@@ -262,8 +262,8 @@ async function handleBooking(callSid, input, language, insertVoiceRow) {
       session.step = STATES.SERVICE;
       return {
         reply: T(
-          "Thank you for calling the IFCDC Barbers App. This is AURA, your virtual assistant. I'm here to help you schedule appointments, answer questions, and assist with our services. How may I help you today?",
-          "Gracias por llamar a la aplicación IFCDC Barbers. Soy AURA, tu asistente virtual. Estoy aquí para ayudarte a agendar citas, responder preguntas y asistirte con nuestros servicios. ¿En qué puedo ayudarte hoy?",
+          "Hi, this is Aura, your virtual assistant. Thank you for calling the IFCDC Barbers App. I'm here to help you schedule appointments, answer questions, and assist with our services. How may I help you today?",
+          "Hola, soy Aura, tu asistente virtual. Gracias por llamar a la aplicación IFCDC Barbers. Estoy aquí para ayudarte a agendar citas, responder preguntas y asistirte con nuestros servicios. ¿En qué puedo ayudarte hoy?",
         ),
         log: "start→service",
       };

@@ -152,7 +152,7 @@ function buildGreetingPreview(settings) {
   if (!settings) return null;
   if (settings.customGreeting) return settings.customGreeting;
   const name = String(settings.shopName || "").trim() || "this shop";
-  return `Thank you for calling ${name}, powered by the IFCDC Barbers App. This is AURA. How may I assist you today?`;
+  return `Hi, this is Aura. Thank you for calling ${name}, powered by the IFCDC Barbers App. How may I assist you today?`;
 }
 
 module.exports = {

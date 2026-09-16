@@ -7,7 +7,7 @@
 const STATIC_TERMS = [
   { pattern: /\bI\.?\s*F\.?\s*C\.?\s*D\.?\s*C\b/gi, speak: "I F C D C", id: "ifcdc" },
   { pattern: /\bIFCDC\b/g, speak: "I F C D C", id: "ifcdc_compact" },
-  { pattern: /\bAURA ALLAH\b/gi, speak: "Aura Allah", id: "aura_allah" },
+  { pattern: /\bAURA ALLAH\b/gi, speak: "Aura", id: "aura_allah" },
   { pattern: /\bAURA\b/g, speak: "Aura", id: "aura" },
 ];
 
@@ -110,7 +110,7 @@ function prepareSpokenText(text, { language = "en", extras = [] } = {}) {
 function defaultDictionary() {
   return [
     { id: "ifcdc", term: "IFCDC", speak: "I F C D C" },
-    { id: "aura_allah", term: "AURA Allah", speak: "Aura Allah" },
+    { id: "aura_allah", term: "AURA Allah", speak: "Aura" },
     { id: "aura", term: "AURA", speak: "Aura" },
     { id: "imperial", term: "Imperial Foundation CDC", speak: "Imperial Foundation C D C" },
   ];

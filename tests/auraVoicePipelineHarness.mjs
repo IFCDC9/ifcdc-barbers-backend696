@@ -89,7 +89,7 @@ resetAllCallRuntime();
 // 4 Own TTS echo
 {
   const sid = "H4";
-  const asst = "Thank you for calling the IFCDC Barbers App. This is AURA.";
+  const asst = "Hi, this is Aura. Thank you for calling the IFCDC Barbers App.";
   rememberAssistantSpeech(sid, asst);
   const gate = injectSpeech(sid, asst, 0.94);
   record(4, "Own TTS / echo", {

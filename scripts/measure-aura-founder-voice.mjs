@@ -15,6 +15,8 @@ const {
   FOUNDER_APPROVED_VOICE,
   SAMPLE_A_INSTRUCT,
   SAMPLE_SENTENCE,
+  SAMPLE_SENTENCE_ES,
+  SAMPLE_SENTENCE_HE,
   LANGUAGE_STATUS,
   ensureAuraAllahProfile,
   selectCanonicalEngine,
@@ -35,11 +37,11 @@ const PHRASES = {
   es: {
     short: "De acuerdo.",
     booking:
-      "Hola, soy Aura Allah en Imperial Foundation C D C Barbers. Puedo ayudarte a reservar un corte — dime el día y la hora que te sirve.",
+      SAMPLE_SENTENCE_ES,
   },
   he: {
     short: "הבנתי.",
-    booking: "שלום, כאן Aura Allah. אני יכולה לעזור לך לקבוע תור.",
+    booking: SAMPLE_SENTENCE_HE,
   },
 };
 
@@ -170,7 +172,7 @@ async function main() {
   writeFileSync(
     new URL("../docs/AURA_FOUNDER_APPROVED_VOICE.md", import.meta.url),
     [
-      "# AURA ALLAH — FOUNDER APPROVED V1",
+      "# AURA — FOUNDER APPROVED V1",
       "",
       `Updated: ${report.at}`,
       "",

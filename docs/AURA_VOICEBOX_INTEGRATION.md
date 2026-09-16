@@ -37,9 +37,11 @@ Voicebox is a **parallel TTS provider**. AURA brain, booking, Twilio Gather, HQ 
 
 Kokoro presets cover EN and ES with the **same speaker** (`af_heart`) as closely as Kokoro allows. Hebrew is **not** the same speaker: Kokoro has no HE identity, live Kokoro HE is too slow for a Twilio webhook, and Polly has no HE voice on this stack — HE callers currently hear English Polly.Joanna.
 
-## Profile AURA ALLAH — FOUNDER APPROVED V1
+## Profile AURA — FOUNDER APPROVED V1
 
-- Named Voicebox profile created via `POST /profiles` if missing
+- Named Voicebox profile created via `POST /profiles` if missing; renamed in place via `PUT /profiles/{id}` when the display name changes (voice ID stays `af_heart`)
+- Public display name: **AURA — FOUNDER APPROVED V1**. Customer-facing spoken name: **Aura**. Greeting: **Hi, this is Aura…** (never “Aura Allah”)
+- Internal symbols such as `AURA_ALLAH_NAME` may remain for stable refs
 - **Not cloned** (`voice_type`: `preset`, Kokoro `af_heart`)
 - Canonical in repo: `auraVoiceboxProfile.cjs` → `FOUNDER_APPROVED_VOICE`
 - Persisted in voice memory: `data/aura-voice-memory.json` (`founderApprovedVoice`; gitignored runtime copy)
@@ -65,7 +67,7 @@ Run `node --test tests/auraVoicebox.test.mjs`. Live Voicebox health is used for 
 - `auraVoiceboxFlags.cjs` — `VOICEBOX_PRIMARY` default 0
 - `auraVoiceboxClient.cjs` — real HTTP client
 - `auraVoiceboxBridge.cjs` — `speak()`, health, queue, cancel, stream, fallback
-- `auraVoiceboxProfile.cjs` — engine ranking + AURA ALLAH body
+- `auraVoiceboxProfile.cjs` — engine ranking + AURA founder-approved body
 - `auraVoiceboxRoutes.cjs` — audio + HQ memory
 - `auraVoicePronunciation.cjs` / `auraVoiceMemory.cjs`
 - `auraVoiceReply.js` / `auraVoiceCallRuntime.cjs` / `auraLocale.js` — Gather path extended

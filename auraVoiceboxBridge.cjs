@@ -9,11 +9,13 @@ const { isVoiceboxPrimary, voiceboxFlags } = require("./auraVoiceboxFlags.cjs");
 const { createVoiceboxClient } = require("./auraVoiceboxClient.cjs");
 const {
   AURA_ALLAH_NAME,
+  AURA_PUBLIC_NAME,
   FOUNDER_APPROVED_VOICE,
   LANGUAGE_STATUS,
   SAMPLE_A_INSTRUCT,
   selectCanonicalEngine,
   ensureAuraAllahProfile,
+  findAuraAllah,
   runtimeInstruct,
   heUsesPollyFallback,
 } = require("./auraVoiceboxProfile.cjs");
@@ -461,7 +463,7 @@ async function getVoiceboxHqStatus() {
     console.warn("[aura/voicebox] hq status extras:", e?.message || e);
   }
   const engine = selectCanonicalEngine(models);
-  const profile = profiles.find((p) => String(p?.name || "") === AURA_ALLAH_NAME) || profileCache.profile || null;
+  const profile = findAuraAllah(profiles) || profileCache.profile || null;
   if (profile?.id) {
     persistFounderApprovedVoice({
       profileId: profile.id,
@@ -508,6 +510,7 @@ async function getVoiceboxHqStatus() {
       engine: "kokoro",
       model: "kokoro",
       profileName: AURA_ALLAH_NAME,
+      customerFacingName: AURA_PUBLIC_NAME,
       profileId: profile?.id || approved.profileId || null,
       instruct: SAMPLE_A_INSTRUCT,
       speed: 1.0,

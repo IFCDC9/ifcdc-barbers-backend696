@@ -129,6 +129,7 @@ export default function AdminAuraVoice() {
               Founder-approved voice: <strong>A ({vb.founderApproved?.voiceId || "af_heart"})</strong>
             </div>
             <div>Named profile: {vb.founderApproved?.profileName || vb.profile || "—"}</div>
+            <div>Customer-facing name: {vb.founderApproved?.customerFacingName || "Aura"}</div>
             <div>Profile id: {vb.founderApproved?.profileId || vb.profileId || "—"}</div>
             <div>
               Active test model: {vb.activeTestModel?.engine || vb.engine || "kokoro"} /{" "}
