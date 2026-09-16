@@ -49,6 +49,7 @@ function createSession(callSid) {
     pendingQuestions: [],
     currentIntent: null,
     lastConfirmed: null,
+    language: null,
     playback: { speaking: false, interrupted: false, interruptedTurnId: null },
     lastAcceptedTurnId: null,
     lastEventFingerprint: null,
@@ -284,6 +285,11 @@ function markPlaybackSpeaking(callSid, speaking) {
   if (speaking) s.playback.interrupted = false;
 }
 
+let bargeInListener = null;
+function setBargeInListener(fn) {
+  bargeInListener = typeof fn === "function" ? fn : null;
+}
+
 function markBargeIn(callSid, { turnId } = {}) {
   const s = getCallRuntime(callSid);
   s.playback.speaking = false;
@@ -292,7 +298,27 @@ function markBargeIn(callSid, { turnId } = {}) {
   stats.bargeIns += 1;
   const last = s.auraTurns.at(-1);
   if (last) last.interrupted = true;
+  try {
+    if (bargeInListener) bargeInListener(callSid, s.playback.interruptedTurnId);
+  } catch (e) {
+    console.warn("[aura/runtime] barge-in listener:", e?.message || e);
+  }
   return { interruptedTurnId: s.playback.interruptedTurnId, resumeOldResponse: false };
+}
+
+/**
+ * Change spoken language for this call without resetting booking or ledger.
+ */
+function setCallLanguage(callSid, language) {
+  const s = getCallRuntime(callSid);
+  const next = String(language || "").trim().toLowerCase().split(/[-_]/)[0];
+  if (next === "iw") s.language = "he";
+  else if (next === "he" || next === "es" || next === "en") s.language = next;
+  return s.language;
+}
+
+function getCallLanguage(callSid) {
+  return getCallRuntime(callSid).language;
 }
 
 function shouldResumeInterruptedResponse() {
@@ -332,6 +358,7 @@ function snapshotLedger(callSid) {
     pendingQuestions: [...s.pendingQuestions],
     questionsAnswered: s.questionsAnswered.slice(-8),
     currentIntent: s.currentIntent,
+    language: s.language,
     lastConfirmed: s.lastConfirmed,
     completedActions: s.completedActions.slice(-8),
     recentCaller: s.callerTurns.filter((t) => t.accepted).slice(-6).map((t) => t.text),
@@ -447,6 +474,9 @@ module.exports = {
   recordAuraTurn,
   markPlaybackSpeaking,
   markBargeIn,
+  setBargeInListener,
+  setCallLanguage,
+  getCallLanguage,
   shouldResumeInterruptedResponse,
   mergeBookingInfo,
   setPendingQuestion,

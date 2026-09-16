@@ -13,6 +13,7 @@ const { adminListCalls, adminCallStats } = require("./auraVoiceIntelligenceLog.c
 const { maskPhoneForDisplay } = require("./smsPhone.cjs");
 const { getVoiceLatencyAverages } = require("./auraVoiceLatency.cjs");
 const { getNoiseControlStats, getVoiceStackReport } = require("./auraVoiceNoiseControl.cjs");
+const { getVoiceboxHqStatus } = require("./auraVoiceboxBridge.cjs");
 
 function createAuraVoiceIntelligenceRouter(deps = {}) {
   const { dbQuery, resolveAuthPayload, isSuperAdminEmail } = deps;
@@ -70,6 +71,23 @@ function createAuraVoiceIntelligenceRouter(deps = {}) {
       latency: getVoiceLatencyAverages(),
       noiseControl: getNoiseControlStats(),
       voiceStack: getVoiceStackReport(),
+      voicebox: await Promise.race([
+        getVoiceboxHqStatus(),
+        new Promise((resolve) =>
+          setTimeout(
+            () =>
+              resolve({
+                status: "TIMEOUT",
+                primary: false,
+                error: "Voicebox health timed out (expected on Render unless VOICEBOX_BASE_URL is tunneled)",
+              }),
+            1200,
+          ),
+        ),
+      ]).catch((e) => ({
+        status: "ERROR",
+        error: String(e?.message || e).slice(0, 160),
+      })),
       note: "Phase 1 is off by default. Set AURA_VOICE_INTELLIGENCE_PHASE_1=true to enable.",
     });
   });

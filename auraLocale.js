@@ -11,6 +11,38 @@ export function normalizeBarberLang(raw) {
 }
 
 /**
+ * Detect spoken language from caller text without touching booking state.
+ * Hebrew letters win. Clear Spanish markers win. Otherwise null (keep current).
+ * @returns {"en"|"es"|"he"|null}
+ */
+export function detectVoiceLanguageFromText(raw) {
+  const t = String(raw || "").trim();
+  if (!t) return null;
+  if (/[\u0590-\u05FF]/.test(t)) return "he";
+  const esHits = (t.match(
+    /\b(hola|gracias|por favor|quiero|necesito|reservar|corte|mañana|tarde|sí|cita|horario|precio)\b/gi,
+  ) || []).length;
+  const enHits = (t.match(
+    /\b(hello|hi|please|book|haircut|tomorrow|today|yes|appointment|hours|price)\b/gi,
+  ) || []).length;
+  if (esHits >= 2 && esHits > enHits) return "es";
+  if (enHits >= 2 && enHits > esHits) return "en";
+  return null;
+}
+
+/**
+ * Resolve reply language for a call: explicit detect → in-call saved lang → barber lang.
+ * @returns {"en"|"es"|"he"}
+ */
+export function resolveVoiceReplyLang(raw, currentLang, barberLang) {
+  const detected = detectVoiceLanguageFromText(raw);
+  if (detected) return detected;
+  const cur = normalizeAuraClientLang(currentLang);
+  if (cur) return cur;
+  return normalizeBarberLang(barberLang);
+}
+
+/**
  * Normalize a customer app language hint for AURA chat.
  * Recognizes en, es, and he (Hebrew). Legacy `iw` maps to he.
  * @returns {"en"|"es"|"he"|null}
@@ -78,9 +110,10 @@ export function openAiLanguageInstruction(lang) {
     : " Always respond in English. Keep replies short and actionable.";
 }
 
-/** Twilio <Say> voice + xml:lang for Polly. */
+/** Twilio <Say> voice + xml:lang for Polly. Hebrew has no Polly voice on this stack — Voicebox handles HE when primary. */
 export function twilioSayAttributes(lang, preferredVoice) {
-  if (normalizeBarberLang(lang) === "es") {
+  const client = normalizeAuraClientLang(lang);
+  if (client === "es" || normalizeBarberLang(lang) === "es") {
     return { voice: "Polly.Lucia", language: "es-ES" };
   }
   let v = String(preferredVoice || "").trim();

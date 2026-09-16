@@ -75,6 +75,7 @@ export default function AdminAuraVoice() {
   }, [load]);
 
   const flags = status?.flags || {};
+  const vb = status?.voicebox || null;
 
   return (
     <div style={{ maxWidth: 1100, margin: "24px auto", padding: "0 16px", color: "#f5f5f5" }}>
@@ -116,6 +117,29 @@ export default function AdminAuraVoice() {
         >
           Refresh
         </button>
+      </div>
+
+      <div style={panel}>
+        <h2 style={{ marginTop: 0, fontSize: 16 }}>VOICEBOX STATUS</h2>
+        {!vb ? (
+          <p style={{ color: "#888" }}>Voicebox status unavailable.</p>
+        ) : (
+          <div style={{ display: "grid", gap: 8, fontSize: 14 }}>
+            <div>
+              Status: <strong>{vb.status || "—"}</strong>
+              {vb.primary ? " · primary" : " · standby (Polly fallback)"}
+            </div>
+            <div>Model: {vb.model || "—"} {vb.engineDownloaded ? "(downloaded)" : "(not downloaded)"}</div>
+            <div>Engine: {vb.engine || "—"} {vb.engineTested ? "· tested locally" : "· untested until a model is downloaded"}</div>
+            <div>Profile: {vb.profile || "—"} {vb.voiceType ? `(${vb.voiceType})` : ""}</div>
+            <div>Language: {vb.language || "—"}</div>
+            <div>Latency: {vb.latencyMs != null ? `${vb.latencyMs} ms` : "—"}</div>
+            <div>Fallback: {vb.fallback || "none"}</div>
+            <div>Last lesson: {vb.lastLesson?.text || vb.memory?.lastLesson?.text || "—"}</div>
+            <div style={{ color: "#aaa", fontSize: 12 }}>{vb.engineReason}</div>
+            <div style={{ color: "#aaa", fontSize: 12 }}>{vb.enablement}</div>
+          </div>
+        )}
       </div>
 
       {stats ? (

@@ -59,6 +59,10 @@ uploads/
 mobile/uploads/
 backend/uploads/
 
+# local Voicebox / AURA speech cache (audio binaries stay off git)
+data/aura-voice-memory.json
+data/aura-voicebox-audio/
+
 # local Python tooling deps
 tools/_pydeps/
 __pycache__/

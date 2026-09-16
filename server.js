@@ -558,6 +558,20 @@ try {
   console.warn("[boot] /api/aura/voice-intelligence mount skipped:", e?.message || e);
 }
 
+try {
+  const { createAuraVoiceboxRouter } = require("./auraVoiceboxRoutes.cjs");
+  app.use(
+    "/api/aura/voicebox",
+    createAuraVoiceboxRouter({
+      resolveAuthPayload,
+      isSuperAdminEmail,
+    }),
+  );
+  console.log("[boot] mounted /api/aura/voicebox (parallel TTS; VOICEBOX_PRIMARY default 0)");
+} catch (e) {
+  console.warn("[boot] /api/aura/voicebox mount skipped:", e?.message || e);
+}
+
 app.use(
   session({
     secret: String(process.env.SESSION_SECRET || "aura-secret"),
