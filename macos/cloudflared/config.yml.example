@@ -1,0 +1,9 @@
+# Persistent named tunnel (NOT trycloudflare).
+# Public hostname → allowlisted proxy on 127.0.0.1:17494.
+# NEVER ingress to Voicebox admin 127.0.0.1:17493.
+tunnel: <TUNNEL_UUID>
+credentials-file: /Users/<FOUNDER>/.cloudflared/<TUNNEL_UUID>.json
+ingress:
+  - hostname: aura-voice.ifcdcbarbersapp.com
+    service: http://127.0.0.1:17494
+  - service: http_status:404

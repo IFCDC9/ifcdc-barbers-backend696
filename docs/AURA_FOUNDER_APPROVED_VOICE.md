@@ -69,9 +69,9 @@ HE policy: **polly_fallback**. Kokoro has no Hebrew speaker identity. Live Kokor
 1. On the Founder Mac with Voicebox open and Kokoro loaded:
    - Optional: `PIPECAT_ENABLED=1` and `python3 tools/pipecat/sidecar.py`
    - `VOICEBOX_PRIMARY=1` only when Twilio should Play Sample A
-2. `VOICEBOX_BASE_URL=http://127.0.0.1:17493`
+2. `VOICEBOX_BASE_URL=http://127.0.0.1:17493` on the Mac. Render uses `https://aura-voice.ifcdcbarbersapp.com` after Cloudflare named-tunnel login (`docs/AURA_VOICEBOX_TUNNEL.md`) plus `VOICEBOX_TUNNEL_SECRET`.
 3. Public `PUBLIC_API_URL` that Twilio can fetch (`/api/aura/voicebox/audio/:id`). Localhost Play URLs fall back to Polly.
-4. Do **not** set `VOICEBOX_PRIMARY=1` on Render until a private tunnel exists. Do **not** set it globally.
+4. Do **not** set `VOICEBOX_PRIMARY=1` on Render until Founder final call test. Do **not** set it globally.
 5. Leave entitlements / booking / Management Team flags untouched.
 
 See `docs/AURA_PIPECAT.md`.

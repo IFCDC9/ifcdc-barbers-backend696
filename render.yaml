@@ -28,6 +28,12 @@
 #     HUBSPOT_DEAL_STAGE_COMPLETED, HUBSPOT_DEAL_STAGE_CANCELLED, HUBSPOT_DEAL_STAGE_NO_SHOW
 #   ADMIN_SECRET (must match local .env ADMIN_SECRET / VITE_ADMIN_API_KEY for x-admin-key ops)
 #
+# AURA live voice (Voicebox Sample A is NOT production TTS):
+#   VOICEBOX_PRIMARY=0              KEEP OFF until Founder final call test.
+#   VOICEBOX_BASE_URL               https://aura-voice.ifcdcbarbersapp.com  (dashboard, after Cloudflare login)
+#   VOICEBOX_TUNNEL_SECRET          dashboard only — never commit the value
+#   See docs/AURA_VOICEBOX_TUNNEL.md
+#
 # Monetization / IAP (dashboard only — never commit secrets or .p8 / JSON keys):
 #   ENTITLEMENTS_ENFORCE=0          KEEP OFF. Do not set to 1 in this phase.
 #   ENTITLEMENTS_LOCK_SHOPS=0       KEEP OFF. Do not set to 1.
@@ -98,6 +104,13 @@ services:
       # Transactional SMS via existing Messaging Service (From +19895141064 set in code)
       - key: SMS_NOTIFICATIONS_ENABLED
         value: "1"
+      # AURA live voice: keep Polly. Do NOT set VOICEBOX_PRIMARY=1.
+      - key: VOICEBOX_PRIMARY
+        value: "0"
+      # Dashboard-only after Founder Cloudflare login (never commit values):
+      #   VOICEBOX_BASE_URL=https://aura-voice.ifcdcbarbersapp.com
+      #   VOICEBOX_TUNNEL_SECRET=<from Founder Mac data/aura-voicebox-tunnel.secret>
+      # See docs/AURA_VOICEBOX_TUNNEL.md
 
   # AURA / Twilio voice + chat API — same Node backend as backend696 (repo root), NOT client/
   # Twilio webhooks: set PUBLIC_BASE_URL to this service URL (e.g. https://aura-backend.onrender.com)
@@ -145,6 +158,14 @@ services:
       # Same customer multilingual gate as backend696 (voice booking emails).
       - key: MULTI_LANGUAGE_DROPDOWN_V2
         value: "1"
+      # AURA live voice: production stays Polly. Do NOT enable Voicebox globally.
+      - key: VOICEBOX_PRIMARY
+        value: "0"
+      # Dashboard-only after Founder Cloudflare login (never commit values):
+      #   VOICEBOX_BASE_URL=https://aura-voice.ifcdcbarbersapp.com
+      #   VOICEBOX_TUNNEL_SECRET=<from Founder Mac data/aura-voicebox-tunnel.secret>
+      # Named tunnel host is NOT 127.0.0.1. Voicebox admin is not exposed.
+      # See docs/AURA_VOICEBOX_TUNNEL.md
 
   # 30-day follow-up push reminders run inside the web service (setInterval every 6h on boot).
   # Do NOT add a separate cron service unless you copy DATABASE_URL + push env vars to it in Render.

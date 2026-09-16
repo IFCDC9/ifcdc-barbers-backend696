@@ -1,0 +1,24 @@
+# Example launchd agent. install-aura-voice-mac.sh writes the live copy to ~/Library/LaunchAgents.
+# KeepAlive recovers after login, network, and process drop. VOICEBOX_PRIMARY stays 0.
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.ifcdc.aura.voicebox-proxy</string>
+  <key>WorkingDirectory</key>
+  <string>__REPO_ROOT__</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>__REPO_ROOT__/scripts/macos/aura-voice-service.sh</string>
+    <string>proxy</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+</dict>
+</plist>

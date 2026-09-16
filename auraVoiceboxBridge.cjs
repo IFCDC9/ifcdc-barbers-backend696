@@ -5,8 +5,9 @@
  * Never drops a call. Never books. Never replaces AURA brain.
  */
 
-const { isVoiceboxPrimary, voiceboxFlags } = require("./auraVoiceboxFlags.cjs");
+const { isVoiceboxPrimary, voiceboxFlags, voiceboxTunnelHostname } = require("./auraVoiceboxFlags.cjs");
 const { createVoiceboxClient } = require("./auraVoiceboxClient.cjs");
+const { classifyVoiceboxFailure, isLoopbackBase, voiceboxUsesTunnelAuth } = require("./auraVoiceboxTunnelAuth.cjs");
 const {
   AURA_ALLAH_NAME,
   AURA_PUBLIC_NAME,
@@ -159,16 +160,27 @@ async function probeHealth(force = false) {
   if (!force && healthCache.value && now - healthCache.at < flags.healthTtlMs) return healthCache.value;
   try {
     const health = await getClient().health(flags.healthTimeoutMs);
+    const healthy = String(health?.status || "").toLowerCase() === "healthy" && health?.online !== false;
     const value = {
-      ok: String(health?.status || "").toLowerCase() === "healthy",
+      ok: healthy,
       reachable: true,
+      online: healthy,
+      reason: healthy ? null : "unhealthy",
       health,
-      error: null,
+      error: healthy ? null : "unhealthy",
     };
     healthCache = { at: now, value };
     return value;
   } catch (e) {
-    const value = { ok: false, reachable: false, health: null, error: String(e?.message || e).slice(0, 180) };
+    const reason = classifyVoiceboxFailure(e);
+    const value = {
+      ok: false,
+      reachable: reason === "auth_fail" || reason === "rate_limited",
+      online: false,
+      reason,
+      health: null,
+      error: String(e?.message || e).slice(0, 180),
+    };
     healthCache = { at: now, value };
     return value;
   }
@@ -370,8 +382,9 @@ async function speak(opts = {}) {
 
   const health = await probeHealth();
   if (!health.reachable || !health.ok) {
-    recordFallback("unhealthy", health.error);
-    return { ok: false, fallback: true, reason: "unhealthy", error: health.error };
+    const reason = health.reason || "unhealthy";
+    recordFallback(reason, health.error);
+    return { ok: false, fallback: true, reason, error: health.error };
   }
 
   const language = mapLanguage(opts.language);
@@ -424,7 +437,7 @@ async function speak(opts = {}) {
     });
     return result;
   } catch (e) {
-    const reason = e?.code === "timeout" || String(e?.message || "").includes("timeout") ? "timeout" : "error";
+    const reason = classifyVoiceboxFailure(e);
     recordFallback(reason, e);
     stats.lastLatencyMs = Date.now() - started;
     return { ok: false, fallback: true, reason, error: String(e?.message || e).slice(0, 180) };
@@ -732,9 +745,29 @@ async function getVoiceboxHqStatus() {
     polly,
     stats: { ...stats },
     enablement:
-      "Tessa later: (1) PIPECAT_ENABLED=1 on the Founder Mac with Voicebox + optional `python3 tools/pipecat/sidecar.py`. (2) VOICEBOX_PRIMARY=1 only on a host that can reach Voicebox. Leave both 0 on Render until a private tunnel exists. Polly remains production primary. Sample A is the test identity only.",
-    tunnel:
-      "Render cannot reach 127.0.0.1 on the Founder Mac. To try primary from Render, run a private tunnel and set VOICEBOX_BASE_URL to that URL. Default path is local/HQ + Polly fallback.",
+      "Tessa later: (1) Founder Cloudflare login + named tunnel (docs/AURA_VOICEBOX_TUNNEL.md). (2) PIPECAT_ENABLED=1 on the Founder Mac with Voicebox + optional sidecar. (3) VOICEBOX_PRIMARY=1 only after Founder final call test. Leave VOICEBOX_PRIMARY=0 on Render. Polly remains production primary. Sample A is the test identity only. Never use Aura Allah publicly.",
+    tunnel: (() => {
+      const loopback = isLoopbackBase(flags.baseUrl);
+      const auth = voiceboxUsesTunnelAuth(flags.baseUrl);
+      const hostname = voiceboxTunnelHostname();
+      const publicUrl = loopback ? null : flags.baseUrl;
+      const online = Boolean(health.ok) && !loopback && Boolean(publicUrl);
+      return {
+        online,
+        ready: online,
+        loopback,
+        hostname,
+        publicUrl: publicUrl || `https://${hostname}`,
+        auth: auth ? "hmac" : flags.tunnelSecretConfigured ? "secret_configured_loopback" : "not_configured",
+        secretConfigured: Boolean(flags.tunnelSecretConfigured),
+        voiceboxOk: Boolean(health.ok),
+        reason: online
+          ? null
+          : health.reason || (loopback ? "loopback_not_public" : "unhealthy"),
+        note:
+          "Render VOICEBOX_BASE_URL must be the HTTPS Cloudflare named-tunnel host. Proxy allowlists health/speak/generate only. Voicebox admin stays on 127.0.0.1:17493. Do not report ONLINE if Mac/Voicebox/tunnel is down.",
+      };
+    })(),
   };
   hq.pipelineHealth = getPipelineHealth({
     voicebox: hq,

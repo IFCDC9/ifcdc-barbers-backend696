@@ -4,6 +4,12 @@
  * on the Founder Mac. Does not change booking, PayPal, entitlements, or Twilio.
  */
 
+const {
+  voiceboxTunnelSecret,
+  voiceboxUsesTunnelAuth,
+  isLoopbackBase,
+} = require("./auraVoiceboxTunnelAuth.cjs");
+
 function envFlagOn(name) {
   const v = String(process.env[name] || "0").trim().toLowerCase();
   return v === "1" || v === "true" || v === "yes" || v === "on";
@@ -22,12 +28,21 @@ function isVoiceboxPrimary() {
   return envFlagOn("VOICEBOX_PRIMARY");
 }
 
+function voiceboxTunnelHostname() {
+  return String(process.env.VOICEBOX_TUNNEL_HOSTNAME || "aura-voice.ifcdcbarbersapp.com")
+    .trim()
+    .replace(/^https?:\/\//i, "")
+    .replace(/\/$/, "");
+}
+
 function voiceboxFlags() {
   const { FOUNDER_APPROVED_VOICE } = require("./auraVoiceboxProfile.cjs");
   const engineOverride = String(process.env.VOICEBOX_ENGINE || "").trim();
+  const baseUrl = voiceboxBaseUrl();
+  const tunnelAuth = voiceboxUsesTunnelAuth(baseUrl);
   return {
     primary: isVoiceboxPrimary(),
-    baseUrl: voiceboxBaseUrl(),
+    baseUrl,
     timeoutMs: Math.max(1500, envNum("VOICEBOX_TIMEOUT_MS", 8000)),
     healthTimeoutMs: Math.max(400, envNum("VOICEBOX_HEALTH_TIMEOUT_MS", 2000)),
     healthTtlMs: Math.max(500, envNum("VOICEBOX_HEALTH_TTL_MS", 4000)),
@@ -41,8 +56,12 @@ function voiceboxFlags() {
     crossfadeMs: Math.min(500, Math.max(0, envNum("VOICEBOX_CROSSFADE_MS", 40))),
     hePollyFallback: String(process.env.VOICEBOX_HE_POLLY_FALLBACK || "1").trim() !== "0",
     productionActivation: "OFF",
+    tunnelHostname: voiceboxTunnelHostname(),
+    tunnelAuth,
+    tunnelSecretConfigured: Boolean(voiceboxTunnelSecret()),
+    loopback: isLoopbackBase(baseUrl),
     note:
-      "VOICEBOX_PRIMARY default 0. Founder-approved Sample A (Kokoro af_heart) is the test identity only. Production Polly/Twilio Say stays until Tessa enables. Render cannot reach Founder Mac 127.0.0.1 unless VOICEBOX_BASE_URL is a tunnel.",
+      "VOICEBOX_PRIMARY default 0. Founder-approved Sample A (Kokoro af_heart) is the test identity only. Production Polly/Twilio Say stays until Tessa enables. Render uses VOICEBOX_BASE_URL HTTPS tunnel host + VOICEBOX_TUNNEL_SECRET HMAC; never Voicebox 127.0.0.1 admin.",
   };
 }
 
@@ -50,5 +69,6 @@ module.exports = {
   envFlagOn,
   voiceboxBaseUrl,
   isVoiceboxPrimary,
+  voiceboxTunnelHostname,
   voiceboxFlags,
 };

@@ -64,7 +64,7 @@ Run `node --test tests/auraVoicebox.test.mjs`. Live Voicebox health is used for 
    - `VOICEBOX_BASE_URL=http://127.0.0.1:17493` (default)
    - Restart the local API
 2. Twilio `<Play>` needs a **public** `PUBLIC_API_URL` that can fetch `/api/aura/voicebox/audio/:id`. Localhost Play URLs are rejected and **fall back to Polly**.
-3. **Do not** set `VOICEBOX_PRIMARY=1` on Render until there is a **documented private tunnel** from Render → Founder Mac, and `VOICEBOX_BASE_URL` is that tunnel URL. Default Render path is Polly.
+3. **Do not** set `VOICEBOX_PRIMARY=1` on Render. Named Cloudflare Tunnel + HMAC (`VOICEBOX_TUNNEL_SECRET`) is required first (`docs/AURA_VOICEBOX_TUNNEL.md`). Default Render path is Polly. `VOICEBOX_BASE_URL` on Render is `https://aura-voice.ifcdcbarbersapp.com`, never `127.0.0.1`.
 4. Leave `ENTITLEMENTS_ENFORCE=0` unless Tessa separately authorizes it. This work does not touch entitlements.
 
 See `docs/AURA_PIPECAT.md`.
@@ -83,7 +83,9 @@ See `docs/AURA_PIPECAT.md`.
 - `client/src/pages/AdminAuraVoice.jsx` / `frontend/src/pages/AdminAuraVoice.jsx` — Founder-approved + Voicebox/Pipecat/Twilio/Polly + PRODUCTION PRIMARY OFF
 - `tests/auraVoicebox.test.mjs`
 - `scripts/measure-aura-founder-voice.mjs`
-- `docs/AURA_PIPECAT.md`
+- `auraVoiceboxTunnelAuth.cjs` / `auraVoiceboxTunnelProxy.cjs` — HMAC allowlisted edge
+- `scripts/install-aura-voice-mac.sh` — launchd + named cloudflared (not trycloudflare)
+- `docs/AURA_VOICEBOX_TUNNEL.md`
 
 ## Remaining limits
 
@@ -91,6 +93,6 @@ See `docs/AURA_PIPECAT.md`.
 - Polly fallback cannot speak Hebrew (no Polly HE voice on this stack)
 - Kokoro HE is too slow / not the same speaker → HE uses Polly fallback (English Joanna)
 - `/generate/stream` typically delivers a complete WAV, so first-byte can be close to total; Pipecat ack-prefix is what makes the first *phrase* fast
-- Render cannot reach Founder Mac Voicebox without a tunnel
+- Render cannot reach Founder Mac Voicebox without a **named Cloudflare Tunnel** to the allowlisted proxy (`docs/AURA_VOICEBOX_TUNNEL.md`). `VOICEBOX_PRIMARY` stays **0**. Founder `cloudflared tunnel login` is the remaining stop for a persistent hostname.
 - Voice memory is file-backed (`data/aura-voice-memory.json`), not production Postgres (schema freeze)
 - Full `pipecat-ai` 1.6+ needs Python 3.11+; this Mac has 3.9 so the sidecar runs stdlib VAD unless 3.11 is installed

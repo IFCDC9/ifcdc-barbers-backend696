@@ -16,7 +16,8 @@ Latency trick: long booking lines start with a complete phrase (**“Absolutely�
 |---|---|---|
 | `PIPECAT_ENABLED` | `0` | Test-path orchestrator (chunking + continue Play). Live Twilio still Polly unless Voicebox primary is also on. |
 | `VOICEBOX_PRIMARY` | `0` | Use Voicebox `<Play>` instead of Polly `<Say>`. **Leave off on Render.** |
-| `PIPECAT_SIDECAR_URL` | `http://127.0.0.1:8766` | Optional Founder-Mac sidecar |
+| `VOICEBOX_BASE_URL` | `http://127.0.0.1:17493` locally; Render uses `https://aura-voice.ifcdcbarbersapp.com` after tunnel login | HMAC via `VOICEBOX_TUNNEL_SECRET` |
+| `PIPECAT_SIDECAR_URL` | `http://127.0.0.1:8766` | Optional Founder-Mac sidecar (not tunneled) |
 
 Do **not** set `VOICEBOX_PRIMARY=1` globally or on Render.
 
@@ -25,7 +26,7 @@ Do **not** set `VOICEBOX_PRIMARY=1` globally or on Render.
 1. Founder Mac: Voicebox open, Kokoro loaded, Sample A profile named **AURA — FOUNDER APPROVED V1**.
 2. Optional sidecar: `python3 tools/pipecat/sidecar.py` (pipecat-ai 1.6+ needs Python **3.11+**; sidecar still serves `/health` on 3.9 without the package).
 3. Test path only: `PIPECAT_ENABLED=1` (streaming first phrase). Production stays Polly.
-4. When ready for live Voicebox Play: `VOICEBOX_PRIMARY=1` **only** on the host that can reach `VOICEBOX_BASE_URL` (Founder Mac or a documented private tunnel). `PUBLIC_API_URL` must be HTTPS public so Twilio can `<Play>` `/api/aura/voicebox/audio/:id`.
+4. When ready for live Voicebox Play: `VOICEBOX_PRIMARY=1` **only after** Founder final call test. Render needs `VOICEBOX_BASE_URL=https://aura-voice.ifcdcbarbersapp.com` and `VOICEBOX_TUNNEL_SECRET` (dashboard). Named Cloudflare Tunnel docs: `docs/AURA_VOICEBOX_TUNNEL.md`. `PUBLIC_API_URL` must be HTTPS public so Twilio can `<Play>` `/api/aura/voicebox/audio/:id`.
 5. Leave entitlements, booking DB, Management Team, PayPal, and the `$0.99` fee untouched.
 
 ## Language routing

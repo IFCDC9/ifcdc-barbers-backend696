@@ -62,6 +62,12 @@ backend/uploads/
 # local Voicebox / AURA speech cache (audio binaries stay off git)
 data/aura-voice-memory.json
 data/aura-voicebox-audio/
+data/aura-voicebox-tunnel.secret
+data/aura-voicebox-tunnel.json
+data/aura-voice-runtime.json
+macos/cloudflared/config.yml
+macos/launchd/*.plist
+!macos/launchd/*.plist.example
 *.wav
 
 # local Python tooling deps

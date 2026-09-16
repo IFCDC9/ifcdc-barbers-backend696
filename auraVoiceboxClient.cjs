@@ -4,6 +4,7 @@
  */
 
 const { voiceboxFlags } = require("./auraVoiceboxFlags.cjs");
+const { signVoiceboxTunnelRequest, voiceboxUsesTunnelAuth, voiceboxTunnelSecret } = require("./auraVoiceboxTunnelAuth.cjs");
 
 function defaultFetch() {
   return globalThis.fetch.bind(globalThis);
@@ -36,6 +37,14 @@ async function parseBody(res) {
   return buf;
 }
 
+function tunnelHeaders(method, path, body, flags) {
+  const base = flags?.baseUrl;
+  if (!voiceboxUsesTunnelAuth(base)) return {};
+  const secret = voiceboxTunnelSecret();
+  if (!secret) return {};
+  return signVoiceboxTunnelRequest({ secret, method, path, body });
+}
+
 function createVoiceboxClient(opts = {}) {
   const fetchImpl = opts.fetch || defaultFetch();
   const flags = () => ({ ...voiceboxFlags(), ...(opts.flags || {}) });
@@ -43,15 +52,17 @@ function createVoiceboxClient(opts = {}) {
   async function request(method, path, { json, timeoutMs, headers } = {}) {
     const f = flags();
     const t = withTimeout(timeoutMs || f.timeoutMs);
+    const rawBody = json ? JSON.stringify(json) : undefined;
     try {
       const res = await fetchImpl(joinUrl(f.baseUrl, path), {
         method,
         headers: {
           Accept: "application/json",
           ...(json ? { "Content-Type": "application/json" } : {}),
+          ...tunnelHeaders(method, path, rawBody, f),
           ...(headers || {}),
         },
-        body: json ? JSON.stringify(json) : undefined,
+        body: rawBody,
         signal: t.signal,
       });
       const body = await parseBody(res);
@@ -70,14 +81,16 @@ function createVoiceboxClient(opts = {}) {
   async function requestBinary(method, path, { json, timeoutMs } = {}) {
     const f = flags();
     const t = withTimeout(timeoutMs || f.timeoutMs);
+    const rawBody = json ? JSON.stringify(json) : undefined;
     try {
       const res = await fetchImpl(joinUrl(f.baseUrl, path), {
         method,
         headers: {
           Accept: "audio/wav, audio/mpeg, application/octet-stream, application/json",
           ...(json ? { "Content-Type": "application/json" } : {}),
+          ...tunnelHeaders(method, path, rawBody, f),
         },
-        body: json ? JSON.stringify(json) : undefined,
+        body: rawBody,
         signal: t.signal,
       });
       const ct = String(res.headers.get("content-type") || "");
@@ -112,14 +125,16 @@ function createVoiceboxClient(opts = {}) {
       if (typeof onAbort === "function") onAbort(() => t.abort());
       const started = Date.now();
       let firstByteMs = null;
+      const rawBody = JSON.stringify(body);
       try {
         const res = await fetchImpl(joinUrl(f.baseUrl, "/generate/stream"), {
           method: "POST",
           headers: {
             Accept: "audio/wav, audio/mpeg, application/octet-stream, application/json",
             "Content-Type": "application/json",
+            ...tunnelHeaders("POST", "/generate/stream", rawBody, f),
           },
-          body: JSON.stringify(body),
+          body: rawBody,
           signal: t.signal,
         });
         const ct = String(res.headers.get("content-type") || "");

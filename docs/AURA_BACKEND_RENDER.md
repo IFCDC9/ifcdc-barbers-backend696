@@ -41,6 +41,11 @@ Copy from `ifcdc-barbers-backend696` (same Postgres + Twilio + OpenAI):
 | `PUBLIC_BASE_URL` | `https://aura-backend.onrender.com` (this service URL) |
 | `NODE_ENV` | `production` |
 | `SKIP_VITE_ENV_VALIDATION` | `true` (backend-only service) |
+| `VOICEBOX_PRIMARY` | **`0`** (keep Polly). Do not set `1`. |
+| `VOICEBOX_BASE_URL` | Dashboard after Cloudflare login: `https://aura-voice.ifcdcbarbersapp.com` |
+| `VOICEBOX_TUNNEL_SECRET` | Dashboard only — never git. Copy from Mac `data/aura-voicebox-tunnel.secret` |
+
+See `docs/AURA_VOICEBOX_TUNNEL.md`. Founder `cloudflared tunnel login` is required for a persistent hostname.
 
 **Do not** set `rootDir: client` or build the Vite SPA on this service.
 
