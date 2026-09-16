@@ -25,33 +25,30 @@ Voicebox is a **parallel TTS provider**. AURA brain, booking, Twilio Gather, HQ 
 
 **Generation request:** `{ profile_id, text, language, seed, model_size (1.7B\|0.6B\|1B\|3B), instruct, engine, personality, max_chunk_chars, crossfade_ms, normalize }`. There is **no `speed` field**; pace is mapped into `instruct`.
 
-## Model chosen
+## Model chosen (Founder-approved)
 
-**Tested locally: Kokoro 82M** (`downloaded=true`, `loaded=true`). Female preset **`af_heart`** (warm) for AURA ALLAH. Qwen3-TTS 1.7B is in the UI but was **not downloaded**, so it was not ranked as “best” — only downloaded engines are tested.
+**Canonical identity: Sample A (round2) — Kokoro 82M preset `af_heart`.** Qwen 1.7B may be downloaded on the Founder Mac; it is **not** the approved speaker and is not used for AURA speech.
 
-Kokoro presets cover EN and ES. Live check: ES completed in ~4.4s; HE completed in ~22s on Kokoro (too slow for a Twilio webhook, so the phone path will **fallback** until a faster multilingual model such as Qwen 1.7B is downloaded). Qwen 1.7B remains the strongest *candidate* once downloaded.
+- Engine / model: `kokoro` / `kokoro`
+- Voice ID: `af_heart`
+- Speed: `1.0` (Voicebox has no speed field; 1.0 means no pace override)
+- Instruct: `Warm, soft, confident, conversational. Mature-youthful. Never cartoonish or caricature.`
+- Production activation: **OFF**. `VOICEBOX_PRIMARY` default **0**. Polly remains the live-call path.
 
-1. Qwen TTS 1.7B (multilingual EN/ES/HE)
-2. Qwen CustomVoice 1.7B
-3. TADA 3B multilingual
-4. Qwen 0.6B variants
-5. Chatterbox multilingual
-6. Kokoro 82M (EN/ES presets, **no Hebrew**)
+Kokoro presets cover EN and ES with the **same speaker** (`af_heart`) as closely as Kokoro allows. Hebrew is **not** the same speaker: Kokoro has no HE identity, live Kokoro HE is too slow for a Twilio webhook, and Polly has no HE voice on this stack — HE callers currently hear English Polly.Joanna.
 
-Kokoro female presets matching character: `af_heart` (warm). Qwen CustomVoice female preset closest: `Serena` (API labels it `zh`). Designed voice + `instruct` is used so the **same profile** speaks EN/ES/HE.
+## Profile AURA ALLAH — FOUNDER APPROVED V1
 
-## Profile AURA ALLAH
-
-- Created via `POST /profiles` if missing (`id` `808d37fe-02e0-49bd-8d1d-e54e7ff97b34` on Founder Mac)
+- Named Voicebox profile created via `POST /profiles` if missing
 - **Not cloned** (`voice_type`: `preset`, Kokoro `af_heart`)
-- Character: female, warm, soft, confident, mature-youthful, conversational; never caricature/stereotype
-- **Not locked** — samples A–E are for Founder choice
-- Sample sentence (same for A–E) with five `instruct` variants in `auraVoiceboxProfile.cjs`
-- Audio (outside git): `~/Documents/ifcdc-aura-voice-samples/aura-allah-sample-{A-E}.wav`
+- Canonical in repo: `auraVoiceboxProfile.cjs` → `FOUNDER_APPROVED_VOICE`
+- Persisted in voice memory: `data/aura-voice-memory.json` (`founderApprovedVoice`; gitignored runtime copy)
+- HQ: `/admin/aura-voice` (Founder-approved voice = A / `af_heart`, production activation OFF)
+- Source wav (not in git): `~/Documents/ifcdc-aura-voice-samples/round2/aura-allah-A.wav`
 
 ## Tests 1–17
 
-All **PASS** (`node --test tests/auraVoicebox.test.mjs`). See `docs/AURA_VOICEBOX_TEST_RESULTS.md`. Live Voicebox health was used for tests 1 and 3. Timeout/outage/invalid-audio used a mock client (honest: not a live crash). Live EN samples A–E generated on Kokoro.
+Run `node --test tests/auraVoicebox.test.mjs`. Live Voicebox health is used for tests 1 and 3. Timeout/outage/invalid-audio use a mock client. Latency harness: `node scripts/measure-aura-founder-voice.mjs` (writes wavs under `~/Documents`, not git).
 
 ## How Tessa enables Voicebox primary
 
@@ -72,15 +69,15 @@ All **PASS** (`node --test tests/auraVoicebox.test.mjs`). See `docs/AURA_VOICEBO
 - `auraVoiceboxRoutes.cjs` — audio + HQ memory
 - `auraVoicePronunciation.cjs` / `auraVoiceMemory.cjs`
 - `auraVoiceReply.js` / `auraVoiceCallRuntime.cjs` / `auraLocale.js` — Gather path extended
-- `client/src/pages/AdminAuraVoice.jsx` — VOICEBOX STATUS panel
+- `client/src/pages/AdminAuraVoice.jsx` / `frontend/src/pages/AdminAuraVoice.jsx` — Founder-approved + VOICEBOX STATUS
 - `tests/auraVoicebox.test.mjs`
-- `scripts/generate-aura-voice-samples.mjs`
+- `scripts/measure-aura-founder-voice.mjs`
 
 ## Remaining limits
 
-- Gather still has no raw PCM / true AEC; barge-in is Twilio + cancel of Voicebox jobs
+- Gather still has no raw PCM / true AEC; barge-in is Twilio + cancel of Voicebox stream/jobs
 - Polly fallback cannot speak Hebrew (no Polly HE voice on this stack)
-- Same-person multilingual quality depends on the downloaded engine (Kokoro HE is slow ~22s)
-- Streaming WAV is used when `POST /generate/stream` works; Twilio Gather still needs a complete Play URL
+- Kokoro HE is too slow / not the same speaker → HE uses Polly fallback (English Joanna)
+- `/generate/stream` typically delivers a complete WAV, so first-byte can be close to total; Twilio Play still needs a finished URL
 - Render cannot reach Founder Mac Voicebox without a tunnel
 - Voice memory is file-backed (`data/aura-voice-memory.json`), not production Postgres (schema freeze)

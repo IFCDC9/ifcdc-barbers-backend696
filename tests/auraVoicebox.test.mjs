@@ -14,6 +14,8 @@ const { isVoiceboxPrimary, voiceboxFlags } = require("../auraVoiceboxFlags.cjs")
 const { createVoiceboxClient } = require("../auraVoiceboxClient.cjs");
 const {
   AURA_ALLAH_NAME,
+  FOUNDER_APPROVED_VOICE,
+  SAMPLE_A_INSTRUCT,
   selectBestLocalEngine,
   auraAllahCreateBody,
   SAMPLE_INSTRUCTS,
@@ -66,8 +68,10 @@ function mockClient(overrides = {}) {
   const profile = {
     id: "profile-aura-allah",
     name: AURA_ALLAH_NAME,
-    voice_type: "designed",
-    default_engine: "qwen",
+    voice_type: "preset",
+    preset_engine: "kokoro",
+    preset_voice_id: "af_heart",
+    default_engine: "kokoro",
     language: "en",
   };
   return {
@@ -83,11 +87,12 @@ function mockClient(overrides = {}) {
     modelsStatus: async () => ({
       models: [
         { model_name: "qwen-tts-1.7B", downloaded: true, loaded: true, display_name: "Qwen TTS 1.7B" },
-        { model_name: "kokoro", downloaded: false, loaded: false, display_name: "Kokoro 82M" },
+        { model_name: "kokoro", downloaded: true, loaded: true, display_name: "Kokoro 82M" },
       ],
     }),
     listProfiles: async () => [profile],
     createProfile: async (body) => ({ id: "profile-new", ...body, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }),
+    updateProfile: async (id, body) => ({ id, ...profile, ...body, updated_at: new Date().toISOString() }),
     generateStream: async (body) => {
       generated.push({ via: "stream", ...body });
       return { buffer: tinyWav(), contentType: "audio/wav" };
@@ -190,8 +195,8 @@ test("4 speak() maps to real Voicebox generate fields", async () => {
   assert.ok(body);
   assert.equal(body.profile_id, "profile-aura-allah");
   assert.equal(body.language, "en");
-  assert.equal(body.engine, "qwen");
-  assert.match(String(body.instruct || ""), /warm/i);
+  assert.equal(body.engine, "kokoro");
+  assert.match(String(body.instruct || ""), /Warm, soft, confident, conversational/i);
   assert.ok(isValidAudio(out.audio));
   results.push({ id: 4, name: "speak() maps to /generate or /generate/stream", result: "PASS" });
 });
@@ -229,10 +234,10 @@ test("8 language change does not reset booking state", () => {
   results.push({ id: 8, name: "Language change keeps booking ledger", result: "PASS" });
 });
 
-test("9 same profile across EN/ES/HE", async () => {
+test("9 same profile across EN/ES; HE uses Polly fallback", async () => {
   const client = mockClient();
   setVoiceboxClientForTests(client);
-  for (const lang of ["en", "es", "he"]) {
+  for (const lang of ["en", "es"]) {
     const out = await speak({ text: "Booking confirmation", language: lang, conversationId: `same-${lang}` });
     assert.equal(out.ok, true);
     assert.equal(out.profileId, "profile-aura-allah");
@@ -240,7 +245,11 @@ test("9 same profile across EN/ES/HE", async () => {
   }
   const ids = client.generated.map((g) => g.profile_id);
   assert.ok(ids.every((id) => id === "profile-aura-allah"));
-  results.push({ id: 9, name: "Same AURA ALLAH profile across EN/ES/HE", result: "PASS" });
+  const he = await speak({ text: "Booking confirmation", language: "he", conversationId: "same-he" });
+  assert.equal(he.ok, false);
+  assert.equal(he.fallback, true);
+  assert.equal(he.reason, "hebrew_kokoro_too_slow");
+  results.push({ id: 9, name: "Same Sample A profile EN/ES; HE Polly fallback", result: "PASS" });
 });
 
 test("10 timeout → fallback", async () => {
@@ -369,11 +378,18 @@ test("16 HQ status payload fields", async () => {
   addLesson("Say shop names slowly.");
   upsertPronunciation({ from: "Fade", to: "fade" });
   const hq = await getVoiceboxHqStatus();
-  for (const key of ["status", "model", "profile", "language", "latencyMs", "fallback", "lastLesson"]) {
+  for (const key of ["status", "model", "profile", "language", "latencyMs", "fallback", "lastLesson", "founderApproved", "productionActivation"]) {
     assert.ok(key in hq, `missing ${key}`);
   }
   assert.equal(typeof hq.status, "string");
+  assert.equal(hq.productionActivation, "OFF");
+  assert.equal(hq.primary, false);
+  assert.equal(hq.founderApproved.sample, "A");
+  assert.equal(hq.founderApproved.voiceId, "af_heart");
+  assert.equal(hq.founderApproved.productionActivation, "OFF");
   assert.ok(getVoiceMemorySnapshot().lastLesson);
+  assert.equal(getVoiceMemorySnapshot().founderApprovedVoice.voiceId, "af_heart");
+  assert.equal(FOUNDER_APPROVED_VOICE.instruct, SAMPLE_A_INSTRUCT);
   results.push({ id: 16, name: "HQ VOICEBOX STATUS fields", result: "PASS", detail: hq.status });
 });
 

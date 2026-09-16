@@ -9,11 +9,21 @@ const { isVoiceboxPrimary, voiceboxFlags } = require("./auraVoiceboxFlags.cjs");
 const { createVoiceboxClient } = require("./auraVoiceboxClient.cjs");
 const {
   AURA_ALLAH_NAME,
-  selectBestLocalEngine,
+  FOUNDER_APPROVED_VOICE,
+  LANGUAGE_STATUS,
+  SAMPLE_A_INSTRUCT,
+  selectCanonicalEngine,
   ensureAuraAllahProfile,
+  runtimeInstruct,
+  heUsesPollyFallback,
 } = require("./auraVoiceboxProfile.cjs");
 const { prepareSpokenText } = require("./auraVoicePronunciation.cjs");
-const { listPronunciations, getLastLesson, getVoiceMemorySnapshot } = require("./auraVoiceMemory.cjs");
+const {
+  listPronunciations,
+  getLastLesson,
+  getVoiceMemorySnapshot,
+  persistFounderApprovedVoice,
+} = require("./auraVoiceMemory.cjs");
 
 const MAX_CACHE = 40;
 const audioCache = new Map();
@@ -25,6 +35,8 @@ const stats = {
   invalidAudio: 0,
   cancels: 0,
   lastLatencyMs: null,
+  lastFirstByteMs: null,
+  lastTotalMs: null,
   lastFallbackReason: null,
   lastEngine: null,
   lastProfileId: null,
@@ -66,6 +78,8 @@ function resetVoiceboxBridgeForTests() {
   stats.invalidAudio = 0;
   stats.cancels = 0;
   stats.lastLatencyMs = null;
+  stats.lastFirstByteMs = null;
+  stats.lastTotalMs = null;
   stats.lastFallbackReason = null;
   stats.lastEngine = null;
   stats.lastProfileId = null;
@@ -106,16 +120,15 @@ function mapLanguage(language) {
 }
 
 function instructFromTone(emotionalTone, speed) {
-  const bits = [];
-  const tone = String(emotionalTone || "").trim();
-  if (tone) bits.push(tone.slice(0, 220));
-  else bits.push("Warm, soft, confident, conversational. Same person. Never caricature.");
-  const spd = String(speed || "").trim().toLowerCase();
-  if (spd === "slow" || spd === "slower") bits.push("Unhurried pace.");
-  else if (spd === "fast" || spd === "faster") bits.push("Slightly brisk, still clear.");
-  else if (spd && Number(spd) > 0 && Number(spd) < 0.95) bits.push("Unhurried pace.");
-  else if (spd && Number(spd) > 1.05) bits.push("Slightly brisk, still clear.");
-  return bits.join(" ").slice(0, 500);
+  return runtimeInstruct(emotionalTone, speed);
+}
+
+/** Keep punctuation pauses; do not rewrite booking copy. */
+function applyPhonePauses(text) {
+  return String(text || "")
+    .replace(/\s+[–—]\s+/g, " — ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
 }
 
 async function probeHealth(force = false) {
@@ -152,8 +165,16 @@ async function resolveEngineAndProfile() {
   } catch (e) {
     console.warn("[aura/voicebox] models/status failed:", e?.message || e);
   }
-  const engine = selectBestLocalEngine(models, { preferredEngine: flags.preferredEngine });
+  void flags;
+  const engine = selectCanonicalEngine(models);
   const { profile } = await ensureAuraAllahProfile(client, engine);
+  if (profile?.id) {
+    persistFounderApprovedVoice({
+      profileId: profile.id,
+      profileName: profile.name,
+      voiceId: profile.preset_voice_id || FOUNDER_APPROVED_VOICE.voiceId,
+    });
+  }
   profileCache = { at: now, profile, engine };
   return { profile, engine };
 }
@@ -207,19 +228,19 @@ async function synthesizeOnce(args) {
   const flags = voiceboxFlags();
   const { profile, engine } = await resolveEngineAndProfile();
   const language = mapLanguage(args.language);
-  const spoken = prepareSpokenText(args.text, { language, extras: listPronunciations() });
+  const spoken = applyPhonePauses(prepareSpokenText(args.text, { language, extras: listPronunciations() }));
   const body = {
     profile_id: profile.id,
     text: spoken,
     language,
-    engine: engine.engine,
-    model_size: engine.modelSize || flags.preferredModelSize,
-    instruct: instructFromTone(args.emotionalTone, args.speed),
+    engine: "kokoro",
+    instruct: instructFromTone(args.emotionalTone || SAMPLE_A_INSTRUCT, args.speed || FOUNDER_APPROVED_VOICE.speed),
     personality: false,
-    max_chunk_chars: 800,
-    crossfade_ms: 50,
+    max_chunk_chars: flags.maxChunkChars || 120,
+    crossfade_ms: flags.crossfadeMs ?? 40,
     normalize: true,
   };
+  if (engine.modelSize) body.model_size = engine.modelSize;
 
   const conversationId = String(args.conversationId || "");
   cancelFlags.delete(conversationId);
@@ -233,7 +254,12 @@ async function synthesizeOnce(args) {
   try {
     if (flags.stream) {
       try {
-        const streamed = await client.generateStream(body, flags.timeoutMs);
+        const streamFn = client.generateStreamMeta || client.generateStream;
+        const streamed = await streamFn.call(client, body, flags.timeoutMs, {
+          onAbort: (fn) => {
+            if (conversationId) abortByConversation.set(conversationId, fn);
+          },
+        });
         if (isValidAudio(streamed.buffer)) {
           const id = `stream_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
           cacheAudio(id, streamed.buffer, streamed.contentType);
@@ -249,11 +275,18 @@ async function synthesizeOnce(args) {
             profileId: profile.id,
             profileName: profile.name,
             spokenText: spoken,
+            firstByteMs: streamed.firstByteMs ?? null,
+            totalMs: streamed.totalMs ?? null,
           };
         }
         stats.invalidAudio += 1;
         throw new Error("invalid_audio");
       } catch (streamErr) {
+        if (conversationId && cancelFlags.get(conversationId)) {
+          const err = new Error("cancelled");
+          err.code = "cancelled";
+          throw err;
+        }
         if (String(streamErr?.message || "") === "invalid_audio") throw streamErr;
         console.warn("[aura/voicebox] stream failed; trying /generate:", streamErr?.message || streamErr);
       }
@@ -285,6 +318,7 @@ async function synthesizeOnce(args) {
       spokenText: spoken,
     };
   } finally {
+    if (conversationId) abortByConversation.delete(conversationId);
     if (conversationId && inflightByConversation.get(conversationId) === generationId) {
       inflightByConversation.delete(conversationId);
     }
@@ -318,10 +352,27 @@ async function speak(opts = {}) {
     return { ok: false, fallback: true, reason: "unhealthy", error: health.error };
   }
 
+  const language = mapLanguage(opts.language);
+  const flags = voiceboxFlags();
+  if (language === "he" && heUsesPollyFallback() && flags.hePollyFallback && !opts.allowSlowHebrew) {
+    recordFallback("hebrew_kokoro_too_slow");
+    stats.lastLanguage = "he";
+    stats.lastLatencyMs = Date.now() - started;
+    return {
+      ok: false,
+      fallback: true,
+      reason: "hebrew_kokoro_too_slow",
+      language: "he",
+      note: LANGUAGE_STATUS.he.note,
+    };
+  }
+
   const conversationId = String(opts.conversationId || opts.voiceProfile || "default");
   try {
-    const result = await enqueue(conversationId, () => synthesizeOnce({ ...opts, conversationId }));
+    const result = await enqueue(conversationId, () => synthesizeOnce({ ...opts, conversationId, language }));
     stats.lastLatencyMs = Date.now() - started;
+    stats.lastFirstByteMs = result.firstByteMs ?? stats.lastLatencyMs;
+    stats.lastTotalMs = result.totalMs ?? stats.lastLatencyMs;
     stats.lastEngine = result.engine;
     stats.lastProfileId = result.profileId;
     stats.lastLanguage = result.language;
@@ -330,6 +381,7 @@ async function speak(opts = {}) {
     stats.lastError = null;
     console.log("[aura/voicebox] speak ok", {
       ms: stats.lastLatencyMs,
+      firstByteMs: stats.lastFirstByteMs,
       engine: result.engine,
       language: result.language,
       generationId: result.generationId,
@@ -380,6 +432,9 @@ function publicAudioUrl(generationId) {
  */
 async function tryVoiceboxPlayUrl(opts = {}) {
   if (!isVoiceboxPrimary()) return { used: false, url: null, reason: "primary_off" };
+  if (mapLanguage(opts.language) === "he" && heUsesPollyFallback()) {
+    return { used: false, url: null, reason: "hebrew_kokoro_too_slow", fallback: true };
+  }
   const result = await speak(opts);
   if (!result.ok || !result.generationId) {
     return { used: false, url: null, reason: result.reason || "speak_failed", fallback: true };
@@ -405,12 +460,21 @@ async function getVoiceboxHqStatus() {
   } catch (e) {
     console.warn("[aura/voicebox] hq status extras:", e?.message || e);
   }
-  const engine = selectBestLocalEngine(models, { preferredEngine: flags.preferredEngine });
+  const engine = selectCanonicalEngine(models);
   const profile = profiles.find((p) => String(p?.name || "") === AURA_ALLAH_NAME) || profileCache.profile || null;
+  if (profile?.id) {
+    persistFounderApprovedVoice({
+      profileId: profile.id,
+      profileName: profile.name,
+      voiceId: profile.preset_voice_id || FOUNDER_APPROVED_VOICE.voiceId,
+    });
+  }
   const mem = getVoiceMemorySnapshot();
+  const approved = mem.founderApprovedVoice || FOUNDER_APPROVED_VOICE;
   return {
     status: !health.reachable ? "DOWN" : health.ok ? (flags.primary ? "PRIMARY" : "STANDBY") : "UNHEALTHY",
     primary: flags.primary,
+    productionActivation: "OFF",
     reachable: health.reachable,
     modelLoaded: Boolean(health.health?.model_loaded),
     model: engine.modelName,
@@ -419,24 +483,68 @@ async function getVoiceboxHqStatus() {
     engineTested: engine.tested,
     engineDownloaded: engine.downloaded,
     profile: profile?.name || flags.profileName,
-    profileId: profile?.id || stats.lastProfileId,
-    voiceType: profile?.voice_type || null,
+    profileId: profile?.id || stats.lastProfileId || approved.profileId || null,
+    voiceType: profile?.voice_type || "preset",
     language: stats.lastLanguage || "en",
     latencyMs: stats.lastLatencyMs,
-    fallback: stats.lastFallbackReason,
+    firstByteMs: stats.lastFirstByteMs,
+    totalMs: stats.lastTotalMs,
+    fallback: stats.lastFallbackReason || "polly",
     lastLesson: getLastLesson(),
     lastError: stats.lastError,
     gpu: health.health
       ? { available: health.health.gpu_available, backend: health.health.backend_type, variant: health.health.backend_variant }
       : null,
     baseUrl: flags.baseUrl,
-    memory: { pronunciationCount: mem.pronunciationCount, lessonCount: mem.lessonCount, lastLesson: mem.lastLesson },
+    memory: {
+      pronunciationCount: mem.pronunciationCount,
+      lessonCount: mem.lessonCount,
+      lastLesson: mem.lastLesson,
+      founderApprovedVoice: approved,
+    },
+    founderApproved: {
+      sample: "A",
+      voiceId: FOUNDER_APPROVED_VOICE.voiceId,
+      engine: "kokoro",
+      model: "kokoro",
+      profileName: AURA_ALLAH_NAME,
+      profileId: profile?.id || approved.profileId || null,
+      instruct: SAMPLE_A_INSTRUCT,
+      speed: 1.0,
+      productionActivation: "OFF",
+    },
+    activeTestModel: {
+      engine: engine.engine,
+      model: engine.modelName,
+      voiceId: FOUNDER_APPROVED_VOICE.voiceId,
+      downloaded: engine.downloaded,
+      loaded: engine.loaded,
+    },
+    languages: LANGUAGE_STATUS,
     stats: { ...stats },
     enablement:
-      "Tessa: set VOICEBOX_PRIMARY=1 on the host that can reach Voicebox (Founder Mac or a documented tunnel). Leave 0 on Render until then. Polly/Twilio Say remains automatic fallback.",
+      "Tessa: set VOICEBOX_PRIMARY=1 on the host that can reach Voicebox (Founder Mac or a documented tunnel). Leave 0 on Render until then. Polly/Twilio Say remains automatic fallback. Founder-approved Sample A is the test identity only.",
     tunnel:
       "Render cannot reach 127.0.0.1 on the Founder Mac. To try primary from Render, run a private tunnel and set VOICEBOX_BASE_URL to that URL. Default path is local/HQ + Polly fallback.",
   };
+}
+
+let prewarmPromise = null;
+async function prewarmVoicebox() {
+  if (prewarmPromise) return prewarmPromise;
+  prewarmPromise = (async () => {
+    const health = await probeHealth(true);
+    if (!health.ok) return { ok: false, reason: "unhealthy", error: health.error };
+    const started = Date.now();
+    const result = await speak({ text: "Hi.", language: "en", conversationId: "__prewarm__" });
+    return {
+      ok: Boolean(result.ok),
+      ms: Date.now() - started,
+      firstByteMs: result.firstByteMs ?? null,
+      fallback: result.fallback || false,
+    };
+  })().catch((e) => ({ ok: false, reason: "prewarm_error", error: String(e?.message || e).slice(0, 180) }));
+  return prewarmPromise;
 }
 
 module.exports = {
@@ -444,6 +552,7 @@ module.exports = {
   cancelSpeak,
   tryVoiceboxPlayUrl,
   probeHealth,
+  prewarmVoicebox,
   getVoiceboxHqStatus,
   getCachedAudio,
   cacheAudio,

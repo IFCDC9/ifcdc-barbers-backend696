@@ -106,6 +106,54 @@ function createVoiceboxClient(opts = {}) {
     listPresets: (engine) => request("GET", `/profiles/presets/${encodeURIComponent(engine)}`),
     generate: (body) => request("POST", "/generate", { json: body }),
     generateStream: (body, timeoutMs) => requestBinary("POST", "/generate/stream", { json: body, timeoutMs }),
+    async generateStreamMeta(body, timeoutMs, { onAbort } = {}) {
+      const f = flags();
+      const t = withTimeout(timeoutMs || f.timeoutMs);
+      if (typeof onAbort === "function") onAbort(() => t.abort());
+      const started = Date.now();
+      let firstByteMs = null;
+      try {
+        const res = await fetchImpl(joinUrl(f.baseUrl, "/generate/stream"), {
+          method: "POST",
+          headers: {
+            Accept: "audio/wav, audio/mpeg, application/octet-stream, application/json",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(body),
+          signal: t.signal,
+        });
+        const ct = String(res.headers.get("content-type") || "");
+        if (!res.ok) {
+          const buf = Buffer.from(await res.arrayBuffer());
+          const err = new Error(`voicebox_${res.status}`);
+          err.status = res.status;
+          err.body = ct.includes("json") ? buf.toString("utf8").slice(0, 400) : null;
+          throw err;
+        }
+        if (!res.body || typeof res.body.getReader !== "function") {
+          const buf = Buffer.from(await res.arrayBuffer());
+          firstByteMs = Date.now() - started;
+          return { buffer: buf, contentType: ct, firstByteMs, totalMs: Date.now() - started };
+        }
+        const reader = res.body.getReader();
+        const chunks = [];
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value && value.byteLength && firstByteMs == null) firstByteMs = Date.now() - started;
+          chunks.push(Buffer.from(value));
+        }
+        const buffer = chunks.length ? Buffer.concat(chunks) : Buffer.alloc(0);
+        return {
+          buffer,
+          contentType: ct,
+          firstByteMs: firstByteMs ?? Date.now() - started,
+          totalMs: Date.now() - started,
+        };
+      } finally {
+        t.cancel();
+      }
+    },
     speak: (body) => request("POST", "/speak", { json: body }),
     generationStatus: (id) => request("GET", `/generate/${encodeURIComponent(id)}/status`),
     getHistory: (id) => request("GET", `/history/${encodeURIComponent(id)}`),

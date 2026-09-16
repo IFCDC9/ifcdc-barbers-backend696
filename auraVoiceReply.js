@@ -380,7 +380,7 @@ async function voiceboxOrPollyUtterance(attrs, rawText, escapedText, { callSid, 
     text: prepared,
     language,
     conversationId: callSid,
-    voiceProfile: "AURA ALLAH",
+    voiceProfile: "AURA ALLAH — FOUNDER APPROVED V1",
   });
   if (attempt.used && attempt.url) return utteranceXml(attrs, escapedText, attempt.url);
   return utteranceXml(attrs, escapedText, null);

@@ -23,18 +23,26 @@ function isVoiceboxPrimary() {
 }
 
 function voiceboxFlags() {
+  const { FOUNDER_APPROVED_VOICE } = require("./auraVoiceboxProfile.cjs");
+  const engineOverride = String(process.env.VOICEBOX_ENGINE || "").trim();
   return {
     primary: isVoiceboxPrimary(),
     baseUrl: voiceboxBaseUrl(),
     timeoutMs: Math.max(1500, envNum("VOICEBOX_TIMEOUT_MS", 8000)),
     healthTimeoutMs: Math.max(400, envNum("VOICEBOX_HEALTH_TIMEOUT_MS", 2000)),
     healthTtlMs: Math.max(500, envNum("VOICEBOX_HEALTH_TTL_MS", 4000)),
-    profileName: String(process.env.VOICEBOX_PROFILE_NAME || "AURA ALLAH").trim() || "AURA ALLAH",
-    preferredEngine: String(process.env.VOICEBOX_ENGINE || "").trim() || null,
-    preferredModelSize: String(process.env.VOICEBOX_MODEL_SIZE || "1.7B").trim() || "1.7B",
+    profileName:
+      String(process.env.VOICEBOX_PROFILE_NAME || FOUNDER_APPROVED_VOICE.name).trim() ||
+      FOUNDER_APPROVED_VOICE.name,
+    preferredEngine: engineOverride || "kokoro",
+    preferredModelSize: String(process.env.VOICEBOX_MODEL_SIZE || "").trim() || null,
     stream: String(process.env.VOICEBOX_STREAM || "1").trim() !== "0",
+    maxChunkChars: Math.min(5000, Math.max(100, envNum("VOICEBOX_MAX_CHUNK_CHARS", 120))),
+    crossfadeMs: Math.min(500, Math.max(0, envNum("VOICEBOX_CROSSFADE_MS", 40))),
+    hePollyFallback: String(process.env.VOICEBOX_HE_POLLY_FALLBACK || "1").trim() !== "0",
+    productionActivation: "OFF",
     note:
-      "VOICEBOX_PRIMARY default 0. Production Polly/Twilio Say stays until Tessa enables. Render cannot reach Founder Mac 127.0.0.1 unless VOICEBOX_BASE_URL is a tunnel.",
+      "VOICEBOX_PRIMARY default 0. Founder-approved Sample A (Kokoro af_heart) is the test identity only. Production Polly/Twilio Say stays until Tessa enables. Render cannot reach Founder Mac 127.0.0.1 unless VOICEBOX_BASE_URL is a tunnel.",
   };
 }
 

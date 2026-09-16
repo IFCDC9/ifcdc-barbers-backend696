@@ -568,6 +568,15 @@ try {
     }),
   );
   console.log("[boot] mounted /api/aura/voicebox (parallel TTS; VOICEBOX_PRIMARY default 0)");
+  try {
+    const { prewarmVoicebox } = require("./auraVoiceboxBridge.cjs");
+    void prewarmVoicebox().then((r) => {
+      if (r?.ok) console.log("[boot] Voicebox prewarm ok", r.ms, "ms");
+      else console.log("[boot] Voicebox prewarm skipped", r?.reason || r?.error || "");
+    });
+  } catch (prewarmErr) {
+    console.warn("[boot] Voicebox prewarm skipped:", prewarmErr?.message || prewarmErr);
+  }
 } catch (e) {
   console.warn("[boot] /api/aura/voicebox mount skipped:", e?.message || e);
 }

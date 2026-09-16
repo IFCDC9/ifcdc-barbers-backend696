@@ -5,6 +5,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const { FOUNDER_APPROVED_VOICE, LANGUAGE_STATUS, SAMPLE_A_INSTRUCT } = require("./auraVoiceboxProfile.cjs");
 
 const DEFAULT_PATH = path.join(__dirname, "data", "aura-voice-memory.json");
 
@@ -13,13 +14,28 @@ function memoryPath() {
   return override || DEFAULT_PATH;
 }
 
+function canonicalFounderApproved(extra = {}) {
+  return {
+    ...FOUNDER_APPROVED_VOICE,
+    instruct: SAMPLE_A_INSTRUCT,
+    languages: LANGUAGE_STATUS,
+    productionActivation: "OFF",
+    voiceboxPrimary: 0,
+    profileId: extra.profileId || extra.profile_id || FOUNDER_APPROVED_VOICE.profileId || null,
+    profileName: extra.profileName || FOUNDER_APPROVED_VOICE.name,
+    voiceId: FOUNDER_APPROVED_VOICE.voiceId,
+    persistedAt: extra.persistedAt || null,
+  };
+}
+
 function emptyStore() {
   return {
-    version: 1,
+    version: 2,
     pronunciations: [],
     lessons: [],
     lastLesson: null,
     updatedAt: null,
+    founderApprovedVoice: canonicalFounderApproved(),
   };
 }
 
@@ -33,6 +49,7 @@ function readStore() {
       ...parsed,
       pronunciations: Array.isArray(parsed.pronunciations) ? parsed.pronunciations : [],
       lessons: Array.isArray(parsed.lessons) ? parsed.lessons : [],
+      founderApprovedVoice: canonicalFounderApproved(parsed.founderApprovedVoice || {}),
     };
   } catch {
     return emptyStore();
@@ -88,16 +105,54 @@ function getLastLesson() {
   return readStore().lastLesson;
 }
 
+function persistFounderApprovedVoice(extra = {}) {
+  const store = readStore();
+  const prev = store.founderApprovedVoice || {};
+  const next = canonicalFounderApproved({
+    ...prev,
+    ...extra,
+  });
+  const { persistedAt: prevAt, ...prevRest } = prev;
+  const { persistedAt: _nextAt, ...nextRest } = next;
+  void _nextAt;
+  if (JSON.stringify(prevRest) === JSON.stringify(nextRest)) {
+    if (!prevAt) {
+      next.persistedAt = new Date().toISOString();
+      store.founderApprovedVoice = next;
+      writeStore(store);
+      return next;
+    }
+    return prev;
+  }
+  next.persistedAt = new Date().toISOString();
+  store.founderApprovedVoice = next;
+  writeStore(store);
+  return next;
+}
+
+function getFounderApprovedVoice() {
+  const store = readStore();
+  return canonicalFounderApproved(store.founderApprovedVoice || {});
+}
+
 function getVoiceMemorySnapshot() {
+  const approved = persistFounderApprovedVoice();
   const store = readStore();
   return {
     pronunciationCount: store.pronunciations.length,
     lessonCount: store.lessons.length,
     lastLesson: store.lastLesson,
     pronunciations: store.pronunciations,
+    founderApprovedVoice: approved,
     updatedAt: store.updatedAt,
     path: memoryPath(),
   };
+}
+
+try {
+  persistFounderApprovedVoice();
+} catch {
+  /* disk may be read-only in some test sandboxes */
 }
 
 module.exports = {
@@ -108,4 +163,7 @@ module.exports = {
   addLesson,
   getLastLesson,
   getVoiceMemorySnapshot,
+  persistFounderApprovedVoice,
+  getFounderApprovedVoice,
+  canonicalFounderApproved,
 };

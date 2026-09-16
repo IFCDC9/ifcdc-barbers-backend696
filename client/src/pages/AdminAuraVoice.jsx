@@ -120,6 +120,41 @@ export default function AdminAuraVoice() {
       </div>
 
       <div style={panel}>
+        <h2 style={{ marginTop: 0, fontSize: 16 }}>FOUNDER-APPROVED VOICE</h2>
+        {!vb ? (
+          <p style={{ color: "#888" }}>Voicebox status unavailable.</p>
+        ) : (
+          <div style={{ display: "grid", gap: 8, fontSize: 14 }}>
+            <div>
+              Founder-approved voice: <strong>A ({vb.founderApproved?.voiceId || "af_heart"})</strong>
+            </div>
+            <div>Named profile: {vb.founderApproved?.profileName || vb.profile || "—"}</div>
+            <div>Profile id: {vb.founderApproved?.profileId || vb.profileId || "—"}</div>
+            <div>
+              Active test model: {vb.activeTestModel?.engine || vb.engine || "kokoro"} /{" "}
+              {vb.activeTestModel?.model || vb.model || "kokoro"}{" "}
+              {vb.activeTestModel?.loaded || vb.modelLoaded ? "(loaded)" : "(not loaded)"}
+            </div>
+            <div>
+              Latency: first-byte {vb.firstByteMs != null ? `${vb.firstByteMs} ms` : "—"} · total{" "}
+              {vb.totalMs != null ? `${vb.totalMs} ms` : vb.latencyMs != null ? `${vb.latencyMs} ms` : "—"}
+            </div>
+            <div>
+              Languages: EN {vb.languages?.en?.sameSpeaker ? "same speaker" : "—"} · ES{" "}
+              {vb.languages?.es?.sameSpeaker ? "same speaker (Kokoro closest)" : "—"} · HE{" "}
+              {vb.languages?.he?.path || "polly_fallback"}
+            </div>
+            <div>Fallback: Polly / Twilio Say</div>
+            <div>
+              Production activation: <strong>{vb.productionActivation || "OFF"}</strong>
+              {vb.primary ? " · VOICEBOX_PRIMARY=1 (test host)" : " · VOICEBOX_PRIMARY=0"}
+            </div>
+            <div style={{ color: "#aaa", fontSize: 12 }}>{vb.languages?.he?.note}</div>
+          </div>
+        )}
+      </div>
+
+      <div style={panel}>
         <h2 style={{ marginTop: 0, fontSize: 16 }}>VOICEBOX STATUS</h2>
         {!vb ? (
           <p style={{ color: "#888" }}>Voicebox status unavailable.</p>
@@ -134,7 +169,7 @@ export default function AdminAuraVoice() {
             <div>Profile: {vb.profile || "—"} {vb.voiceType ? `(${vb.voiceType})` : ""}</div>
             <div>Language: {vb.language || "—"}</div>
             <div>Latency: {vb.latencyMs != null ? `${vb.latencyMs} ms` : "—"}</div>
-            <div>Fallback: {vb.fallback || "none"}</div>
+            <div>Fallback: {vb.fallback || "Polly / Twilio Say"}</div>
             <div>Last lesson: {vb.lastLesson?.text || vb.memory?.lastLesson?.text || "—"}</div>
             <div style={{ color: "#aaa", fontSize: 12 }}>{vb.engineReason}</div>
             <div style={{ color: "#aaa", fontSize: 12 }}>{vb.enablement}</div>
