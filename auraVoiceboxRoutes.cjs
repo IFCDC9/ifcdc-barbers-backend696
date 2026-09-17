@@ -5,6 +5,7 @@
 
 const express = require("express");
 const { getCachedAudio, getVoiceboxHqStatus, speak, probeHealth, takePendingRest, publicAudioUrl, runVoiceboxProdDiag } = require("./auraVoiceboxBridge.cjs");
+const { getTurnTraces } = require("./auraVoiceCallRuntime.cjs");
 const { upsertPronunciation, addLesson, getVoiceMemorySnapshot, listPronunciations } = require("./auraVoiceMemory.cjs");
 const { isVoiceboxPrimary } = require("./auraVoiceboxFlags.cjs");
 const { verifyVoiceboxTunnelRequest, voiceboxTunnelSecret } = require("./auraVoiceboxTunnelAuth.cjs");
@@ -126,10 +127,19 @@ function createAuraVoiceboxRouter(deps = {}) {
         : language === "he"
           ? "אני כאן. אפשר להמשיך עם ההזמנה."
           : "I'm here. Tell me the day and time that works.";
-    const inner = playUrl
-      ? `<Play>${escapeXml(playUrl)}</Play>`
-      : `<Say voice="Polly.Joanna" language="${language === "es" ? "es-ES" : "en-US"}">${escapeXml(say)}</Say>`;
-    const action = gather || "/api/aura/process";
+    const action = gather || "/api/aura/voice";
+    let interrupted = false;
+    try {
+      const { snapshotLedger } = require("./auraVoiceCallRuntime.cjs");
+      interrupted = Boolean(callSid && snapshotLedger(callSid).playbackInterrupted);
+    } catch {
+      interrupted = false;
+    }
+    const inner = interrupted
+      ? `<Pause length="1"/>`
+      : playUrl
+        ? `<Play>${escapeXml(playUrl)}</Play>`
+        : `<Say voice="Polly.Joanna" language="${language === "es" ? "es-ES" : "en-US"}">${escapeXml(say)}</Say>`;
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Gather input="speech dtmf" timeout="4" speechTimeout="auto" bargeIn="true" method="POST" action="${escapeXml(action)}">
@@ -137,9 +147,20 @@ function createAuraVoiceboxRouter(deps = {}) {
   </Gather>
   <Redirect method="POST">${escapeXml(action)}</Redirect>
 </Response>`;
-    void callSid;
     res.type("text/xml");
     res.send(xml);
+  });
+
+  router.get("/turn-trace", (req, res) => {
+    if (!requireSuperAdmin(req, res)) return;
+    const callSid = String(req.query.callSid || req.query.CALL_SESSION_ID || "").trim();
+    const limit = Number(req.query.limit || 40);
+    res.json({
+      ok: true,
+      callSid: callSid || null,
+      traces: getTurnTraces(callSid, limit),
+      note: "Safe fields only. No HMAC, phones, or secrets. Founder retest: dial +19895141064 from AURA_VOICEBOX_TEST_FROM.",
+    });
   });
 
   router.get("/status", async (_req, res) => {

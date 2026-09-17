@@ -16,7 +16,7 @@ import {
   resolveVoiceReplyLang,
 } from "./auraLocale.js";
 import { loadBarberSettingsRow } from "./barberScope.js";
-import { runSimpleBookingTurn, getSimpleBookingStage, STATES } from "./auraVoiceSimpleBookingFlow.js";
+import { runSimpleBookingTurn } from "./auraVoiceSimpleBookingFlow.js";
 import { isCallCompleted, markCallCompleted } from "./src/services/bookingLock.js";
 import { createRequire } from "module";
 
@@ -31,7 +31,7 @@ const {
   rememberAssistantSpeech,
   twilioGatherSpeechAttrs,
   parseConfidence,
-  getNoiseControlStats,
+  conversationallyRelevant,
 } = requireCjs("./auraVoiceNoiseControl.cjs");
 const {
   beginCallerTurn,
@@ -43,10 +43,20 @@ const {
   ledgerContextBlock,
   applyRepeatGuard,
   rememberReplay,
-  getReplay,
   runExclusiveTurn,
   setCallLanguage,
   getCallLanguage,
+  resolveTurnInput,
+  isCallGreeted,
+  markCallGreeted,
+  conversationMessages,
+  getCallRuntime,
+  getTurn,
+  getTurnByTwilioEvent,
+  recordTurnTrace,
+  snapshotLedger,
+  contextSummary,
+  stashTurnInput,
 } = requireCjs("./auraVoiceCallRuntime.cjs");
 const { tryVoiceboxPlayUrl } = requireCjs("./auraVoiceboxBridge.cjs");
 const { prepareSpokenText } = requireCjs("./auraVoicePronunciation.cjs");
@@ -56,6 +66,8 @@ const streamingContinueByCall = new Map();
 
 const WELCOME_SENTINEL = "__IFCDC_VOICE_WELCOME__";
 const NO_SPEECH_SENTINEL = "__IFCDC_NO_SPEECH__";
+const START_GREETING_EN = "Hi, this is Aura. How can I help you today?";
+const START_GREETING_ES = "Hola, soy Aura. ¿En qué te puedo ayudar hoy?";
 
 const VOICE_GUIDE_EN = " You can say book, services, or ask a question.";
 const VOICE_GUIDE_ES = " Puedes decir reserva, servicios, o hacer una pregunta.";
@@ -67,24 +79,6 @@ Help with bookings, services, and pricing without sounding robotic.
 Do not ask for phone numbers. Never mention SMS. After booking, confirm that an email was sent and end the call cleanly.
 Never announce a booking as successful until the backend booking confirmation has completed.`;
 
-/** Per CallSid: first empty webhook → welcome; later empty (e.g. Gather timeout) → reprompt. */
-const voiceGreetedCallSids = new Set();
-const VOICE_GREET_TRACK_CAP = 2000;
-function trackVoiceGreeting(callSid) {
-  const k = String(callSid || "").trim();
-  if (!k) return;
-  while (voiceGreetedCallSids.size >= VOICE_GREET_TRACK_CAP) {
-    const first = voiceGreetedCallSids.values().next().value;
-    voiceGreetedCallSids.delete(first);
-  }
-  voiceGreetedCallSids.add(k);
-}
-function voiceAlreadyGreeted(callSid) {
-  const k = String(callSid || "").trim();
-  return Boolean(k && voiceGreetedCallSids.has(k));
-}
-
-/** Last “core” reply per call (before the closing guide line) — avoids saying the exact same line twice. */
 const voiceLastCoreByCallSid = new Map();
 const VOICE_LAST_CAP = 2000;
 function rememberVoiceCore(callSid, core) {
@@ -197,11 +191,17 @@ function appendVoiceGuide(core, L, skipGuide) {
  * @param {string} langNorm "en" | "es"
  * @returns {Promise<string|null>} assistant text or null on failure / no key
  */
-async function openAiVoiceCompletion(userText, langNorm) {
+async function openAiVoiceCompletion(userText, langNorm, opts = {}) {
   const apiKey = String(process.env.OPENAI_API_KEY || "").trim();
   if (!apiKey) return null;
   const model = String(process.env.OPENAI_MODEL || "gpt-4o-mini").trim();
   const system = `${VOICE_SYSTEM_BASE}${openAiLanguageInstruction(langNorm)}`;
+  const history = Array.isArray(opts.history) ? opts.history.slice(-8) : [];
+  const messages = [
+    { role: "system", content: system },
+    ...history.filter((m) => m && m.content && m.role !== "system"),
+    { role: "user", content: String(userText || "").slice(0, 2800) },
+  ];
   const r = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -210,10 +210,7 @@ async function openAiVoiceCompletion(userText, langNorm) {
     },
     body: JSON.stringify({
       model,
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: String(userText || "").slice(0, 2800) },
-      ],
+      messages,
       max_tokens: 220,
       temperature: 0.65,
     }),
@@ -239,19 +236,20 @@ export async function generateAuraReply(userInput, opts = {}) {
 
   let core = "";
   let skipGuide = false;
+  const greeted = callSid ? isCallGreeted(callSid) : false;
 
-  if (!raw) {
-    core =
-      L === "es"
-        ? "Hola, soy Aura, tu asistente virtual. Gracias por llamar a la aplicación IFCDC Barbers. Estoy aquí para ayudarte a agendar citas, responder preguntas y asistirte con nuestros servicios. ¿En qué puedo ayudarte hoy?"
-        : "Hi, this is Aura, your virtual assistant. Thank you for calling the IFCDC Barbers App. I'm here to help you schedule appointments, answer questions, and assist with our services. How may I help you today?";
-    skipGuide = true;
-  } else if (raw === WELCOME_SENTINEL) {
-    core =
-      L === "es"
-        ? "Hola, soy Aura, tu asistente virtual. Gracias por llamar a la aplicación IFCDC Barbers. Estoy aquí para ayudarte a agendar citas, responder preguntas y asistirte con nuestros servicios. ¿En qué puedo ayudarte hoy?"
-        : "Hi, this is Aura, your virtual assistant. Thank you for calling the IFCDC Barbers App. I'm here to help you schedule appointments, answer questions, and assist with our services. How may I help you today?";
-    skipGuide = true;
+  if (!raw || raw === WELCOME_SENTINEL) {
+    if (greeted) {
+      core =
+        L === "es"
+          ? "Sigo aquí. ¿Qué servicio quieres, o qué día te conviene?"
+          : "I'm here. What service would you like, or what day works?";
+      skipGuide = true;
+    } else {
+      core = L === "es" ? START_GREETING_ES : START_GREETING_EN;
+      skipGuide = true;
+      if (callSid) markCallGreeted(callSid);
+    }
   } else if (raw === NO_SPEECH_SENTINEL) {
     core =
       L === "es"
@@ -271,7 +269,10 @@ export async function generateAuraReply(userInput, opts = {}) {
         core = hit;
       } else {
         const ledger = callSid ? ledgerContextBlock(callSid) : "";
-        const ai = await openAiVoiceCompletion(ledger ? `${ledger}\n\nCaller: ${raw}` : raw, L);
+        const history = callSid ? conversationMessages(callSid) : [];
+        const ai = await openAiVoiceCompletion(ledger ? `${ledger}\n\nCaller: ${raw}` : raw, L, {
+          history,
+        });
         if (ai) {
           core = ai;
         } else {
@@ -307,43 +308,81 @@ export function auraVoiceReplyShouldHangup(replyText) {
   return /booking is confirmed|appointment has been confirmed|reserva está confirmada/i.test(String(replyText || ""));
 }
 
-/**
- * Persist SpeechResult (and resolved welcome / no-speech) across /voice → /process Redirect.
- * Twilio often omits SpeechResult on the follow-up POST to /process; /voice always writes here first.
- * Relative TwiML URLs keep the same host Twilio already reached (avoids stale PUBLIC_API_URL).
- */
-const callSessions = Object.create(null);
-const CALL_SESSION_CAP = 2000;
 const VOICE_WEBHOOK_PATH = "/api/aura/voice";
 const VOICE_PROCESS_PATH = "/api/aura/process";
 const SAFE_REPLY_MS = 5000;
 const SETTINGS_BUDGET_MS = 3000;
 
-function callSessionsPut(callSid, text, meta = null) {
-  const k = String(callSid ?? "").trim();
-  if (!k) return;
-  while (Object.keys(callSessions).length >= CALL_SESSION_CAP) {
-    const first = Object.keys(callSessions)[0];
-    if (first === undefined) break;
-    delete callSessions[first];
-  }
-  callSessions[k] = {
-    text: String(text ?? ""),
-    meta: meta && typeof meta === "object" ? meta : {},
-  };
+function twilioEventIdFromBody(body = {}) {
+  return String(body.RequestSid || "").trim();
 }
 
-/** Read and remove so the next /process leg never reuses stale input. */
-function callSessionsTake(callSid) {
-  const k = String(callSid ?? "").trim();
-  if (!k) return { text: "", meta: {} };
-  const v = callSessions[k];
-  delete callSessions[k];
-  if (v == null) return { text: "", meta: {} };
-  if (typeof v === "object" && v && "text" in v) {
-    return { text: String(v.text ?? ""), meta: v.meta && typeof v.meta === "object" ? v.meta : {} };
+function ingestGatherTurn(callSid, body, { greeted, source = "gather" } = {}) {
+  const speech = String(body.SpeechResult ?? "").trim();
+  const digits = String(body.Digits ?? "").trim();
+  const unstable = String(body.UnstableSpeechResult ?? "").trim();
+  const confidence = parseConfidence(body.Confidence ?? body.confidence);
+  const twilioEventId = twilioEventIdFromBody(body);
+  let userInput;
+  if (speech || digits) userInput = speech || digits;
+  else if (unstable && !speech) {
+    return {
+      userInput: "",
+      turn: {
+        accepted: false,
+        interim: true,
+        duplicate: false,
+        reason: "interim_not_a_turn",
+        turnId: "",
+        replayTwiml: "",
+        transcriptHash: "",
+        twilioEventId,
+        transcriptFinal: false,
+      },
+      speech,
+      digits,
+      unstable,
+      confidence,
+    };
+  } else if (callSid && greeted) {
+    userInput = NO_SPEECH_SENTINEL;
+  } else {
+    userInput = WELCOME_SENTINEL;
   }
-  return { text: String(v), meta: {} };
+  const playbackSpeaking = Boolean(callSid && getCallRuntime(callSid).playback?.speaking);
+  const bargeInWhileSpeaking = Boolean(speech) && playbackSpeaking;
+  const fragmentBarge =
+    bargeInWhileSpeaking &&
+    !conversationallyRelevant(speech) &&
+    (speech.length < 14 || speech.split(/\s+/).filter(Boolean).length < 3);
+  const turn = callSid
+    ? beginCallerTurn(callSid, {
+        speech: speech || (userInput === WELCOME_SENTINEL || userInput === NO_SPEECH_SENTINEL ? userInput : ""),
+        digits,
+        confidence,
+        source: bargeInWhileSpeaking ? "bargein" : source,
+        twilioEventId,
+        transcriptFinal: true,
+        unstable,
+      })
+    : { accepted: true, turnId: "", eventId: "", duplicate: false, twilioEventId, transcriptHash: "" };
+  if (callSid && turn.accepted && !turn.duplicate) {
+    stashTurnInput(callSid, {
+      text: userInput,
+      turnId: turn.turnId,
+      eventId: turn.eventId,
+      twilioEventId: turn.twilioEventId,
+      transcriptHash: turn.transcriptHash,
+      confidence,
+      bargeInCandidate: fragmentBarge,
+      source: bargeInWhileSpeaking ? "bargein" : source,
+    });
+  }
+  if (bargeInWhileSpeaking && callSid && turn.accepted && !turn.sameTurn) {
+    markBargeIn(callSid);
+  }
+  if (callSid) getCallRuntime(callSid).playback.speaking = false;
+  return { userInput, turn, speech, digits, unstable, confidence, bargeInCandidate: fragmentBarge };
 }
 
 /**
@@ -383,7 +422,7 @@ function utteranceXml(attrs, escapedText, playUrl = null) {
   return `<Say voice="${xmlEscapeAttr(attrs.voice)}" language="${xmlEscapeAttr(attrs.language)}">${escapedText}</Say>`;
 }
 
-async function voiceboxOrPollyUtterance(attrs, rawText, escapedText, { callSid, language, from }) {
+async function voiceboxOrPollyUtterance(attrs, rawText, escapedText, { callSid, language, from, audioId }) {
   const prepared = prepareSpokenText(rawText, { language });
   const attempt = await tryVoiceboxPlayUrl({
     text: prepared,
@@ -392,15 +431,18 @@ async function voiceboxOrPollyUtterance(attrs, rawText, escapedText, { callSid, 
     voiceProfile: AURA_ALLAH_NAME,
     from,
   });
+  const usedId = attempt.generationId || audioId || null;
   if (attempt.streaming && attempt.continueToken && callSid) {
     streamingContinueByCall.set(String(callSid), {
       token: attempt.continueToken,
       language,
+      audioId: usedId,
     });
   }
-  if (attempt.used && attempt.urls?.length) return utteranceXml(attrs, escapedText, attempt.urls);
-  if (attempt.used && attempt.url) return utteranceXml(attrs, escapedText, attempt.url);
-  return utteranceXml(attrs, escapedText, null);
+  let xml = utteranceXml(attrs, escapedText, null);
+  if (attempt.used && attempt.urls?.length) xml = utteranceXml(attrs, escapedText, attempt.urls);
+  else if (attempt.used && attempt.url) xml = utteranceXml(attrs, escapedText, attempt.url);
+  return { xml, audioId: usedId, playUrl: attempt.url || null };
 }
 
 function buildVoiceLoopTwiML(gatherAction, attrs, mainInner, stillHereInner, callSid = "") {
@@ -527,63 +569,42 @@ export function createSimpleAuraVoiceHandlers(opts = {}) {
             Object.keys(body).join(","),
         );
       }
-      const speech = String(body.SpeechResult ?? "").trim();
-      const digits = String(body.Digits ?? "").trim();
-      const confidence = parseConfidence(body.Confidence ?? body.confidence);
-      let userInput;
-      if (speech || digits) {
-        userInput = speech || digits;
-      } else if (callSid && voiceAlreadyGreeted(callSid)) {
-        userInput = NO_SPEECH_SENTINEL;
-      } else {
-        userInput = WELCOME_SENTINEL;
-        if (callSid) trackVoiceGreeting(callSid);
+      const greeted = Boolean(callSid && isCallGreeted(callSid));
+      const ingested = ingestGatherTurn(callSid, body, { greeted, source: "gather" });
+      const { userInput, turn, speech, digits, confidence } = ingested;
+      if (ingested.turn?.interim) {
+        res.type("text/xml");
+        res.send(buildSilentListenTwiML(gatherLoop, callSid));
+        console.log("[aura/turn] dropped_interim UnstableSpeechResult callSid=", callSid || "(none)");
+        return;
       }
       console.log("CALL SID:", callSid || "(none)");
       console.log(
         "USER INPUT:",
         userInput === WELCOME_SENTINEL ? "(welcome)" : userInput === NO_SPEECH_SENTINEL ? "(no speech)" : userInput,
         confidence != null ? `conf=${confidence}` : "",
+        "turn=",
+        turn.turnId || "",
+        turn.reason || "",
       );
 
-      const bargeInCandidate = Boolean(speech) && voiceAlreadyGreeted(callSid);
-      if (bargeInCandidate && callSid) {
-        markBargeIn(callSid);
-      }
-      const turn = callSid
-        ? beginCallerTurn(callSid, {
-            speech: speech || (userInput === WELCOME_SENTINEL || userInput === NO_SPEECH_SENTINEL ? userInput : ""),
-            digits,
-            confidence,
-            source: bargeInCandidate ? "bargein" : "gather",
-          })
-        : { accepted: true, turnId: "", eventId: "", duplicate: false };
-      if (callSid) {
-        callSessionsPut(callSid, userInput, {
-          confidence,
-          bargeInCandidate,
-          unstable: String(body.UnstableSpeechResult || "").trim() || null,
-          turnId: turn.turnId,
-          eventId: turn.eventId,
-          duplicate: Boolean(turn.duplicate),
-        });
-      } else {
+      if (!callSid) {
         console.warn("[aura/flow] MISSING_LEG route=/api/aura/voice reason=no_CallSid_session_not_stored");
       }
 
       res.type("text/xml");
-      // Welcome + barge-in: redirect only (no filler TTS — filler echoed into STT and sounded like repeats).
       const isWelcome = userInput === WELCOME_SENTINEL;
       if (turn.duplicate && turn.replayTwiml) {
         res.send(turn.replayTwiml);
       } else {
-        // No filler TTS on this hop — avoids echo-into-STT and a second spoken line per turn.
         const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Redirect method="POST">${processPath}</Redirect>
 </Response>`;
         res.send(xml);
       }
+      void speech;
+      void digits;
       console.log("[aura/timing] /api/aura/voice_ms", Date.now() - tRoute);
       console.log("[aura/flow] voice→process enqueued callSid=", callSid || "(none)", "welcome=", isWelcome);
       return;
@@ -600,7 +621,6 @@ export function createSimpleAuraVoiceHandlers(opts = {}) {
 
   const process = async (req, res) => {
     const gatherAction = xmlEscapeAttr(VOICE_WEBHOOK_PATH);
-    const processAction = xmlEscapeAttr(VOICE_PROCESS_PATH);
     const tRoute = Date.now();
     let sent = false;
     const sendGlobalFallback = (reason) => {
@@ -645,44 +665,110 @@ export function createSimpleAuraVoiceHandlers(opts = {}) {
         return;
       }
 
-      const sessionPeek = callSid ? callSessions[callSid] : null;
       const digitsBody = String(body.Digits ?? "").trim();
       const speechBody = String(body.SpeechResult ?? "").trim();
       const confBody = parseConfidence(body.Confidence ?? body.confidence);
-      let stashed = { text: "", meta: {} };
-      let userInput = "";
-      if (digitsBody) userInput = digitsBody;
-      else if (speechBody) userInput = speechBody;
-      else {
-        stashed = callSessionsTake(callSid);
-        userInput = stashed.text;
-      }
-      if (stashed.meta?.duplicate && getReplay(callSid)?.twiml) {
-        const replay = getReplay(callSid);
+      const twilioEventId = twilioEventIdFromBody(body);
+      const eventTurn = twilioEventId ? getTurnByTwilioEvent(callSid, twilioEventId) : null;
+      if (eventTurn?.twiml && eventTurn.playback !== "interrupted") {
         res.type("text/xml");
-        res.send(replay.twiml);
+        res.send(eventTurn.twiml);
         sent = true;
-        console.log("[aura/turn] replay_duplicate_webhook turnId=", stashed.meta.turnId || replay.turnId);
+        recordTurnTrace(callSid, {
+          TURN_ID: eventTurn.turnId,
+          TWILIO_EVENT_ID: twilioEventId,
+          TRANSCRIPT_HASH: eventTurn.transcriptHash,
+          DUPLICATE: true,
+          USER_TEXT: eventTurn.userText,
+          AURA_RESPONSE_TEXT: eventTurn.reply,
+          AUDIO_ID: eventTurn.audioId,
+          PLAYBACK_STATE: "replay_same_turn",
+          LATENCY_MS: Date.now() - tRoute,
+        });
+        console.log("[aura/turn] replay_same_turn_event turnId=", eventTurn.turnId);
         return;
       }
-      if (!String(userInput).trim()) {
-        const replay = getReplay(callSid);
-        if (replay?.twiml && getSimpleBookingStage(callSid) !== STATES.ANYTHING_ELSE) {
-          console.warn("[aura/flow] empty_process_input_replay_last callSid=", callSid || "(none)");
+
+      let turn = null;
+      if (speechBody || digitsBody) {
+        const ingested = ingestGatherTurn(callSid, body, {
+          greeted: isCallGreeted(callSid),
+          source: "process",
+        });
+        turn = ingested.turn;
+        if (turn?.interim) {
           res.type("text/xml");
-          res.send(replay.twiml);
+          res.send(buildSilentListenTwiML(gatherAction, callSid));
           sent = true;
           return;
         }
-        if (getSimpleBookingStage(callSid) === STATES.ANYTHING_ELSE) {
-          userInput = NO_SPEECH_SENTINEL;
-        } else {
-          console.warn(
-            "[aura/flow] MISSING_LEG route=/api/aura/process reason=empty_input_no_speech " +
-              "callSid=" +
-              callSid,
-          );
-          userInput = NO_SPEECH_SENTINEL;
+        if (turn.duplicate && turn.replayTwiml) {
+          res.type("text/xml");
+          res.send(turn.replayTwiml);
+          sent = true;
+          recordTurnTrace(callSid, {
+            TURN_ID: turn.turnId,
+            TWILIO_EVENT_ID: turn.twilioEventId,
+            TRANSCRIPT_HASH: turn.transcriptHash,
+            DUPLICATE: true,
+            USER_TEXT: ingested.userInput,
+            AUDIO_ID: turn.audioId,
+            PLAYBACK_STATE: "replay_same_turn",
+            LATENCY_MS: Date.now() - tRoute,
+          });
+          return;
+        }
+      } else {
+        const resolved = resolveTurnInput(callSid, { speech: "", digits: "", turnId: "" });
+        turn = resolved.pending?.turnId ? getTurn(callSid, resolved.pending.turnId) : null;
+        if (turn?.twiml && turn.playback !== "interrupted") {
+          res.type("text/xml");
+          res.send(turn.twiml);
+          sent = true;
+          recordTurnTrace(callSid, {
+            TURN_ID: turn.turnId,
+            TWILIO_EVENT_ID: turn.twilioEventId,
+            TRANSCRIPT_HASH: turn.transcriptHash,
+            DUPLICATE: true,
+            USER_TEXT: turn.userText,
+            AURA_RESPONSE_TEXT: turn.reply,
+            AUDIO_ID: turn.audioId,
+            PLAYBACK_STATE: "replay_same_turn",
+            LATENCY_MS: Date.now() - tRoute,
+          });
+          console.log("[aura/turn] replay_pending_completed turnId=", turn.turnId);
+          return;
+        }
+      }
+
+      const resolved = resolveTurnInput(callSid, {
+        speech: speechBody,
+        digits: digitsBody,
+        turnId: turn?.turnId || "",
+      });
+      let userInput = resolved.text;
+      const stashed = {
+        text: resolved.text,
+        meta: {
+          confidence: resolved.pending?.confidence ?? confBody,
+          bargeInCandidate: Boolean(resolved.pending?.bargeInCandidate),
+          turnId: turn?.turnId || resolved.pending?.turnId,
+          eventId: turn?.eventId || resolved.pending?.eventId,
+          twilioEventId: turn?.twilioEventId || resolved.pending?.twilioEventId,
+          transcriptHash: turn?.transcriptHash || resolved.pending?.transcriptHash,
+        },
+      };
+      if (!String(userInput).trim()) {
+        userInput = isCallGreeted(callSid) ? NO_SPEECH_SENTINEL : WELCOME_SENTINEL;
+        if (!turn) {
+          const silence = ingestGatherTurn(callSid, { ...body, SpeechResult: userInput }, {
+            greeted: isCallGreeted(callSid),
+            source: "silence",
+          });
+          turn = silence.turn;
+          stashed.meta.turnId = turn.turnId;
+          stashed.meta.transcriptHash = turn.transcriptHash;
+          stashed.meta.twilioEventId = turn.twilioEventId;
         }
       }
       const speechConfidence =
@@ -691,7 +777,7 @@ export function createSimpleAuraVoiceHandlers(opts = {}) {
       const isNoSpeech = userInput === NO_SPEECH_SENTINEL;
       const gate = evaluateSpeechInput({
         callSid,
-        speechText: isWelcome || isNoSpeech ? userInput : userInput,
+        speechText: userInput,
         confidenceRaw: speechConfidence,
         digits: digitsBody,
         isWelcome,
@@ -748,11 +834,28 @@ export function createSimpleAuraVoiceHandlers(opts = {}) {
         const gatedXml = buildVoiceLoopTwiML(
           gatherAction,
           attrs,
-          gatedMain,
+          gatedMain.xml,
           utteranceXml(attrs, stillHere, null),
           callSid,
         );
-        rememberReplay(callSid, { turnId: stashed.meta?.turnId, twiml: gatedXml, reply: gate.prompt || "" });
+        rememberReplay(callSid, {
+          turnId: stashed.meta?.turnId,
+          twiml: gatedXml,
+          reply: gate.prompt || "",
+          audioId: gatedMain.audioId,
+        });
+        recordTurnTrace(callSid, {
+          TURN_ID: stashed.meta?.turnId,
+          TWILIO_EVENT_ID: stashed.meta?.twilioEventId || twilioEventId,
+          TRANSCRIPT_HASH: stashed.meta?.transcriptHash,
+          DUPLICATE: false,
+          USER_TEXT: userInput,
+          INTENT: gate.reason,
+          AURA_RESPONSE_TEXT: gate.prompt || "",
+          AUDIO_ID: gatedMain.audioId,
+          PLAYBACK_STATE: "playing",
+          LATENCY_MS: Date.now() - tRoute,
+        });
         res.type("text/xml");
         res.send(gatedXml);
         sent = true;
@@ -793,13 +896,16 @@ export function createSimpleAuraVoiceHandlers(opts = {}) {
       console.log("[aura/timing] /api/aura/process_settings_ms", Date.now() - tSettings);
 
       const attrs = twilioSayAttributes(language, voiceType);
-      const turnId = stashed.meta?.turnId || "";
+      const turnId = stashed.meta?.turnId || turn?.turnId || "";
 
       const produced = await runExclusiveTurn(callSid || `anon_${tRoute}`, async () => {
-        /** Phase 1 intelligence (flagged) — never replaces Twilio Verify / SMS / PayPal. */
+        const already = turnId ? getTurn(callSid, turnId) : null;
+        if (already?.twiml && already.playback !== "interrupted") {
+          return { kind: "ready", twiml: already.twiml, reply: already.reply, audioId: already.audioId, duplicate: true };
+        }
+
         if (isAuraVoiceIntelligencePhase1()) {
           try {
-            const fromE164 = String(body.From ?? q.From ?? "").trim();
             const toE164 = String(body.To ?? q.To ?? "").trim();
             const intel = await runVoiceIntelligenceTurn({
               dbQuery,
@@ -811,7 +917,37 @@ export function createSimpleAuraVoiceHandlers(opts = {}) {
               language,
             });
             if (intel?.handled && String(intel.reply || "").trim()) {
-              return { kind: "intel", intel };
+              const guarded = applyRepeatGuard(callSid, String(intel.reply).trim(), { userText: userInput });
+              const spoken = guarded.reply;
+              const closingSay = escapeTwilioSayText(spoken);
+              const inner = await voiceboxOrPollyUtterance(attrs, spoken, closingSay, {
+                callSid,
+                language,
+                from: fromE164,
+                audioId: already?.audioId,
+              });
+              if (intel.afterBookingClose || intel.hangup) {
+                const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  ${inner.xml}
+  <Hangup/>
+</Response>`;
+                rememberReplay(callSid, { turnId, twiml: xml, reply: spoken, audioId: inner.audioId });
+                return { kind: "ready", twiml: xml, reply: spoken, audioId: inner.audioId, hangup: true, intent: intel.intent };
+              }
+              rememberAssistantSpeech(callSid, spoken);
+              recordAuraTurn(callSid, { turnId, text: spoken, audioId: inner.audioId });
+              const stillHere = escapeTwilioSayText("I'm still here if you need me.");
+              const xml = buildVoiceLoopTwiML(
+                gatherAction,
+                attrs,
+                inner.xml,
+                utteranceXml(attrs, stillHere, null),
+                callSid,
+              );
+              rememberReplay(callSid, { turnId, twiml: xml, reply: spoken, audioId: inner.audioId });
+              markPlaybackSpeaking(callSid, true, inner.audioId);
+              return { kind: "ready", twiml: xml, reply: spoken, audioId: inner.audioId, intent: intel.intent };
             }
           } catch (intelErr) {
             console.warn("[aura/voice-intel] turn failed; falling back to legacy:", intelErr?.message || intelErr);
@@ -826,156 +962,117 @@ export function createSimpleAuraVoiceHandlers(opts = {}) {
           insertVoiceRow,
         });
         console.log("[aura/timing] simple_booking_turn_ms", Date.now() - tBook);
-        return { kind: "booking", bookingOut, tBook };
-      });
 
-      if (produced?.kind === "intel") {
-        const intel = produced.intel;
-        const guarded = applyRepeatGuard(callSid, String(intel.reply).trim(), { userText: userInput });
-        const spoken = guarded.reply;
-        const genMs = Date.now() - tRoute;
-        recordVoiceTiming({
-          speechToResponseMs: genMs,
-          responseGenerationMs: genMs,
-          totalTurnMs: Date.now() - tRoute,
-        });
-        res.type("text/xml");
-        if (intel.afterBookingClose || intel.hangup) {
-          markCallCompleted(callSid);
-          req.session.bookingCompleted = true;
-          mergeBookingInfo(callSid, { confirmed: true });
-          const closingSay = escapeTwilioSayText(spoken);
-          const closingInner = await voiceboxOrPollyUtterance(attrs, spoken, closingSay, { callSid, language, from: fromE164 });
+        if (bookingOut.duplicateExecutionBlocked) {
+          const xml = `<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>`;
+          return { kind: "ready", twiml: xml, reply: "", hangup: true, bookingOut };
+        }
+        if (bookingOut.afterBookingClose) {
+          const L = normalizeBarberLang(language);
+          const closingText =
+            L === "es"
+              ? "Todo listo. Tu cita está confirmada. Gracias por elegir IFCDC."
+              : "You're all set. Your appointment has been confirmed. Thank you for choosing IFCDC.";
+          const inner = await voiceboxOrPollyUtterance(attrs, closingText, escapeTwilioSayText(closingText), {
+            callSid,
+            language,
+            from: fromE164,
+          });
           const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  ${closingInner}
+  ${inner.xml}
   <Hangup/>
 </Response>`;
-          rememberReplay(callSid, { turnId, twiml: xml, reply: spoken });
-          res.send(xml);
-          sent = true;
-          console.log("[aura/flow] twiml=voice_intel_close intent=", intel.intent || "");
-          return;
+          rememberReplay(callSid, { turnId, twiml: xml, reply: closingText, audioId: inner.audioId });
+          return { kind: "ready", twiml: xml, reply: closingText, audioId: inner.audioId, hangup: true, bookingOut };
         }
-        const safeMain = escapeTwilioSayText(spoken);
-        const stillHere = escapeTwilioSayText("I'm still here if you need me.");
-        rememberAssistantSpeech(callSid, spoken);
-        recordAuraTurn(callSid, { turnId, text: spoken });
+        if (bookingOut.hangupFollowup) {
+          const farewellRaw = String(bookingOut.reply ?? "").trim();
+          const inner = await voiceboxOrPollyUtterance(attrs, farewellRaw, escapeTwilioSayText(farewellRaw), {
+            callSid,
+            language,
+            from: fromE164,
+          });
+          const xml = buildFarewellHangupTwiML(attrs, escapeTwilioSayText(farewellRaw), 2, inner.xml);
+          rememberReplay(callSid, { turnId, twiml: xml, reply: farewellRaw, audioId: inner.audioId });
+          return { kind: "ready", twiml: xml, reply: farewellRaw, audioId: inner.audioId, hangup: true, bookingOut };
+        }
+
+        let reply = String(bookingOut.reply ?? "").trim();
+        if (!reply) {
+          console.warn("[aura/flow] MISSING_LEG route=/api/aura/process reason=empty_booking_reply_using_safeGenerate");
+          reply = await safeGenerateReply(userInput, { language, callSid });
+          reply = String(reply ?? "").trim();
+        }
+        if (!reply) {
+          reply =
+            normalizeBarberLang(language) === "es"
+              ? "Estoy aquí. ¿Cómo puedo ayudarte hoy?"
+              : "I'm here. How can I help you today?";
+        }
+        const guardedBook = applyRepeatGuard(callSid, reply, { userText: userInput });
+        reply = guardedBook.reply;
+        const inner = await voiceboxOrPollyUtterance(attrs, reply, escapeTwilioSayText(reply), {
+          callSid,
+          language,
+          from: fromE164,
+          audioId: already?.audioId,
+        });
+        const stillHere = escapeTwilioSayText(
+          normalizeBarberLang(language) === "es" ? "Sigo aquí si me necesitas." : "I'm still here if you need me.",
+        );
+        rememberAssistantSpeech(callSid, reply);
+        recordAuraTurn(callSid, { turnId, text: reply, audioId: inner.audioId });
+        markPlaybackSpeaking(callSid, true, inner.audioId);
         const xml = buildVoiceLoopTwiML(
           gatherAction,
           attrs,
-          await voiceboxOrPollyUtterance(attrs, spoken, safeMain, { callSid, language, from: fromE164 }),
+          inner.xml,
           utteranceXml(attrs, stillHere, null),
           callSid,
         );
-        rememberReplay(callSid, { turnId, twiml: xml, reply: spoken });
-        markPlaybackSpeaking(callSid, true);
-        res.send(xml);
-        sent = true;
-        console.log("[aura/flow] twiml=voice_intel intent=", intel.intent || "");
-        return;
-      }
-
-      const bookingOut = produced?.bookingOut || {
-        reply: "",
-        stage: "",
-        duplicateExecutionBlocked: false,
-      };
-      const tBook = produced?.tBook || Date.now();
-      console.log("STAGE:", bookingOut.stage, bookingOut.bookingLog ? `(${bookingOut.bookingLog})` : "");
-      recordVoiceTiming({
-        bookingLookupMs: Date.now() - tBook,
-        responseGenerationMs: Date.now() - tBook,
-        totalTurnMs: Date.now() - tRoute,
-        speechToResponseMs: Date.now() - tRoute,
+        rememberReplay(callSid, { turnId, twiml: xml, reply, audioId: inner.audioId });
+        return {
+          kind: "ready",
+          twiml: xml,
+          reply,
+          audioId: inner.audioId,
+          bookingOut,
+          suppressed: guardedBook.suppressed,
+        };
       });
 
       res.type("text/xml");
-
-      if (bookingOut.duplicateExecutionBlocked) {
-        console.log("⚠️ Duplicate execution blocked (booking flow)");
-        console.log("📞 Ending call");
-        res.send(`<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>`);
-        sent = true;
-        return;
-      }
-
-      if (bookingOut.afterBookingClose) {
+      if (produced?.hangup && produced.bookingOut?.afterBookingClose) {
         markCallCompleted(callSid);
-        req.session.bookingCompleted = true;
-        res.set("Content-Type", "text/xml");
-        const L = normalizeBarberLang(language);
-        const closingText =
-          L === "es"
-            ? "Todo listo. Tu cita está confirmada. Gracias por elegir IFCDC."
-            : "You're all set. Your appointment has been confirmed. Thank you for choosing IFCDC.";
-        const closingSay = escapeTwilioSayText(closingText);
-        console.log("📞 Ending call now");
-        const closingInner = await voiceboxOrPollyUtterance(attrs, closingText, closingSay, { callSid, language, from: fromE164 });
-        res.send(`<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  ${closingInner}
-  <Hangup/>
-</Response>
-`);
-        sent = true;
-        console.log("[aura/flow] twiml=post_booking_close_hangup callSid=", callSid || "(none)");
-        console.log("[aura/timing] /api/aura/process_total_ms", Date.now() - tRoute);
-        return;
+        if (req.session) req.session.bookingCompleted = true;
       }
-
-      if (bookingOut.hangupFollowup) {
-        const farewellRaw = String(bookingOut.reply ?? "").trim();
-        const farewell = escapeTwilioSayText(farewellRaw);
-        const farewellInner = await voiceboxOrPollyUtterance(attrs, farewellRaw, farewell, { callSid, language, from: fromE164 });
-        res.send(buildFarewellHangupTwiML(attrs, farewell, 2, farewellInner));
-        sent = true;
-        console.log("[aura/flow] twiml=farewell_hangup");
-        console.log("[aura/timing] /api/aura/process_total_ms", Date.now() - tRoute);
-        return;
+      if (produced?.hangup && produced.bookingOut?.duplicateExecutionBlocked) {
+        markCallCompleted(callSid);
       }
-
-      let reply = String(bookingOut.reply ?? "").trim();
-      if (!reply) {
-        console.warn("[aura/flow] MISSING_LEG route=/api/aura/process reason=empty_booking_reply_using_safeGenerate");
-        reply = await safeGenerateReply(userInput, { language, callSid });
-        reply = String(reply ?? "").trim();
-      }
-      if (!reply) {
-        reply =
-          normalizeBarberLang(language) === "es"
-            ? "Hola, estoy aquí. ¿Cómo puedo ayudarte hoy?"
-            : "I'm here. How can I help you today?";
-      }
-      const guardedBook = applyRepeatGuard(callSid, reply, { userText: userInput });
-      reply = guardedBook.reply;
-      console.log("REPLY:", reply.slice(0, 400) + (reply.length > 400 ? "…" : ""), guardedBook.suppressed ? "(repeat_guard)" : "");
-
-      const safeMain = escapeTwilioSayText(
-        reply ||
-          (normalizeBarberLang(language) === "es"
-            ? "Hola, estoy aquí. ¿Cómo puedo ayudarte hoy?"
-            : "I'm here. How can I help you today?"),
-      );
-      const stillHere = escapeTwilioSayText(
-        normalizeBarberLang(language) === "es"
-          ? "Sigo aquí si me necesitas."
-          : "I'm still here if you need me.",
-      );
-
-      rememberAssistantSpeech(callSid, reply);
-      recordAuraTurn(callSid, { turnId, text: reply });
-      markPlaybackSpeaking(callSid, true);
-      const loopXml = buildVoiceLoopTwiML(
-        gatherAction,
-        attrs,
-        await voiceboxOrPollyUtterance(attrs, reply, safeMain, { callSid, language, from: fromE164 }),
-        utteranceXml(attrs, stillHere, null),
-        callSid,
-      );
-      rememberReplay(callSid, { turnId, twiml: loopXml, reply });
-      res.send(loopXml);
+      res.send(produced.twiml);
       sent = true;
+      recordVoiceTiming({
+        speechToResponseMs: Date.now() - tRoute,
+        responseGenerationMs: Date.now() - tRoute,
+        totalTurnMs: Date.now() - tRoute,
+      });
+      recordTurnTrace(callSid, {
+        TURN_ID: turnId,
+        TWILIO_EVENT_ID: stashed.meta?.twilioEventId || twilioEventId,
+        TRANSCRIPT_FINAL: true,
+        TRANSCRIPT_HASH: stashed.meta?.transcriptHash || "",
+        DUPLICATE: Boolean(produced?.duplicate),
+        USER_TEXT: userInput,
+        INTENT: produced?.intent || produced?.bookingOut?.bookingLog || snapshotLedger(callSid).currentIntent || "",
+        CONTEXT_SUMMARY: contextSummary(callSid),
+        AURA_RESPONSE_TEXT: produced?.reply || "",
+        AUDIO_ID: produced?.audioId || "",
+        PLAYBACK_STATE: produced?.hangup ? "hangup" : "playing",
+        LATENCY_MS: Date.now() - tRoute,
+      });
+      console.log("STAGE:", produced?.bookingOut?.stage || "", produced?.bookingOut?.bookingLog || "");
+      console.log("REPLY:", String(produced?.reply || "").slice(0, 400));
       console.log("[aura/timing] /api/aura/process_total_ms", Date.now() - tRoute);
       console.log(
         "[aura/flow] sequence_ok legs=VOICE_HIT,CALL_SID,USER_INPUT,PROCESS_HIT,REPLY callSid=",

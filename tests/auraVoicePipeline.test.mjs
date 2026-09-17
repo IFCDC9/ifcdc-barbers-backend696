@@ -24,10 +24,6 @@ const {
   rememberReplay,
 } = require("../auraVoiceCallRuntime.cjs");
 
-test.beforeEach(() => {
-  resetAllCallRuntime();
-});
-
 test("unique turn id; duplicate transcript after replay is one primary response", () => {
   const a = beginCallerTurn("CA1", { speech: "I need a fade tomorrow", confidence: 0.9 });
   assert.equal(a.accepted, true);

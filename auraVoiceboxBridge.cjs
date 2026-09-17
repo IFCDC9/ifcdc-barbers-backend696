@@ -547,25 +547,33 @@ async function speakStreaming(opts = {}) {
 
 async function cancelSpeak(conversationId) {
   const key = String(conversationId || "");
-  cancelFlags.set(key, true);
-  const abort = abortByConversation.get(key);
-  if (typeof abort === "function") {
+  const keys = key ? [key, `${key}:first`, `${key}:rest`] : [];
+  let cancelled = false;
+  let lastId = null;
+  for (const k of keys) {
+    cancelFlags.set(k, true);
+    const abort = abortByConversation.get(k);
+    if (typeof abort === "function") {
+      try {
+        abort();
+        cancelled = true;
+      } catch {
+        /* ignore */
+      }
+    }
+    const id = inflightByConversation.get(k);
+    if (!id) continue;
+    lastId = id;
+    inflightByConversation.delete(k);
+    stats.cancels += 1;
     try {
-      abort();
-    } catch {
-      /* ignore */
+      if (!String(id).startsWith("stream_")) await getClient().cancelGeneration(id);
+      cancelled = true;
+    } catch (e) {
+      console.warn("[aura/voicebox] cancel failed:", e?.message || e);
     }
   }
-  const id = inflightByConversation.get(key);
-  if (!id) return { cancelled: Boolean(abort) };
-  stats.cancels += 1;
-  inflightByConversation.delete(key);
-  try {
-    if (!String(id).startsWith("stream_")) await getClient().cancelGeneration(id);
-  } catch (e) {
-    console.warn("[aura/voicebox] cancel failed:", e?.message || e);
-  }
-  return { cancelled: true, generationId: id };
+  return { cancelled, generationId: lastId };
 }
 
 function publicAudioBase() {

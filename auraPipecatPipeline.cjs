@@ -111,9 +111,10 @@ function createTurnDetector(opts = {}) {
     pushPcm16(samples, now = Date.now()) {
       const rms = pcmRms(samples);
       if (rms >= bargeInRms) {
+        const rising = !speaking;
         speaking = true;
         lastVoiceAt = now;
-        return { speaking: true, endOfTurn: false, bargeIn: true, silenceMs: 0, rms };
+        return { speaking: true, endOfTurn: false, bargeIn: rising, silenceMs: 0, rms };
       }
       const sil = speaking && lastVoiceAt ? now - lastVoiceAt : speaking ? 0 : silenceMs;
       if (speaking && sil >= silenceMs) {

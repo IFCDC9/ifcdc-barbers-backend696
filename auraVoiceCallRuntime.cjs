@@ -1,21 +1,31 @@
 /**
- * Per-call voice runtime: turn IDs, idempotency, in-call ledger, barge-in, repeat guard.
- * In-memory only (one Node process). Does not persist long-term user/business memory.
+ * Per-call voice runtime: one CallSid session, turn IDs, Twilio/transcript
+ * idempotency, in-call ledger, barge-in, booking machine, safe turn traces.
+ * In-memory Map (one Node process). Not wiped between Twilio POSTs.
  */
+
+const crypto = require("crypto");
+const fs = require("fs");
+const path = require("path");
 
 const CAP = 2000;
 const RECENT_AURA = 6;
-const DEDUP_MS = 8000;
+const DEDUP_MS = 15000;
+const TRACE_CAP = 80;
+const TRACE_FILE = path.join(__dirname, "logs", "aura-voice-turns.log");
 
 /** @type {Map<string, object>} */
 const sessions = new Map();
-/** @type {Map<string, Promise<{ twiml: string, turnId: string, reply: string }>>} */
+/** @type {Map<string, Promise<object>>} */
 const inflight = new Map();
+/** @type {object[]} */
+const globalTraces = [];
 
 const stats = {
   turnsAccepted: 0,
   turnsDuplicate: 0,
   turnsSuppressedRepeat: 0,
+  turnsInterimDropped: 0,
   bargeIns: 0,
   generationsCoalesced: 0,
 };
@@ -36,27 +46,47 @@ function emptyBooking() {
   return { service: null, day: null, time: null, name: null, confirmed: false };
 }
 
+function emptyBookingMachine() {
+  return { step: "start", data: {}, completed: false };
+}
+
 function createSession(callSid) {
+  const sid = String(callSid || "").trim();
   return {
-    callSid,
+    callSid: sid,
+    callSessionId: sid || `anon_${now().toString(36)}`,
     createdAt: now(),
     seq: 0,
+    greeted: false,
     callerTurns: [],
     auraTurns: [],
+    messages: [],
     completedActions: [],
     booking: emptyBooking(),
+    bookingMachine: emptyBookingMachine(),
     questionsAnswered: [],
     pendingQuestions: [],
     currentIntent: null,
     lastConfirmed: null,
     language: null,
-    playback: { speaking: false, interrupted: false, interruptedTurnId: null },
+    playback: {
+      speaking: false,
+      interrupted: false,
+      interruptedTurnId: null,
+      currentAudioId: null,
+      state: "idle",
+    },
     lastAcceptedTurnId: null,
-    lastEventFingerprint: null,
-    lastEventAt: 0,
+    lastCompletedTurnId: null,
+    lastTwimlTurnId: null,
     lastTwiml: "",
     lastReply: "",
+    lastAudioId: null,
     fingerprints: new Map(),
+    twilioEvents: new Map(),
+    turns: new Map(),
+    pendingInput: null,
+    traces: [],
   };
 }
 
@@ -75,7 +105,12 @@ function getCallRuntime(callSid) {
 function nextTurnId(callSid) {
   const s = getCallRuntime(callSid);
   s.seq += 1;
-  return `${s.callSid || "anon"}:t${s.seq}:${now().toString(36)}`;
+  return `${s.callSessionId || s.callSid || "anon"}:t${s.seq}:${now().toString(36)}`;
+}
+
+function newAudioId(turnId) {
+  const rand = crypto.randomBytes(4).toString("hex");
+  return `aud_${String(turnId || "t").replace(/[^a-z0-9:]/gi, "").slice(-24) || "t"}:${rand}`;
 }
 
 function normalizeFingerprint(text) {
@@ -87,10 +122,14 @@ function normalizeFingerprint(text) {
     .slice(0, 400);
 }
 
-function eventFingerprint({ speech, digits, confidence }) {
-  return [normalizeFingerprint(speech), String(digits || "").trim(), confidence == null ? "" : String(confidence)].join(
-    "|",
-  );
+function hashTranscript({ speech = "", digits = "" } = {}) {
+  const payload = `${normalizeFingerprint(speech)}|${String(digits || "").trim()}`;
+  return crypto.createHash("sha256").update(payload).digest("hex").slice(0, 20);
+}
+
+/** Transcript only — never include Confidence (retries jitter and would mint a new turn). */
+function eventFingerprint({ speech, digits }) {
+  return `${normalizeFingerprint(speech)}|${String(digits || "").trim()}`;
 }
 
 const STOP = new Set([
@@ -172,7 +211,6 @@ function dice(a, b) {
   return (2 * hit) / (a.length + b.length);
 }
 
-/** Semantic-ish overlap; not exact-string only. */
 function semanticSimilarity(a, b) {
   const ta = contentTokens(a);
   const tb = contentTokens(b);
@@ -202,58 +240,267 @@ function ledgerHasNewInfo(session, candidate) {
   return false;
 }
 
-/**
- * Begin a caller turn. Duplicate transcripts / webhook retries reuse the same turnId.
- */
-function beginCallerTurn(callSid, { speech = "", digits = "", confidence = null, source = "gather" } = {}) {
+function getTurn(callSid, turnId) {
+  if (!turnId) return null;
+  return getCallRuntime(callSid).turns.get(String(turnId)) || null;
+}
+
+function getTurnByTwilioEvent(callSid, twilioEventId) {
+  const id = String(twilioEventId || "").trim();
+  if (!id) return null;
   const s = getCallRuntime(callSid);
-  const fp = eventFingerprint({ speech, digits, confidence });
-  const prev = s.fingerprints.get(fp);
-  if (prev && now() - prev.at < DEDUP_MS) {
-    if (s.lastTwiml && s.lastAcceptedTurnId === prev.turnId) {
+  const turnId = s.twilioEvents.get(id);
+  return turnId ? s.turns.get(turnId) || null : null;
+}
+
+function stashTurnInput(callSid, payload = {}) {
+  const s = getCallRuntime(callSid);
+  s.pendingInput = {
+    text: String(payload.text || ""),
+    turnId: payload.turnId || s.lastAcceptedTurnId,
+    eventId: payload.eventId || null,
+    twilioEventId: payload.twilioEventId || null,
+    transcriptHash: payload.transcriptHash || null,
+    confidence: payload.confidence ?? null,
+    bargeInCandidate: Boolean(payload.bargeInCandidate),
+    source: payload.source || "gather",
+    consumed: false,
+    at: now(),
+  };
+  return s.pendingInput;
+}
+
+function peekPendingInput(callSid) {
+  return getCallRuntime(callSid).pendingInput || null;
+}
+
+/**
+ * Recover SpeechResult across /voice → /process Redirect and Twilio retries.
+ * Same turn keeps the text; a later different turn does not see stale speech.
+ */
+function resolveTurnInput(callSid, { speech = "", digits = "", turnId = "" } = {}) {
+  const spoken = String(speech || digits || "").trim();
+  if (spoken) {
+    const p = peekPendingInput(callSid);
+    if (p && p.turnId === turnId) p.consumed = true;
+    return { text: spoken, from: "webhook", pending: p };
+  }
+  const p = peekPendingInput(callSid);
+  if (p && p.turnId && (!turnId || p.turnId === turnId) && String(p.text || "").trim()) {
+    p.consumed = true;
+    return { text: String(p.text), from: "pending", pending: p };
+  }
+  return { text: "", from: "empty", pending: p };
+}
+
+function isCallGreeted(callSid) {
+  return Boolean(getCallRuntime(callSid).greeted);
+}
+
+function markCallGreeted(callSid) {
+  const s = getCallRuntime(callSid);
+  s.greeted = true;
+  return s.greeted;
+}
+
+function appendMessage(callSid, role, text, turnId) {
+  const s = getCallRuntime(callSid);
+  const t = String(text || "").trim();
+  if (!t) return;
+  s.messages.push({ role, text: t.slice(0, 800), turnId: turnId || null, at: now() });
+  if (s.messages.length > 24) s.messages.splice(0, s.messages.length - 24);
+}
+
+function conversationMessages(callSid) {
+  return getCallRuntime(callSid).messages.slice(-8).map((m) => ({
+    role: m.role === "assistant" ? "assistant" : "user",
+    content: m.text,
+  }));
+}
+
+function getBookingMachine(callSid) {
+  const s = getCallRuntime(callSid);
+  if (!s.bookingMachine) s.bookingMachine = emptyBookingMachine();
+  if (s.greeted && s.bookingMachine.step === "start") s.bookingMachine.step = "service";
+  return s.bookingMachine;
+}
+
+function resetBookingMachine(callSid) {
+  const s = getCallRuntime(callSid);
+  s.bookingMachine = emptyBookingMachine();
+}
+
+/**
+ * Begin a caller turn. Interim/unstable transcripts are not turns.
+ * Duplicate RequestSid / transcript hash reuse the same turnId.
+ * Replay TwiML only if it belongs to THIS turn — never the previous Play.
+ */
+function beginCallerTurn(callSid, opts = {}) {
+  const {
+    speech = "",
+    digits = "",
+    confidence = null,
+    source = "gather",
+    twilioEventId = "",
+    transcriptFinal = true,
+    unstable = "",
+  } = opts;
+  const s = getCallRuntime(callSid);
+  const spoken = String(speech || "").trim();
+  const dtmf = String(digits || "").trim();
+  const interimOnly = Boolean(String(unstable || "").trim()) && !spoken && !dtmf;
+  const notFinal = transcriptFinal === false || interimOnly;
+
+  if (notFinal) {
+    stats.turnsInterimDropped += 1;
+    return {
+      accepted: false,
+      duplicate: false,
+      interim: true,
+      turnId: s.lastAcceptedTurnId || "",
+      eventId: "",
+      twilioEventId: String(twilioEventId || "").trim(),
+      transcriptHash: hashTranscript({ speech: unstable, digits: dtmf }),
+      transcriptFinal: false,
+      reason: "interim_not_a_turn",
+      replayTwiml: "",
+    };
+  }
+
+  const fp = eventFingerprint({ speech: spoken, digits: dtmf });
+  const transcriptHash = hashTranscript({ speech: spoken, digits: dtmf });
+  const eventKey = String(twilioEventId || "").trim();
+
+  if (eventKey && s.twilioEvents.has(eventKey)) {
+    const existing = s.turns.get(s.twilioEvents.get(eventKey));
+    if (existing) {
       stats.turnsDuplicate += 1;
+      const replay = existing.twiml && existing.playback !== "interrupted" ? existing.twiml : "";
       return {
         accepted: false,
         duplicate: true,
-        turnId: prev.turnId,
-        eventId: prev.eventId,
-        reason: "duplicate_transcript",
-        replayTwiml: s.lastTwiml || "",
-        replayReply: s.lastReply || "",
+        turnId: existing.turnId,
+        eventId: existing.eventId,
+        twilioEventId: eventKey,
+        transcriptHash: existing.transcriptHash,
+        transcriptFinal: true,
+        reason: "duplicate_twilio_event",
+        replayTwiml: replay,
+        replayReply: existing.reply || "",
+        audioId: existing.audioId || null,
+        sameTurn: !replay,
       };
     }
-    return {
-      accepted: true,
-      duplicate: false,
-      sameTurn: true,
-      turnId: prev.turnId,
-      eventId: prev.eventId,
-      reason: "in_flight_same_turn",
-    };
   }
+
+  const prev = s.fingerprints.get(fp) || s.fingerprints.get(transcriptHash);
+  if (prev && now() - prev.at < DEDUP_MS) {
+    const existing = s.turns.get(prev.turnId);
+    if (existing) {
+      if (eventKey) s.twilioEvents.set(eventKey, existing.turnId);
+      const complete = Boolean(existing.twiml) && existing.playback !== "interrupted";
+      if (complete) {
+        stats.turnsDuplicate += 1;
+        return {
+          accepted: false,
+          duplicate: true,
+          turnId: existing.turnId,
+          eventId: existing.eventId,
+          twilioEventId: eventKey || existing.twilioEventId,
+          transcriptHash: existing.transcriptHash,
+          transcriptFinal: true,
+          reason: "duplicate_transcript",
+          replayTwiml: existing.twiml,
+          replayReply: existing.reply || "",
+          audioId: existing.audioId || null,
+        };
+      }
+      stats.turnsDuplicate += 1;
+      return {
+        accepted: true,
+        duplicate: false,
+        sameTurn: true,
+        turnId: existing.turnId,
+        eventId: existing.eventId,
+        twilioEventId: eventKey || existing.twilioEventId,
+        transcriptHash: existing.transcriptHash,
+        transcriptFinal: true,
+        reason: "in_flight_same_turn",
+        replayTwiml: "",
+        audioId: existing.audioId || null,
+      };
+    }
+  }
+
   const turnId = nextTurnId(callSid);
   const eventId = `${turnId}:e`;
+  const audioId = newAudioId(turnId);
+  const rec = {
+    turnId,
+    eventId,
+    twilioEventId: eventKey || eventId,
+    transcriptHash,
+    userText: String(spoken || dtmf || "").slice(0, 500),
+    confidence,
+    source,
+    at: now(),
+    accepted: true,
+    final: true,
+    status: "pending",
+    reply: "",
+    twiml: "",
+    audioId,
+    playback: "idle",
+  };
+  s.turns.set(turnId, rec);
   s.fingerprints.set(fp, { turnId, eventId, at: now() });
-  if (s.fingerprints.size > 80) {
+  s.fingerprints.set(transcriptHash, { turnId, eventId, at: now() });
+  if (eventKey) s.twilioEvents.set(eventKey, turnId);
+  if (s.fingerprints.size > 120) {
     const first = s.fingerprints.keys().next().value;
     if (first !== undefined) s.fingerprints.delete(first);
   }
-  s.lastEventFingerprint = fp;
-  s.lastEventAt = now();
   s.lastAcceptedTurnId = turnId;
   s.playback.interrupted = false;
   stats.turnsAccepted += 1;
   s.callerTurns.push({
     turnId,
     eventId,
-    text: String(speech || digits || "").slice(0, 500),
+    twilioEventId: rec.twilioEventId,
+    transcriptHash,
+    text: rec.userText,
     confidence,
     source,
-    at: now(),
+    at: rec.at,
     accepted: true,
   });
   if (s.callerTurns.length > 40) s.callerTurns.splice(0, s.callerTurns.length - 40);
-  return { accepted: true, duplicate: false, turnId, eventId, reason: "new" };
+  if (rec.userText && !/^__IFCDC_/.test(rec.userText)) {
+    appendMessage(callSid, "user", rec.userText, turnId);
+  }
+  stashTurnInput(callSid, {
+    text: rec.userText,
+    turnId,
+    eventId,
+    twilioEventId: rec.twilioEventId,
+    transcriptHash,
+    confidence,
+    source,
+    bargeInCandidate: source === "bargein",
+  });
+  return {
+    accepted: true,
+    duplicate: false,
+    sameTurn: false,
+    turnId,
+    eventId,
+    twilioEventId: rec.twilioEventId,
+    transcriptHash,
+    transcriptFinal: true,
+    reason: "new",
+    replayTwiml: "",
+    audioId,
+  };
 }
 
 function recordRejectedInput(callSid, { text, reason }) {
@@ -267,21 +514,34 @@ function recordRejectedInput(callSid, { text, reason }) {
   });
 }
 
-function recordAuraTurn(callSid, { turnId, text, interrupted = false }) {
+function recordAuraTurn(callSid, { turnId, text, interrupted = false, audioId = null } = {}) {
   const s = getCallRuntime(callSid);
+  const tid = turnId || s.lastAcceptedTurnId;
+  const spoken = String(text || "").slice(0, 800);
   s.auraTurns.push({
-    turnId: turnId || s.lastAcceptedTurnId,
-    text: String(text || "").slice(0, 800),
+    turnId: tid,
+    text: spoken,
     interrupted: Boolean(interrupted),
+    audioId: audioId || null,
     at: now(),
   });
   if (s.auraTurns.length > 40) s.auraTurns.splice(0, s.auraTurns.length - 40);
-  s.lastReply = String(text || "");
+  s.lastReply = spoken;
+  if (audioId) s.lastAudioId = audioId;
+  appendMessage(callSid, "assistant", spoken, tid);
+  const turn = tid ? s.turns.get(tid) : null;
+  if (turn) {
+    turn.reply = spoken;
+    if (audioId) turn.audioId = audioId;
+    if (interrupted) turn.playback = "interrupted";
+  }
 }
 
-function markPlaybackSpeaking(callSid, speaking) {
+function markPlaybackSpeaking(callSid, speaking, audioId = null) {
   const s = getCallRuntime(callSid);
   s.playback.speaking = Boolean(speaking);
+  s.playback.state = speaking ? "playing" : "idle";
+  if (audioId) s.playback.currentAudioId = audioId;
   if (speaking) s.playback.interrupted = false;
 }
 
@@ -294,10 +554,20 @@ function markBargeIn(callSid, { turnId } = {}) {
   const s = getCallRuntime(callSid);
   s.playback.speaking = false;
   s.playback.interrupted = true;
-  s.playback.interruptedTurnId = turnId || s.lastAcceptedTurnId || s.auraTurns.at(-1)?.turnId || null;
+  s.playback.state = "interrupted";
+  s.playback.interruptedTurnId = turnId || s.lastCompletedTurnId || s.auraTurns.at(-1)?.turnId || null;
   stats.bargeIns += 1;
   const last = s.auraTurns.at(-1);
   if (last) last.interrupted = true;
+  const interrupted = s.playback.interruptedTurnId ? s.turns.get(s.playback.interruptedTurnId) : null;
+  if (interrupted) {
+    interrupted.playback = "interrupted";
+    interrupted.twiml = "";
+  }
+  if (s.lastTwimlTurnId && s.lastTwimlTurnId === s.playback.interruptedTurnId) {
+    s.lastTwiml = "";
+    s.lastTwimlTurnId = null;
+  }
   try {
     if (bargeInListener) bargeInListener(callSid, s.playback.interruptedTurnId);
   } catch (e) {
@@ -306,9 +576,6 @@ function markBargeIn(callSid, { turnId } = {}) {
   return { interruptedTurnId: s.playback.interruptedTurnId, resumeOldResponse: false };
 }
 
-/**
- * Change spoken language for this call without resetting booking or ledger.
- */
 function setCallLanguage(callSid, language) {
   const s = getCallRuntime(callSid);
   const next = String(language || "").trim().toLowerCase().split(/[-_]/)[0];
@@ -354,6 +621,8 @@ function markQuestionAnswered(callSid, question) {
 function snapshotLedger(callSid) {
   const s = getCallRuntime(callSid);
   return {
+    callSessionId: s.callSessionId,
+    greeted: s.greeted,
     booking: { ...s.booking },
     pendingQuestions: [...s.pendingQuestions],
     questionsAnswered: s.questionsAnswered.slice(-8),
@@ -364,7 +633,9 @@ function snapshotLedger(callSid) {
     recentCaller: s.callerTurns.filter((t) => t.accepted).slice(-6).map((t) => t.text),
     recentAura: s.auraTurns.slice(-RECENT_AURA).map((t) => t.text),
     playbackInterrupted: s.playback.interrupted,
+    playbackState: s.playback.state,
     lastAcceptedTurnId: s.lastAcceptedTurnId,
+    lastAudioId: s.lastAudioId,
   };
 }
 
@@ -384,18 +655,39 @@ function ledgerContextBlock(callSid) {
     snap.pendingQuestions.length ? `Pending: ${snap.pendingQuestions.join("; ")}` : "Pending: (none)",
     snap.currentIntent ? `Intent: ${snap.currentIntent}` : "",
     snap.recentCaller.length ? `Caller recently said: ${snap.recentCaller.slice(-3).join(" | ")}` : "",
+    snap.recentAura.length ? `You already said: ${snap.recentAura.slice(-2).join(" | ")}` : "",
+    "Do not greet again. Do not dump policy. Ask only the next missing booking field.",
   ].filter(Boolean);
   return lines.join("\n");
 }
 
-/**
- * Before TTS: suppress/rewrite duplicate AURA lines that add no new info.
- */
+function contextSummary(callSid) {
+  const snap = snapshotLedger(callSid);
+  const b = snap.booking;
+  const bits = [
+    snap.greeted ? "greeted" : "not_greeted",
+    b.service && `svc=${b.service}`,
+    b.day && `day=${b.day}`,
+    b.time && `time=${b.time}`,
+    b.name && `name=${b.name}`,
+    snap.currentIntent && `intent=${snap.currentIntent}`,
+    snap.pendingQuestions[0] && `pending=${snap.pendingQuestions[0]}`,
+    snap.language && `lang=${snap.language}`,
+  ].filter(Boolean);
+  return bits.join("; ").slice(0, 240);
+}
+
 function applyRepeatGuard(callSid, reply, { userText = "" } = {}) {
   const s = getCallRuntime(callSid);
   const text = String(reply || "").trim();
   if (!text) return { reply: text, suppressed: false, similarity: 0 };
   if (userAskedRepeat(userText)) return { reply: text, suppressed: false, similarity: 0, reason: "user_requested" };
+  if (/^\s*(hi|hello|hola)[,.]?\s+(this is Aura|soy Aura)\b/i.test(text) && s.auraTurns.some((t) => /^\s*(hi|hello|hola)[,.]?\s+(this is Aura|soy Aura)\b/i.test(t.text || ""))) {
+    stats.turnsSuppressedRepeat += 1;
+    const pending = s.pendingQuestions[0];
+    const rewrite = pending || "I'm here. What would you like to do next?";
+    return { reply: rewrite, suppressed: true, similarity: 1, original: text, reason: "re_greeting" };
+  }
 
   let best = 0;
   for (const prev of s.auraTurns.slice(-RECENT_AURA)) {
@@ -413,22 +705,42 @@ function applyRepeatGuard(callSid, reply, { userText = "" } = {}) {
   return { reply: text, suppressed: false, similarity: best };
 }
 
-function rememberReplay(callSid, { turnId, twiml, reply }) {
+function rememberReplay(callSid, { turnId, twiml, reply, audioId } = {}) {
   const s = getCallRuntime(callSid);
-  s.lastTwiml = String(twiml || "");
+  const tid = turnId || s.lastAcceptedTurnId;
+  const xml = String(twiml || "");
+  const turn = tid ? s.turns.get(tid) : null;
+  if (turn && turn.playback === "interrupted") {
+    return;
+  }
+  s.lastTwiml = xml;
   s.lastReply = String(reply || "");
-  if (turnId) s.lastAcceptedTurnId = turnId;
+  s.lastTwimlTurnId = tid || null;
+  s.lastCompletedTurnId = tid || s.lastCompletedTurnId;
+  if (tid) s.lastAcceptedTurnId = tid;
+  if (audioId) s.lastAudioId = audioId;
+  if (turn) {
+    turn.twiml = xml;
+    turn.reply = String(reply || turn.reply || "");
+    turn.status = "complete";
+    turn.playback = "playing";
+    if (audioId) turn.audioId = audioId;
+  }
 }
 
-function getReplay(callSid) {
+function getReplay(callSid, turnId = null) {
   const s = getCallRuntime(callSid);
-  if (!s.lastTwiml) return null;
-  return { twiml: s.lastTwiml, reply: s.lastReply, turnId: s.lastAcceptedTurnId };
+  const tid = turnId || s.lastTwimlTurnId || s.lastCompletedTurnId;
+  const turn = tid ? s.turns.get(tid) : null;
+  if (turn?.twiml && turn.playback !== "interrupted") {
+    return { twiml: turn.twiml, reply: turn.reply, turnId: turn.turnId, audioId: turn.audioId };
+  }
+  if (!turnId && s.lastTwiml && s.lastTwimlTurnId) {
+    return { twiml: s.lastTwiml, reply: s.lastReply, turnId: s.lastTwimlTurnId, audioId: s.lastAudioId };
+  }
+  return null;
 }
 
-/**
- * One primary generation per call at a time. Concurrent webhook retries await the first result.
- */
 async function runExclusiveTurn(callSid, fn) {
   const k = String(callSid || "").trim() || "__anon__";
   const existing = inflight.get(k);
@@ -443,6 +755,65 @@ async function runExclusiveTurn(callSid, fn) {
     });
   inflight.set(k, p);
   return p;
+}
+
+function redactTraceValue(v) {
+  return String(v ?? "")
+    .replace(/\+1\d{10}/g, "+1**********")
+    .replace(/\b\d{10,}\b/g, "[digits]")
+    .replace(/hmac[^\s"]*/gi, "[redacted]")
+    .replace(/authorization[:\s]+\S+/gi, "[redacted]")
+    .replace(/tunnel[_-]?secret[^\s"]*/gi, "[redacted]")
+    .slice(0, 500);
+}
+
+function recordTurnTrace(callSid, partial = {}) {
+  const s = getCallRuntime(callSid);
+  const turn = getTurn(callSid, partial.TURN_ID || s.lastAcceptedTurnId);
+  const row = {
+    at: new Date().toISOString(),
+    CALL_SESSION_ID: s.callSessionId,
+    TURN_ID: partial.TURN_ID || turn?.turnId || s.lastAcceptedTurnId || "",
+    TWILIO_EVENT_ID: redactTraceValue(partial.TWILIO_EVENT_ID || turn?.twilioEventId || ""),
+    TRANSCRIPT_FINAL: partial.TRANSCRIPT_FINAL !== false,
+    TRANSCRIPT_HASH: partial.TRANSCRIPT_HASH || turn?.transcriptHash || "",
+    DUPLICATE: Boolean(partial.DUPLICATE),
+    USER_TEXT: redactTraceValue(partial.USER_TEXT || turn?.userText || ""),
+    INTENT: redactTraceValue(partial.INTENT || s.currentIntent || ""),
+    CONTEXT_SUMMARY: redactTraceValue(partial.CONTEXT_SUMMARY || contextSummary(callSid)),
+    AURA_RESPONSE_TEXT: redactTraceValue(partial.AURA_RESPONSE_TEXT || turn?.reply || s.lastReply || ""),
+    AUDIO_ID: partial.AUDIO_ID || turn?.audioId || s.lastAudioId || "",
+    PLAYBACK_STATE: partial.PLAYBACK_STATE || s.playback.state || "idle",
+    PLAYBACK_INTERRUPTED: Boolean(s.playback.interrupted),
+    PLAYBACK_AUDIO_ID: s.playback.currentAudioId || partial.AUDIO_ID || "",
+    LATENCY_MS: Number.isFinite(Number(partial.LATENCY_MS)) ? Number(partial.LATENCY_MS) : null,
+  };
+  s.traces.push(row);
+  if (s.traces.length > TRACE_CAP) s.traces.splice(0, s.traces.length - TRACE_CAP);
+  globalTraces.push(row);
+  if (globalTraces.length > 400) globalTraces.splice(0, globalTraces.length - 400);
+  try {
+    console.log("[aura/turn-trace]", JSON.stringify(row));
+  } catch {
+    /* ignore */
+  }
+  try {
+    fs.mkdirSync(path.dirname(TRACE_FILE), { recursive: true });
+    fs.appendFileSync(TRACE_FILE, `${JSON.stringify(row)}\n`);
+  } catch (e) {
+    if (!recordTurnTrace._fsWarned) {
+      recordTurnTrace._fsWarned = true;
+      console.warn("[aura/turn-trace] log file skipped:", e?.message || e);
+    }
+  }
+  return row;
+}
+
+function getTurnTraces(callSid, limit = 40) {
+  const n = Math.max(1, Math.min(80, Number(limit) || 40));
+  const k = String(callSid || "").trim();
+  if (k) return (sessions.get(k)?.traces || []).slice(-n);
+  return globalTraces.slice(-n);
 }
 
 function getRuntimeStats() {
@@ -460,9 +831,11 @@ function resetCallRuntime(callSid) {
 function resetAllCallRuntime() {
   sessions.clear();
   inflight.clear();
+  globalTraces.length = 0;
   stats.turnsAccepted = 0;
   stats.turnsDuplicate = 0;
   stats.turnsSuppressedRepeat = 0;
+  stats.turnsInterimDropped = 0;
   stats.bargeIns = 0;
   stats.generationsCoalesced = 0;
 }
@@ -483,6 +856,7 @@ module.exports = {
   markQuestionAnswered,
   snapshotLedger,
   ledgerContextBlock,
+  contextSummary,
   applyRepeatGuard,
   semanticSimilarity,
   rememberReplay,
@@ -492,4 +866,20 @@ module.exports = {
   resetCallRuntime,
   resetAllCallRuntime,
   nextTurnId,
+  hashTranscript,
+  getTurn,
+  getTurnByTwilioEvent,
+  stashTurnInput,
+  peekPendingInput,
+  resolveTurnInput,
+  isCallGreeted,
+  markCallGreeted,
+  conversationMessages,
+  appendMessage,
+  getBookingMachine,
+  resetBookingMachine,
+  recordTurnTrace,
+  getTurnTraces,
+  newAudioId,
+  TRACE_FILE,
 };
