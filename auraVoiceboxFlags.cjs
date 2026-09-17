@@ -28,6 +28,53 @@ function isVoiceboxPrimary() {
   return envFlagOn("VOICEBOX_PRIMARY");
 }
 
+/** E.164 for allowlist compare. Does not invent numbers. */
+function normalizeE164(raw) {
+  const digits = String(raw || "").trim().replace(/[^\d+]/g, "");
+  if (!digits) return "";
+  if (digits.startsWith("+")) return digits;
+  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+  if (digits.length === 10) return `+1${digits}`;
+  return `+${digits}`;
+}
+
+function maskPhoneLast4(raw) {
+  const n = normalizeE164(raw);
+  if (!n) return "";
+  if (n.length <= 4) return "***";
+  return `${n.slice(0, Math.min(2, n.length - 4))}***${n.slice(-4)}`;
+}
+
+/**
+ * Caller IDs that may hear Sample A while VOICEBOX_PRIMARY stays 0.
+ * Only AURA_VOICEBOX_TEST_FROM and AURA_FOUNDER_PHONE (if set). Never owner-default.
+ */
+function voiceboxTestFromList() {
+  const out = [];
+  const seen = new Set();
+  for (const item of [process.env.AURA_VOICEBOX_TEST_FROM, process.env.AURA_FOUNDER_PHONE]) {
+    for (const part of String(item || "").split(/[,\s]+/)) {
+      const n = normalizeE164(part);
+      if (!n || seen.has(n)) continue;
+      seen.add(n);
+      out.push(n);
+    }
+  }
+  return out;
+}
+
+function isVoiceboxTestCaller(from) {
+  const caller = normalizeE164(from);
+  if (!caller) return false;
+  return voiceboxTestFromList().includes(caller);
+}
+
+/** Global primary OR one allowlisted founder test caller. Everyone else Polly. */
+function shouldUseVoiceboxForCall(opts = {}) {
+  if (isVoiceboxPrimary()) return true;
+  return isVoiceboxTestCaller(opts.from || opts.callerFrom || opts.From);
+}
+
 function voiceboxTunnelHostname() {
   return String(process.env.VOICEBOX_TUNNEL_HOSTNAME || "aura-voice.ifcdcbarbersapp.com")
     .trim()
@@ -60,8 +107,9 @@ function voiceboxFlags() {
     tunnelAuth,
     tunnelSecretConfigured: Boolean(voiceboxTunnelSecret()),
     loopback: isLoopbackBase(baseUrl),
+    testCallerConfigured: voiceboxTestFromList().length > 0,
     note:
-      "VOICEBOX_PRIMARY default 0. Founder-approved Sample A (Kokoro af_heart) is the test identity only. Production Polly/Twilio Say stays until Tessa enables. Render uses VOICEBOX_BASE_URL HTTPS tunnel host + VOICEBOX_TUNNEL_SECRET HMAC; never Voicebox 127.0.0.1 admin.",
+      "VOICEBOX_PRIMARY default 0. Founder-approved Sample A (Kokoro af_heart) is the test identity only. Production Polly/Twilio Say stays until Tessa enables. One allowlisted caller (AURA_VOICEBOX_TEST_FROM) may hear Sample A without flipping global primary. Render uses VOICEBOX_BASE_URL HTTPS tunnel host + VOICEBOX_TUNNEL_SECRET HMAC; never Voicebox 127.0.0.1 admin.",
   };
 }
 
@@ -71,4 +119,9 @@ module.exports = {
   isVoiceboxPrimary,
   voiceboxTunnelHostname,
   voiceboxFlags,
+  normalizeE164,
+  maskPhoneLast4,
+  voiceboxTestFromList,
+  isVoiceboxTestCaller,
+  shouldUseVoiceboxForCall,
 };

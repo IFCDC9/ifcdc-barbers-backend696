@@ -4,9 +4,10 @@
  */
 
 const express = require("express");
-const { getCachedAudio, getVoiceboxHqStatus, speak, probeHealth, takePendingRest, publicAudioUrl } = require("./auraVoiceboxBridge.cjs");
+const { getCachedAudio, getVoiceboxHqStatus, speak, probeHealth, takePendingRest, publicAudioUrl, runVoiceboxProdDiag } = require("./auraVoiceboxBridge.cjs");
 const { upsertPronunciation, addLesson, getVoiceMemorySnapshot, listPronunciations } = require("./auraVoiceMemory.cjs");
 const { isVoiceboxPrimary } = require("./auraVoiceboxFlags.cjs");
+const { verifyVoiceboxTunnelRequest, voiceboxTunnelSecret } = require("./auraVoiceboxTunnelAuth.cjs");
 
 function escapeXml(s) {
   return String(s || "")
@@ -46,6 +47,43 @@ function createAuraVoiceboxRouter(deps = {}) {
       res.status(403).json({ ok: false, error: "forbidden" });
       return null;
     }
+    return user;
+  }
+
+  function requireDiagAuth(req, res) {
+    const sa = trySuperAdmin(req);
+    if (sa) return sa;
+    const secret = voiceboxTunnelSecret();
+    if (!secret) {
+      res.status(401).json({ ok: false, error: "unauthorized" });
+      return null;
+    }
+    const pathForSig = "/api/aura/voicebox/diag";
+    const auth = verifyVoiceboxTunnelRequest({
+      secret,
+      method: req.method,
+      path: pathForSig,
+      body: req.body && Object.keys(req.body).length ? req.body : "",
+      headers: req.headers,
+    });
+    if (auth.ok) return { diag: true, mode: auth.mode };
+    res.status(401).json({ ok: false, error: "unauthorized" });
+    return null;
+  }
+
+  function trySuperAdmin(req) {
+    const token = extractBearer(req);
+    if (!token || typeof resolveAuthPayload !== "function") return null;
+    let user;
+    try {
+      user = resolveAuthPayload(token);
+    } catch {
+      return null;
+    }
+    const role = String(user?.role || "").toLowerCase();
+    const email = String(user?.email || "");
+    const sa = typeof isSuperAdminEmail === "function" ? isSuperAdminEmail(email) : false;
+    if (!(role === "super_admin" || (user?.isSuperAdmin === true && sa))) return null;
     return user;
   }
 
@@ -165,7 +203,23 @@ function createAuraVoiceboxRouter(deps = {}) {
         generationId: result.generationId || null,
         reason: result.reason || null,
         language: result.language || req.body?.language || "en",
+        firstByteMs: result.firstByteMs ?? null,
+        audioBytes: result.audio?.length || 0,
       });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: String(e?.message || e).slice(0, 180) });
+    }
+  });
+
+  /**
+   * Production tunnel check: HMAC health + Sample A generate through this backend.
+   * Super Admin JWT or tunnel HMAC on path /api/aura/voicebox/diag. No public generate.
+   */
+  router.post("/diag", async (req, res) => {
+    if (!requireDiagAuth(req, res)) return;
+    try {
+      const out = await runVoiceboxProdDiag({ text: req.body?.text });
+      res.status(out.hmacReady || out.health.reachable ? 200 : 503).json(out);
     } catch (e) {
       res.status(500).json({ ok: false, error: String(e?.message || e).slice(0, 180) });
     }

@@ -120,3 +120,40 @@ HE remains Polly fallback (not Sample A). EN/ES use Kokoro `af_heart`. Language 
 ## After tunnel is authenticated
 
 `PRODUCTION VOICE = READY FOR FOUNDER FINAL CALL TEST` — then **STOP**. Do not set `VOICEBOX_PRIMARY=1` globally.
+
+## One Founder live call (allowlist, not global primary)
+
+Keep `VOICEBOX_PRIMARY=0` for everyone. Set **one** E.164 on Render:
+
+```
+AURA_VOICEBOX_TEST_FROM=+1XXXXXXXXXX
+```
+
+Only that caller ID hears Sample A (`af_heart`). Every other inbound call stays Polly. Optional alias: `AURA_FOUNDER_PHONE` (same E.164). Do not invent the Founder number.
+
+**Dial:** official Aura Twilio line `+19895141064` (AURA_PHONE_NUMBER).
+
+**Call script (Founder):**
+
+1. Call Aura from the allowlisted handset (Mac/Voicebox/cloudflared already running).
+2. Expect greeting: **Hi, this is Aura…**
+3. Interrupt / barge-in while she is speaking.
+4. Book a haircut (day + time). Booking ledger must survive.
+5. Switch to Spanish (`Claro que sí…` / same Sample A speaker). Hebrew stays Polly.
+6. Hang up.
+7. **Do not** set `VOICEBOX_PRIMARY=1` after the call.
+
+If `AURA_VOICEBOX_TEST_FROM` is unset, the live Sample A call is blocked — Tessa must set that env on **ifcdc-barbers-backend696** and restart. Confirm `VOICEBOX_BASE_URL=https://aura-voice.ifcdcbarbersapp.com` and `VOICEBOX_TUNNEL_SECRET` matches the Mac file (sha256 only).
+
+Align Render (never logs the secret):
+
+```bash
+RENDER_API_KEY=… node scripts/local-only/set-render-voicebox-tunnel.mjs --deploy --wait
+```
+
+Production HMAC + Sample A generate (Super Admin not required if the shared secret matches):
+
+```bash
+node scripts/prod-aura-voicebox-tunnel-check.mjs
+```
+

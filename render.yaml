@@ -110,6 +110,7 @@ services:
       # Dashboard-only after Founder Cloudflare login (never commit values):
       #   VOICEBOX_BASE_URL=https://aura-voice.ifcdcbarbersapp.com
       #   VOICEBOX_TUNNEL_SECRET=<from Founder Mac data/aura-voicebox-tunnel.secret>
+      #   AURA_VOICEBOX_TEST_FROM=+E.164  (optional one Founder caller; keep VOICEBOX_PRIMARY=0)
       # See docs/AURA_VOICEBOX_TUNNEL.md
 
   # AURA / Twilio voice + chat API — same Node backend as backend696 (repo root), NOT client/
@@ -164,6 +165,7 @@ services:
       # Dashboard-only after Founder Cloudflare login (never commit values):
       #   VOICEBOX_BASE_URL=https://aura-voice.ifcdcbarbersapp.com
       #   VOICEBOX_TUNNEL_SECRET=<from Founder Mac data/aura-voicebox-tunnel.secret>
+      #   AURA_VOICEBOX_TEST_FROM=+E.164  (optional one Founder caller; keep VOICEBOX_PRIMARY=0)
       # Named tunnel host is NOT 127.0.0.1. Voicebox admin is not exposed.
       # See docs/AURA_VOICEBOX_TUNNEL.md
 

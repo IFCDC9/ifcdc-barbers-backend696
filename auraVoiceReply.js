@@ -383,13 +383,14 @@ function utteranceXml(attrs, escapedText, playUrl = null) {
   return `<Say voice="${xmlEscapeAttr(attrs.voice)}" language="${xmlEscapeAttr(attrs.language)}">${escapedText}</Say>`;
 }
 
-async function voiceboxOrPollyUtterance(attrs, rawText, escapedText, { callSid, language }) {
+async function voiceboxOrPollyUtterance(attrs, rawText, escapedText, { callSid, language, from }) {
   const prepared = prepareSpokenText(rawText, { language });
   const attempt = await tryVoiceboxPlayUrl({
     text: prepared,
     language,
     conversationId: callSid,
     voiceProfile: AURA_ALLAH_NAME,
+    from,
   });
   if (attempt.streaming && attempt.continueToken && callSid) {
     streamingContinueByCall.set(String(callSid), {
@@ -625,6 +626,7 @@ export function createSimpleAuraVoiceHandlers(opts = {}) {
       console.log("📞 Process webhook body:", body);
       const q = req.query && typeof req.query === "object" ? req.query : {};
       const callSid = String(body.CallSid ?? q.CallSid ?? "").trim();
+      const fromE164 = String(body.From ?? q.From ?? "").trim();
       console.log("CALL SID:", callSid || "(none)");
       console.log("📌 Call completed (session flag):", Boolean(req.session?.bookingCompleted));
       console.log("📌 Call completed (lock):", isCallCompleted(callSid));
@@ -742,7 +744,7 @@ export function createSimpleAuraVoiceHandlers(opts = {}) {
         const stillHere = escapeTwilioSayText("I'm still here if you need me.");
         rememberAssistantSpeech(callSid, gate.prompt || "");
         recordAuraTurn(callSid, { turnId: stashed.meta?.turnId, text: gate.prompt || "" });
-        const gatedMain = await voiceboxOrPollyUtterance(attrs, gate.prompt || "", prompt, { callSid, language });
+        const gatedMain = await voiceboxOrPollyUtterance(attrs, gate.prompt || "", prompt, { callSid, language, from: fromE164 });
         const gatedXml = buildVoiceLoopTwiML(
           gatherAction,
           attrs,
@@ -843,7 +845,7 @@ export function createSimpleAuraVoiceHandlers(opts = {}) {
           req.session.bookingCompleted = true;
           mergeBookingInfo(callSid, { confirmed: true });
           const closingSay = escapeTwilioSayText(spoken);
-          const closingInner = await voiceboxOrPollyUtterance(attrs, spoken, closingSay, { callSid, language });
+          const closingInner = await voiceboxOrPollyUtterance(attrs, spoken, closingSay, { callSid, language, from: fromE164 });
           const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   ${closingInner}
@@ -862,7 +864,7 @@ export function createSimpleAuraVoiceHandlers(opts = {}) {
         const xml = buildVoiceLoopTwiML(
           gatherAction,
           attrs,
-          await voiceboxOrPollyUtterance(attrs, spoken, safeMain, { callSid, language }),
+          await voiceboxOrPollyUtterance(attrs, spoken, safeMain, { callSid, language, from: fromE164 }),
           utteranceXml(attrs, stillHere, null),
           callSid,
         );
@@ -909,7 +911,7 @@ export function createSimpleAuraVoiceHandlers(opts = {}) {
             : "You're all set. Your appointment has been confirmed. Thank you for choosing IFCDC.";
         const closingSay = escapeTwilioSayText(closingText);
         console.log("📞 Ending call now");
-        const closingInner = await voiceboxOrPollyUtterance(attrs, closingText, closingSay, { callSid, language });
+        const closingInner = await voiceboxOrPollyUtterance(attrs, closingText, closingSay, { callSid, language, from: fromE164 });
         res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   ${closingInner}
@@ -925,7 +927,7 @@ export function createSimpleAuraVoiceHandlers(opts = {}) {
       if (bookingOut.hangupFollowup) {
         const farewellRaw = String(bookingOut.reply ?? "").trim();
         const farewell = escapeTwilioSayText(farewellRaw);
-        const farewellInner = await voiceboxOrPollyUtterance(attrs, farewellRaw, farewell, { callSid, language });
+        const farewellInner = await voiceboxOrPollyUtterance(attrs, farewellRaw, farewell, { callSid, language, from: fromE164 });
         res.send(buildFarewellHangupTwiML(attrs, farewell, 2, farewellInner));
         sent = true;
         console.log("[aura/flow] twiml=farewell_hangup");
@@ -967,7 +969,7 @@ export function createSimpleAuraVoiceHandlers(opts = {}) {
       const loopXml = buildVoiceLoopTwiML(
         gatherAction,
         attrs,
-        await voiceboxOrPollyUtterance(attrs, reply, safeMain, { callSid, language }),
+        await voiceboxOrPollyUtterance(attrs, reply, safeMain, { callSid, language, from: fromE164 }),
         utteranceXml(attrs, stillHere, null),
         callSid,
       );

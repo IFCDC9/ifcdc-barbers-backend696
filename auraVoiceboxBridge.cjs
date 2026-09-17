@@ -5,7 +5,7 @@
  * Never drops a call. Never books. Never replaces AURA brain.
  */
 
-const { isVoiceboxPrimary, voiceboxFlags, voiceboxTunnelHostname } = require("./auraVoiceboxFlags.cjs");
+const { isVoiceboxPrimary, shouldUseVoiceboxForCall, voiceboxFlags, voiceboxTunnelHostname } = require("./auraVoiceboxFlags.cjs");
 const { createVoiceboxClient } = require("./auraVoiceboxClient.cjs");
 const { classifyVoiceboxFailure, isLoopbackBase, voiceboxUsesTunnelAuth } = require("./auraVoiceboxTunnelAuth.cjs");
 const {
@@ -568,19 +568,29 @@ async function cancelSpeak(conversationId) {
   return { cancelled: true, generationId: id };
 }
 
+function publicAudioBase() {
+  return String(
+    process.env.PUBLIC_API_URL || process.env.PUBLIC_BASE_URL || process.env.RENDER_EXTERNAL_URL || "",
+  )
+    .trim()
+    .replace(/\/$/, "");
+}
+
 function publicAudioUrl(generationId) {
-  const base = String(process.env.PUBLIC_API_URL || "").trim().replace(/\/$/, "");
+  const base = publicAudioBase();
   if (!base || !generationId) return null;
   if (/localhost|127\.0\.0\.1/i.test(base)) return null;
   return `${base}/api/aura/voicebox/audio/${encodeURIComponent(generationId)}`;
 }
 
 /**
- * For Twilio Gather: try Voicebox Play URL when VOICEBOX_PRIMARY=1.
- * Always returns fallback:true + no url when primary is off or synthesis fails.
+ * For Twilio Gather: Voicebox Play when VOICEBOX_PRIMARY=1 OR allowlisted test From.
+ * Global primary stays 0 unless Tessa sets it. Everyone else Polly.
  */
 async function tryVoiceboxPlayUrl(opts = {}) {
-  if (!isVoiceboxPrimary()) return { used: false, url: null, reason: "primary_off" };
+  if (!shouldUseVoiceboxForCall(opts)) {
+    return { used: false, url: null, reason: "primary_off" };
+  }
   if (mapLanguage(opts.language) === "he" && heUsesPollyFallback()) {
     return { used: false, url: null, reason: "hebrew_kokoro_too_slow", fallback: true };
   }
@@ -638,7 +648,7 @@ async function tryVoiceboxPlayUrl(opts = {}) {
 }
 
 function publicContinueUrl(token, opts = {}) {
-  const base = String(process.env.PUBLIC_API_URL || "").trim().replace(/\/$/, "");
+  const base = publicAudioBase();
   if (!base || !token) return null;
   if (/localhost|127\.0\.0\.1/i.test(base)) return null;
   const qs = new URLSearchParams();
@@ -761,11 +771,12 @@ async function getVoiceboxHqStatus() {
         auth: auth ? "hmac" : flags.tunnelSecretConfigured ? "secret_configured_loopback" : "not_configured",
         secretConfigured: Boolean(flags.tunnelSecretConfigured),
         voiceboxOk: Boolean(health.ok),
+        testCallerConfigured: Boolean(flags.testCallerConfigured),
         reason: online
           ? null
           : health.reason || (loopback ? "loopback_not_public" : "unhealthy"),
         note:
-          "Render VOICEBOX_BASE_URL must be the HTTPS Cloudflare named-tunnel host. Proxy allowlists health/speak/generate only. Voicebox admin stays on 127.0.0.1:17493. Do not report ONLINE if Mac/Voicebox/tunnel is down.",
+          "Render VOICEBOX_BASE_URL must be the HTTPS Cloudflare named-tunnel host. Proxy allowlists health/speak/generate only. Voicebox admin stays on 127.0.0.1:17493. Do not report ONLINE if Mac/Voicebox/tunnel is down. AURA_VOICEBOX_TEST_FROM may hear Sample A while VOICEBOX_PRIMARY=0.",
       };
     })(),
   };
@@ -776,6 +787,53 @@ async function getVoiceboxHqStatus() {
     polly,
   });
   return hq;
+}
+
+/** Super-Admin / tunnel-secret diagnostic: health + short Sample A generate. Not public. */
+async function runVoiceboxProdDiag({ text } = {}) {
+  const flags = voiceboxFlags();
+  const healthStarted = Date.now();
+  const health = await probeHealth(true);
+  const healthMs = Date.now() - healthStarted;
+  const phrase = String(text || "Hi, this is Aura.").trim() || "Hi, this is Aura.";
+  const genStarted = Date.now();
+  const spoken = await speak({
+    text: phrase,
+    language: "en",
+    conversationId: "prod-diag",
+  });
+  const valid = isValidAudio(spoken.audio);
+  return {
+    ok: Boolean(health.ok) && Boolean(spoken.ok) && valid,
+    primary: flags.primary,
+    productionActivation: "OFF",
+    baseUrl: flags.baseUrl,
+    loopback: flags.loopback,
+    tunnelAuth: flags.tunnelAuth,
+    secretConfigured: Boolean(flags.tunnelSecretConfigured),
+    hmacReady: Boolean(flags.tunnelAuth && flags.tunnelSecretConfigured && !flags.loopback),
+    playUrlReady: Boolean(publicAudioBase()) && !/localhost|127\.0\.0\.1/i.test(publicAudioBase()),
+    health: {
+      ok: Boolean(health.ok),
+      reachable: Boolean(health.reachable),
+      online: Boolean(health.online),
+      reason: health.reason || null,
+      ms: healthMs,
+      modelLoaded: Boolean(health.health?.model_loaded),
+    },
+    generate: {
+      ok: Boolean(spoken.ok),
+      fallback: Boolean(spoken.fallback),
+      reason: spoken.reason || null,
+      firstByteMs: spoken.firstByteMs ?? null,
+      totalMs: spoken.totalMs ?? Date.now() - genStarted,
+      audioBytes: spoken.audio?.length || 0,
+      validAudio: valid,
+      sample: "A",
+      voiceId: FOUNDER_APPROVED_VOICE.voiceId,
+      publicName: AURA_PUBLIC_NAME,
+    },
+  };
 }
 
 let prewarmPromise = null;
@@ -803,7 +861,9 @@ module.exports = {
   tryVoiceboxPlayUrl,
   probeHealth,
   prewarmVoicebox,
+  runVoiceboxProdDiag,
   getVoiceboxHqStatus,
+  publicAudioBase,
   getCachedAudio,
   cacheAudio,
   publicAudioUrl,
