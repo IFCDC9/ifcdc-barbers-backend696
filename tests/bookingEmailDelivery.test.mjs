@@ -326,6 +326,83 @@ test("webhook retry does not send a second customer payment email", async () => 
   }
 });
 
+test("a failed claim can be retried and sent or uncertain stay blocked", async () => {
+  const token = randomBytes(16).toString("hex");
+  const previous = process.env.POSTMARK_SERVER_TOKEN;
+  process.env.POSTMARK_SERVER_TOKEN = token;
+  const { dbQuery, table } = createDurableDb();
+  const ledger = createSqlLedger(dbQuery);
+  let mode = "reject";
+  const fetchImpl = async () => {
+    if (mode === "uncertain") {
+      return { status: 503, async json() { return {}; } };
+    }
+    if (mode === "ok") {
+      return { status: 200, async json() { return { ErrorCode: 0, MessageID: "pm-retry" }; } };
+    }
+    return { status: 422, async json() { return { ErrorCode: 300, Message: "rejected" }; } };
+  };
+  const sendResend = async () => ({
+    configured: true,
+    success: false,
+    uncertain: false,
+    error: "resend_rejected",
+  });
+  const message = {
+    ledger,
+    fetchImpl,
+    sendResend,
+    to: "frank@example.com",
+    subject: "Booking Confirmation - IFCDC Barbers",
+    html: "<p>Confirmed</p>",
+    text: "Confirmed",
+    templateId: "booking_confirmation",
+  };
+  try {
+    const failed = await deliverTransactionalEmail({
+      ...message,
+      idempotencyKey: "booking:book-fail:booking_confirmation",
+    });
+    assert.equal(failed.success, false);
+    assert.equal(table.get("booking:book-fail:booking_confirmation").status, "failed");
+
+    mode = "ok";
+    const retried = await deliverTransactionalEmail({
+      ...message,
+      idempotencyKey: "booking:book-fail:booking_confirmation",
+    });
+    assert.equal(retried.success, true);
+    assert.equal(retried.duplicate, false);
+    assert.equal(retried.provider, "postmark");
+    assert.equal(table.get("booking:book-fail:booking_confirmation").status, "sent");
+
+    const sentAgain = await deliverTransactionalEmail({
+      ...message,
+      idempotencyKey: "booking:book-fail:booking_confirmation",
+    });
+    assert.equal(sentAgain.duplicate, true);
+    assert.equal(sentAgain.status, "sent");
+
+    mode = "uncertain";
+    const uncertain = await deliverTransactionalEmail({
+      ...message,
+      idempotencyKey: "booking:book-uncertain:booking_confirmation",
+    });
+    assert.equal(uncertain.uncertain, true);
+    assert.equal(uncertain.fallbackUsed, false);
+    const uncertainAgain = await deliverTransactionalEmail({
+      ...message,
+      idempotencyKey: "booking:book-uncertain:booking_confirmation",
+    });
+    assert.equal(uncertainAgain.duplicate, true);
+    assert.equal(uncertainAgain.status, "uncertain");
+    assert.equal(table.get("booking:book-uncertain:booking_confirmation").status, "uncertain");
+  } finally {
+    if (previous == null) delete process.env.POSTMARK_SERVER_TOKEN;
+    else process.env.POSTMARK_SERVER_TOKEN = previous;
+  }
+});
+
 test("gate allows password reset, reminder, and payment receipt", () => {
   const reset = authorizeOutboundEmail({
     to: "erin@example.com",
