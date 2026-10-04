@@ -11,6 +11,7 @@ const {
   sendEmail,
   sendResendWithRetry,
 } = require("./emailResend.cjs");
+const { deliverTransactionalEmail, postmarkConfigured } = require("./emailDelivery.cjs");
 const {
   PAYMENT_STATUS,
   paymentStatusForEmailFromRow,
@@ -546,9 +547,10 @@ async function sendBookingEmail({
   language,
   bookingRow,
   bookingId,
+  deps,
 } = {}) {
   const resend = getResend();
-  if (!resend) {
+  if (!resend && !postmarkConfigured()) {
     const err = new Error("RESEND_API_KEY missing or invalid (must start with re_)");
     console.error("[booking-email] FAILED:", err.message);
     throw err;
@@ -563,14 +565,7 @@ async function sendBookingEmail({
     throw err;
   }
 
-  const from = getMailFrom();
-  if (!from) {
-    const err = new Error(
-      'MAIL_FROM is not set. Set MAIL_FROM=IFCDC Barbers <notifications@ifcdcbarbersapp.com> on Render backend696',
-    );
-    console.error("[booking-email] FAILED:", err.message);
-    throw err;
-  }
+  const from = getMailFrom() || "IFCDC Barbers <service@ifcdcbarbersapp.com>";
 
   const resolvedStatus = paymentStatus
     ? String(paymentStatus).toLowerCase()
@@ -619,37 +614,53 @@ async function sendBookingEmail({
     paymentStatus: resolvedStatus,
   });
 
-  const customerResult = await sendEmail({
+  const confirmKey = payload.bookingId
+    ? `booking:${payload.bookingId}:booking_confirmation`
+    : payload.captureId
+      ? `capture:${payload.captureId}:booking_confirmation`
+      : `guest:${toAddr}:booking_confirmation`;
+
+  const customerResult = await deliverTransactionalEmail({
+    ...(deps || {}),
+    from,
     to: toAddr,
     subject: customerContent.subject,
     html: customerContent.html,
     text: customerContent.plain,
     label: "booking-confirmation-customer",
+    templateId: "booking_confirmation",
+    idempotencyKey: confirmKey,
   });
-  if (customerResult.error) {
-    const msg = customerResult.error.message || "Booking email send failed";
-    console.error("[booking-email] Resend customer send FAILED:", msg, customerResult.error);
+  if (!customerResult.success) {
+    const msg = customerResult.error || "Booking email send failed";
+    console.error("[booking-email] customer send FAILED:", msg);
     throw new Error(msg);
   }
 
-  const messageId = customerResult.data?.id;
-  console.log("[booking-email] SENT OK", { to: toAddr, bookingId: payload.bookingId, messageId });
+  const messageId = customerResult.messageId || null;
+  console.log("[booking-email] SENT OK", {
+    to: toAddr,
+    bookingId: payload.bookingId,
+    messageId,
+    provider: customerResult.provider,
+    duplicate: customerResult.duplicate === true,
+  });
 
   const adminEmail = String(process.env.BOOKING_ADMIN_EMAIL || "service@ifcdc.org").trim();
   let adminResult = null;
-  if (adminEmail) {
+  if (adminEmail && adminEmail.toLowerCase() !== toAddr.toLowerCase()) {
     try {
-      adminResult = await sendResendWithRetry(
-        resend,
-        {
-          from,
-          to: adminEmail,
-          subject: adminContent.subject,
-          html: adminContent.html,
-          text: adminContent.plain,
-        },
-        "booking-admin-notification",
-      );
+      adminResult = await deliverTransactionalEmail({
+        ...(deps || {}),
+        from,
+        to: adminEmail,
+        subject: adminContent.subject,
+        html: adminContent.html,
+        text: adminContent.plain,
+        label: "booking-admin-notification",
+        templateId: "admin_notice",
+        idempotencyKey: `${confirmKey}:admin`,
+      });
     } catch (adminErr) {
       console.error(
         "[booking-email] admin copy FAILED:",
@@ -660,9 +671,13 @@ async function sendBookingEmail({
 
   return {
     success: true,
+    duplicate: customerResult.duplicate === true,
+    provider: customerResult.provider || null,
     customer: customerResult,
     admin: adminResult,
     messageId,
+    customerPaymentEmail: "suppressed",
+    paymentMessageId: null,
   };
 }
 
@@ -840,9 +855,112 @@ ${refundId ? `<p>PayPal refund: ${escapeHtml(String(refundId))}</p>` : ""}
   }
 }
 
+/**
+ * Customer reschedule notice. Does not reuse the paid confirmation template.
+ */
+async function sendBookingRescheduleEmail({
+  name,
+  email,
+  service,
+  date,
+  time,
+  previousDate,
+  previousTime,
+  barberName,
+  bookingId,
+  deps,
+} = {}) {
+  const toAddr = String(email ?? "").trim();
+  if (!isDeliverableCustomerEmail(toAddr)) {
+    throw new Error(`Customer email is missing or not deliverable: "${toAddr || "(empty)"}"`);
+  }
+  const safeName = escapeHtml(name || "Guest");
+  const safeService = escapeHtml(service || "Appointment");
+  const safeDate = escapeHtml(date || "TBD");
+  const safeTime = escapeHtml(time || "TBD");
+  const safeBarber = barberName ? escapeHtml(barberName) : "";
+  const previous =
+    previousDate || previousTime
+      ? `<p>Previous: ${escapeHtml(previousDate || "")} ${escapeHtml(previousTime || "")}</p>`
+      : "";
+  const subject = "Appointment rescheduled — IFCDC Barbers";
+  const html = `
+<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:560px;color:#111;">
+  <p style="margin:0 0 8px;font-size:12px;letter-spacing:0.08em;color:#b8860b;font-weight:700;">IFCDC BARBERS</p>
+  <h2 style="margin:0 0 16px;">Appointment rescheduled</h2>
+  <p>Name: <strong>${safeName}</strong></p>
+  ${safeBarber ? `<p>Barber: <strong>${safeBarber}</strong></p>` : ""}
+  <p>Service: <strong>${safeService}</strong></p>
+  ${previous}
+  <p>New date: <strong>${safeDate}</strong></p>
+  <p>New time: <strong>${safeTime}</strong></p>
+</div>`.trim();
+  const result = await deliverTransactionalEmail({
+    ...(deps || {}),
+    to: toAddr,
+    subject,
+    html,
+    text: htmlToPlainText(html),
+    label: "booking-reschedule",
+    templateId: "booking_reschedule",
+    idempotencyKey: `booking:${bookingId || toAddr}:booking_reschedule:${date || ""}:${time || ""}`,
+  });
+  if (!result.success) throw new Error(result.error || "Reschedule email failed");
+  return result;
+}
+
+/**
+ * Customer cancellation notice. Push and Aura hooks stay on the cancel route.
+ */
+async function sendBookingCancellationEmail({
+  name,
+  email,
+  service,
+  date,
+  time,
+  barberName,
+  bookingId,
+  deps,
+} = {}) {
+  const toAddr = String(email ?? "").trim();
+  if (!isDeliverableCustomerEmail(toAddr)) {
+    throw new Error(`Customer email is missing or not deliverable: "${toAddr || "(empty)"}"`);
+  }
+  const safeName = escapeHtml(name || "Guest");
+  const safeService = escapeHtml(service || "Appointment");
+  const safeDate = escapeHtml(date || "TBD");
+  const safeTime = escapeHtml(time || "TBD");
+  const safeBarber = barberName ? escapeHtml(barberName) : "";
+  const subject = "Appointment cancelled — IFCDC Barbers";
+  const html = `
+<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:560px;color:#111;">
+  <p style="margin:0 0 8px;font-size:12px;letter-spacing:0.08em;color:#b8860b;font-weight:700;">IFCDC BARBERS</p>
+  <h2 style="margin:0 0 16px;">Appointment cancelled</h2>
+  <p>Name: <strong>${safeName}</strong></p>
+  ${safeBarber ? `<p>Barber: <strong>${safeBarber}</strong></p>` : ""}
+  <p>Service: <strong>${safeService}</strong></p>
+  <p>Date: <strong>${safeDate}</strong></p>
+  <p>Time: <strong>${safeTime}</strong></p>
+</div>`.trim();
+  const result = await deliverTransactionalEmail({
+    ...(deps || {}),
+    to: toAddr,
+    subject,
+    html,
+    text: htmlToPlainText(html),
+    label: "booking-cancellation",
+    templateId: "booking_cancellation",
+    idempotencyKey: `booking:${bookingId || toAddr}:booking_cancellation`,
+  });
+  if (!result.success) throw new Error(result.error || "Cancellation email failed");
+  return result;
+}
+
 module.exports = {
   sendBookingEmail,
   sendBookingConfirmationEmail,
+  sendBookingRescheduleEmail,
+  sendBookingCancellationEmail,
   sendAuraVoiceBookingEmail,
   sendBookingRefundEmail,
   isEmailConfigured,

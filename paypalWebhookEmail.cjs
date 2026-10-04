@@ -6,8 +6,8 @@
 const {
   getResend,
   getMailFrom,
-  sendResendWithRetry,
 } = require("./emailResend.cjs");
+const { deliverTransactionalEmail, postmarkConfigured } = require("./emailDelivery.cjs");
 
 function escapeHtml(s) {
   return String(s)
@@ -168,19 +168,14 @@ async function sendPaymentSuccessEmails({
   currency,
   payerEmail,
   payerName,
-}) {
+  deps,
+} = {}) {
   const resend = getResend();
-  if (!resend) {
+  if (!resend && !postmarkConfigured() && !deps?.ledger) {
     throw new Error("RESEND not configured");
   }
 
-  const from = getMailFrom();
-  if (!from) {
-    console.error(
-      "[paypal] MAIL_FROM missing — cannot send payment emails. Set MAIL_FROM in backend/.env."
-    );
-    return;
-  }
+  const from = getMailFrom() || "IFCDC Barbers <service@ifcdcbarbersapp.com>";
 
   const adminTo = getAdminEmail();
 
@@ -198,41 +193,24 @@ async function sendPaymentSuccessEmails({
   const adminHtml = `<div style="font-family:system-ui,sans-serif">${lines}</div>`;
   const adminPlain = adminHtml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 
-  await sendResendWithRetry(
-    resend,
-    {
-      from,
-      to: adminTo,
-      subject: `[IFCDC] PayPal payment received — ${captureId || "capture"}`,
-      html: adminHtml,
-      text: adminPlain,
-    },
-    "paypal-webhook-admin"
-  );
+  const adminResult = await deliverTransactionalEmail({
+    ...(deps || {}),
+    from,
+    to: adminTo,
+    subject: `[IFCDC] PayPal payment received — ${captureId || "capture"}`,
+    html: adminHtml,
+    text: adminPlain,
+    label: "paypal-webhook-admin",
+    templateId: "admin_notice",
+    idempotencyKey: `capture:${captureId || orderId || "unknown"}:admin_payment_notice`,
+  });
+  if (!adminResult.success) {
+    console.error("[paypal] admin payment notice failed:", adminResult.error || "delivery_failed");
+  }
 
-  if (payerEmail && String(payerEmail).includes("@")) {
-    const custHtml = `
-<div style="font-family:system-ui,sans-serif;line-height:1.5">
-  <h2>Payment received</h2>
-  <p>Thank you — we received your PayPal payment.</p>
-  <p>Amount: ${escapeHtml(String(amount))} ${escapeHtml(String(currency))}</p>
-  ${captureId ? `<p>Reference: ${escapeHtml(String(captureId))}</p>` : ""}
-  <p>— IFCDC Barbers</p>
-</div>`.trim();
-    const custPlain = custHtml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-
-    await sendResendWithRetry(
-      resend,
-      {
-        from,
-        to: String(payerEmail).trim(),
-        subject: "IFCDC — Payment received",
-        html: custHtml,
-        text: custPlain,
-      },
-      "paypal-webhook-payer"
-    );
-  } else {
+  // The customer already receives booking_confirmation for this capture.
+  // Do not send a second customer "Payment received" message.
+  if (!payerEmail || !String(payerEmail).includes("@")) {
     console.warn(
       "[paypal] No payer email on capture payload — admin notified only. Configure PayPal webhooks + order flow to include payer if needed."
     );

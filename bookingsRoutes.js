@@ -59,7 +59,7 @@ function notifyFounderOps(event) {
     console.warn("[founder-notify]", e?.message || e);
   }
 }
-const { sendBookingRefundEmail } = require("./bookingEmail.cjs");
+const { sendBookingRefundEmail, sendBookingCancellationEmail, sendBookingRescheduleEmail } = require("./bookingEmail.cjs");
 const { assessBookingRemoval } = require("./bookingDeletePolicy.cjs");
 const {
   markBookingCompletedIdempotent,
@@ -891,6 +891,24 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
         data: { bookingId: id, reason: reason || null },
       });
 
+      try {
+        const cancelEmail = String(booking.customer_email || "").trim();
+        const cancelInternal = /@ifcdc\.local$/i.test(cancelEmail) || /^pending\+/i.test(cancelEmail);
+        if (cancelEmail && !cancelInternal) {
+          await sendBookingCancellationEmail({
+            bookingId: id,
+            name: booking.customer_name || "Guest",
+            email: cancelEmail,
+            service: booking.service || booking.style_title || "Appointment",
+            date: booking.date,
+            time: booking.time,
+            barberName: booking.barber_name || "",
+          });
+        }
+      } catch (emailErr) {
+        console.warn("[cancel] cancellation email failed:", emailErr?.message || emailErr);
+      }
+
       notifyFounderOps({
         eventType: "appointment_cancelled",
         bookingId: id,
@@ -1182,38 +1200,28 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
         source: "bookings_api",
       });
 
-      // Best-effort confirmation email — logs warning but never blocks the save.
-      if (typeof sendBookingEmail === "function") {
+      // Best-effort reschedule email — logs warning but never blocks the save.
+      {
         const email = String(booking.customer_email || "").trim();
         const isInternal =
           /@ifcdc\.local$/i.test(email) || /^pending\+/i.test(email);
         if (email && !isInternal) {
           try {
-            await sendBookingEmail({
+            await sendBookingRescheduleEmail({
+              bookingId: id,
               name: booking.customer_name || "Guest",
               email,
               service: booking.service || booking.style_title || "Appointment",
-              serviceDuration: Number(booking.service_duration_minutes) || undefined,
               date: newDate,
               time: newTimeLabel,
+              previousDate: oldDateStr,
+              previousTime: oldTimeSql,
               barberName: booking.barber_name || "",
-              language: await (async () => {
-                try {
-                  const { resolveCustomerLanguage } = await import("./customerLanguage.js");
-                  return await resolveCustomerLanguage({
-                    userId: booking.user_id || null,
-                    customerEmail: email,
-                  });
-                } catch {
-                  return "en";
-                }
-              })(),
-              ...bookingEmailPayloadFromRow(booking),
             });
-            console.log(`[reschedule] confirmation email sent to ${email} for ${id.slice(0, 8)}`);
+            console.log(`[reschedule] reschedule email sent to ${email} for ${id.slice(0, 8)}`);
           } catch (emailErr) {
             console.warn(
-              `[reschedule] confirmation email failed for ${id.slice(0, 8)}:`,
+              `[reschedule] reschedule email failed for ${id.slice(0, 8)}:`,
               emailErr?.message || emailErr,
             );
           }
