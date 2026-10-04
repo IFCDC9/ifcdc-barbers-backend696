@@ -36,6 +36,7 @@ import { mountBarberOnboardingRoutes } from "./barberOnboardingRoutes.js";
 import { mountOnboardingBusinessRoutes } from "./onboardingBusinessRoutes.js";
 import { handleBarberAvailableSlotsGet } from "./barberAvailableSlotsRoute.js";
 import { createBookingsRouter, insertAuraVoiceBookingRow } from "./bookingsRoutes.js";
+import { createHqOperationsSnapshotRouter } from "./hqOperationsSnapshot.js";
 import { createManualBypassBookingRouter } from "./manualBypassBookingRoutes.js";
 import { ensureManualBypassBookingColumns } from "./manualBypassBookingMigrations.js";
 import { createBookingsAdminGuard } from "./bookingsAdminGuard.js";
@@ -496,6 +497,9 @@ app.get("/api/app-bookings/barbers", async (req, res) => {
 
 app.use("/api/app-bookings", appBookingCheckoutRoutes);
 console.log("[boot] mounted public GET /api/app-bookings/services|barbers|health + USE /api/app-bookings");
+
+app.use("/api/hq", createHqOperationsSnapshotRouter({ dbQuery }));
+console.log("[boot] mounted GET /api/hq/operations-snapshot");
 
 /** Public bookable services — no auth; authenticated management uses barber-business router. */
 app.get("/api/barber/services", async (req, res, next) => {
