@@ -1,6 +1,7 @@
 /**
  * Dedicated IFCDC HQ read snapshot.
- * The read token is accepted only on GET /api/hq/operations-snapshot.
+ * The read token is accepted only on GET /api/hq/operations-snapshot
+ * and GET /api/hq/notification-activity.
  * It is not an admin key and must not be wired into write or admin middleware.
  */
 import express from "express";
