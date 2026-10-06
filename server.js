@@ -675,7 +675,8 @@ async function runTestEmailSend(to, res) {
   });
 }
 
-/** GET /api/email/health — Resend config status (no secrets). */
+/** GET /api/email/health — config status only. No secrets and no send. */
+const { postmarkReadiness } = require("./emailHealth.cjs");
 app.get("/api/email/health", (_req, res) => {
   const keyOk = Boolean(getResend());
   const mailFrom = getMailFrom();
@@ -688,6 +689,7 @@ app.get("/api/email/health", (_req, res) => {
     mailFromDomain: domain || null,
     expectedDomain: "ifcdcbarbersapp.com",
     bookingAdminEmail: String(process.env.BOOKING_ADMIN_EMAIL || "service@ifcdc.org").trim(),
+    ...postmarkReadiness(),
   });
 });
 
