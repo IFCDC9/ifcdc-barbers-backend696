@@ -30,21 +30,13 @@ async function afterBookingCancelled(dbQuery, booking, { reason } = {}) {
   const flags = auraPhase2Flags();
   if (!flags.master) return { ...results, skippedAura: true };
 
-  try {
-    const emails = safeRequireEmails();
-    results.customer = await emails.sendAuraCancelEmail({
-      customerName: booking.customer_name,
-      customerEmail: booking.customer_email,
-      barberName: booking.barber_name,
-      service: booking.service || booking.style_title,
-      date: booking.date,
-      time: booking.time,
-      price: booking.total_paid ?? booking.amount_paid ?? booking.total_price,
-      bookingId: booking.id,
-    });
-  } catch (e) {
-    results.customer = { ok: false, error: e?.message || String(e) };
-  }
+  results.customer = {
+    ok: true,
+    retired: true,
+    sent: false,
+    skipped: true,
+    reason: "postmark_booking_cancellation_is_the_only_send",
+  };
 
   if (flags.barberNotify) {
     try {
@@ -96,25 +88,16 @@ async function afterBookingRescheduled(dbQuery, booking, { fromLabel, newDate, n
   const flags = auraPhase2Flags();
   if (!flags.master) return { ...results, skippedAura: true };
 
-  // Customer already gets confirmation via sendBookingEmail on the reschedule route.
-  // Extra AURA-branded reschedule email only when AURA_PHASE2_RESCHEDULE_EMAIL=1.
+  // Customer reschedule mail is the Postmark booking_reschedule path.
+  // The extra AURA copy is retired and must not send, including when the extra flag is on.
   if (flags.rescheduleEmailExtra) {
-    try {
-      const emails = safeRequireEmails();
-      results.customer = await emails.sendAuraRescheduleEmail({
-        customerName: booking.customer_name,
-        customerEmail: booking.customer_email,
-        barberName: booking.barber_name,
-        service: booking.service || booking.style_title,
-        date: newDate || booking.date,
-        time: newTime || booking.time,
-        price: booking.total_paid ?? booking.amount_paid ?? booking.total_price,
-        bookingId: booking.id,
-        fromLabel: fromLabel || "",
-      });
-    } catch (e) {
-      results.customer = { ok: false, error: e?.message || String(e) };
-    }
+    results.customer = {
+      ok: true,
+      retired: true,
+      sent: false,
+      skipped: true,
+      reason: "postmark_booking_reschedule_is_the_only_send",
+    };
   }
 
   if (flags.barberNotify) {

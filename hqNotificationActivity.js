@@ -125,10 +125,38 @@ function bookingIdFromKey(key) {
 function relationshipFromTemplate(template) {
   const name = String(template || "");
   if (name === "admin_notice") return "shop_admin";
-  if (name === "booking_confirmation" || name === "booking_reschedule" || name === "booking_cancellation") {
+  if (name === "barber_notification" || name === "barber_review") return "barber";
+  if (
+    name === "password_reset" ||
+    name === "account_verification" ||
+    name === "account_approved" ||
+    name === "account_denied" ||
+    name === "signup_pending" ||
+    name === "admin_invite"
+  ) {
+    return "account_security";
+  }
+  if (name === "founder_notice" || name === "founder_daily_report" || name === "operational_digest") {
+    return "founder";
+  }
+  if (
+    name === "booking_confirmation" ||
+    name === "booking_reschedule" ||
+    name === "booking_cancellation" ||
+    name === "appointment_reminder" ||
+    name === "payment_receipt" ||
+    name === "review_followup" ||
+    name === "review_prompt" ||
+    name === "waitlist_offer"
+  ) {
     return "customer";
   }
   return null;
+}
+
+function reminderWindowFromKey(key) {
+  const match = String(key || "").match(/:appointment_reminder:([^:]+)$/);
+  return match ? match[1] : null;
 }
 
 function reminderWindowFromMetadata(metadata) {
@@ -174,7 +202,7 @@ export function mapEmailClaim(row = {}) {
     fallbackUsed: booleanOrNull(row.fallback_used),
     errorReason: textOrNull(row.error_reason) || textOrNull(row.error),
     template,
-    reminderWindow: null,
+    reminderWindow: reminderWindowFromKey(row.idempotency_key),
     originatingApp: "barbers",
   };
 }

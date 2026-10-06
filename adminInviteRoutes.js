@@ -92,6 +92,7 @@ function validateInviteRole(scope, email, role) {
 
 const require = createRequire(import.meta.url);
 const { resolvePublicWebOrigin, buildInviteAcceptUrl } = require("./publicSiteConfig.cjs");
+const { sendClaimedEmail } = require("./transactionalMail.cjs");
 
 function inviteAcceptBaseUrl() {
   return resolvePublicWebOrigin();
@@ -111,20 +112,35 @@ function buildInviteEmailHtml({ name, role, inviteUrl, welcomeNote }) {
   `;
 }
 
-async function sendInviteEmailIfReady({ invite, sendEmail, sendEmailFn }) {
-  if (!sendEmail || typeof sendEmailFn !== "function") return false;
-  const inviteUrl = buildInviteAcceptUrl(invite.invite_token);
-  console.log("[admin/invite] Invite URL Generated:", inviteUrl);
+export async function deliverAdminInviteEmail({ to, name, role, inviteUrl, welcomeNote, inviteId, deps } = {}) {
+  const id = String(inviteId || "").trim();
+  const dest = String(to || "").trim();
+  if (!id || !dest) {
+    return { ok: false, success: false, error: { message: "missing_invite_delivery_fields" } };
+  }
+  return sendClaimedEmail({
+    ...(deps || {}),
+    to: dest,
+    subject: "You're invited to IFCDC Barbers",
+    html: buildInviteEmailHtml({ name, role, inviteUrl, welcomeNote }),
+    text: `You're invited to IFCDC Barbers as ${role || "a team member"}. Accept: ${inviteUrl}`,
+    templateId: "admin_invite",
+    idempotencyKey: `invite:${id}:admin_invite`,
+    label: "admin-invite",
+  });
+}
+
+async function sendInviteEmailIfReady({ invite, sendEmail, deps }) {
+  if (!sendEmail) return false;
   try {
-    const result = await sendEmailFn({
+    const result = await deliverAdminInviteEmail({
       to: invite.email,
-      subject: "You're invited to IFCDC Barbers",
-      html: buildInviteEmailHtml({
-        name: invite.name,
-        role: invite.role,
-        inviteUrl,
-        welcomeNote: invite.welcome_note,
-      }),
+      name: invite.name,
+      role: invite.role,
+      inviteUrl: buildInviteAcceptUrl(invite.invite_token),
+      welcomeNote: invite.welcome_note,
+      inviteId: invite.id,
+      deps,
     });
     return Boolean(result?.success ?? result?.ok);
   } catch (e) {
@@ -386,7 +402,7 @@ export function registerAdminInviteRoutes(router, { sendEmail } = {}) {
 
       let emailSent = false;
       if (sendEmailFlag) {
-        emailSent = await sendInviteEmailIfReady({ invite: row, sendEmail: true, sendEmailFn: sendEmail });
+        emailSent = await sendInviteEmailIfReady({ invite: row, sendEmail: true });
       }
 
       const upd = await dbQuery(
@@ -441,7 +457,6 @@ export function registerAdminInviteRoutes(router, { sendEmail } = {}) {
       const emailSent = await sendInviteEmailIfReady({
         invite: row,
         sendEmail: Boolean(row.send_email),
-        sendEmailFn: sendEmail,
       });
       const smsWarning = Boolean(row.send_sms) ? SMS_UNAVAILABLE_MESSAGE : null;
 

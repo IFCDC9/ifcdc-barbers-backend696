@@ -3,7 +3,8 @@
  * Automatic sending requires AURA_DAILY_REPORT_ENABLED (second controlled step).
  */
 const { auraPhase2Flags, flagOn } = require("./auraPhase2Flags.cjs");
-const { sendEmail, getMailFrom } = require("./emailResend.cjs");
+const { getMailFrom } = require("./emailResend.cjs");
+const { sendClaimedEmail } = require("./transactionalMail.cjs");
 const { logAuraAction } = require("./auraActionLog.cjs");
 
 function shopTimezone() {
@@ -351,12 +352,11 @@ async function generateAuraDailyReport(dbQuery, opts = {}) {
     }
   }
 
-  const out = await sendEmail({
+  const out = await deliverFounderDailyReportEmail({
     to,
-    subject: `IFCDC Barbers daily report — ${stats.day}`,
+    day: stats.day,
     html,
     text,
-    label: "aura-daily-report",
   });
   const sent = !out?.error;
   await logAuraAction(dbQuery, {
@@ -380,12 +380,28 @@ async function generateAuraDailyReport(dbQuery, opts = {}) {
   };
 }
 
+async function deliverFounderDailyReportEmail({ to, day, html, text, deps } = {}) {
+  const reportDay = String(day || "").trim();
+  if (!reportDay) return { ok: false, success: false, error: { message: "missing_report_day" } };
+  return sendClaimedEmail({
+    ...(deps || {}),
+    to,
+    subject: `IFCDC Barbers daily report — ${reportDay}`,
+    html,
+    text,
+    templateId: "founder_daily_report",
+    idempotencyKey: `founder:daily_report:${reportDay}`,
+    label: "aura-daily-report",
+  });
+}
+
 module.exports = {
   shopTimezone,
   reportDayBounds,
   gatherDailyReportStats,
   formatDailyReportText,
   generateAuraDailyReport,
+  deliverFounderDailyReportEmail,
   controlledTestSql,
   flagOn,
 };

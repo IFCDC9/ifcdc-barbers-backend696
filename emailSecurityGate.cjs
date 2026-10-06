@@ -34,15 +34,83 @@ const APPROVED_TEMPLATE_IDS = Object.freeze({
   },
   payment_receipt: {
     id: "payment_receipt",
-    subjectAllow: [/payment/i, /receipt/i, /refund/i, /paid/i],
+    subjectAllow: [
+      /payment/i,
+      /receipt/i,
+      /refund/i,
+      /paid/i,
+      /reembolso|remboursement|remèsman|החזר|退款|환불|hoàn tiền|استرداد/i,
+    ],
   },
   appointment_reminder: {
     id: "appointment_reminder",
-    subjectAllow: [/remind/i, /appointment/i, /booking/i],
+    subjectAllow: [
+      /remind/i,
+      /appointment/i,
+      /booking/i,
+      /recordatorio|cita|rappel|rendez|rapèl|randevou|lembrete|consulta|תזכורת|התור|提醒|预约|알림|예약|nhắc|lịch hẹn|تذكير|موعد/i,
+    ],
   },
   admin_notice: {
     id: "admin_notice",
     subjectAllow: [/IFCDC/i, /admin/i, /invite/i, /contact/i, /system test/i],
+  },
+  barber_notification: {
+    id: "barber_notification",
+    subjectAllow: [/IFCDC/i, /appointment/i, /assigned/i, /cancel/i, /reschedul/i],
+  },
+  barber_review: {
+    id: "barber_review",
+    subjectAllow: [/review/i, /IFCDC/i],
+  },
+  review_followup: {
+    id: "review_followup",
+    subjectAllow: [/visit/i, /review/i, /IFCDC/i, /rate/i],
+  },
+  review_prompt: {
+    id: "review_prompt",
+    subjectAllow: [
+      /rate/i,
+      /review/i,
+      /califica|notez|nòt|avalie|قيّم|דרגו|评价|평가|đánh giá/i,
+      /complet|termin|conclu|fini|اكتمل|הושלם|已完成|완료|hoàn tất/i,
+    ],
+  },
+  signup_pending: {
+    id: "signup_pending",
+    subjectAllow: [/awaiting approval/i, /approval/i, /IFCDC/i],
+  },
+  account_approved: {
+    id: "account_approved",
+    subjectAllow: [/approved/i, /welcome/i, /IFCDC/i],
+  },
+  account_denied: {
+    id: "account_denied",
+    subjectAllow: [/IFCDC/i, /application/i],
+  },
+  waitlist_offer: {
+    id: "waitlist_offer",
+    subjectAllow: [/waitlist/i, /IFCDC/i],
+  },
+  founder_notice: {
+    id: "founder_notice",
+    subjectAllow: [/AURA/i, /IFCDC/i, /founder/i],
+  },
+  founder_daily_report: {
+    id: "founder_daily_report",
+    subjectAllow: [/daily report/i, /IFCDC/i],
+  },
+  operational_digest: {
+    id: "operational_digest",
+    subjectAllow: [/operational insights/i, /digest/i, /AURA/i],
+  },
+  starter_welcome: {
+    id: "starter_welcome",
+    subjectAllow: [/IFCDC/i],
+  },
+  admin_invite: {
+    id: "admin_invite",
+    subjectAllow: [/invite/i, /IFCDC/i],
   },
 });
 

@@ -4,7 +4,6 @@
  */
 const crypto = require("crypto");
 const { sendAuraTemplatedEmail, sendAuraAdminFailureAlert } = require("./auraPhase2Emails.cjs");
-const { getMailFrom } = require("./emailResend.cjs");
 
 function escapeHtml(s) {
   return String(s || "")
@@ -164,19 +163,23 @@ async function sendWaitlistOfferEmail({
   offer,
   acceptUrl,
   declineUrl,
+  deps,
 }) {
-  if (!getMailFrom()) return { ok: false, error: "MAIL_FROM_missing" };
   const dest = String(to || "").trim();
   if (!isApprovedWaitlistNotifyRecipient(dest)) {
     return { ok: false, error: "recipient_not_allowlisted", sent: false };
   }
+  const offerId = String(offer?.id || offer?.offerId || offer?.offer_id || `${offer?.slotDate || offer?.slot_date || "slot"}:${offer?.slotTime || offer?.slot_time || "time"}`).trim();
   const subject = "Optional open slot from your IFCDC waitlist — not booked yet";
   const out = await sendAuraTemplatedEmail({
+    ...(deps || {}),
     to: dest,
     subject,
     heading: "Optional waitlist slot offer",
     bodyHtml: buildWaitlistOfferEmailHtml({ customerName, offer, acceptUrl, declineUrl }),
     label: "aura-waitlist-offer",
+    templateId: "waitlist_offer",
+    idempotencyKey: `waitlist:${offerId}:waitlist_offer`,
   });
   return out;
 }

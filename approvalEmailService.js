@@ -5,7 +5,8 @@ import { createRequire } from "node:module";
 import { CANONICAL_SUPER_ADMIN_EMAIL } from "./rolePolicy.js";
 
 const require = createRequire(import.meta.url);
-const { sendEmail, isResendConfigured } = require("./emailResend.cjs");
+const { isResendConfigured } = require("./emailResend.cjs");
+const { sendClaimedEmail } = require("./transactionalMail.cjs");
 
 const APP_URL = String(process.env.PUBLIC_WEB_URL || "https://ifcdcbarbersapp.com").replace(/\/+$/, "");
 const ADMIN_BARBERS_URL = `${APP_URL}/admin/barbers`;
@@ -94,16 +95,21 @@ function ctaButton(href, label) {
   </p>`;
 }
 
-async function sendBestEffort({ to, subject, text, html, label }) {
-  if (!isResendConfigured()) {
-    console.warn(`[approval-email] skipped (${label}) — Resend not configured`);
-    return { ok: false, skipped: true, reason: "resend_not_configured" };
-  }
+async function sendBestEffort({ to, subject, text, html, label, templateId, idempotencyKey, deps }) {
   if (!looksLikeEmail(to)) {
     console.warn(`[approval-email] skipped (${label}) — invalid recipient`);
     return { ok: false, skipped: true, reason: "invalid_recipient" };
   }
-  const result = await sendEmail({ to, subject, text, html, label });
+  const result = await sendClaimedEmail({
+    ...(deps || {}),
+    to,
+    subject,
+    text,
+    html,
+    label,
+    templateId,
+    idempotencyKey,
+  });
   if (result?.error) {
     console.warn(`[approval-email] failed (${label}):`, result.error?.message || result.error);
     return { ok: false, error: result.error?.message || "send_failed" };
@@ -128,6 +134,7 @@ export async function emailSuperAdminNewSignupPending({
   businessId,
   city,
   state,
+  deps,
 }) {
   const roleLabel = formatRoleLabel(role);
   const subject = `New ${roleLabel} Awaiting Approval`;
@@ -170,12 +177,16 @@ export async function emailSuperAdminNewSignupPending({
     bodyHtml,
   });
 
+  const signupId = String(barberId || businessId || email || role).trim();
   return sendBestEffort({
     to: platformAdminEmail(),
     subject,
     text,
     html,
     label: `super-admin-signup-${role}`,
+    templateId: "signup_pending",
+    idempotencyKey: `signup:${signupId}:signup_pending`,
+    deps,
   });
 }
 
@@ -210,7 +221,7 @@ export async function emailSuperAdminNewShopOwnerPending(params) {
 }
 
 /** User — account approved. */
-export async function emailUserAccountApproved({ to, name, role, shopName }) {
+export async function emailUserAccountApproved({ to, name, role, shopName, userId, deps }) {
   const roleLabel = formatRoleLabel(role);
   const subject = "Welcome to IFCDC Barbers App – Your Account Has Been Approved!";
   const firstName = String(name || "there").trim().split(/\s+/)[0] || "there";
@@ -250,11 +261,21 @@ export async function emailUserAccountApproved({ to, name, role, shopName }) {
     bodyHtml,
   });
 
-  return sendBestEffort({ to, subject, text, html, label: "user-account-approved" });
+  const accountId = String(userId || to || "").trim().toLowerCase();
+  return sendBestEffort({
+    to,
+    subject,
+    text,
+    html,
+    label: "user-account-approved",
+    templateId: "account_approved",
+    idempotencyKey: `account:${accountId}:account_approved`,
+    deps,
+  });
 }
 
 /** User — application not approved. */
-export async function emailUserAccountDenied({ to, name, role, shopName, reason }) {
+export async function emailUserAccountDenied({ to, name, role, shopName, reason, userId, deps }) {
   const roleLabel = formatRoleLabel(role);
   const subject = "Update Regarding Your IFCDC Barbers App Application";
   const firstName = String(name || "there").trim().split(/\s+/)[0] || "there";
@@ -284,5 +305,15 @@ export async function emailUserAccountDenied({ to, name, role, shopName, reason 
     bodyHtml,
   });
 
-  return sendBestEffort({ to, subject, text, html, label: "user-account-denied" });
+  const accountId = String(userId || to || "").trim().toLowerCase();
+  return sendBestEffort({
+    to,
+    subject,
+    text,
+    html,
+    label: "user-account-denied",
+    templateId: "account_denied",
+    idempotencyKey: `account:${accountId}:account_denied`,
+    deps,
+  });
 }

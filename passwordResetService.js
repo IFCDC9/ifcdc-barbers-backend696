@@ -6,6 +6,7 @@ import { hashPassword, validatePasswordStrength } from "./authPasswordPolicy.js"
 
 const require = createRequire(import.meta.url);
 const { resolvePublicWebOrigin, buildPasswordResetUrl } = require("./publicSiteConfig.cjs");
+const { sendClaimedEmail } = require("./transactionalMail.cjs");
 const { normalizeToE164, maskPhoneForDisplay } = require("./smsPhone.cjs");
 
 const RESET_TOKEN_TTL_MS = 60 * 60 * 1000;
@@ -219,6 +220,19 @@ export function userFacingForgotPasswordMessage(errorCode) {
   return FORGOT_PASSWORD_USER_MESSAGES[errorCode] || FORGOT_PASSWORD_USER_MESSAGES.server_error;
 }
 
+export async function deliverCustomerPasswordResetEmail({ to, html, userId, tokenHash, deps } = {}) {
+  const hash = String(tokenHash || "").slice(0, 16);
+  return sendClaimedEmail({
+    ...(deps || {}),
+    to,
+    subject: "Reset Your Password — IFCDC Barbers",
+    html,
+    templateId: "password_reset",
+    idempotencyKey: `account:${userId}:password_reset:${hash}`,
+    label: "auth-reset-password",
+  });
+}
+
 export async function requestPasswordResetForEmail(email, { sendEmail, includeResetLink } = {}) {
   const em = normalizeEmail(email);
   if (!isValidEmailFormat(em)) {
@@ -245,11 +259,11 @@ export async function requestPasswordResetForEmail(email, { sendEmail, includeRe
     return { ok: false, error: "email_unconfigured", message: "Password reset email is temporarily unavailable. Please try again later." };
   }
 
-  const result = await sendEmail({
+  const result = await deliverCustomerPasswordResetEmail({
     to: em,
-    subject: "Reset Your Password — IFCDC Barbers",
     html: buildCustomerResetEmailHtml({ name: user.name, resetLink }),
-    label: "auth-reset-password",
+    userId: user.id,
+    tokenHash,
   });
 
   if (result?.error) {

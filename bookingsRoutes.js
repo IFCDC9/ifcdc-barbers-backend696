@@ -354,6 +354,8 @@ export async function insertAuraVoiceBookingRow(body, sendBookingEmail) {
           time: String(row.time ?? timeStr),
           service: row.service || serviceTitle,
           language: bookingLanguage,
+          bookingId: row.id,
+          callSid,
           ...bookingEmailPayloadFromRow(row),
         });
         emailSent = !r?.error;
@@ -385,6 +387,8 @@ export async function insertAuraVoiceBookingRow(body, sendBookingEmail) {
       time: timeStr,
       service: serviceTitle,
       language: bookingLanguage,
+      bookingId,
+      callSid,
       paymentStatus: PAYMENT_STATUS.UNPAID,
       servicePrice: totalPrice,
       platformFee: 0.99,
@@ -1988,6 +1992,7 @@ export function createBookingsRouter({ sendBookingEmail, sendBookingPush, requir
         refundId: paypalResult.refundId,
         reason,
         paymentStatus: newPaymentStatus,
+        bookingId: id,
       }).catch((e) => console.warn("[email] refund confirmation:", e?.message || e));
 
       void dispatchBookingPush({

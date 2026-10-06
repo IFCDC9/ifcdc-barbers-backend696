@@ -1,12 +1,11 @@
 /**
  * Admin alert when PayPal captured funds but booking finalization failed or is missing.
  */
-const { sendEmail, getMailFrom } = require("./emailResend.cjs");
+const { sendClaimedEmail } = require("./transactionalMail.cjs");
 
 async function sendOrphanedPaymentAdminAlert(payload = {}) {
   const adminTo = String(process.env.BOOKING_ADMIN_EMAIL || "service@ifcdc.org").trim();
-  const from = getMailFrom();
-  if (!from || !adminTo) {
+  if (!adminTo) {
     console.error("[orphan-payment] admin alert skipped — MAIL_FROM or BOOKING_ADMIN_EMAIL missing", payload);
     return { ok: false, error: "mail_not_configured" };
   }
@@ -35,12 +34,20 @@ ${extra ? `<pre style="font-size:12px;background:#f4f4f4;padding:12px;">${escape
   `.trim();
 
   try {
-    const result = await sendEmail({
+    const origin = bookingId
+      ? `booking:${bookingId}`
+      : captureId
+        ? `capture:${captureId}`
+        : `order:${paypalOrderId || "unknown"}`;
+    const result = await sendClaimedEmail({
+      ...(payload.deps || {}),
       to: adminTo,
       subject,
       html,
       text: html.replace(/<[^>]+>/g, " "),
       label: "orphaned-payment-admin",
+      templateId: "admin_notice",
+      idempotencyKey: `${origin}:admin_notice:orphaned_payment`,
     });
     if (result.error) {
       console.error("[orphan-payment] admin alert send FAILED:", result.error?.message || result.error);

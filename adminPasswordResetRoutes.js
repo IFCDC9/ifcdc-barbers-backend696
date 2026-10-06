@@ -10,6 +10,7 @@ import { writeSecurityAudit } from "./auditSecurity.js";
 
 const require = createRequire(import.meta.url);
 const { buildPasswordResetUrl } = require("./publicSiteConfig.cjs");
+const { sendClaimedEmail } = require("./transactionalMail.cjs");
 
 async function resolveSuperAdminScope(req, res) {
   const hdr = String(req.get("authorization") || "");
@@ -106,6 +107,19 @@ function buildResetEmailHtml({ name, resetLink }) {
 }
 
 /** Register admin password recovery routes on the admin router. */
+export async function deliverAdminPasswordResetEmail({ to, html, userId, tokenHash, deps } = {}) {
+  const hash = String(tokenHash || "").slice(0, 16);
+  return sendClaimedEmail({
+    ...(deps || {}),
+    to,
+    subject: "IFCDC password reset requested",
+    html,
+    templateId: "password_reset",
+    idempotencyKey: `account:${userId}:password_reset:${hash}`,
+    label: "admin-password-reset",
+  });
+}
+
 export function registerAdminPasswordResetRoutes(router, { sendEmail } = {}) {
   router.post("/api/admin/send-password-reset", async (req, res) => {
     const scope = await resolveSuperAdminScope(req, res);
@@ -134,11 +148,11 @@ export function registerAdminPasswordResetRoutes(router, { sendEmail } = {}) {
       let emailSent = false;
       if (typeof sendEmail === "function") {
         try {
-          const result = await sendEmail({
+          const result = await deliverAdminPasswordResetEmail({
             to: target.email,
-            subject: "IFCDC password reset requested",
             html: buildResetEmailHtml({ name: target.name, resetLink }),
-            label: "admin-password-reset",
+            userId,
+            tokenHash,
           });
           emailSent = Boolean(result?.success ?? result?.ok);
         } catch (e) {

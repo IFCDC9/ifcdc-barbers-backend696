@@ -2,7 +2,7 @@
  * Review system emails — new review → barber; report/hide/remove → Super Admin.
  * Best-effort; never throws to callers.
  */
-const { sendEmail } = require("./emailResend.cjs");
+const { sendClaimedEmail } = require("./transactionalMail.cjs");
 
 const ADMIN_REVIEW_EMAIL = String(process.env.REVIEW_ADMIN_EMAIL || process.env.BOOKING_ADMIN_EMAIL || "service@ifcdc.org")
   .trim()
@@ -65,7 +65,7 @@ async function resolveBarberContact(dbQuery, barberId) {
   };
 }
 
-async function emailBarberNewReview({ dbQuery, barberId, rating, comment, customerName }) {
+async function emailBarberNewReview({ dbQuery, barberId, rating, comment, customerName, reviewId, deps }) {
   try {
     const contact = await resolveBarberContact(dbQuery, barberId);
     if (!contact.emails.length) {
@@ -86,8 +86,19 @@ async function emailBarberNewReview({ dbQuery, barberId, rating, comment, custom
       `<p style="margin-top:16px;"><a href="${WEB_URL}/profile/rate-me" style="color:#b8860b;">Open IFCDC Barbers</a> to view and reply.</p>` +
       `</div>`;
     const results = [];
+    const reviewKey = String(reviewId || barberId || "review").trim();
     for (const to of contact.emails) {
-      results.push(await sendEmail({ to, subject, html, label: "review_new_to_barber" }));
+      results.push(
+        await sendClaimedEmail({
+          ...(deps || {}),
+          to,
+          subject,
+          html,
+          label: "review_new_to_barber",
+          templateId: "barber_review",
+          idempotencyKey: `review:${reviewKey}:barber_review:${to}`,
+        }),
+      );
     }
     return { ok: true, results };
   } catch (e) {
@@ -105,6 +116,7 @@ async function emailCustomerReviewPrompt({
   deepLinkApp,
   language,
   userId,
+  deps,
 }) {
   try {
     const email = String(to || "").trim();
@@ -140,7 +152,17 @@ async function emailCustomerReviewPrompt({
       `<p style="color:#666;font-size:13px;">${escapeHtml(tLabel(labels, "reviewAppLink"))} <a href="${escapeHtml(appLink)}">${escapeHtml(appLink)}</a></p>` +
       `<p style="color:#666;font-size:13px;">${escapeHtml(tLabel(labels, "reviewNote"))}</p>` +
       `</div>`;
-    return await sendEmail({ to: email, subject, html, label: "review_prompt_customer" });
+    const id = String(bookingId || "").trim();
+    if (!id) return { ok: false, reason: "missing_booking_id" };
+    return await sendClaimedEmail({
+      ...(deps || {}),
+      to: email,
+      subject,
+      html,
+      label: "review_prompt_customer",
+      templateId: "review_prompt",
+      idempotencyKey: `booking:${id}:review_prompt`,
+    });
   } catch (e) {
     console.warn("[review-email] customer prompt failed:", e?.message || e);
     return { ok: false, reason: e?.message || "send_failed" };
@@ -163,6 +185,7 @@ async function emailAdminReviewModeration({
   photoUrls,
   adminNotes,
   adminUserId,
+  deps,
 }) {
   try {
     const subject = `[IFCDC Reviews] ${String(action || "update").toUpperCase()} — ${targetType || "content"}`;
@@ -195,11 +218,16 @@ async function emailAdminReviewModeration({
       `</ul>` +
       `<p><a href="${WEB_URL}/admin/content-moderation">Open Admin Content Moderation</a></p>` +
       `</div>`;
-    return await sendEmail({
+    const target = String(targetId || bookingId || "content").trim();
+    const origin = bookingId ? `booking:${bookingId}` : `review:${target}`;
+    return await sendClaimedEmail({
+      ...(deps || {}),
       to: ADMIN_REVIEW_EMAIL,
       subject,
       html,
       label: "review_moderation_admin",
+      templateId: "admin_notice",
+      idempotencyKey: `${origin}:admin_notice:moderation:${target}`,
     });
   } catch (e) {
     console.warn("[review-email] admin notify failed:", e?.message || e);

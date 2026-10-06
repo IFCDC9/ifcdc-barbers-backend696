@@ -8,8 +8,6 @@ const {
   getMailFrom,
   sanitizeEnvLine,
   getResendApiKey,
-  sendEmail,
-  sendResendWithRetry,
 } = require("./emailResend.cjs");
 const { deliverTransactionalEmail, postmarkConfigured } = require("./emailDelivery.cjs");
 const {
@@ -731,15 +729,10 @@ function trimmedDateTime(date, time) {
  * @param {{ name?: string, email?: string, date?: string, time?: string, barberName?: string, barber?: string }} booking
  */
 async function sendAuraVoiceBookingEmail(booking = {}) {
-  const resend = getResend();
-  if (!resend) {
-    throw new Error("RESEND_API_KEY missing or invalid (must start with re_)");
-  }
-
   const clientEmail = String(booking.email || "").trim() || "service@ifcdc.org";
-  const recipients = Array.from(new Set([clientEmail, "service@ifcdc.org"]));
-  console.log("EMAIL FINAL RECIPIENTS:", recipients);
-
+  const adminEmail = "service@ifcdc.org";
+  const bookingId = String(booking.bookingId || booking.id || booking.bookingRow?.id || "").trim();
+  const callSid = String(booking.callSid || "").trim();
   const es = String(booking.language || "")
     .trim()
     .toLowerCase()
@@ -760,16 +753,40 @@ async function sendAuraVoiceBookingEmail(booking = {}) {
     <p>${lnTime}: ${safeTime}</p>
     <p>${lnBarber}: ${safeBarber}</p>
   `.trim();
-
-  await resend.emails.send({
-    from: "IFCDC Barbers <notifications@ifcdcbarbersapp.com>",
-    to: recipients,
+  const from = "IFCDC Barbers <notifications@ifcdcbarbersapp.com>";
+  const confirmKey = bookingId
+    ? `booking:${bookingId}:booking_confirmation`
+    : `voice:${callSid || "call"}:${booking.date || ""}:${booking.time || ""}:booking_confirmation`;
+  const deps = booking.deps || {};
+  const customer = await deliverTransactionalEmail({
+    ...deps,
+    from,
+    to: clientEmail,
     subject,
     html,
     text: htmlToPlainText(html),
+    label: "aura-voice-booking-confirmation",
+    templateId: "booking_confirmation",
+    idempotencyKey: confirmKey,
   });
-
-  return { ok: true };
+  let admin = null;
+  if (adminEmail.toLowerCase() !== clientEmail.toLowerCase()) {
+    admin = await deliverTransactionalEmail({
+      ...deps,
+      from,
+      to: adminEmail,
+      subject,
+      html,
+      text: htmlToPlainText(html),
+      label: "aura-voice-booking-confirmation-admin",
+      templateId: "admin_notice",
+      idempotencyKey: `${confirmKey}:admin`,
+    });
+  }
+  if (!customer.success) {
+    return { ok: false, success: false, error: customer.error || "send_failed", customer, admin };
+  }
+  return { ok: true, success: true, error: null, customer, admin, messageId: customer.messageId || null };
 }
 
 /**
@@ -788,13 +805,12 @@ async function sendBookingRefundEmail({
   reason,
   paymentStatus,
   language,
+  bookingId,
+  deps,
 } = {}) {
   const to = String(email || "").trim();
   if (!to || /@ifcdc\.local$/i.test(to) || /^pending\+/i.test(to)) {
     return { success: false, skipped: true, reason: "no_customer_email" };
-  }
-  if (!isResendConfigured()) {
-    return { success: false, skipped: true, reason: "resend_not_configured" };
   }
 
   const { customerEmailLabels, tLabel } = require("./customerEmailI18n.cjs");
@@ -830,25 +846,40 @@ ${reason ? `<p>${escapeHtml(tLabel(labels, "refundReason"))}: ${escapeHtml(Strin
 ${refundId ? `<p>PayPal refund: ${escapeHtml(String(refundId))}</p>` : ""}
   `.trim();
 
+  const eventId = String(refundId || bookingId || "refund").trim();
+  const origin = bookingId ? `booking:${bookingId}` : `refund:${eventId}`;
   try {
-    const customerResult = await sendResendWithRetry({
+    const customerResult = await deliverTransactionalEmail({
+      ...(deps || {}),
       to,
       subject,
       html,
       text: htmlToPlainText(html),
+      label: "booking-refund-customer",
+      templateId: "payment_receipt",
+      idempotencyKey: `${origin}:payment_receipt:${eventId}`,
     });
-    let adminResult = { ok: true };
+    let adminResult = { success: false };
     try {
-      adminResult = await sendEmail({
+      adminResult = await deliverTransactionalEmail({
+        ...(deps || {}),
         to: "service@ifcdc.org",
         subject: `[IFCDC Admin] Refund — ${safeName}`,
         html: adminHtml,
         text: htmlToPlainText(adminHtml),
+        label: "booking-refund-admin",
+        templateId: "admin_notice",
+        idempotencyKey: `${origin}:admin_notice:refund:${eventId}`,
       });
     } catch (adminErr) {
       console.warn("[email] refund admin copy failed:", adminErr?.message || adminErr);
     }
-    return { success: true, customer: customerResult, admin: adminResult };
+    return {
+      success: customerResult.success === true,
+      customer: customerResult,
+      admin: adminResult,
+      error: customerResult.success ? null : customerResult.error || "send_failed",
+    };
   } catch (e) {
     console.warn("[email] sendBookingRefundEmail failed:", formatResendError(e));
     return { success: false, error: formatResendError(e) };

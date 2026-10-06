@@ -582,16 +582,11 @@ async function sendControlledInsightsDailyDigest(
     /* continue — best-effort dedupe */
   }
 
-  const { sendAuraTemplatedEmail } = require("./auraPhase2Emails.cjs");
-  const { getMailFrom } = require("./emailResend.cjs");
-  if (!getMailFrom()) return { ok: false, error: "MAIL_FROM_missing", sent: false };
-
-  const send = await sendAuraTemplatedEmail({
+  const send = await deliverOperationalDigestEmail({
     to: dest,
-    subject: `AURA Operational Insights digest (controlled) — ${period.label || "report"}`,
-    heading: "Operational Insights Daily Digest (controlled one-time)",
+    periodLabel: period.label,
     bodyHtml: formatInsightsDailyDigestHtml(out.report),
-    label: "aura-insights-daily-digest-controlled",
+    fingerprint,
   });
 
   if (!send.ok) {
@@ -635,12 +630,29 @@ async function sendControlledInsightsDailyDigest(
   };
 }
 
+async function deliverOperationalDigestEmail({ to, periodLabel, bodyHtml, fingerprint, deps } = {}) {
+  const { sendAuraTemplatedEmail } = require("./auraPhase2Emails.cjs");
+  const stamp = String(fingerprint || "").trim();
+  if (!stamp) return { ok: false, sent: false, error: "missing_fingerprint" };
+  return sendAuraTemplatedEmail({
+    ...(deps || {}),
+    to,
+    subject: `AURA Operational Insights digest (controlled) — ${periodLabel || "report"}`,
+    heading: "Operational Insights Daily Digest (controlled one-time)",
+    bodyHtml,
+    label: "aura-insights-daily-digest-controlled",
+    templateId: "operational_digest",
+    idempotencyKey: `founder:operational_digest:${stamp}`,
+  });
+}
+
 module.exports = {
   insightsEnabled,
   authorityGuard,
   generateOperationalInsightsReport,
   previewInsightsDailyDigest,
   sendControlledInsightsDailyDigest,
+  deliverOperationalDigestEmail,
   formatInsightsDailyDigestHtml,
   isApprovedDigestRecipient,
   digestRecipientAllowlist,

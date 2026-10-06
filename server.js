@@ -387,7 +387,8 @@ function summarizeAuthRouterPaths(router) {
 }
 
 // Auth (JWT + password reset via Resend) — mount early, before other `/api/*` routers and the JSON 404.
-const authRouter = createAuthRouter({ sendEmail });
+const { sendClaimedEmail } = require("./transactionalMail.cjs");
+const authRouter = createAuthRouter({ sendEmail: sendClaimedEmail });
 app.use("/api/aura", createAuraChatHistoryRouter({ requireAuth }));
 console.log("[boot] mounted /api/aura/messages (GET, DELETE)");
 // Explicit surface: some deployments/proxies mis-handle nested GET registration; this always reaches `router.get("/me", …)`.
@@ -641,39 +642,8 @@ app.get("/api/aura/test", (req, res) => {
 });
 
 /**
- * GET /api/test-email?to=… — send one test message (production MAIL_FROM).
- * POST /api/test-email — body `{ "to" }` or query `?to=`.
+ * GET/POST /api/test-email — diagnostic send is disabled. These routes do not send mail.
  */
-async function runTestEmailSend(to, res) {
-  console.log(
-    "[EMAIL] test-email: RESEND_API_KEY:",
-    getResend() ? "LOADED" : "MISSING",
-    "MAIL_FROM:",
-    getMailFrom() || "MISSING"
-  );
-
-  const result = await sendEmail({
-    to,
-    subject: "IFCDC System Test",
-    html: "<p>IFCDC transactional email test ✅</p>",
-    label: "test-email",
-  });
-  if (result.error) {
-    const msg = result.error.message != null ? String(result.error.message) : JSON.stringify(result.error);
-    console.error("[EMAIL ERROR]", msg);
-    const isConfig = /RESEND_API_KEY|MAIL_FROM/i.test(msg);
-    return res.status(isConfig ? 503 : 200).json({
-      success: false,
-      error: msg,
-      hint: "Verify MAIL_FROM at resend.com/domains and RESEND_API_KEY at resend.com/api-keys",
-    });
-  }
-  return res.json({
-    success: true,
-    to,
-    messageId: result?.data?.id ?? null,
-  });
-}
 
 /** GET /api/email/health — config status only. No secrets and no send. */
 const { postmarkReadiness } = require("./emailHealth.cjs");
@@ -693,28 +663,13 @@ app.get("/api/email/health", (_req, res) => {
   });
 });
 
-async function handleGetTestEmail(req, res) {
-  const to = String(req.query.to || req.query.email || "").trim();
-  if (!to) {
-    return res.status(400).json({
-      success: false,
-      error: "to_required",
-      message: "Use GET /api/test-email?to=you@example.com",
-    });
-  }
-  return runTestEmailSend(to, res);
+const { refuseDiagnosticTestEmail } = require("./testEmailRoute.cjs");
+function handleGetTestEmail(_req, res) {
+  return refuseDiagnosticTestEmail(_req, res);
 }
 
-async function handlePostTestEmail(req, res) {
-  const to = String(req.body?.to || req.query?.to || "").trim();
-  if (!to) {
-    return res.status(400).json({
-      success: false,
-      error: "to_required",
-      message: 'Send JSON body { "to": "you@example.com" } or use GET /api/test-email?to=…',
-    });
-  }
-  return runTestEmailSend(to, res);
+function handlePostTestEmail(_req, res) {
+  return refuseDiagnosticTestEmail(_req, res);
 }
 
 /**

@@ -1,8 +1,10 @@
 /**
  * AURA Phase 2 customer/barber/admin email helpers.
- * Always uses existing Resend pipeline + current MAIL_FROM (no sender domain switch).
+ * Primary send is deliverTransactionalEmail (Postmark, then Resend only on explicit rejection).
+ * From stays getMailFrom() / the verified ifcdcbarbersapp.com fallback inside that function.
  */
-const { sendEmail, getMailFrom } = require("./emailResend.cjs");
+const crypto = require("crypto");
+const { sendClaimedEmail } = require("./transactionalMail.cjs");
 const { auraReceptionistIdentity } = require("./auraPhase2Flags.cjs");
 
 function escapeHtml(s) {
@@ -57,11 +59,30 @@ ${f.bookingId ? `<p>Booking reference: <strong>${escapeHtml(f.bookingId)}</stron
 `.trim();
 }
 
-async function sendAuraTemplatedEmail({ to, subject, heading, bodyHtml, label }) {
-  const from = getMailFrom();
-  if (!from) return { ok: false, error: "MAIL_FROM_missing" };
+function deliveryDeps(source = {}) {
+  return {
+    ledger: source.ledger,
+    fetchImpl: source.fetchImpl,
+    sendResend: source.sendResend,
+  };
+}
+
+async function sendAuraTemplatedEmail({
+  to,
+  subject,
+  heading,
+  bodyHtml,
+  label,
+  templateId,
+  idempotencyKey,
+  from,
+  ledger,
+  fetchImpl,
+  sendResend,
+} = {}) {
   const dest = String(to || "").trim();
-  if (!dest || !dest.includes("@")) return { ok: false, error: "invalid_to" };
+  if (!dest || !dest.includes("@")) return { ok: false, sent: false, error: "invalid_to" };
+  if (!templateId || !idempotencyKey) return { ok: false, sent: false, error: "missing_template_or_key" };
   const html = `
 <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:560px;color:#111;">
   <p style="margin:0 0 8px;font-size:12px;letter-spacing:0.08em;color:#b8860b;font-weight:700;">IFCDC BARBERS</p>
@@ -70,79 +91,121 @@ async function sendAuraTemplatedEmail({ to, subject, heading, bodyHtml, label })
   ${auraFooterHtml()}
 </div>`.trim();
   try {
-    const out = await sendEmail({
+    const out = await sendClaimedEmail({
       to: dest,
       subject,
       html,
       text: html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim(),
-      label: label || "aura-phase2",
+      label: label || templateId,
+      templateId,
+      idempotencyKey,
+      from,
+      ledger,
+      fetchImpl,
+      sendResend,
     });
-    if (out?.error) return { ok: false, error: out.error.message || "send_failed" };
-    return { ok: true, id: out?.id || null };
+    if (!out?.ok) {
+      return {
+        ok: false,
+        sent: false,
+        error: out?.error?.message || "send_failed",
+        provider: out?.provider || null,
+        fallbackUsed: out?.fallbackUsed === true,
+        uncertain: out?.uncertain === true,
+      };
+    }
+    return {
+      ok: true,
+      sent: true,
+      id: out.id || null,
+      messageId: out.messageId || null,
+      provider: out.provider || null,
+      fallbackUsed: out.fallbackUsed === true,
+      duplicate: out.duplicate === true,
+    };
   } catch (e) {
-    return { ok: false, error: e?.message || String(e) };
+    return { ok: false, sent: false, error: e?.message || String(e) };
   }
+}
+
+function reminderWindow(windowLabel) {
+  return windowLabel === "24h" || windowLabel === "2h" || windowLabel === "30m" ? windowLabel : "30m";
 }
 
 async function sendAuraReminderEmail(payload, windowLabel) {
   const f = bookingFields(payload);
+  if (!f.bookingId) return { ok: false, sent: false, error: "missing_booking_id" };
+  const window = reminderWindow(windowLabel);
   const heading =
-    windowLabel === "24h"
+    window === "24h"
       ? "Appointment reminder — 24 hours"
-      : windowLabel === "2h"
+      : window === "2h"
         ? "Appointment reminder — 2 hours"
-        : windowLabel === "30m"
-          ? "Appointment reminder — 30 minutes"
-          : "Appointment reminder";
+        : "Appointment reminder — 30 minutes";
   return sendAuraTemplatedEmail({
+    ...deliveryDeps(payload?.deps || payload || {}),
     to: f.email,
     subject: `${heading} — IFCDC Barbers`,
     heading,
     bodyHtml: `<p>Hi ${escapeHtml(f.name)},</p><p>This is a reminder from ${escapeHtml(auraReceptionistIdentity())} about your upcoming appointment.</p>${buildBookingDetailsHtml(f)}`,
-    label: `aura-reminder-${windowLabel}`,
+    label: `aura-reminder-${window}`,
+    templateId: "appointment_reminder",
+    idempotencyKey: `booking:${f.bookingId}:appointment_reminder:${window}`,
   });
 }
 
-async function sendAuraCancelEmail(payload) {
-  const f = bookingFields(payload);
-  return sendAuraTemplatedEmail({
-    to: f.email,
-    subject: "Appointment cancelled — IFCDC Barbers",
-    heading: "Appointment cancelled",
-    bodyHtml: `<p>Hi ${escapeHtml(f.name)},</p><p>Your appointment has been cancelled.</p>${buildBookingDetailsHtml(f)}`,
-    label: "aura-cancel-customer",
-  });
+async function sendAuraCancelEmail() {
+  return {
+    ok: true,
+    retired: true,
+    sent: false,
+    skipped: true,
+    reason: "postmark_booking_cancellation_is_the_only_send",
+  };
 }
 
-async function sendAuraRescheduleEmail(payload) {
-  const f = bookingFields(payload);
-  const fromLabel = String(payload.fromLabel || "").trim();
-  return sendAuraTemplatedEmail({
-    to: f.email,
-    subject: "Appointment rescheduled — IFCDC Barbers",
-    heading: "Appointment rescheduled",
-    bodyHtml: `<p>Hi ${escapeHtml(f.name)},</p><p>Your appointment has been rescheduled${fromLabel ? ` from <strong>${escapeHtml(fromLabel)}</strong>` : ""}.</p>${buildBookingDetailsHtml(f)}`,
-    label: "aura-reschedule-customer",
-  });
+async function sendAuraRescheduleEmail() {
+  return {
+    ok: true,
+    retired: true,
+    sent: false,
+    skipped: true,
+    reason: "postmark_booking_reschedule_is_the_only_send",
+  };
 }
 
 async function sendAuraBarberEventEmail(payload, eventType) {
   const f = bookingFields(payload);
   const barberEmail = String(payload.barberEmail || "").trim();
-  if (!barberEmail) return { ok: false, error: "no_barber_email" };
+  if (!barberEmail) return { ok: false, sent: false, error: "no_barber_email" };
+  if (!f.bookingId) return { ok: false, sent: false, error: "missing_booking_id" };
   const titles = {
     created: "New appointment assigned",
     cancelled: "Appointment cancelled",
     rescheduled: "Appointment rescheduled",
   };
   const heading = titles[eventType] || "Appointment update";
+  const eventKey = String(eventType || "update").toLowerCase().replace(/[^a-z0-9_]+/g, "_");
   return sendAuraTemplatedEmail({
+    ...deliveryDeps(payload?.deps || {}),
     to: barberEmail,
     subject: `[IFCDC] ${heading}`,
     heading,
     bodyHtml: `<p>${escapeHtml(auraReceptionistIdentity())} notifying you of a booking update.</p>${buildBookingDetailsHtml(f)}`,
-    label: `aura-barber-${eventType}`,
+    label: `aura-barber-${eventKey}`,
+    templateId: "barber_notification",
+    idempotencyKey: `booking:${f.bookingId}:barber_notification:${eventKey}`,
   });
+}
+
+function adminFailureKey(payload = {}) {
+  const kind = String(payload.kind || "failure").slice(0, 80);
+  const detail = payload.detail && typeof payload.detail === "object" ? payload.detail : {};
+  const bookingId = String(payload.bookingId || detail.bookingId || "").trim();
+  const kindKey = kind.toLowerCase().replace(/[^a-z0-9_]+/g, "_").slice(0, 60) || "failure";
+  if (bookingId) return `booking:${bookingId}:admin_notice:${kindKey}`;
+  const hash = crypto.createHash("sha256").update(`${kind}|${JSON.stringify(detail)}`).digest("hex").slice(0, 24);
+  return `admin:${hash}:admin_notice`;
 }
 
 async function sendAuraAdminFailureAlert(payload = {}) {
@@ -152,6 +215,7 @@ async function sendAuraAdminFailureAlert(payload = {}) {
   const kind = String(payload.kind || "failure").slice(0, 80);
   const detail = payload.detail || payload;
   return sendAuraTemplatedEmail({
+    ...deliveryDeps(payload.deps || {}),
     to: adminTo,
     subject: `[IFCDC AURA] Super Admin attention — ${kind}`,
     heading: "Action required",
@@ -159,6 +223,8 @@ async function sendAuraAdminFailureAlert(payload = {}) {
 <p><strong>Kind:</strong> ${escapeHtml(kind)}</p>
 <pre style="font-size:12px;background:#f4f4f4;padding:12px;">${escapeHtml(JSON.stringify(detail, null, 2).slice(0, 4000))}</pre>`,
     label: "aura-admin-alert",
+    templateId: "admin_notice",
+    idempotencyKey: adminFailureKey(payload),
   });
 }
 
@@ -169,7 +235,9 @@ async function sendAuraReviewFollowupEmail(payload = {}) {
   const rewards = payload.rewardsProgress
     ? `<p>Rewards progress: <strong>${escapeHtml(String(payload.rewardsProgress))}</strong></p>`
     : `<p>Visit Profile → Rewards to see your progress.</p>`;
+  if (!f.bookingId) return { ok: false, sent: false, error: "missing_booking_id" };
   return sendAuraTemplatedEmail({
+    ...deliveryDeps(payload.deps || {}),
     to: f.email,
     subject: "How was your visit? — IFCDC Barbers",
     heading: "Thanks for visiting IFCDC Barbers",
@@ -179,6 +247,8 @@ async function sendAuraReviewFollowupEmail(payload = {}) {
 ${rewards}
 ${buildBookingDetailsHtml(f)}`,
     label: "aura-review-followup",
+    templateId: "review_followup",
+    idempotencyKey: `booking:${f.bookingId}:review_followup`,
   });
 }
 

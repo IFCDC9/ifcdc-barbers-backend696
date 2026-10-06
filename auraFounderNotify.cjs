@@ -3,7 +3,7 @@
  * Channel order: in-app → push → email → SMS (only when A2P transactional SMS is enabled).
  * Never blocks DB logging when SMS is disabled. Never sends customer SMS from founder handset.
  */
-const { sendEmail } = require("./emailResend.cjs");
+const { sendClaimedEmail } = require("./transactionalMail.cjs");
 const pushNotifier = require("./pushNotifier.cjs");
 const { isSmsNotificationsEnabled } = require("./smsFlags.cjs");
 const { sendTransactionalSms } = require("./smsDeliveryService.cjs");
@@ -125,6 +125,23 @@ async function emitFounderEvent(dbQuery, eventInput = {}) {
   }
 }
 
+async function deliverFounderOperationalEmail({ to, title, body, event, deps } = {}) {
+  const eventId = String(event?.id || "").trim();
+  if (!eventId) return { ok: false, success: false, error: { message: "missing_event_id" } };
+  const eventType = String(event?.event_type || event?.eventType || "ops_update");
+  const subject = title || `AURA: ${eventType.replace(/_/g, " ")}`;
+  return sendClaimedEmail({
+    ...(deps || {}),
+    to,
+    subject,
+    text: `${body || ""}\n\nPlatform: ${FOUNDER_IDENTITY.platform}\nEvent: ${eventType}`,
+    html: `<p>${body || ""}</p><p>Event: <code>${eventType}</code></p>`,
+    templateId: "founder_notice",
+    idempotencyKey: `founder:${eventId}:founder_notice`,
+    label: "founder-operational-event",
+  });
+}
+
 async function deliverFounderNotification(dbQuery, event) {
   const channels = [];
   const { title, body } = buildNotifyCopy(event);
@@ -235,11 +252,11 @@ async function deliverFounderNotification(dbQuery, event) {
   // 3) Email
   let emailOk = false;
   try {
-    const mail = await sendEmail({
+    const mail = await deliverFounderOperationalEmail({
       to: email,
-      subject: title,
-      text: `${body}\n\nPlatform: ${FOUNDER_IDENTITY.platform}\nEvent: ${event.event_type}\nTime: ${event.created_at || new Date().toISOString()}`,
-      html: `<p>${body}</p><p>Event: <code>${event.event_type}</code></p>`,
+      title,
+      body,
+      event,
     });
     emailOk = Boolean(mail?.ok || mail?.id || !mail?.error);
     await logNotification(dbQuery, {
@@ -326,5 +343,6 @@ async function deliverFounderNotification(dbQuery, event) {
 module.exports = {
   emitFounderEvent,
   deliverFounderNotification,
+  deliverFounderOperationalEmail,
   resolveFounderUserIds,
 };

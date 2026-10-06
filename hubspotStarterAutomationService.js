@@ -20,7 +20,7 @@ import {
 } from "./hubspotService.js";
 
 const require = createRequire(import.meta.url);
-const { sendEmail, isResendConfigured } = require("./emailResend.cjs");
+const { sendClaimedEmail } = require("./transactionalMail.cjs");
 
 const API = "https://api.hubapi.com";
 
@@ -194,21 +194,40 @@ async function tryHubSpotSingleSend({ emailId, to, contactProperties = {} }) {
   return { ok: false, channel: "hubspot_singlesend", ...(last || { reason: "all_paths_failed" }) };
 }
 
-async function sendViaResend({ to, subject, html }) {
-  if (!isResendConfigured()) {
-    return { ok: false, skipped: true, reason: "resend_not_configured" };
-  }
+export async function sendViaResend({ to, subject, html, automationKey, deps } = {}) {
   if (!to || !subject || !html) {
     return { ok: false, skipped: true, reason: "missing_email_content" };
   }
+  const email = String(to).trim().toLowerCase();
+  const key = String(automationKey || "starter").trim();
   try {
-    const result = await sendEmail({ to, subject, html });
+    const result = await sendClaimedEmail({
+      ...(deps || {}),
+      to: email,
+      subject,
+      html,
+      templateId: "starter_welcome",
+      idempotencyKey: `starter:${key}:${email}`,
+      label: `starter-${key}`,
+    });
     if (result?.ok === false) {
-      return { ok: false, channel: "resend", message: result?.error || result?.message || "send_failed" };
+      return {
+        ok: false,
+        channel: result.provider || "postmark",
+        provider: result.provider || null,
+        fallbackUsed: result.fallbackUsed === true,
+        message: result?.error?.message || "send_failed",
+      };
     }
-    return { ok: true, channel: "resend", messageId: result?.id || result?.messageId || null };
+    return {
+      ok: true,
+      channel: result.provider || "postmark",
+      provider: result.provider || null,
+      messageId: result?.messageId || null,
+      fallbackUsed: result.fallbackUsed === true,
+    };
   } catch (error) {
-    return { ok: false, channel: "resend", message: String(error?.message || error).slice(0, 180) };
+    return { ok: false, channel: "postmark", message: String(error?.message || error).slice(0, 180) };
   }
 }
 
@@ -281,21 +300,21 @@ export async function runStarterAutomationEmail(key, { to, name = null, force = 
     return { ok: true, channel: "hubspot_singlesend", automation: key, hubspot: hs };
   }
 
-  const rs = await sendViaResend({ to: email, subject, html });
+  const rs = await sendViaResend({ to: email, subject, html, automationKey: key });
   if (rs.ok) {
     await recordAutomationEvent({
       key,
       email,
-      status: "resend_sent",
-      message: `hubspot_blocked:${hs.http || hs.message || "n/a"};resend_ok`,
+      status: rs.provider === "resend" ? "resend_sent" : "postmark_sent",
+      message: `hubspot_blocked:${hs.http || hs.message || "n/a"};${rs.provider || "postmark"}_ok`,
     });
     return {
       ok: true,
-      channel: "resend",
+      channel: rs.channel || rs.provider || "postmark",
       automation: key,
       hubspotAttempt: hs,
       resend: rs,
-      note: "HubSpot single-send unavailable on Starter without transactional add-on; Resend delivered.",
+      note: "HubSpot single-send failed. Fallback used Postmark, then Resend only if Postmark explicitly rejected.",
     };
   }
 

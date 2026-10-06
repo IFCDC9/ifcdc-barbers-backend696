@@ -17,6 +17,22 @@ function escapeHtml(s) {
     .replace(/"/g, "&quot;");
 }
 
+export async function deliverLegacyAppointmentReminder({ to, subject, html, text, bookingId, deps } = {}) {
+  const id = String(bookingId || "").trim();
+  if (!id) return { ok: false, success: false, error: { message: "missing_booking_id" } };
+  const { sendClaimedEmail } = require("./transactionalMail.cjs");
+  return sendClaimedEmail({
+    ...(deps || {}),
+    to,
+    subject,
+    html,
+    text,
+    templateId: "appointment_reminder",
+    idempotencyKey: `booking:${id}:appointment_reminder:30m`,
+    label: "booking-reminder",
+  });
+}
+
 async function loadPhase2() {
   try {
     return {
@@ -44,7 +60,6 @@ export async function scanAndSendBookingReminders() {
     });
   }
 
-  const { getResend, sendEmail } = require("./emailResend.cjs");
   const { customerEmailLabels, tLabel } = require("./customerEmailI18n.cjs");
   const { resolveCustomerLanguage } = await import("./customerLanguage.js");
   // Email is best-effort; SMS still runs when Resend is unavailable.
@@ -68,7 +83,7 @@ export async function scanAndSendBookingReminders() {
     const when = `${row.date} ${row.time}`.trim();
     const to = String(row.customer_email || "").trim();
     let emailOk = false;
-    if (to && getResend()) {
+    if (to) {
       try {
         const language = await resolveCustomerLanguage({
           userId: row.user_id || null,
@@ -85,12 +100,12 @@ export async function scanAndSendBookingReminders() {
       service: escapeHtml(service),
     })}</p>
 <p>${escapeHtml(tLabel(labels, "reminderSeeYou"))}</p>`;
-        const out = await sendEmail({
+        const out = await deliverLegacyAppointmentReminder({
           to,
           subject: subj,
           html,
           text: tLabel(labels, "reminderText", { name, when }),
-          label: "booking-reminder",
+          bookingId: row.id,
         });
         if (out?.error) throw new Error(out.error.message || "send failed");
         emailOk = true;
@@ -140,8 +155,6 @@ async function scanWindow({
   const phase2 = await loadPhase2();
   if (!phase2) return { sent: 0, skipped: "phase2_unavailable" };
   const { emails, log } = phase2;
-  const { getResend } = require("./emailResend.cjs");
-
   await log.ensureAuraReminderColumns(dbQuery);
 
   const allowedColumns = new Set(["reminder_24h_sent_at", "reminder_2h_sent_at", "reminder_sent_at"]);
@@ -175,7 +188,7 @@ async function scanWindow({
   for (const row of rows) {
     const to = String(row.customer_email || "").trim();
     let emailOk = false;
-    if (to && getResend()) {
+    if (to) {
       try {
         const out = await emails.sendAuraReminderEmail(
           {
