@@ -107,7 +107,7 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
                 role: u?.role,
                 redirect: responseData.redirect,
               });
-              await signInWithToken(responseData.token);
+              await signInWithToken(responseData.token, responseData.user);
             } catch (saveErr) {
               Alert.alert("Session", userFacingApiError(saveErr));
             }
@@ -150,7 +150,7 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
         fullName: credential.fullName,
       });
       if (responseData.token) {
-        await signInWithToken(responseData.token);
+        await signInWithToken(responseData.token, responseData.user);
         return;
       }
       Alert.alert(t("auth.appleSignIn"), t("auth.appleSignInFailed"));
@@ -200,7 +200,7 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
         redirect: result.json?.redirect,
       });
       try {
-        await signInWithToken(result.token);
+        await signInWithToken(result.token, result.json?.user);
       } catch (saveErr) {
         Alert.alert("Session", userFacingApiError(saveErr));
       }

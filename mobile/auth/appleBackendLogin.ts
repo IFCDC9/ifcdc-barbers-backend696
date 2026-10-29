@@ -1,13 +1,6 @@
 import { fetchWithTimeout, mapAuthErrorToMessage, type JsonAuth } from "./authSessionApi";
 
-export type AppleAuthUser = {
-  id?: string;
-  name?: string | null;
-  email?: string;
-  role?: string;
-  isOwner?: boolean;
-  isSuperAdmin?: boolean;
-};
+export type AppleAuthUser = NonNullable<JsonAuth["user"]>;
 
 type AppleAuthJson = {
   ok?: boolean;

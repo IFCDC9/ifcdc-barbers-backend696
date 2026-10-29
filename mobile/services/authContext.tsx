@@ -1,4 +1,5 @@
 import React from "react";
+import { AppState } from "react-native";
 import { signOutSupabase } from "../lib/supabase";
 import { decodeJwtPayload, isOwnerAdminDashboardPayload } from "../auth/jwtSession";
 import { getAuthMe, type JsonAuth } from "../auth/authSessionApi";
@@ -21,7 +22,7 @@ type AuthContextValue = {
   hasStaffDashboard: boolean;
   staffRole: ReturnType<typeof resolveStaffRole>;
   approvalPending: boolean;
-  signInWithToken: (token: string) => Promise<void>;
+  signInWithToken: (token: string, loginUser?: AppUser | null) => Promise<void>;
   signOut: () => Promise<void>;
   refresh: () => Promise<void>;
 };
@@ -45,6 +46,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = React.useState<string | null>(null);
   const [user, setUser] = React.useState<AppUser | null>(null);
   const [sessionKind, setSessionKind] = React.useState<SessionKind>("default");
+  const sessionRevision = React.useRef(0);
+  const refreshInFlight = React.useRef(false);
 
   const applySession = React.useCallback((t: string | null, u: AppUser | null) => {
     setToken(t);
@@ -58,58 +61,71 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const refresh = React.useCallback(async () => {
-    let cachedToken: string | null = null;
+    if (refreshInFlight.current) return;
+    refreshInFlight.current = true;
+    const revision = sessionRevision.current;
+    const isCurrent = () => revision === sessionRevision.current;
     try {
-      cachedToken = await getAuthToken();
-    } catch {
-      cachedToken = null;
-    }
+      let cachedToken: string | null = null;
+      try {
+        cachedToken = await getAuthToken();
+      } catch {
+        cachedToken = null;
+      }
 
-    if (!cachedToken) {
-      applySession(null, null);
-      setLoading(false);
-      return;
-    }
-
-    // Restore JWT immediately so protected screens can load without waiting on /me.
-    setToken(cachedToken);
-    setSessionKind(tokenToSessionKind(cachedToken));
-    setLoading(false);
-
-    try {
-      const me = await getAuthMe(cachedToken, 15_000);
-      if (!me.ok) {
-        if (me.status === 401 || me.status === 403) {
-          const refreshed = await refreshAuthSession(cachedToken);
-          if (refreshed.ok) {
-            await setAuthToken(refreshed.token);
-            applySession(refreshed.token, refreshed.user ?? null);
-            return;
-          }
-          if (refreshed.reason === "invalid") {
-            console.warn("[auth] stored session rejected; clearing token", { status: me.status, url: me.url });
-            await setAuthToken(null);
-            applySession(null, null);
-          }
-          return;
-        }
-        if (me.status === 404) {
-          console.warn("[auth] GET /api/auth/me missing on server — using JWT until API is deployed", { url: me.url });
-          return;
-        }
-        if (me.status === 0) {
-          console.warn("[auth] /me unreachable (network/timeout); keeping cached JWT", { url: me.url });
-          return;
-        }
-        console.warn("[auth] /me unexpected status; keeping cached JWT", { status: me.status, url: me.url });
+      if (!isCurrent()) return;
+      if (!cachedToken) {
+        applySession(null, null);
+        setLoading(false);
         return;
       }
 
-      const freshToken = me.json.token ? String(me.json.token).trim() : cachedToken;
-      if (me.json.token) await setAuthToken(freshToken);
-      applySession(freshToken, me.json.user ?? null);
-    } catch (e) {
-      console.warn("[auth] background session validation failed:", e instanceof Error ? e.message : String(e));
+      // Restore JWT immediately so protected screens can load without waiting on /me.
+      setToken(cachedToken);
+      setSessionKind(tokenToSessionKind(cachedToken));
+      setLoading(false);
+
+      try {
+        const me = await getAuthMe(cachedToken, 15_000);
+        if (!isCurrent()) return;
+        if (!me.ok) {
+          if (me.status === 401 || me.status === 403) {
+            const refreshed = await refreshAuthSession(cachedToken);
+            if (!isCurrent()) return;
+            if (refreshed.ok) {
+              await setAuthToken(refreshed.token);
+              if (!isCurrent()) return;
+              applySession(refreshed.token, refreshed.user ?? null);
+              return;
+            }
+            if (refreshed.reason === "invalid") {
+              console.warn("[auth] stored session rejected; clearing token", { status: me.status, url: me.url });
+              await setAuthToken(null);
+              applySession(null, null);
+            }
+            return;
+          }
+          if (me.status === 404) {
+            console.warn("[auth] GET /api/auth/me missing on server — using JWT until API is deployed", { url: me.url });
+            return;
+          }
+          if (me.status === 0) {
+            console.warn("[auth] /me unreachable (network/timeout); keeping cached JWT", { url: me.url });
+            return;
+          }
+          console.warn("[auth] /me unexpected status; keeping cached JWT", { status: me.status, url: me.url });
+          return;
+        }
+
+        const freshToken = me.json.token ? String(me.json.token).trim() : cachedToken;
+        if (me.json.token) await setAuthToken(freshToken);
+        if (!isCurrent()) return;
+        applySession(freshToken, me.json.user ?? null);
+      } catch (e) {
+        console.warn("[auth] background session validation failed:", e instanceof Error ? e.message : String(e));
+      }
+    } finally {
+      refreshInFlight.current = false;
     }
   }, [applySession]);
 
@@ -120,22 +136,52 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     return subscribeAuthToken((t) => {
       setToken((prev) => (prev === t ? prev : t));
+      if (!t) {
+        sessionRevision.current += 1;
+        applySession(null, null);
+      }
     });
-  }, []);
+  }, [applySession]);
 
-  const signInWithToken = React.useCallback(async (t: string) => {
+  React.useEffect(() => {
+    if (!token) return;
+    // Pick up promotions made while signed in, including when returning from another app.
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") void refresh();
+    });
+    const timer = setInterval(() => {
+      if (AppState.currentState === "active") void refresh();
+    }, 60_000);
+    return () => {
+      sub.remove();
+      clearInterval(timer);
+    };
+  }, [token, refresh]);
+
+  const signInWithToken = React.useCallback(async (t: string, loginUser?: AppUser | null) => {
     const normalized = String(t || "").trim();
     if (!normalized) {
       throw new Error("Sign-in failed: missing session token.");
     }
+    const revision = ++sessionRevision.current;
+    const isCurrent = () => revision === sessionRevision.current;
     try {
       // Persist + apply session immediately so AuthGate leaves Login before /me returns.
       await setAuthToken(normalized);
-      applySession(normalized, null);
+      if (!isCurrent()) return;
+      // This user came from the authenticated login response, not a cached role or JWT claim.
+      applySession(normalized, loginUser ?? null);
       const me = await getAuthMe(normalized, 15_000);
+      if (!isCurrent()) return;
+      if (me.status === 401 || me.status === 403) {
+        await setAuthToken(null);
+        applySession(null, null);
+        return;
+      }
       if (me.ok && me.json.token) {
         const fresh = String(me.json.token).trim();
         await setAuthToken(fresh);
+        if (!isCurrent()) return;
         applySession(fresh, me.json.user ?? null);
       } else if (me.ok) {
         applySession(normalized, me.json.user ?? null);
@@ -153,9 +199,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [applySession]);
 
   const signOut = React.useCallback(async () => {
-    await signOutSupabase();
-    await setAuthToken(null);
+    sessionRevision.current += 1;
     applySession(null, null);
+    await setAuthToken(null);
+    await signOutSupabase();
   }, [applySession]);
 
   const isPlatformAdmin = isSuperAdminUser(user, token);
