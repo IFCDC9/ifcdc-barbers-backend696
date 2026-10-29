@@ -396,7 +396,27 @@ async function handleBooking(callSid, input, language, insertVoiceRow) {
   switch (session.step) {
     case STATES.CONFIRM: {
       const normalized = normalizeConfirmInput(input);
-      if (isYes(normalized)) {
+      // A correction must be applied before checking "yes": callers often
+      // say "yes, but Friday at three". Keep the other collected details.
+      const corrections = extractSlots(trimmed);
+      const changed = (corrections.service && corrections.service !== d.service) ||
+        (corrections.day && corrections.day !== d.dateYmd) ||
+        (corrections.time && corrections.time !== d.time);
+      if (changed) {
+        applySlots(d, corrections);
+        return { reply: promptFor(STATES.CONFIRM, T, d), log: "confirm_corrected_requires_confirmation" };
+      }
+      if (isNo(normalized)) {
+        session.step = STATES.CONFIRM;
+        return {
+          reply: T(
+            "What should I change? Say the new service, day, or time. Your other details will stay the same.",
+            "¿Qué debo cambiar? Di el nuevo servicio, día u hora. Conservaré los demás datos.",
+          ),
+          log: "confirm_awaiting_correction",
+        };
+      }
+      if (isYes(normalized) && !/\b(but|except|actually|change|not|don't|do not)\b/i.test(normalized)) {
         if (session.completed) {
           console.log("⚠️ Duplicate execution blocked");
           return {
@@ -451,18 +471,6 @@ async function handleBooking(callSid, input, language, insertVoiceRow) {
           reply: closing.reply,
           log: "confirm→hard_close+email_confirmation",
           afterBookingClose: closing.afterBookingClose,
-        };
-      }
-      if (isNo(normalized)) {
-        session.step = STATES.SERVICE;
-        session.data = {};
-        session.completed = false;
-        return {
-          reply: T(
-            "No problem. What would you like to change?",
-            "Sin problema. ¿Qué te gustaría cambiar?",
-          ),
-          log: "confirm→service_reset",
         };
       }
       return {

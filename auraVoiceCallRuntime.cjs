@@ -394,7 +394,9 @@ function beginCallerTurn(callSid, opts = {}) {
   }
 
   const prev = s.fingerprints.get(fp) || s.fingerprints.get(transcriptHash);
-  if (prev && now() - prev.at < DEDUP_MS) {
+  // Identical words can answer a NEW question (especially "yes"). Only
+  // coalesce the current turn; stable provider event IDs still replay above.
+  if (prev && prev.turnId === s.lastAcceptedTurnId && now() - prev.at < DEDUP_MS) {
     const existing = s.turns.get(prev.turnId);
     if (existing) {
       if (eventKey) s.twilioEvents.set(eventKey, existing.turnId);
@@ -677,10 +679,13 @@ function contextSummary(callSid) {
   return bits.join("; ").slice(0, 240);
 }
 
-function applyRepeatGuard(callSid, reply, { userText = "" } = {}) {
+function applyRepeatGuard(callSid, reply, { userText = "", authoritative = false } = {}) {
   const s = getCallRuntime(callSid);
   const text = String(reply || "").trim();
   if (!text) return { reply: text, suppressed: false, similarity: 0 };
+  // A booking tool may legitimately re-ask an unanswered question or return
+  // a corrected confirmation. Text similarity cannot overrule its state.
+  if (authoritative) return { reply: text, suppressed: false, similarity: 0, reason: "booking_state" };
   if (userAskedRepeat(userText)) return { reply: text, suppressed: false, similarity: 0, reason: "user_requested" };
   if (/^\s*(hi|hello|hola)[,.]?\s+(this is Aura|soy Aura)\b/i.test(text) && s.auraTurns.some((t) => /^\s*(hi|hello|hola)[,.]?\s+(this is Aura|soy Aura)\b/i.test(t.text || ""))) {
     stats.turnsSuppressedRepeat += 1;
@@ -697,9 +702,9 @@ function applyRepeatGuard(callSid, reply, { userText = "" } = {}) {
   if (best >= 0.72 && !ledgerHasNewInfo(s, text)) {
     stats.turnsSuppressedRepeat += 1;
     const pending = s.pendingQuestions[0];
-    const rewrite = pending
-      ? `I already have that. ${pending}`
-      : "I already noted that. What else do you need for this booking?";
+    // Never claim the caller's answer was collected merely because OUR
+    // response resembles an earlier response.
+    const rewrite = pending || text;
     return { reply: rewrite, suppressed: true, similarity: best, original: text };
   }
   return { reply: text, suppressed: false, similarity: best };
