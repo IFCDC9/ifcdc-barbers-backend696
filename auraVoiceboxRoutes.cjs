@@ -4,6 +4,7 @@
  */
 
 const express = require("express");
+const { speechPlaybackParts } = require("./auraVoicePlaybackPolicy.cjs");
 const { getCachedAudio, getVoiceboxHqStatus, speak, probeHealth, takePendingRest, publicAudioUrl, runVoiceboxProdDiag } = require("./auraVoiceboxBridge.cjs");
 const { getTurnTraces } = require("./auraVoiceCallRuntime.cjs");
 const { upsertPronunciation, addLesson, getVoiceMemorySnapshot, listPronunciations } = require("./auraVoiceMemory.cjs");
@@ -140,10 +141,12 @@ function createAuraVoiceboxRouter(deps = {}) {
       : playUrl
         ? `<Play>${escapeXml(playUrl)}</Play>`
         : `<Say voice="Polly.Joanna" language="${language === "es" ? "es-ES" : "en-US"}">${escapeXml(say)}</Say>`;
+    const playback = speechPlaybackParts(inner);
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
+  ${playback.beforeGather}
   <Gather input="speech dtmf" timeout="4" speechTimeout="auto" bargeIn="true" method="POST" action="${escapeXml(action)}">
-    ${inner}
+    ${playback.duringGather}
   </Gather>
   <Redirect method="POST">${escapeXml(action)}</Redirect>
 </Response>`;

@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import cors from "cors";
 import { createRequire } from "module";
 import express from "express";
+import { buildAuraChatThread, needsAuraChatGuidance, resolveAuraChatKeywordIntent, AURA_CHAT_CONVERSATION_RULES } from "./auraChatConversation.js";
 import session from "express-session";
 import { mountProductionBarbersRoutes } from "./productionBarbersRoutes.js";
 import { mountProductionCms } from "./mountProductionCms.js";
@@ -286,6 +287,7 @@ async function auraOpenAiChat({ apiKey, model, systemPrompt, thread }) {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
+    signal: AbortSignal.timeout(20000),
     body: JSON.stringify({
       model,
       messages: [{ role: "system", content: systemPrompt }, ...thread],
@@ -1073,35 +1075,20 @@ async function handleAuraChatRequest(req, res) {
     clientLang: clientLangHint || null,
   });
   try {
-    const { message, messages } = req.body || {};
-    let thread = [];
-    if (Array.isArray(messages) && messages.length > 0) {
-      thread = messages
-        .filter(
-          (m) =>
-            m &&
-            (m.role === "user" || m.role === "assistant") &&
-            String(m.content ?? "").trim()
-        )
-        .map((m) => ({ role: m.role, content: String(m.content).trim() }));
+    const { message } = req.body || {};
+    const thread = buildAuraChatThread(req.body || {});
+    if (!thread.length) {
+      const Lempty = clientLangHint || "en";
+      const emptyReply =
+        Lempty === "es"
+          ? "Dígame qué necesita: reservar, horarios, servicios o cómo llegar."
+          : Lempty === "he"
+            ? "ספרו לי במה אוכל לעזור — הזמנה, שעות פעילות, שירותים או הגעה."
+            : "Tell me what you need — booking, hours, services, or directions.";
+      return res.status(200).json(
+        auraChatJson(emptyReply, "NONE", { language: Lempty, replyLanguage: Lempty }),
+      );
     }
-    if (thread.length === 0) {
-      const m = String(message || "").trim();
-      if (!m) {
-        const Lempty = clientLangHint || "en";
-        const emptyReply =
-          Lempty === "es"
-            ? "Dígame qué necesita: reservar, horarios, servicios o cómo llegar."
-            : Lempty === "he"
-              ? "ספרו לי במה אוכל לעזור — הזמנה, שעות פעילות, שירותים או הגעה."
-              : "Tell me what you need — booking, hours, services, or directions.";
-        return res.status(200).json(
-          auraChatJson(emptyReply, "NONE", { language: Lempty, replyLanguage: Lempty }),
-        );
-      }
-      thread = [{ role: "user", content: m }];
-    }
-
     const lastUser = auraLastUserText({ message, messages: thread });
 
     const bodyBid = Number(req.body?.barberId ?? req.body?.barber_id);
@@ -1149,7 +1136,7 @@ async function handleAuraChatRequest(req, res) {
       originalMessage: String(lastUser || "").slice(0, 8000),
     };
 
-    const kw = auraStructuredIntentFromKeywords(lastUser, L);
+    const kw = resolveAuraChatKeywordIntent(lastUser, L);
     if (kw.matched) {
       console.log("[aura/chat] keyword intent:", kw.intent, "lang:", L);
       if (kw.intent === "NAVIGATE_BOOK") {
@@ -1233,14 +1220,9 @@ async function handleAuraChatRequest(req, res) {
       }
     }
 
-    // Prevent dead ends: for unclear short messages, respond instantly (no OpenAI).
+    // Only explicit standalone help gets the menu; preserve short follow-up answers.
     const cleaned = String(lastUser || "").trim();
-    const wordCount = cleaned ? cleaned.split(/\s+/).filter(Boolean).length : 0;
-    if (
-      !cleaned ||
-      wordCount <= 2 ||
-      /\b(help|what can you do|options|ayuda|qu[eé] puedes hacer|opci[oó]nes)\b/i.test(cleaned)
-    ) {
+    if (needsAuraChatGuidance(cleaned, thread)) {
       const localized = auraUnclearFallbackReply(L);
       const englishMirror = L === "en" ? localized : auraUnclearFallbackReply("en");
       return res.json(auraChatJson(localized, "NONE", { ...meta, adminMessageEn: englishMirror }));
@@ -1257,7 +1239,7 @@ async function handleAuraChatRequest(req, res) {
     }
 
     const model = String(process.env.OPENAI_MODEL || "gpt-4o-mini").trim();
-    let system = AURA_ASSISTANT_PROMPT + openAiLanguageInstruction(L);
+    let system = AURA_ASSISTANT_PROMPT + AURA_CHAT_CONVERSATION_RULES + openAiLanguageInstruction(L);
     if (/\b(price|cost|pricing|how\s+much)\b/i.test(cleaned)) {
       system +=
         L === "es"
@@ -1267,12 +1249,7 @@ async function handleAuraChatRequest(req, res) {
 
     const out = await auraOpenAiChat({ apiKey, model, systemPrompt: system, thread });
     const base = String(out.reply || "").trim() || auraUnclearFallbackReply(L);
-    // Gentle next-step suggestion in the customer's language.
-    const navigateHint =
-      L === "es"
-        ? "\n\nSi quiere, diga: reservar, estilos o precios — y lo llevo."
-        : "\n\nIf you want, tell me: book, styles, or pricing — and I’ll take you there.";
-    const reply = base + (/\b(book|booking|appointment)\b/i.test(base) ? "" : navigateHint);
+    const reply = base;
     return res.json(auraChatJson(reply, "NONE", meta));
   } catch (e) {
     console.error("[aura/chat] route failure:", e?.stack || e);
