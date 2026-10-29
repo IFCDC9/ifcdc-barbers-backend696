@@ -17,6 +17,7 @@ import {
 } from "./auraLocale.js";
 import { loadBarberSettingsRow } from "./barberScope.js";
 import { runSimpleBookingTurn } from "./auraVoiceSimpleBookingFlow.js";
+import { isPhoneConversationQuestion, phoneQuestionFallback, PHONE_CONVERSATION_RULES } from "./auraVoiceConversation.js";
 import { isCallCompleted, markCallCompleted } from "./src/services/bookingLock.js";
 import { createRequire } from "module";
 
@@ -77,8 +78,8 @@ const VOICE_SYSTEM_BASE = `You are Aura, a confident, intelligent assistant for 
 Speak clearly, avoid repeating yourself, guide the user, and always move the conversation forward.
 Ask only one follow-up question at a time.
 Help with bookings, services, and pricing without sounding robotic.
-Do not ask for phone numbers. Never mention SMS. After booking, confirm that an email was sent and end the call cleanly.
-Never announce a booking as successful until the backend booking confirmation has completed.`;
+Do not ask for phone numbers. Never mention SMS.
+${PHONE_CONVERSATION_RULES}`;
 
 const voiceLastCoreByCallSid = new Map();
 const VOICE_LAST_CAP = 2000;
@@ -205,6 +206,7 @@ async function openAiVoiceCompletion(userText, langNorm, opts = {}) {
   ];
   const r = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
+    signal: AbortSignal.timeout(4000),
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
@@ -265,7 +267,7 @@ export async function generateAuraReply(userInput, opts = {}) {
           : "Thanks, I've got that number down for your appointment.";
       skipGuide = true;
     } else {
-      const hit = structuredVoiceIntent(raw, L);
+      const hit = isPhoneConversationQuestion(raw) ? null : structuredVoiceIntent(raw, L);
       if (hit) {
         core = hit;
       } else {
@@ -276,6 +278,8 @@ export async function generateAuraReply(userInput, opts = {}) {
         });
         if (ai) {
           core = ai;
+        } else if (isPhoneConversationQuestion(raw)) {
+          core = phoneQuestionFallback(raw, L);
         } else {
           const kw = auraStructuredIntentFromKeywords(raw, L);
           if (kw.matched) {
@@ -300,7 +304,7 @@ export async function generateAuraReply(userInput, opts = {}) {
 
   rememberVoiceCore(callSid, core);
 
-  const out = appendVoiceGuide(core, L, skipGuide);
+  const out = appendVoiceGuide(core, L, skipGuide || isPhoneConversationQuestion(raw));
   return out.slice(0, 2000);
 }
 
@@ -394,7 +398,7 @@ function ingestGatherTurn(callSid, body, { greeted, source = "gather" } = {}) {
 async function safeGenerateReply(input, opts = {}) {
   const L = normalizeBarberLang(opts.language);
   const fallback =
-    L === "es"
+    isPhoneConversationQuestion(input) ? phoneQuestionFallback(input, L) : L === "es"
       ? "Estoy aquí contigo. ¿Qué te gustaría hacer?"
       : "I'm here with you. What would you like to do?";
   const t0 = Date.now();
@@ -920,7 +924,7 @@ export function createSimpleAuraVoiceHandlers(opts = {}) {
               language,
             });
             if (intel?.handled && String(intel.reply || "").trim()) {
-              const guarded = applyRepeatGuard(callSid, String(intel.reply).trim(), { userText: userInput });
+              const guarded = applyRepeatGuard(callSid, String(intel.reply).trim(), { userText: userInput, authoritative: true });
               const spoken = guarded.reply;
               const closingSay = escapeTwilioSayText(spoken);
               const inner = await voiceboxOrPollyUtterance(attrs, spoken, closingSay, {
@@ -958,7 +962,11 @@ export function createSimpleAuraVoiceHandlers(opts = {}) {
         }
 
         const tBook = Date.now();
-        const bookingOut = await runSimpleBookingTurn({
+        // Answer side questions without consuming them as a service/name or
+        // resetting the booking draft. Booking execution stays in its tool flow.
+        const bookingOut = isPhoneConversationQuestion(userInput)
+          ? { reply: await safeGenerateReply(userInput, { language, callSid }), conversationOnly: true }
+          : await runSimpleBookingTurn({
           callSid,
           userInput,
           language,
@@ -1013,7 +1021,7 @@ export function createSimpleAuraVoiceHandlers(opts = {}) {
               ? "Estoy aquí. ¿Cómo puedo ayudarte hoy?"
               : "I'm here. How can I help you today?";
         }
-        const guardedBook = applyRepeatGuard(callSid, reply, { userText: userInput });
+        const guardedBook = applyRepeatGuard(callSid, reply, { userText: userInput, authoritative: Boolean(bookingOut.reply) });
         reply = guardedBook.reply;
         const inner = await voiceboxOrPollyUtterance(attrs, reply, escapeTwilioSayText(reply), {
           callSid,
