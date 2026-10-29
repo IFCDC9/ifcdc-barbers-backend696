@@ -21,6 +21,7 @@ import { isCallCompleted, markCallCompleted } from "./src/services/bookingLock.j
 import { createRequire } from "module";
 
 const requireCjs = createRequire(import.meta.url);
+const { speechPlaybackParts } = requireCjs("./auraVoicePlaybackPolicy.cjs");
 const {
   isAuraVoiceIntelligencePhase1,
 } = requireCjs("./auraVoiceIntelligenceFlags.cjs");
@@ -465,10 +466,12 @@ function buildVoiceLoopTwiML(gatherAction, attrs, mainInner, stillHereInner, cal
 </Response>`;
     }
   }
+  const playback = speechPlaybackParts(mainInner);
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
+  ${playback.beforeGather}
   <Gather input="speech dtmf" timeout="${g.timeout}" speechTimeout="${g.speechTimeout}" bargeIn="${g.bargeIn}" enhanced="${g.enhanced}" speechModel="${g.speechModel}" method="POST" action="${gatherAction}">
-    ${mainInner}
+    ${playback.duringGather}
   </Gather>
   ${stillHereInner}
   <Redirect method="POST">${gatherAction}</Redirect>

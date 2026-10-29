@@ -1,4 +1,5 @@
 import express from "express";
+import { buildAuraChatThread, needsAuraChatGuidance, resolveAuraChatKeywordIntent, AURA_CHAT_CONVERSATION_RULES } from "./auraChatConversation.js";
 import { dbQuery } from "./db.js";
 import { extractBearerToken, resolveAuthPayload } from "./authRoutes.js";
 import { loadBarberSettingsRow } from "./barberScope.js";
@@ -66,6 +67,7 @@ async function openAiReply({ apiKey, model, systemPrompt, messages }) {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
+    signal: AbortSignal.timeout(20000),
     body: JSON.stringify({
       model,
       messages: [{ role: "system", content: systemPrompt }, ...messages],
@@ -95,18 +97,9 @@ export function mountAuraChatRoutes(app, opts) {
       const userId = getAuthUserId(req);
       const body = req.body && typeof req.body === "object" ? req.body : {};
       const message = String(body.message || "").trim();
-      const clientMessages = Array.isArray(body.messages) ? body.messages : [];
       const bodyBid = Number(body.barberId ?? body.barber_id);
 
-      let thread = [];
-      if (clientMessages.length) {
-        thread = clientMessages
-          .filter(
-            (m) => m && (m.role === "user" || m.role === "assistant") && String(m.content ?? "").trim(),
-          )
-          .map((m) => ({ role: m.role, content: String(m.content).trim() }));
-      }
-      if (!thread.length && message) thread = [{ role: "user", content: message }];
+      const thread = buildAuraChatThread(body);
 
       if (!thread.length) {
         return res.status(400).json({ error: "message required", reply: AURA_FAILSAFE_REPLY, action: "NONE" });
@@ -140,7 +133,7 @@ export function mountAuraChatRoutes(app, opts) {
       const L = normalizeBarberLang(barberLang);
       const lastUser = auraLastUserText({ message, messages: thread });
 
-      const kw = auraStructuredIntentFromKeywords(lastUser, L);
+      const kw = resolveAuraChatKeywordIntent(lastUser, L);
       if (kw.matched) {
         if (kw.intent === "NAVIGATE_BOOK") {
           return res.json({ reply: auraChatNavigateBook(L), action: "NAVIGATE_BOOK" });
@@ -186,12 +179,7 @@ export function mountAuraChatRoutes(app, opts) {
       }
 
       const cleaned = String(lastUser || "").trim();
-      const wordCount = cleaned ? cleaned.split(/\s+/).filter(Boolean).length : 0;
-      if (
-        !cleaned ||
-        wordCount <= 2 ||
-        /\b(help|what can you do|options|ayuda|qu[eé] puedes hacer|opci[oó]nes)\b/i.test(cleaned)
-      ) {
+      if (needsAuraChatGuidance(cleaned, thread)) {
         return res.json({ reply: auraUnclearFallbackReply(L), action: "NONE" });
       }
 
@@ -203,6 +191,7 @@ export function mountAuraChatRoutes(app, opts) {
       const model = String(process.env.OPENAI_MODEL || "gpt-4o-mini").trim();
       let system =
         assistantPrompt +
+        AURA_CHAT_CONVERSATION_RULES +
         openAiLanguageInstruction(L) +
         memoryBlock +
         "\nUse the customer's history when relevant. Suggest booking steps on /booking. Never invent paid amounts.";
@@ -217,14 +206,10 @@ export function mountAuraChatRoutes(app, opts) {
         apiKey,
         model,
         systemPrompt: system,
-        messages: thread.slice(-12),
+        messages: thread,
       });
       const base = String(out.reply || "").trim() || auraUnclearFallbackReply(L);
-      const navigateHint =
-        L === "es"
-          ? "\n\nSi quiere, diga: reservar, estilos o precios — y lo llevo."
-          : "\n\nIf you want, tell me: book, styles, or pricing — and I’ll take you there.";
-      const reply = base + (/\b(book|booking|appointment)\b/i.test(base) ? "" : navigateHint);
+      const reply = base;
 
       if (userId && out.ok && reply) {
         try {
