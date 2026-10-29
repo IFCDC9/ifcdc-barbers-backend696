@@ -1,15 +1,6 @@
 import { fetchWithTimeout, mapAuthErrorToMessage, type JsonAuth } from "./authSessionApi";
 
-export type GoogleAuthUser = {
-  id?: number;
-  full_name?: string | null;
-  email?: string;
-  google_id?: string | null;
-  avatar?: string | null;
-  role?: string;
-  isOwner?: boolean;
-  isSuperAdmin?: boolean;
-};
+export type GoogleAuthUser = NonNullable<JsonAuth["user"]>;
 
 type GoogleAuthJson = {
   ok?: boolean;

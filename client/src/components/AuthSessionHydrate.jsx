@@ -19,15 +19,21 @@ export default function AuthSessionHydrate({ children }) {
 
   useEffect(() => {
     let cancelled = false;
+    let inFlight = false;
 
     async function hydrate() {
       const token = getStoredToken();
-      if (!token) return;
-      const before = window.localStorage.getItem("user");
-      await hydrateAuthSessionFromMe({ token });
-      if (cancelled) return;
-      const after = window.localStorage.getItem("user");
-      if (after !== before) setGeneration((n) => n + 1);
+      if (!token || inFlight || cancelled) return;
+      inFlight = true;
+      try {
+        const before = window.localStorage.getItem("user");
+        await hydrateAuthSessionFromMe({ token });
+        if (cancelled) return;
+        const after = window.localStorage.getItem("user");
+        if (after !== before) setGeneration((n) => n + 1);
+      } finally {
+        inFlight = false;
+      }
     }
 
     void hydrate();
@@ -37,8 +43,12 @@ export default function AuthSessionHydrate({ children }) {
     };
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVisibility);
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") void hydrate();
+    }, 60_000);
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisibility);
     };

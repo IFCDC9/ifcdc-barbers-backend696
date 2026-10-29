@@ -51,7 +51,8 @@
     "verify:hubspot": "node --import ./loadBackendEnv.mjs scripts/verify-hubspot-phase1.mjs",
     "test:photos": "node --import ./loadBackendEnv.mjs scripts/test-photo-pipeline.mjs",
     "test:photos:prod": "node --import ./loadBackendEnv.mjs scripts/test-photo-production-verification.mjs",
-    "bootstrap-super-admin": "node scripts/setSuperAdminPassword.mjs --generate"
+    "bootstrap-super-admin": "node scripts/setSuperAdminPassword.mjs --generate",
+    "test:manager-promotion": "node --test tests/managerPromotionSession.test.mjs"
   },
   "dependencies": {
     "@paypal/checkout-server-sdk": "^1.0.3",
@@ -79,6 +80,9 @@
     "kill-port": "^2.0.1",
     "nodemon": "^3.1.9",
     "playwright": "^1.60.0",
-    "sharp": "^0.35.1"
+    "react": "^19.1.0",
+    "react-test-renderer": "^19.1.0",
+    "sharp": "^0.35.1",
+    "typescript": "^5.9.2"
   }
 }

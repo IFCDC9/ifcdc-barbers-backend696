@@ -4,7 +4,7 @@
  * localStorage is a display cache of the last /me payload, replaced on every hydrate.
  */
 import { getApiOrigin } from "../services/api.js";
-import { clearAuthSession, persistAuthSession } from "./authHeaders.js";
+import { clearAuthSession, getStoredToken, persistAuthSession } from "./authHeaders.js";
 
 export async function fetchAuthMe(token, origin = getApiOrigin()) {
   const res = await fetch(`${String(origin || "").replace(/\/$/, "")}/api/auth/me`, {
@@ -32,6 +32,8 @@ export async function hydrateAuthSessionFromMe({ token, fallbackUser = null } = 
   if (!bearer) return fallbackUser;
   try {
     const { res, data } = await fetchAuthMe(bearer);
+    // A late /me response must not resurrect a signed-out or different account.
+    if (getStoredToken() !== bearer) return null;
     if (res.status === 401 || res.status === 403) {
       clearAuthSession();
       return null;
@@ -46,6 +48,7 @@ export async function hydrateAuthSessionFromMe({ token, fallbackUser = null } = 
     });
     return data.user;
   } catch {
+    if (getStoredToken() !== bearer) return null;
     if (fallbackUser) persistAuthSession({ token: bearer, user: fallbackUser });
     return fallbackUser;
   }

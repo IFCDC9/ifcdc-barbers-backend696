@@ -49,9 +49,13 @@ export function persistAuthSession({ token, user } = {}) {
         role === "admin" || role === "super_admin" || user.isSuperAdmin === true;
       if (isPlatformAdmin) {
         window.localStorage.setItem(LOGGED_IN_KEY, "1");
+      } else {
+        window.localStorage.removeItem(LOGGED_IN_KEY);
       }
       if (isPlatformAdmin || user.isManager === true) {
         window.localStorage.setItem(USER_PUBLIC_KEY, JSON.stringify(user));
+      } else {
+        window.localStorage.removeItem(USER_PUBLIC_KEY);
       }
     }
   } catch {

@@ -153,7 +153,7 @@ export default function RegisterScreen({ navigation }: { navigation: any }) {
                 role: u?.role,
                 redirect: responseData.redirect,
               });
-              await signInWithToken(responseData.token);
+              await signInWithToken(responseData.token, responseData.user);
               try {
                 const acceptances = buildSignupAcceptances({
                   acceptedTerms,
@@ -277,7 +277,7 @@ export default function RegisterScreen({ navigation }: { navigation: any }) {
         redirect: json?.redirect,
       });
       try {
-        await signInWithToken(token);
+        await signInWithToken(token, json?.user);
       } catch (saveErr) {
         Alert.alert("Session", userFacingApiError(saveErr));
       }
