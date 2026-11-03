@@ -1,3 +1,4 @@
+import BeautyManage from "./pages/BeautyManage.jsx";
 import BeautySupply from "./pages/BeautySupply.jsx";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import PayPalReturnBridge from "./components/PayPalReturnBridge.jsx";
@@ -108,6 +109,7 @@ function AppShell() {
           <Route element={<MainLayout />}>
             <Route path="/" element={<Home />} />
             <Route path="/beauty-supply" element={<BeautySupply />} />
+            <Route path="/admin/beauty-supply" element={<RequireRole roles={["admin", "super_admin"]}><BeautyManage /></RequireRole>} />
             <Route path="/barbers" element={<Navigate to="/booking" replace />} />
             <Route path="/styles" element={<StylesBrowse />} />
             <Route path="/discover" element={<StyleDiscoverPage />} />

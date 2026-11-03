@@ -1,3 +1,4 @@
+import { getStoredUser } from '../lib/authHeaders.js';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -9,6 +10,8 @@ const money = cents => new Intl.NumberFormat('en-US', { style:'currency', curren
 
 export default function BeautySupply() {
   const { t } = useTranslation();
+  const user = getStoredUser();
+  const canManage = user?.isSuperAdmin === true || user?.role === "super_admin" || user?.isOwner === true;
   const text = (key, fallback) => t(`web.beauty.${key}`, { defaultValue:fallback });
   const [products, setProducts] = useState([]);
   const [status, setStatus] = useState('loading');
@@ -47,7 +50,7 @@ export default function BeautySupply() {
       <span className="ifcdc-beauty__eyebrow">IFCDC BARBERS · {text('eyebrow', 'BEAUTY SUPPLY')}</span>
       <h1 id="beauty-title">{text('title', 'Your look. Your essentials.')}</h1>
       <p>{text('intro', 'Tools for the trade, care for your routine, and a place to discover independent product lines.')}</p>
-      <div className="ifcdc-beauty__actions"><a href="#beauty-collection">{text('explore', 'Explore the collection')} ↓</a><Link to="/booking">{text('book', 'Book your next service')}</Link></div>
+      <div className="ifcdc-beauty__actions">{canManage && <Link to="/admin/beauty-supply">Manage store</Link>}<a href="#beauty-collection">{text('explore', 'Explore the collection')} ↓</a><Link to="/booking">{text('book', 'Book your next service')}</Link></div>
       <div className="ifcdc-beauty__promise"><span>{text('pickup', 'Pickup where available')}</span><span>{text('shipping', 'Shipping where available')}</span><span>{text('brands', 'Independent brands')}</span></div>
     </header>
 
