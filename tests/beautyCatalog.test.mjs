@@ -1,0 +1,9 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readBeautyCatalog, filterBeautyProducts, changeBeautyBag } from '../client/src/lib/beautyCatalog.js';
+const p={id:'one',name:'Clipper',brand:'Example',seller:'Sample seller',category:'Clippers & trimmers',priceCents:10001,stock:2,fulfillment:['shipping'],independentBrand:true};
+test('catalog rejects non-JSON fallback payloads and duplicate IDs',()=>{assert.throws(()=>readBeautyCatalog({_nonJson:true}));assert.throws(()=>readBeautyCatalog({products:[p,p]}));});
+test('catalog validates inventory, cents and pickup locations',()=>{for(const v of [{stock:-1},{priceCents:1.2},{fulfillment:['pickup']},{fulfillment:['other']}])assert.throws(()=>readBeautyCatalog({products:[{...p,...v}]}));assert.equal(readBeautyCatalog({products:[{...p,fulfillment:['pickup'],pickupLocation:'Sample location'}]}).length,1);});
+test('catalog strips private supplier and commission fields',()=>{const [publicProduct]=readBeautyCatalog({products:[{...p,wholesaleCostCents:1,commissionBps:2000}]});assert.equal(publicProduct.wholesaleCostCents,undefined);assert.equal(publicProduct.commissionBps,undefined);});
+test('search and fulfillment filters combine with independent brand filter',()=>{assert.equal(filterBeautyProducts([p],{query:' EXAMPLE ',independentOnly:true,fulfillment:'shipping'}).length,1);assert.equal(filterBeautyProducts([p],{fulfillment:'pickup'}).length,0);assert.equal(filterBeautyProducts([p],{category:'Hair care'}).length,0);});
+test('bag respects stock, removes zero quantities and preserves input',()=>{const original={one:1};assert.deepEqual(changeBeautyBag(original,p,5),{one:2});assert.deepEqual(original,{one:1});assert.deepEqual(changeBeautyBag(original,p,-2),{});assert.deepEqual(changeBeautyBag({}, {...p,stock:0}, 1),{});});

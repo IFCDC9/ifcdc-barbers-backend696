@@ -1,3 +1,4 @@
+import BeautySupply from "./pages/BeautySupply.jsx";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import PayPalReturnBridge from "./components/PayPalReturnBridge.jsx";
 import MainLayout from "./layouts/MainLayout.jsx";
@@ -106,6 +107,7 @@ function AppShell() {
         <Routes>
           <Route element={<MainLayout />}>
             <Route path="/" element={<Home />} />
+            <Route path="/beauty-supply" element={<BeautySupply />} />
             <Route path="/barbers" element={<Navigate to="/booking" replace />} />
             <Route path="/styles" element={<StylesBrowse />} />
             <Route path="/discover" element={<StyleDiscoverPage />} />

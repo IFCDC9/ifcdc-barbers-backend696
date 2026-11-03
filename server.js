@@ -51,6 +51,7 @@ import { ensureLoyaltySchema } from "./loyaltyMigrations.js";
 import { expireStaleRewardReservations, seedDefaultRewardsIfEmpty } from "./loyaltyService.js";
 import { createHubSpotRouter } from "./hubspotRoutes.js";
 import { ensureHubSpotSchema } from "./hubspotMigrations.js";
+import { createBeautyRouter } from "./beautyRoutes.js";
 import { createAdminShopsRouter } from "./adminShopsRoutes.js";
 import { createManagementTeamRouter } from "./managementTeamRoutes.js";
 import { ensureManagementTeamSchema } from "./managementTeamMigrations.js";
@@ -820,6 +821,7 @@ app.use(
 );
 console.log("[boot] mounted /api/admin/hubspot (kpis)");
 app.use(createAdminShopsRouter());
+app.use(createBeautyRouter());
 app.use(createManagementTeamRouter());
 console.log(
   "[admin] routes mounted: invite, audit, password-reset, barbers, shops, management-team, notifications",

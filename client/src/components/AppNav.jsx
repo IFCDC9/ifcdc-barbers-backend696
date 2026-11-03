@@ -76,6 +76,7 @@ export default function AppNav({ variant = "bottom" }) {
 
   const tabs = [
     { to: "/", icon: NAV_ICONS.home, label: t("web.nav.home", { defaultValue: "Home" }), end: true },
+    { to: "/beauty-supply", icon: NAV_ICONS.shop, label: t("web.nav.beautySupply", { defaultValue: "Beauty" }) },
     { to: "/booking", icon: NAV_ICONS.book, label: t("web.nav.book", { defaultValue: "Book" }) },
     { to: "/aura", icon: NAV_ICONS.aura, label: t("web.nav.aura", { defaultValue: "AURA" }) },
     { to: "/profile", icon: NAV_ICONS.profile, label: t("web.nav.profile", { defaultValue: "Profile" }) },
