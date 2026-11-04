@@ -97,8 +97,8 @@ function AppShell() {
         aria-hidden
       />
       <div className="app-header" style={{ color: IFCDC_GOLD, borderBottomColor: "rgba(255, 215, 0, 0.35)" }}>
-        <span className="app-header__brand" aria-hidden>
-          IFCDC
+        <span className="app-header__brand">
+          IFCDC BARBERS
         </span>
         <HeaderLanguageSelect />
       </div>
