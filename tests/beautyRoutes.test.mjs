@@ -13,7 +13,7 @@ test('HTTP catalog routes enforce authentication, current Founder role and confl
  try {
   await writeFile(join(dir,'package.json'),'{"type":"module"}');
   await mkdir(join(dir,'client/src/lib'),{recursive:true});
-  for(const file of ['beautyRoutes.js','beautyCatalogService.js','beautyOrderService.js','client/src/lib/beautyOrderPricing.js','client/src/lib/beautyCatalog.js'])
+  for(const file of ['beautyRoutes.js','beautyCatalogService.js','beautyOrderService.js','beautyOrderDrafts.js','client/src/lib/beautyOrderPricing.js','client/src/lib/beautyCatalog.js'])
    await copyFile(new URL('../'+file,import.meta.url),join(dir,file));
   await writeFile(join(dir,'db.js'),'export const dbQuery = () => {throw Error("unexpected live database access")};');
   await writeFile(join(dir,'authRoutes.js'),'export const resolveAuthPayload = () => null;');
@@ -35,6 +35,9 @@ test('HTTP catalog routes enforce authentication, current Founder role and confl
   const url=`http://127.0.0.1:${server.address().port}`;
   const request=(path,token,init={})=>fetch(url+path,{...init,headers:{...(token?{Authorization:`Bearer ${token}`} : {}),...init.headers}});
   let res=await request('/api/beauty/catalog');assert.equal(res.status,200);assert.equal(res.headers.get('cache-control'),'no-store');assert.deepEqual((await res.json()).products,[]);
+  assert.equal((await request('/api/beauty/orders')).status,401);
+  assert.equal((await request('/api/beauty/orders','manager')).status,200);
+  assert.equal((await request('/api/beauty/orders/not-a-uuid','manager')).status,404);
   const before=queries;
   assert.equal((await request('/api/beauty/admin/catalog')).status,401);
   assert.equal((await request('/api/beauty/admin/catalog','manager')).status,403);assert.equal(queries,before);
