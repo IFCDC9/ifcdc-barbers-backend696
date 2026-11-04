@@ -1,3 +1,4 @@
+import { beautyBagTotals } from '../lib/beautyOrderPricing.js';
 import { getStoredUser } from '../lib/authHeaders.js';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -40,6 +41,7 @@ export default function BeautySupply() {
   const bagProducts = products.filter(p => bag[p.id]);
   const bagCount = bagProducts.reduce((sum, p) => sum + bag[p.id], 0);
   const subtotal = bagProducts.reduce((sum, p) => sum + bag[p.id] * p.priceCents, 0);
+  const totals = beautyBagTotals(subtotal, bagCount);
   const updateBag = (product, delta) => {
     setBag(current => changeBeautyBag(current, product, delta));
     setAnnouncement(`${product.name}: ${delta > 0 ? text('added', 'added to your bag') : text('removed', 'quantity reduced')}`);
@@ -73,7 +75,7 @@ export default function BeautySupply() {
     </div>
     <aside className="ifcdc-beauty__bag" aria-labelledby="beauty-bag-title"><h2 id="beauty-bag-title">{text('bag', 'Your bag')} <span>({bagCount})</span></h2><p className="ifcdc-beauty__sr" aria-live="polite">{announcement}</p>
       {bagProducts.length ? <ul>{bagProducts.map(p=><li key={p.id}><strong>{p.name}</strong><p>{bag[p.id]} × {money(p.priceCents)}</p><button type="button" aria-label={`${text('reduce', 'Reduce quantity')}: ${p.name}`} onClick={()=>updateBag(p,-1)}>{text('removeOne', 'Remove one')}</button></li>)}</ul> : <p>{text('emptyBag', 'Your essentials will appear here.')}</p>}
-      <p className="ifcdc-beauty__subtotal">{text('subtotal', 'Product subtotal')} <strong>{money(subtotal)}</strong></p><small>{text('taxNote', 'Tax and shipping are not included. Your bag is kept for this visit.')}</small>
+      <p className="ifcdc-beauty__subtotal">{text('subtotal', 'Product subtotal')} <strong>{money(subtotal)}</strong></p><p className="ifcdc-beauty__subtotal">Platform fee <strong>{money(totals.platformFeeCents)}</strong></p><p className="ifcdc-beauty__subtotal">Total before tax &amp; shipping <strong>{money(totals.totalBeforeTaxShippingCents)}</strong></p><small>One $1.50 platform fee per completed order, including orders with multiple sellers. </small><small>{text('taxNote', 'Tax and shipping are not included. Your bag is kept for this visit.')}</small>
       <button type="button" disabled>{text('checkout', 'Checkout coming soon')}</button><p>{text('checkoutDetail', 'Ordering opens after payment and fulfillment are connected.')}</p>
     </aside></div>
     <footer className="ifcdc-beauty__partners"><div><strong>FOR THE PROFESSIONAL.</strong><p>Clippers, trimmers and essentials for your station.</p></div><div><strong>FOR YOUR EVERYDAY.</strong><p>Hair, beard and beauty care for your routine.</p></div><div><strong>DISCOVER INDEPENDENT.</strong><p>A dedicated place for independent product lines.</p></div></footer>
