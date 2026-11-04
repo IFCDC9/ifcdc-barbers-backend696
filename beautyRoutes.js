@@ -1,3 +1,4 @@
+import { createBeautyOrderDraftStore, publicBeautyDraft } from './beautyOrderDrafts.js';
 import { quoteBeautyOrder } from './beautyOrderService.js';
 import express from 'express';
 import { dbQuery } from './db.js';
@@ -30,6 +31,40 @@ export function createBeautyRouter({ query = dbQuery, resolveToken = resolveAuth
     } catch (e) {
       if (e.message === 'Invalid basket') return res.status(400).json({ error:'invalid_basket_or_stock_changed' });
       res.status(503).json({ error:'quote_unavailable' });
+    }
+  });
+  const drafts = createBeautyOrderDraftStore(query);
+  router.use('/api/beauty/orders', async (req,res,next) => {
+    try {
+      const token = /^Bearer\s+(.+)$/i.exec(req.get('authorization') || '');
+      const user = token && await resolveToken(token[1]);
+      if (!user?.id) return res.status(401).json({error:'authentication_required'});
+      const r=await query('SELECT id, account_status FROM app_users WHERE id = $1::uuid LIMIT 1',[user.id]);
+      const account=r.rows?.[0];
+      if (!account || (account.account_status && account.account_status !== 'active')) return res.status(403).json({error:'active_account_required'});
+      req.beautyBuyerId=user.id;next();
+    } catch {res.status(503).json({error:'authorization_unavailable'});}
+  });
+  router.get('/api/beauty/orders', async (req,res) => {
+    try {res.json({orders:(await drafts.list(req.beautyBuyerId)).map(publicBeautyDraft)});}
+    catch {res.status(503).json({error:'orders_unavailable'});}
+  });
+  router.get('/api/beauty/orders/:id', async (req,res) => {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(req.params.id)) return res.status(404).json({error:'order_not_found'});
+    try {
+      const order=await drafts.read(req.beautyBuyerId,req.params.id);
+      if (!order) return res.status(404).json({error:'order_not_found'});
+      res.json({order:publicBeautyDraft(order)});
+    } catch {res.status(503).json({error:'orders_unavailable'});}
+  });
+  router.post('/api/beauty/orders',express.json({limit:'32kb'}),async(req,res)=>{
+    try {
+      const order=await drafts.create(req.beautyBuyerId,req.body?.requestKey,await store.read(),req.body?.items);
+      res.json({order:publicBeautyDraft(order),checkoutEnabled:false});
+    } catch(e) {
+      if(e.message==='Order key conflict') return res.status(409).json({error:'order_key_conflict'});
+      if(e.message.startsWith('Invalid')) return res.status(400).json({error:'invalid_basket_or_stock_changed'});
+      res.status(503).json({error:'order_draft_unavailable'});
     }
   });
   router.use('/api/beauty/admin', async (req, res, next) => {
