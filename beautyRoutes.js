@@ -1,3 +1,4 @@
+import { quoteBeautyOrder } from './beautyOrderService.js';
 import express from 'express';
 import { dbQuery } from './db.js';
 import { resolveAuthPayload } from './authRoutes.js';
@@ -14,6 +15,22 @@ export function createBeautyRouter({ query = dbQuery, resolveToken = resolveAuth
   router.get('/api/beauty/catalog', async (_req, res) => {
     try { res.json(publicBeautyCatalog(await store.read())); }
     catch { res.status(503).json({ error:'catalog_unavailable' }); }
+  });
+  router.post('/api/beauty/quote', express.json({ limit:'32kb' }), async (req, res) => {
+    try {
+      const match = /^Bearer\s+(.+)$/i.exec(req.get('authorization') || '');
+      const user = match && await resolveToken(match[1]);
+      if (!user?.id) return res.status(401).json({ error:'authentication_required' });
+      const found = await query('SELECT id, account_status FROM app_users WHERE id = $1::uuid LIMIT 1', [user.id]);
+      const account = found.rows?.[0];
+      if (!account || (account.account_status && account.account_status !== 'active')) {
+        return res.status(403).json({ error:'active_account_required' });
+      }
+      res.json({ buyerId:user.id, ...quoteBeautyOrder(await store.read(), req.body?.items) });
+    } catch (e) {
+      if (e.message === 'Invalid basket') return res.status(400).json({ error:'invalid_basket_or_stock_changed' });
+      res.status(503).json({ error:'quote_unavailable' });
+    }
   });
   router.use('/api/beauty/admin', async (req, res, next) => {
     try {
