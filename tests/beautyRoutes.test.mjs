@@ -13,9 +13,9 @@ test('HTTP catalog routes enforce authentication, current Founder role and confl
  try {
   await writeFile(join(dir,'package.json'),'{"type":"module"}');
   await mkdir(join(dir,'client/src/lib'),{recursive:true});
-  for(const file of ['beautySellerPayments.js','beautyRoutes.js','beautyCatalogService.js','beautyOrderService.js','beautyOrderDrafts.js','client/src/lib/beautyOrderPricing.js','client/src/lib/beautyCatalog.js'])
+  for(const file of ['beautySandboxCheckoutRoutes.js','beautySandboxCheckout.js','beautySandboxPaymentContract.js','beautySellerPayments.js','beautyRoutes.js','beautyCatalogService.js','beautyOrderService.js','beautyOrderDrafts.js','client/src/lib/beautyOrderPricing.js','client/src/lib/beautyCatalog.js'])
    await copyFile(new URL('../'+file,import.meta.url),join(dir,file));
-  await writeFile(join(dir,'db.js'),'export const dbQuery = () => {throw Error("unexpected live database access")};');
+  await writeFile(join(dir,'db.js'),'export const getDbPool = () => {throw Error("unexpected live database access")};export const dbQuery = () => {throw Error("unexpected live database access")};');
   await writeFile(join(dir,'authRoutes.js'),'export const resolveAuthPayload = () => null;');
   await writeFile(join(dir,'authPlatformJwt.js'),'export const isJwtGlobalSuperScope = u => u?.isSuperAdmin === true;');
   const require=createRequire(import.meta.url);
@@ -38,6 +38,9 @@ test('HTTP catalog routes enforce authentication, current Founder role and confl
   assert.equal((await request('/api/beauty/orders')).status,401);
   assert.equal((await request('/api/beauty/orders','manager')).status,200);
   assert.equal((await request('/api/beauty/orders/not-a-uuid','manager')).status,404);
+  assert.equal((await request('/api/beauty/admin/sandbox-checkout','manager')).status,403);
+  assert.equal((await request('/api/beauty/admin/sandbox-checkout')).status,401);
+  assert.equal((await request('/api/beauty/admin/sandbox-checkout','founder')).status,503);
   const before=queries;
   assert.equal((await request('/api/beauty/admin/catalog')).status,401);
   assert.equal((await request('/api/beauty/admin/seller-payments/config','manager')).status,403);

@@ -1,3 +1,4 @@
+import BeautySandboxCheckout from '../components/BeautySandboxCheckout.jsx';
 import BeautySellerPaymentConnection from '../components/BeautySellerPaymentConnection.jsx';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -59,6 +60,7 @@ export default function BeautyManage() {
         <button>{editing?'Add edits to catalog':'Add product to catalog'}</button>{editing&&<button type="button" onClick={()=>{setEditing(null);setForm(blank());}}>Cancel product edit</button>}
       </form><p>Adding or editing here prepares your changes. Use Save catalog above to persist them. Commission rates record your agreed terms; payouts are not connected.</p></section>
       <section><h2>Products ({catalog.products.length})</h2>{!catalog.products.length&&<p>No products added yet.</p>}<div className="beauty-manage__products">{catalog.products.map(p=><article key={p.id}><small>{p.status}</small><h3>{p.name}</h3><p>{p.brand} • {catalog.sellers.find(s=>s.id===p.sellerId)?.name}</p><p>${money(p.priceCents)} • {p.stock} in stock</p><button type="button" onClick={()=>edit(p)}>Edit {p.name}</button></article>)}</div></section>
+      <BeautySandboxCheckout catalog={catalog} disabled={busy||dirty}/>
     </fieldset>}
   </main>;
 }
