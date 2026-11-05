@@ -52,7 +52,7 @@ export default function BeautySupply() {
     <div className="ifcdc-beauty__servicebar">IFCDC BEAUTY SUPPLY <span>Professional tools. Everyday essentials.</span></div>
     <header className="ifcdc-beauty__hero">
       <div><span className="ifcdc-beauty__eyebrow">THE BARBER &amp; BEAUTY STORE</span><h1 id="beauty-title">Tools. Care. Confidence.</h1><p>Discover grooming tools, beauty essentials and independent brands.</p></div>
-      <div className="ifcdc-beauty__actions">{canManage && <Link to="/admin/beauty-supply">Manage store</Link>}<a href="#beauty-bag-title">Shopping bag ({bagCount})</a></div>
+      <div className="ifcdc-beauty__brand-panel"><img className="ifcdc-beauty__glowing-logo" src="/icon-512.png" alt="IFCDC gold ring logo" width="144" height="144" /><div className="ifcdc-beauty__actions">{canManage && <Link to="/admin/beauty-supply">Manage store</Link>}<a href="#beauty-bag-title">Shopping bag ({bagCount})</a></div></div>
     </header>
     <nav className="ifcdc-beauty__categories" aria-label="Shop by category">{['All', ...BEAUTY_CATEGORIES].map(c=><button type="button" key={c} aria-pressed={category===c} onClick={()=>setCategory(c)}>{c==='All'?'Shop all':c}</button>)}</nav>
     <div className="ifcdc-beauty__banner"><strong>YOUR ROUTINE, UPGRADED.</strong><span>Shop the essentials. Discover your next favorite.</span><span>Pickup &amp; shipping where available</span></div>

@@ -49,3 +49,12 @@
 .ifcdc-beauty__partners strong{color:#e7ca81;letter-spacing:.12em}
 @media(max-width:650px){.ifcdc-beauty{border-radius:10px}.ifcdc-beauty__hero{padding:28px 18px}.ifcdc-beauty__hero:before{right:-140px}.ifcdc-beauty__servicebar{padding:12px 18px;letter-spacing:.12em}.ifcdc-beauty__grid article>strong{font-size:18px}}
 @media(prefers-reduced-motion:reduce){.ifcdc-beauty *{transition:none!important;scroll-behavior:auto!important}}
+
+/* Existing IFCDC gold-ring asset with a soft, motion-aware glow. */
+.ifcdc-beauty__brand-panel{display:flex;flex-direction:column;align-items:center;gap:14px;flex-shrink:0;position:relative}
+.ifcdc-beauty__glowing-logo{display:block;width:144px;height:144px;object-fit:contain;border-radius:50%;filter:drop-shadow(0 0 12px #edce7870);animation:ifcdc-beauty-logo-glow 4s ease-in-out infinite}
+.ifcdc-beauty__hero:before{display:none}
+@keyframes ifcdc-beauty-logo-glow{0%,100%{filter:drop-shadow(0 0 10px #edce7860)}50%{filter:drop-shadow(0 0 22px #edce7890)}}
+@media(max-width:1000px){.ifcdc-beauty__brand-panel{width:100%;flex-direction:row;justify-content:space-between;gap:16px}.ifcdc-beauty__glowing-logo{width:100px;height:100px}.ifcdc-beauty__brand-panel .ifcdc-beauty__actions{justify-content:flex-end}}
+@media(max-width:400px){.ifcdc-beauty__brand-panel{align-items:flex-start;flex-direction:column}.ifcdc-beauty__brand-panel .ifcdc-beauty__actions{justify-content:flex-start}}
+@media(prefers-reduced-motion:reduce){.ifcdc-beauty__glowing-logo{animation:none}}
