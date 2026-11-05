@@ -123,16 +123,16 @@ export default function SubscriptionScreen() {
   };
 
   const ids = Platform.OS === "ios" ? APPLE_PRODUCT_IDS : [...APPLE_PRODUCT_IDS];
-  const ordered = [...ids].sort((a, b) => (PLAN_RANK[b] || 0) - (PLAN_RANK[a] || 0));
+  const ordered: string[] = [];
 
   return (
     <ProfileScreenLayout
-      title={shopScoped ? "Shop subscription" : "IFCDC Pro"}
-      subtitle={shopScoped ? "Shop & multi-location plans" : "Subscriptions verified on the server"}
+      title="Free IFCDC Barbers access"
+      subtitle="No recurring plan required"
     >
       <ProfileCard glow>
-        <Text style={styles.kicker}>{APPLE_SUBSCRIPTION_GROUP}</Text>
-        <Text style={styles.hero}>Black-and-gold plans. App access, SaaS, and the $0.99 booking fee stay separate.</Text>
+        <Text style={styles.kicker}>IFCDC BARBERS</Text>
+        <Text style={styles.hero}>Free to use for customers, barbers and shops. App download/access purchases and booking fees remain separate.</Text>
         <Text style={styles.meta}>
           Status: {String(entitlements?.subscriptionStatus || "none")} · Plan: {String(entitlements?.planKey || "none")}
         </Text>
@@ -199,7 +199,7 @@ export default function SubscriptionScreen() {
         <ProfileCard>
           <Text style={styles.planName}>App Store billing</Text>
           <Text style={styles.blurb}>
-            Subscriptions are billed through the App Store. Restore purchases if you already subscribed with this Apple ID.
+            Recurring plans are no longer offered. Check any existing renewal in your App Store subscription settings. Restore purchases to recover an existing purchase.
           </Text>
         </ProfileCard>
       )}

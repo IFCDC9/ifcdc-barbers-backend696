@@ -31,14 +31,14 @@ export function normalizeBillingProvider(v) {
   return BILLING_PROVIDERS.has(s) ? s : "none";
 }
 
-/** Pro and Elite get AURA when the barber toggle is on; Free never. */
+/** All tiers may use AURA when the barber enables it. */
 export function tierAllowsAura(tier) {
-  return normalizeTier(tier) !== TIER_FREE;
+  return true;
 }
 
-/** Pro and Elite may use booking deposits; Free never. */
+/** All tiers may use booking deposits when the barber enables them. */
 export function tierAllowsDeposits(tier) {
-  return normalizeTier(tier) !== TIER_FREE;
+  return true;
 }
 
 /** Per-booking platform fee charged to customers at checkout (USD). */

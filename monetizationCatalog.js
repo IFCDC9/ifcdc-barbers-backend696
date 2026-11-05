@@ -162,21 +162,21 @@ export function catalogPublic() {
     apple: {
       bundleId: APPLE_BUNDLE_ID,
       subscriptionGroup: APPLE_SUBSCRIPTION_GROUP,
-      rank: ["multilocation", "shop", "individual"],
-      intro: "free first month",
-      products: Object.values(APPLE_PRODUCTS),
-      promoPlaceholders: PROMO_OFFER_PLACEHOLDERS,
+      rank: [],
+      intro: null,
+      products: [],
+      promoPlaceholders: {},
       promoOfferIds: "confirm App Store Connect promotional offer IDs with Tessa",
     },
     google: {
       packageName: GOOGLE_PACKAGE_NAME,
-      products: Object.values(GOOGLE_SUB_PRODUCTS),
+      products: [],
       access: {
         ...GOOGLE_ACCESS_PRODUCT,
         productId: googleAccessProductId(),
         confirmWithTessaBeforeProduction: true,
       },
-      promoPlaceholders: PROMO_OFFER_PLACEHOLDERS,
+      promoPlaceholders: {},
     },
     bookingPlatformFeeUsd: BOOKING_PLATFORM_FEE.usd,
     fieldsAreSeparate: {

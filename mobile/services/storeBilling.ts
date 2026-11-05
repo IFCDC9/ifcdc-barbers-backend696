@@ -137,8 +137,8 @@ async function ensureConnection(): Promise<IapModule> {
 }
 
 function skuList(): string[] {
-  if (Platform.OS === "ios") return [...APPLE_PRODUCT_IDS];
-  return [...GOOGLE_SUB_PRODUCT_IDS, GOOGLE_ACCESS_PRODUCT_ID];
+  if (Platform.OS === "ios") return [];
+  return [GOOGLE_ACCESS_PRODUCT_ID];
 }
 
 function productIdOf(product: Record<string, unknown>): string {
@@ -155,7 +155,7 @@ export async function fetchStoreProducts(): Promise<{
     const skus = skuList();
     const products = (await iap.fetchProducts({
       skus,
-      type: "subs",
+      type: "in-app",
     })) as Array<Record<string, unknown>>;
     return { products: (products || []).map((p) => ({ ...p, native: true })), native: true };
   } catch (e) {
@@ -301,6 +301,9 @@ export async function purchaseProduct(
   productId: string,
   opts: { offerId?: string; upgradeFrom?: string } = {},
 ): Promise<PurchaseOutcome> {
+  if (productId !== GOOGLE_ACCESS_PRODUCT_ID) {
+    return { ok: false, error: "subscriptions_retired", message: "IFCDC Barbers is free to use. Recurring plans are no longer offered." };
+  }
   let iap: IapModule;
   try {
     iap = await ensureConnection();
