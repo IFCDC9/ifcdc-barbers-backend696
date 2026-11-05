@@ -1,5 +1,6 @@
 /**
- * Routes where `?token=` is used for auth/invites — not PayPal order capture.
+ * Routes whose `?token=` must not enter the booking payment flow.
+ * Includes auth links and product payments, which use separate verification.
  * PayPalReturnHandler must not hijack these links.
  */
 const NON_PAYPAL_TOKEN_PATHS = new Set([
@@ -9,6 +10,8 @@ const NON_PAYPAL_TOKEN_PATHS = new Set([
   "/login",
   "/register",
   "/paypal-booking",
+  "/admin/beauty-supply",
+  "/beauty-supply",
 ]);
 
 export function isNonPayPalTokenPath(pathname) {
