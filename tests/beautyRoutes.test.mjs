@@ -13,7 +13,7 @@ test('HTTP catalog routes enforce authentication, current Founder role and confl
  try {
   await writeFile(join(dir,'package.json'),'{"type":"module"}');
   await mkdir(join(dir,'client/src/lib'),{recursive:true});
-  for(const file of ['beautyRoutes.js','beautyCatalogService.js','beautyOrderService.js','beautyOrderDrafts.js','client/src/lib/beautyOrderPricing.js','client/src/lib/beautyCatalog.js'])
+  for(const file of ['beautySellerPayments.js','beautyRoutes.js','beautyCatalogService.js','beautyOrderService.js','beautyOrderDrafts.js','client/src/lib/beautyOrderPricing.js','client/src/lib/beautyCatalog.js'])
    await copyFile(new URL('../'+file,import.meta.url),join(dir,file));
   await writeFile(join(dir,'db.js'),'export const dbQuery = () => {throw Error("unexpected live database access")};');
   await writeFile(join(dir,'authRoutes.js'),'export const resolveAuthPayload = () => null;');
@@ -40,8 +40,12 @@ test('HTTP catalog routes enforce authentication, current Founder role and confl
   assert.equal((await request('/api/beauty/orders/not-a-uuid','manager')).status,404);
   const before=queries;
   assert.equal((await request('/api/beauty/admin/catalog')).status,401);
+  assert.equal((await request('/api/beauty/admin/seller-payments/config','manager')).status,403);
   assert.equal((await request('/api/beauty/admin/catalog','manager')).status,403);assert.equal(queries,before);
   assert.equal((await request('/api/beauty/admin/catalog','founder')).status,200);
+  const paymentConfig=await request('/api/beauty/admin/seller-payments/config','founder');assert.equal(paymentConfig.status,200);const pc=await paymentConfig.json();assert.equal(pc.checkoutEnabled,false);assert.equal('secret' in pc,false);
+  assert.equal((await request('/api/beauty/admin/seller-payments/missing/start','founder',{method:'POST'})).status,404);
+  assert.equal((await request('/api/beauty/admin/seller-payments/missing/refresh','manager',{method:'POST'})).status,403);
   role='user';assert.equal((await request('/api/beauty/admin/catalog','founder')).status,403);
   role='super_admin';
   assert.equal((await request('/api/beauty/admin/catalog','founder',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision:0,sellers:[],products:[]})})).status,409);

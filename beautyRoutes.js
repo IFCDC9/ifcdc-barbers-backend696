@@ -1,3 +1,4 @@
+import { createBeautySellerPaymentStore, publicBeautyPaymentConfig } from './beautySellerPayments.js';
 import { createBeautyOrderDraftStore, publicBeautyDraft } from './beautyOrderDrafts.js';
 import { quoteBeautyOrder } from './beautyOrderService.js';
 import express from 'express';
@@ -7,7 +8,7 @@ import { isJwtGlobalSuperScope } from './authPlatformJwt.js';
 import { createBeautyCatalogStore, publicBeautyCatalog } from './beautyCatalogService.js';
 
 export function createBeautyRouter({ query = dbQuery, resolveToken = resolveAuthPayload,
-  isFounder = isJwtGlobalSuperScope } = {}) {
+  isFounder = isJwtGlobalSuperScope, sellerPaymentProvider } = {}) {
   const router = express.Router();
   const store = createBeautyCatalogStore(query);
   router.use('/api/beauty', (_req, res, next) => {
@@ -94,6 +95,26 @@ export function createBeautyRouter({ query = dbQuery, resolveToken = resolveAuth
     } catch (e) {
       if (/^Invalid/.test(e.message)) return res.status(400).json({ error:'invalid_catalog' });
       res.status(503).json({ error:'catalog_save_unavailable' });
+    }
+  });
+  const sellerPayments = createBeautySellerPaymentStore(query,sellerPaymentProvider);
+  router.get('/api/beauty/admin/seller-payments/config', (_req,res)=>res.json(publicBeautyPaymentConfig(sellerPayments.config)));
+  router.all('/api/beauty/admin/seller-payments/:sellerId/:action', express.json({limit:'2kb'}), async(req,res)=>{
+    const {sellerId,action}=req.params;
+    if(!/^[a-zA-Z0-9_-]{1,100}$/.test(sellerId) || !['status','start','refresh'].includes(action)) return res.status(404).json({error:'seller_not_found'});
+    if((action==='status' && req.method!=='GET') || (action!=='status' && req.method!=='POST')) return res.status(405).json({error:'method_not_allowed'});
+    try {
+      const catalog=await store.read();
+      const seller=catalog.sellers.find(s=>s.id===sellerId);
+      if(!seller)return res.status(404).json({error:'seller_not_found'});
+      if(action!=='status' && seller.status!=='approved')return res.status(409).json({error:'approved_seller_required'});
+      if(action==='status')return res.json({connection:await sellerPayments.status(sellerId)});
+      if(action==='start')return res.json(await sellerPayments.start(sellerId,req.beautyActorId));
+      return res.json({connection:await sellerPayments.refresh(sellerId,req.beautyActorId)});
+    }catch(e){
+      if(e.code==='seller_payments_not_configured')return res.status(503).json({error:e.code});
+      if(e.code==='seller_connection_missing')return res.status(409).json({error:e.code});
+      return res.status(503).json({error:'seller_connection_unavailable'});
     }
   });
   return router;
