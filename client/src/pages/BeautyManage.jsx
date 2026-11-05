@@ -1,3 +1,4 @@
+import BeautySellerPaymentConnection from '../components/BeautySellerPaymentConnection.jsx';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { apiGet, apiPut } from '../lib/api.js';
@@ -42,7 +43,7 @@ export default function BeautyManage() {
     <div className="beauty-manage__actions"><button disabled={busy} onClick={()=>{if(!dirty||window.confirm('Discard unsaved catalog changes?'))void load();}}>Reload catalog</button><button disabled={!catalog||!dirty||busy} onClick={save}>Save catalog{dirty?' • unsaved':''}</button></div>
     {catalog&&<fieldset disabled={busy} className="beauty-manage__body">
       <section><h2>Sellers &amp; brands</h2><form onSubmit={addSeller}><label>Public seller name<input required maxLength={200} value={sellerName} onChange={e=>setSellerName(e.target.value)}/></label><button>Add seller</button></form><p>New sellers start pending. Changing an approved seller to pending or suspended also moves their published products to drafts.</p>
-      {catalog.sellers.map(s=><div className="beauty-manage__seller" key={s.id}><strong>{s.name}</strong><label>Approval<select value={s.status} onChange={e=>change(changeBeautySellerStatus(catalog,s.id,e.target.value))}><option value="pending">Pending</option><option value="approved">Approved</option><option value="suspended">Suspended</option></select></label></div>)}</section>
+      {catalog.sellers.map(s=><div className="beauty-manage__seller" key={s.id}><strong>{s.name}</strong><label>Approval<select value={s.status} onChange={e=>change(changeBeautySellerStatus(catalog,s.id,e.target.value))}><option value="pending">Pending</option><option value="approved">Approved</option><option value="suspended">Suspended</option></select></label><BeautySellerPaymentConnection seller={s} disabled={busy||dirty}/></div>)}</section>
       <section><h2>{editing?'Edit product':'Add product'}</h2><form className="beauty-manage__form" onSubmit={addProduct}>
         <label>Product name<input name="name" required maxLength={200} value={form.name} onChange={field}/></label><label>Brand<input name="brand" required maxLength={200} value={form.brand} onChange={field}/></label>
         <label>Seller<select required name="sellerId" value={form.sellerId} onChange={field}><option value="">Choose seller</option>{catalog.sellers.map(s=><option key={s.id} value={s.id}>{s.name} ({s.status})</option>)}</select></label>
