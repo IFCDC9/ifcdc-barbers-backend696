@@ -35,7 +35,7 @@ export function verifiedSellerStatus(data,trackingId,config) {
     status:permissionsGranted && paymentsReceivable && emailConfirmed?'account_authorized':'pending'};
 }
 export function createBeautyPayPalProvider({config=beautyPaymentConfig(),fetchImpl=globalThis.fetch}={}) {
-  async function request(path,{method='GET',body,requestId}={}) {
+  async function request(path,{method='GET',body,requestId,merchantId}={}) {
     if(!config.configured) fail('seller_payments_not_configured');
     const oauth=await fetchImpl(config.apiBase+'/v1/oauth2/token',{method:'POST',redirect:'error',signal:AbortSignal.timeout(15000),
       headers:{Authorization:'Basic '+Buffer.from(config.clientId+':'+config.secret).toString('base64'),'Content-Type':'application/x-www-form-urlencoded'},
@@ -43,7 +43,7 @@ export function createBeautyPayPalProvider({config=beautyPaymentConfig(),fetchIm
     if(!oauth.ok) fail('seller_provider_auth_failed');
     const token=await oauth.json();if(typeof token.access_token!=='string' || !token.access_token) fail('seller_provider_auth_failed');
     const response=await fetchImpl(config.apiBase+path,{method,redirect:'error',signal:AbortSignal.timeout(15000),
-      headers:{Authorization:'Bearer '+token.access_token,'Content-Type':'application/json','PayPal-Partner-Attribution-Id':config.bnCode,Prefer:'return=representation',...(requestId?{'PayPal-Request-Id':requestId}:{})},
+      headers:{Authorization:'Bearer '+token.access_token,'Content-Type':'application/json','PayPal-Partner-Attribution-Id':config.bnCode,Prefer:'return=representation',...(requestId?{'PayPal-Request-Id':requestId}:{}),...(merchantId?{'PayPal-Auth-Assertion':Buffer.from(JSON.stringify({alg:'none'})).toString('base64url')+'.'+Buffer.from(JSON.stringify({iss:config.clientId,payer_id:merchantId})).toString('base64url')+'.'}:{})},
       ...(body?{body:JSON.stringify(body)}:{})});
     if(response.status===404) return null;
     if(!response.ok) fail('seller_provider_request_failed');
