@@ -1,3 +1,4 @@
+import { createSandboxWebhookRouter } from './beautySandboxWebhooks.js';
 import { createSandboxCheckoutRouter } from './beautySandboxCheckoutRoutes.js';
 import { createBeautySellerPaymentStore, publicBeautyPaymentConfig } from './beautySellerPayments.js';
 import { createBeautyOrderDraftStore, publicBeautyDraft } from './beautyOrderDrafts.js';
@@ -15,6 +16,7 @@ export function createBeautyRouter({ query = dbQuery, resolveToken = resolveAuth
   router.use('/api/beauty', (_req, res, next) => {
     res.set('Cache-Control', 'no-store'); next();
   });
+  router.use(createSandboxWebhookRouter());
   router.get('/api/beauty/catalog', async (_req, res) => {
     try { res.json(publicBeautyCatalog(await store.read())); }
     catch { res.status(503).json({ error:'catalog_unavailable' }); }
