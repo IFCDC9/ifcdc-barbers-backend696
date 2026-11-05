@@ -35,7 +35,7 @@ export function verifiedSellerStatus(data,trackingId,config) {
     status:permissionsGranted && paymentsReceivable && emailConfirmed?'account_authorized':'pending'};
 }
 export function createBeautyPayPalProvider({config=beautyPaymentConfig(),fetchImpl=globalThis.fetch}={}) {
-  async function request(path,{method='GET',body}={}) {
+  async function request(path,{method='GET',body,requestId}={}) {
     if(!config.configured) fail('seller_payments_not_configured');
     const oauth=await fetchImpl(config.apiBase+'/v1/oauth2/token',{method:'POST',redirect:'error',signal:AbortSignal.timeout(15000),
       headers:{Authorization:'Basic '+Buffer.from(config.clientId+':'+config.secret).toString('base64'),'Content-Type':'application/x-www-form-urlencoded'},
@@ -43,13 +43,13 @@ export function createBeautyPayPalProvider({config=beautyPaymentConfig(),fetchIm
     if(!oauth.ok) fail('seller_provider_auth_failed');
     const token=await oauth.json();if(typeof token.access_token!=='string' || !token.access_token) fail('seller_provider_auth_failed');
     const response=await fetchImpl(config.apiBase+path,{method,redirect:'error',signal:AbortSignal.timeout(15000),
-      headers:{Authorization:'Bearer '+token.access_token,'Content-Type':'application/json','PayPal-Partner-Attribution-Id':config.bnCode},
+      headers:{Authorization:'Bearer '+token.access_token,'Content-Type':'application/json','PayPal-Partner-Attribution-Id':config.bnCode,Prefer:'return=representation',...(requestId?{'PayPal-Request-Id':requestId}:{})},
       ...(body?{body:JSON.stringify(body)}:{})});
     if(response.status===404) return null;
     if(!response.ok) fail('seller_provider_request_failed');
     return response.json();
   }
-  return {config,
+  return {config,request,
     async start(trackingId) {
       const data=await request('/v2/customer/partner-referrals',{method:'POST',body:{tracking_id:trackingId,
         operations:[{operation:'API_INTEGRATION',api_integration_preference:{rest_api_integration:{integration_method:'PAYPAL',integration_type:'THIRD_PARTY',third_party_details:{features:['PAYMENT','REFUND','PARTNER_FEE']}}}}],

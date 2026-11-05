@@ -1,3 +1,4 @@
+import { createSandboxCheckoutRouter } from './beautySandboxCheckoutRoutes.js';
 import { createBeautySellerPaymentStore, publicBeautyPaymentConfig } from './beautySellerPayments.js';
 import { createBeautyOrderDraftStore, publicBeautyDraft } from './beautyOrderDrafts.js';
 import { quoteBeautyOrder } from './beautyOrderService.js';
@@ -117,5 +118,6 @@ export function createBeautyRouter({ query = dbQuery, resolveToken = resolveAuth
       return res.status(503).json({error:'seller_connection_unavailable'});
     }
   });
+  router.use('/api/beauty/admin/sandbox-checkout',createSandboxCheckoutRouter());
   return router;
 }
