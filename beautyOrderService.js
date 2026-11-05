@@ -6,6 +6,7 @@ import { beautyBagTotals } from './client/src/lib/beautyOrderPricing.js';
 export function quoteBeautyOrder(catalog, items) {
   if (!Array.isArray(items) || !items.length || items.length > 100) throw new Error('Invalid basket');
   const products = new Map(publicBeautyCatalog(catalog).products.map(p => [p.id, p]));
+  const sourceProducts = new Map(catalog.products.map(p=>[p.id,p]));
   const seen = new Set();
   let subtotal = 0, count = 0;
   const lines = items.map(item => {
@@ -17,7 +18,24 @@ export function quoteBeautyOrder(catalog, items) {
     subtotal += p.priceCents * item.quantity;
     count += item.quantity;
     if (!Number.isSafeInteger(subtotal) || !Number.isSafeInteger(count)) throw new Error('Invalid basket');
-    return { productId:p.id, name:p.name, quantity:item.quantity, unitPriceCents:p.priceCents };
+    return { productId:p.id, sellerId:sourceProducts.get(p.id).sellerId, name:p.name, quantity:item.quantity, unitPriceCents:p.priceCents };
   });
-  return { currency:'USD', lines, ...beautyBagTotals(subtotal,count), checkoutEnabled:false };
+  const totals = beautyBagTotals(subtotal,count);
+  // Allocate the order-level commission by product proceeds. Largest remainders
+  // distribute cents deterministically, so splitting a basket never increases fees.
+  const grossBySeller = new Map();
+  for (const line of lines) grossBySeller.set(line.sellerId,
+    (grossBySeller.get(line.sellerId) || 0) + line.unitPriceCents * line.quantity);
+  const allocations = [...grossBySeller].sort(([a],[b])=>a < b ? -1 : a > b ? 1 : 0).map(([sellerId,grossCents])=>{
+    const weighted = BigInt(grossCents) * BigInt(totals.commissionCents);
+    return {sellerId,grossCents,commissionCents:subtotal ? Number(weighted / BigInt(subtotal)) : 0,
+      remainder:subtotal ? weighted % BigInt(subtotal) : 0n};
+  });
+  let remaining = totals.commissionCents - allocations.reduce((sum,a)=>sum+a.commissionCents,0);
+  const ranked = [...allocations].sort((a,b)=>a.remainder === b.remainder
+    ? (a.sellerId < b.sellerId ? -1 : a.sellerId > b.sellerId ? 1 : 0)
+    : a.remainder > b.remainder ? -1 : 1);
+  for (const a of ranked) { if (!remaining) break; a.commissionCents++; remaining--; }
+  const sellerAllocations = allocations.map(({remainder,...a})=>({...a,netBeforeProcessingCents:a.grossCents-a.commissionCents}));
+  return { currency:'USD', lines, ...totals, sellerAllocations, checkoutEnabled:false };
 }

@@ -22,7 +22,7 @@ test('public catalog retires recurring offers and keeps one-time access and hist
 });
 test('commission rounds once at order level and empty baskets have no fees',()=>{
  assert.equal(beautyBagTotals(10000,5).commissionCents,200);
- assert.equal(beautyBagTotals(10000,5).totalBeforeTaxShippingCents,10350);
+ assert.equal(beautyBagTotals(10000,5).totalBeforeTaxShippingCents,10150);
  assert.equal(beautyBagTotals(24,1).commissionCents,0);
  assert.equal(beautyBagTotals(25,1).commissionCents,1);
  assert.equal(beautyBagTotals(0,0).totalBeforeTaxShippingCents,0);

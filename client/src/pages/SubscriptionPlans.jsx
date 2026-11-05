@@ -4,7 +4,7 @@ export default function SubscriptionPlans() {
     <h1 style={{color:'#d4af37'}}>IFCDC Barbers — free to use</h1>
     <p>No recurring plan is required for customers, barbers or shops. Account permissions still apply.</p>
     <p>The app download/access purchase and booking platform fees remain separate.</p>
-    <p>Product orders include one $1.50 platform fee plus 2% of the product subtotal, before tax and shipping.</p>
+    <p>Buyers pay one $1.50 platform fee per product order, before tax and shipping. The 2% product commission is deducted from seller proceeds.</p>
     <p>Have an existing subscription? Check its renewal status with your original billing provider.</p>
     <a href="https://apps.apple.com/account/subscriptions">Manage Apple subscriptions</a>{' · '}
     <a href="https://play.google.com/store/account/subscriptions">Manage Google subscriptions</a>
