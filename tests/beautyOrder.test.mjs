@@ -6,7 +6,7 @@ const product = (id,sellerId) => ({id,sellerId,name:id,brand:'Brand',category:'H
 const catalog={sellers:[{id:'a',name:'A',status:'approved'},{id:'b',name:'B',status:'approved'}],products:[product('one','a'),product('two','b')]};
 test('multiple sellers and quantities produce exactly one fee; client amounts ignored',()=>{
  const q=quoteBeautyOrder(catalog,[{productId:'one',quantity:2,priceCents:1,platformFeeCents:0},{productId:'two',quantity:1}]);
- assert.equal(q.subtotalCents,3000);assert.equal(q.platformFeeCents,150);assert.equal(q.totalBeforeTaxShippingCents,3150);assert.equal(q.checkoutEnabled,false);
+ assert.equal(q.subtotalCents,3000);assert.equal(q.platformFeeCents,150);assert.equal(q.totalBeforeTaxShippingCents,3210);assert.equal(q.checkoutEnabled,false);
 });
 test('empty display has no fee; empty and invalid quotes cannot proceed',()=>{
  assert.equal(beautyBagTotals(0,0).platformFeeCents,0);

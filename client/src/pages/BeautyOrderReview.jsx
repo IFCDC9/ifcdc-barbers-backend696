@@ -31,6 +31,7 @@ export default function BeautyOrderReview({items}) {
     {orders.map(o=><article key={o.id}><h3>Order {o.id.slice(0,8)}</h3><p>{new Date(o.expires_at)<=new Date()?'Expired draft':'Draft · not paid'}</p>
       <ul>{o.quote.lines.map(l=><li key={l.productId}>{l.name} · {l.quantity} × {money(l.unitPriceCents)}</li>)}</ul>
       <p>Product subtotal: {money(o.quote.subtotalCents)}</p><p>Platform fee: {money(o.quote.platformFeeCents)}</p>
+      {o.quote.commissionCents != null && <p>Product commission (2%): {money(o.quote.commissionCents)}</p>}
       <strong>Before tax &amp; shipping: {money(o.quote.totalBeforeTaxShippingCents)}</strong>
       <p>Quote expires {new Date(o.expires_at).toLocaleString()}. Price and availability must be checked again before payment.</p>
     </article>)}
