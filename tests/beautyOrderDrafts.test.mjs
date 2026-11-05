@@ -26,5 +26,5 @@ test('new draft snapshots one fee and seller allocations; concurrent key conflic
   quote=JSON.parse(args[4]);return {rows:[{id:args[0],basket_hash:args[3],quote}]};
  });
  await store.create('buyer','long-request-key-1',c,[items[0]]);
- assert.equal(quote.platformFeeCents,150);assert.equal(quote.lines[0].sellerId,'seller');assert.equal(quote.checkoutEnabled,false);
+ assert.equal(quote.platformFeeCents,150);assert.equal(quote.commissionPayer,'seller');assert.equal(quote.sellerAllocations[0].commissionCents,20);assert.equal(quote.sellerAllocations[0].netBeforeProcessingCents,980);assert.equal(quote.lines[0].sellerId,'seller');assert.equal(quote.checkoutEnabled,false);
 });
