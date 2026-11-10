@@ -2,8 +2,11 @@ import {beautyRefundTerms} from './client/src/lib/beautyOrderPricing.js';
 import {sandboxPurchaseUnits,cents,usd} from './beautySandboxPaymentContract.js';
 export function refundRequestBody(row){
  const amount=Number(row.amount_cents),fee=Number(row.platform_fee_cents);
+ if(!Number.isSafeInteger(amount)||amount<=0||!Number.isSafeInteger(fee)||fee<0||fee>amount)throw Error('refund_request_invalid');
+ // Omission allowed a proportional fee reversal in sandbox. Explicitly request
+ // zero contribution; a capability rejection must never fall back to omission.
  return {amount:usd(amount),custom_id:row.request_id,invoice_id:row.request_id,
-   note_to_payer:'IFCDC sandbox refund',...(fee?{payment_instruction:{platform_fees:[{amount:usd(fee)}]}}:{})};
+   note_to_payer:'IFCDC sandbox refund',payment_instruction:{platform_fees:[{amount:usd(fee)}]}};
 }
 export function verifySandboxRefund(data,row){
  const invalid=()=>{throw Error('refund_verification_failed');};

@@ -17,7 +17,7 @@ test('multi-seller allocations collect one fee and refund product proceeds only'
  assert.equal(units.reduce((n,u)=>n+cents(u.amount),0),1750);
  assert.equal(units.filter(u=>u.payment_instruction.platform_fees).length,1);
  assert.equal(targets.reduce((n,t)=>n+t.amountCents,0),1500);assert.ok(targets.every(t=>t.platformFeeCents===0));
- for(const t of targets)assert.equal('payment_instruction' in refundRequestBody({amount_cents:t.amountCents,platform_fee_cents:t.platformFeeCents,request_id:'request'}),false);
+ for(const t of targets)assert.deepEqual(refundRequestBody({amount_cents:t.amountCents,platform_fee_cents:t.platformFeeCents,request_id:'request'}).payment_instruction,{platform_fees:[{amount:usd(0)}]});
 });
 test('new capture verification accepts a seller with no commission or platform-fee leg',()=>{
  const o=order(true),units=sandboxPurchaseUnits(o,'PARTNER1');
@@ -32,8 +32,13 @@ test('unexpected fee refunds, wrong policy, and mismatched capture cannot be acc
  const row={capture_id:'CAPTURE0',request_id:'request',amount_cents:1000,platform_fee_cents:0};
  const response={id:'REFUND1',custom_id:'request',status:'COMPLETED',amount:usd(1000),links:[{rel:'up',method:'GET',href:'https://api-m.sandbox.paypal.com/v2/payments/captures/CAPTURE0'}]};
  assert.equal(verifySandboxRefund(response,row).status,'completed');
+ assert.equal(verifySandboxRefund({...response,seller_payable_breakdown:{platform_fees:[{amount:usd(0)}]}},row).status,'completed');
+ assert.equal(verifySandboxRefund({...response,seller_payable_breakdown:{platform_fees:[{amount:usd(200)}],net_amount:usd(800)}},row).status,'review_required');
  assert.equal(verifySandboxRefund({...response,seller_payable_breakdown:{platform_fees:[{amount:usd(250)}]}},row).status,'review_required');
  assert.throws(()=>verifySandboxRefund({...response,amount:usd(1250)},row));
+});
+test('invalid saved refund amounts fail before requesting money',()=>{
+ for(const change of [{amount_cents:0},{amount_cents:1000.5},{platform_fee_cents:-1},{platform_fee_cents:1001},{platform_fee_cents:'bad'}])assert.throws(()=>refundRequestBody({amount_cents:1000,platform_fee_cents:0,request_id:'request',...change}),/refund_request_invalid/);
 });
 test('legacy quotes keep the original full-payment refund and fee-return request',()=>{
  const legacy={pricingPolicy:'seller_commission_v1',totalBeforeTaxShippingCents:1150};
