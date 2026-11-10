@@ -1,3 +1,4 @@
+import {BEAUTY_PRICING_POLICY} from './client/src/lib/beautyOrderPricing.js';
 import {createSandboxOperations} from './beautySandboxOperations.js';
 import {createSandboxWebhookStore} from './beautySandboxWebhooks.js';
 import express from 'express';
@@ -19,7 +20,7 @@ export function createSandboxCheckoutRouter({getPool=getDbPool,provider=createBe
     return res.status(503).json({error:'sandbox_checkout_unavailable'});
   }
   router.get('/',async(req,res)=>{try{res.json({orders:(await service().listForFounder()).map(publicSandboxOrder)});}catch(e){error(res,e);}});
-  router.post('/',async(req,res)=>{try{res.json({order:publicSandboxOrder(await service().reserve(req.beautyActorId,req.body?.requestKey,req.body?.items))});}catch(e){error(res,e);}});
+  router.post('/',async(req,res)=>{if(req.body?.pricingPolicy!==BEAUTY_PRICING_POLICY||req.body?.acceptFeePolicy!==true)return res.status(409).json({error:'fee_policy_acceptance_required'});try{res.json({order:publicSandboxOrder(await service().reserve(req.beautyActorId,req.body?.requestKey,req.body?.items))});}catch(e){error(res,e);}});
   router.get('/webhooks',async(_req,res)=>{try{res.json({webhooks:await webhooks().list()});}catch(e){error(res,e);}});
   router.post('/webhooks/:eventId/retry',async(req,res)=>{
     if(!/^[A-Za-z0-9_-]{1,128}$/.test(req.params.eventId))return res.status(404).json({error:'webhook_not_found'});

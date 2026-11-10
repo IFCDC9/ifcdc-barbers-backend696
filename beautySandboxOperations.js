@@ -1,7 +1,7 @@
 import {randomUUID} from 'node:crypto';
 import {assertSandboxCheckout} from './beautySandboxCheckout.js';
 import {verifySandboxOrder} from './beautySandboxPaymentContract.js';
-import {refundRequestBody,verifySandboxRefund} from './beautySandboxRefundContract.js';
+import {refundRequestBody,verifySandboxRefund,sandboxRefundTargets} from './beautySandboxRefundContract.js';
 export function createSandboxOperations({pool,provider,env=process.env}){
  const scope=[provider.config.clientId,provider.config.partnerId];
  const assertEnabled=()=>assertSandboxCheckout(provider,env);
@@ -18,7 +18,8 @@ export function createSandboxOperations({pool,provider,env=process.env}){
    const rows=(await c.query('SELECT * FROM beauty_sandbox_refunds WHERE order_id=$1::uuid',[order.id])).rows;
    const caps=(await c.query('SELECT * FROM beauty_sandbox_captures WHERE order_id=$1::uuid',[order.id])).rows;
    const total=rows.reduce((n,r)=>n+Number(r.amount_cents),0);
-   const status=rows.length===caps.length&&rows.length>0&&total===order.quote.totalBeforeTaxShippingCents&&rows.every(r=>r.status==='completed')?'completed':rows.some(r=>r.status==='review_required')?'review_required':'pending';
+   const targets=sandboxRefundTargets(order,caps,provider.config.partnerId);
+   const status=rows.length===caps.length&&rows.length>0&&total===targets.reduce((n,t)=>n+t.amountCents,0)&&rows.every(r=>r.status==='completed'&&targets.some(t=>t.captureId===r.capture_id&&t.amountCents===Number(r.amount_cents)&&t.platformFeeCents===Number(r.platform_fee_cents)))?'completed':rows.some(r=>r.status==='review_required')?'review_required':'pending';
    const r=await c.query("UPDATE beauty_sandbox_orders SET refund_status=$2,fulfillment_status='halted' WHERE id=$1::uuid RETURNING *",[order.id,status]);
    await event(c,order.id,'refund_'+status);return {...r.rows[0],refund_issue:rows.some(x=>x.result?.issue==='PLATFORM_FEE_NOT_ENABLED')?'PLATFORM_FEE_NOT_ENABLED':null};
  }
@@ -30,8 +31,8 @@ export function createSandboxOperations({pool,provider,env=process.env}){
     if(order.status!=='paid'||order.payment_review)throw Error('verified_payment_required');
     const caps=(await c.query('SELECT * FROM beauty_sandbox_captures WHERE order_id=$1::uuid',[id])).rows;
     if(!caps.length||caps.reduce((n,c)=>n+c.details.grossCents,0)!==order.quote.totalBeforeTaxShippingCents)throw Error('verified_payment_required');
-    for(const cap of caps)await c.query('INSERT INTO beauty_sandbox_refunds(capture_id,order_id,request_id,merchant_id,amount_cents,platform_fee_cents) VALUES($1,$2::uuid,$3::uuid,$4,$5,$6)',[cap.capture_id,id,randomUUID(),cap.details.merchantId,cap.details.grossCents,cap.details.platformFeeCents]);
-    await c.query("UPDATE beauty_sandbox_orders SET refund_status='requested',fulfillment_status='halted' WHERE id=$1::uuid",[id]);await event(c,id,'full_refund_requested');
+    for(const cap of sandboxRefundTargets(order,caps,provider.config.partnerId))await c.query('INSERT INTO beauty_sandbox_refunds(capture_id,order_id,request_id,merchant_id,amount_cents,platform_fee_cents) VALUES($1,$2::uuid,$3::uuid,$4,$5,$6)',[cap.captureId,id,randomUUID(),cap.merchantId,cap.amountCents,cap.platformFeeCents]);
+    await c.query("UPDATE beauty_sandbox_orders SET refund_status='requested',fulfillment_status='halted' WHERE id=$1::uuid",[id]);await event(c,id,order.quote.pricingPolicy==='flat_buyer_fee_v2'?'product_refund_requested_fee_retained':'full_refund_requested');
    });
    return this.processRefund(buyer,id,true);
   },

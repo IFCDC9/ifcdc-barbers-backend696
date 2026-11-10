@@ -5,7 +5,7 @@ import {randomUUID} from 'node:crypto';
 import {createSandboxCheckout} from '../beautySandboxCheckout.js';
 import {createSandboxOperations} from '../beautySandboxOperations.js';
 import {createSandboxWebhookStore} from '../beautySandboxWebhooks.js';
-import {quoteBeautyOrder} from '../beautyOrderService.js';
+import {quoteBeautyOrder} from './beautyLegacyQuote.mjs';
 import {sandboxPurchaseUnits,verifySandboxOrder,usd,cents} from '../beautySandboxPaymentContract.js';
 const runDb=process.env.BEAUTY_CHECKOUT_DB_TESTS==='1';
 test('sandbox refunds, pickup and webhook PostgreSQL integration',{skip:!runDb},async t=>{

@@ -1,3 +1,4 @@
+import {BEAUTY_PRICING_POLICY,beautyRefundTerms} from './client/src/lib/beautyOrderPricing.js';
 const invalid=()=>{throw Error('payment_verification_failed');};
 export function usd(cents){
   if(!Number.isSafeInteger(cents)||cents<0)invalid();
@@ -9,7 +10,11 @@ export function cents(amount){
 }
 export function sandboxPurchaseUnits(order,partnerId){
   const {quote,bindings}=order;
-  if(quote.pricingPolicy!=='seller_commission_v1'||quote.commissionPayer!=='seller'||!quote.sellerAllocations?.length||quote.sellerAllocations.length>10)invalid();
+  const flat=quote.pricingPolicy===BEAUTY_PRICING_POLICY;
+  if(flat){try{beautyRefundTerms(quote);}catch{invalid();}}
+  else if(quote.pricingPolicy!=='seller_commission_v1'||quote.commissionPayer!=='seller')invalid();
+  if(!quote.sellerAllocations?.length||quote.sellerAllocations.length>10||new Set(quote.sellerAllocations.map(a=>a.sellerId)).size!==quote.sellerAllocations.length)invalid();
+  if(flat&&(quote.sellerAllocations.some(a=>a.commissionCents!==0||a.netBeforeProcessingCents!==a.grossCents)||quote.sellerAllocations.reduce((n,a)=>n+a.grossCents,0)!==quote.subtotalCents))invalid();
   const units=quote.sellerAllocations.map((a,i)=>{
     const binding=bindings.find(b=>b.sellerId===a.sellerId);if(!binding?.merchantId)invalid();
     const fixed=i===0?quote.platformFeeCents:0,fee=a.commissionCents+fixed;
