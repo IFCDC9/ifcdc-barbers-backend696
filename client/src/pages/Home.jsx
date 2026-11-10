@@ -1,3 +1,4 @@
+import '../websites/futuristic.css';
 import {useEffect,useState} from 'react';
 import {Link} from 'react-router-dom';
 import {websiteApi} from '../websites/websiteApi.js';
@@ -5,7 +6,7 @@ import {MarketingNav,MarketingFooter,ProfessionalTypeSelect} from '../websites/W
 export default function Home({previewSite}={}){const [provider,setProvider]=useState('');const [content,setContent]=useState(null);useEffect(()=>{if(previewSite)return;const c=new AbortController();websiteApi('/public/ifcdc',{signal:c.signal}).then(setContent).catch(()=>{});return()=>c.abort();},[previewSite]);
  const active=previewSite||content;
  const d=active?.document,media=new Map((active?.media||[]).map(m=>[m.id,m.url]));
- return <div className={'ws-home ws-theme-'+(d?.theme||'editorial')+' ws-font-'+(d?.font||'modern')} style={{'--ws-accent':d?.accent||'#a77b36'}}><MarketingNav/><main>
+ return <div className={'ws-home ws-future ws-theme-'+(d?.theme||'editorial')+' ws-font-'+(d?.font||'modern')} style={{'--ws-accent':d?.accent||'#a77b36'}}><MarketingNav/><main>
  <section className="ws-home-hero"><div className="ws-hero-copy"><p className="ws-eyebrow">Independent style. Connected community.</p><h1>{d?.headline||<>Your style.<br/>Your people.<br/><em>Your next chapter.</em></>}</h1><p>{d?.intro||'Discover exceptional barbers and shops. Book your next look. Build a business that looks like you.'}</p><ProfessionalTypeSelect value={provider} onChange={setProvider}/><div className="ws-actions"><Link className="ws-button" to={provider?'/find-a-barber?type='+encodeURIComponent(provider):'/find-a-barber'}>Find a barber <span aria-hidden>↗</span></Link><Link className="ws-text-link" to="/signup-business">Bring your business to IFCDC ↗</Link></div><div className="ws-hero-note"><span className="ws-line"/>Great service starts with a connection.</div></div><div className={'ws-hero-photo'+(!d?.heroId?' ws-hero-photo--founders':'')}><img src={media.get(d?.heroId)||'/images/ifcdc-founders-black-gold.jpeg'} alt={d?.heroId?"IFCDC community":"IFCDC founders in a barbershop"} fetchPriority="high"/><div className="ws-photo-caption"><span>A cut above.</span><small>More than an appointment. An experience.</small></div></div></section>
  <div className="ws-values"><span>Find your professional</span><i aria-hidden>✦</i><span>Book with confidence</span><i aria-hidden>✦</i><span>Support independent business</span></div>
  {d?.promos?.length>0&&<section className="ws-section ws-promos">{d.promos.map((p,i)=><article key={i}><p className="ws-eyebrow">What’s happening</p><h2>{p.title}</h2><p>{p.body}</p><Link to="/find-a-barber">Explore & book ↗</Link></article>)}</section>}
