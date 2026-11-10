@@ -6,3 +6,19 @@
 @media(prefers-reduced-motion:reduce){.ws-root{scroll-behavior:auto}}
 
 .ws-home.ws-theme-midnight .ws-hero-copy>p,.ws-home.ws-theme-midnight .ws-home-intro>p,.ws-home.ws-theme-midnight .ws-hero-note,.ws-home.ws-theme-midnight .ws-business-invite>p{color:#c0c7bc}.ws-home.ws-theme-midnight .ws-button{background:var(--ws-accent);border-color:var(--ws-accent)}
+
+/* Keep CTA text readable: the generic link rule otherwise inherits dark text. */
+.ws-root a.ws-button,.ws-root a.ws-button:visited,.ws-root a.ws-button:hover,.ws-root a.ws-button:focus-visible{color:var(--ws-button-text,#fff)}
+.ws-options{position:relative;font-size:.84rem}
+.ws-options>summary{display:flex;align-items:center;gap:10px;cursor:pointer;list-style:none;padding:10px 0;white-space:nowrap}
+.ws-options>summary::-webkit-details-marker{display:none}
+.ws-options[open]>summary{font-weight:700}
+.ws-options-panel{position:absolute;top:100%;right:0;z-index:100;width:285px;max-height:65dvh;overflow-y:auto;padding:10px;background:#fff;color:#20211f;border:1px solid #d6d9ce;border-radius:5px;box-shadow:0 16px 40px #17201726}
+.ws-root .ws-options-panel a{display:block;padding:10px 13px;color:#20211f;font-size:.82rem;border-radius:3px}
+.ws-root .ws-options-panel a:hover,.ws-root .ws-options-panel a:focus-visible{background:#eeefe7;text-decoration:none}
+.ws-professional-select{display:flex;flex-direction:column;gap:8px;width:min(100%,360px);margin:0 0 22px;font-size:.75rem;font-weight:600;text-align:left}
+.ws-root .ws-professional-select select{display:block;width:100%;min-height:46px;padding:11px 35px 11px 13px;border:1px solid #b9beaf;border-radius:3px;background:#fff;color:#20211f;font:inherit;font-size:.88rem;cursor:pointer}
+.ws-directory .ws-professional-select{margin-top:22px}
+.ws-hero-photo--founders{background:#171c18}
+.ws-hero-photo--founders>img{object-fit:contain;object-position:center}
+@media(max-width:620px){.ws-nav nav{overflow:visible;flex-wrap:wrap;row-gap:8px}.ws-options-panel{right:0;width:min(285px,85vw)}.ws-hero-photo--founders{min-height:0;aspect-ratio:1467/1072}.ws-hero-photo--founders .ws-photo-caption{padding:30px 6vw 14px}.ws-hero-photo--founders .ws-photo-caption>span{font-size:1.5rem}.ws-hero-photo--founders .ws-photo-caption small{font-size:.65rem}}
