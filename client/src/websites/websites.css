@@ -22,3 +22,17 @@
 .ws-hero-photo--founders{background:#171c18}
 .ws-hero-photo--founders>img{object-fit:contain;object-position:center}
 @media(max-width:620px){.ws-nav nav{overflow:visible;flex-wrap:wrap;row-gap:8px}.ws-options-panel{right:0;width:min(285px,85vw)}.ws-hero-photo--founders{min-height:0;aspect-ratio:1467/1072}.ws-hero-photo--founders .ws-photo-caption{padding:30px 6vw 14px}.ws-hero-photo--founders .ws-photo-caption>span{font-size:1.5rem}.ws-hero-photo--founders .ws-photo-caption small{font-size:.65rem}}
+
+/* Visible app downloads on the homepage and shared marketing footer. */
+.ws-download{display:grid;grid-template-columns:1.4fr 1fr;align-items:center;gap:60px;padding:70px 5vw;background:#ece9df;color:#20211f;border-top:1px solid #d6d4c9}
+.ws-download h2{font-size:clamp(2rem,3.5vw,3.8rem);margin-bottom:22px}
+.ws-download>div>p:not(.ws-eyebrow){max-width:510px;font-size:.95rem;color:#565c50;line-height:1.7}
+.ws-store-links{display:flex;flex-direction:column;gap:14px;align-items:flex-start;justify-self:end;width:min(100%,300px)}
+.ws-root a.ws-store-badge,.ws-root a.ws-store-badge:visited{display:flex;align-items:center;gap:15px;width:100%;min-height:80px;padding:15px 20px;border:1px solid #393e35;border-radius:9px;background:#171c18;color:#fff;text-decoration:none;transition:background .15s}
+.ws-root a.ws-store-badge:hover,.ws-root a.ws-store-badge:focus-visible{background:#303a2e;color:#fff;text-decoration:none}
+.ws-store-badge>span:not(.ws-store-arrow){display:flex;flex-direction:column;gap:2px;line-height:1.2}
+.ws-store-badge small{font-size:.7rem;letter-spacing:.02em}
+.ws-store-badge strong{font-size:1.55rem;font-weight:600;letter-spacing:-.03em}
+.ws-store-arrow{margin-left:auto;font-size:1.25rem}
+.ws-store-help{color:#565c50;font-size:.7rem;padding:2px 0}
+@media(max-width:620px){.ws-download{grid-template-columns:1fr;gap:30px;padding:50px 6vw}.ws-store-links{justify-self:start;width:min(100%,340px)}}
