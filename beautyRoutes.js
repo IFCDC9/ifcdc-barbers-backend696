@@ -1,3 +1,4 @@
+import {createBeautyCustomerSandboxRouter} from './beautyCustomerSandboxRoutes.js';
 import { createSandboxWebhookRouter } from './beautySandboxWebhooks.js';
 import { createSandboxCheckoutRouter } from './beautySandboxCheckoutRoutes.js';
 import { createBeautySellerPaymentStore, publicBeautyPaymentConfig } from './beautySellerPayments.js';
@@ -37,6 +38,7 @@ export function createBeautyRouter({ query = dbQuery, resolveToken = resolveAuth
       res.status(503).json({ error:'quote_unavailable' });
     }
   });
+  router.use('/api/beauty/customer-sandbox',createBeautyCustomerSandboxRouter({query,resolveToken}));
   const drafts = createBeautyOrderDraftStore(query);
   router.use('/api/beauty/orders', async (req,res,next) => {
     try {
