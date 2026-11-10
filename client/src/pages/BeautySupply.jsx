@@ -1,3 +1,4 @@
+import BeautyCustomerCheckout from '../components/BeautyCustomerCheckout.jsx';
 import BeautyOrderReview from './BeautyOrderReview.jsx';
 import { beautyBagTotals } from '../lib/beautyOrderPricing.js';
 import { getStoredUser } from '../lib/authHeaders.js';
@@ -78,7 +79,7 @@ export default function BeautySupply() {
       {bagProducts.length ? <ul>{bagProducts.map(p=><li key={p.id}><strong>{p.name}</strong><p>{bag[p.id]} × {money(p.priceCents)}</p><button type="button" aria-label={`${text('reduce', 'Reduce quantity')}: ${p.name}`} onClick={()=>updateBag(p,-1)}>{text('removeOne', 'Remove one')}</button></li>)}</ul> : <p>{text('emptyBag', 'Your essentials will appear here.')}</p>}
       <p className="ifcdc-beauty__subtotal">{text('subtotal', 'Product subtotal')} <strong>{money(subtotal)}</strong></p><p className="ifcdc-beauty__subtotal">Platform fee <strong>{money(totals.platformFeeCents)}</strong></p><p className="ifcdc-beauty__subtotal">Total before tax &amp; shipping <strong>{money(totals.totalBeforeTaxShippingCents)}</strong></p><small>One $1.50 platform fee per completed order, including orders with multiple sellers. The 2% product commission is deducted from seller proceeds. </small><small>{text('taxNote', 'Tax and shipping are not included. Your bag is kept for this visit.')}</small>
       <BeautyOrderReview items={bagProducts.map(p=>({productId:p.id,quantity:bag[p.id]}))} />
-      <button type="button" disabled>{text('checkout', 'Checkout coming soon')}</button><p>{text('checkoutDetail', 'Ordering opens after payment and fulfillment are connected.')}</p>
+      <BeautyCustomerCheckout items={bagProducts.map(p=>({productId:p.id,quantity:bag[p.id]}))} />
     </aside></div>
     <footer className="ifcdc-beauty__partners"><div><strong>FOR THE PROFESSIONAL.</strong><p>Clippers, trimmers and essentials for your station.</p></div><div><strong>FOR YOUR EVERYDAY.</strong><p>Hair, beard and beauty care for your routine.</p></div><div><strong>DISCOVER INDEPENDENT.</strong><p>A dedicated place for independent product lines.</p></div></footer>
   </section>;

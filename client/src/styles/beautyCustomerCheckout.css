@@ -1,0 +1,7 @@
+.beauty-customer-checkout { margin-top: 1.5rem; border-top: 1px solid #8f7b35; padding-top: 1rem; }
+.beauty-customer-checkout fieldset { border: 0; padding: 0; min-width: 0; }
+.beauty-customer-checkout article { margin-top: 1rem; padding: 1rem; border: 1px solid #8f7b35; border-radius: 12px; overflow-wrap: anywhere; }
+.beauty-customer-checkout button { display: block; width: 100%; margin: .6rem 0; white-space: normal; min-height: 44px; }
+.beauty-customer-checkout a { color: #ffe477; text-decoration: underline; }
+.beauty-customer-checkout__notice { padding: 1rem; background: #201d14; border: 1px solid #d5b451; border-radius: 12px; }
+.beauty-customer-checkout p { line-height: 1.5; }

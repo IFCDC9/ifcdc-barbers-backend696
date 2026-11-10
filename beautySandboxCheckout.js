@@ -9,7 +9,7 @@ export function publicSandboxOrder(row){
   return {id:row.id,status:row.status,quote:row.quote,expiresAt:row.expires_at,createdAt:row.created_at,refundStatus:row.refund_status || 'none',refundIssue:row.refund_issue==='PLATFORM_FEE_NOT_ENABLED'?'PLATFORM_FEE_NOT_ENABLED':null,fulfillmentStatus:row.fulfillment_status || 'processing',paymentReview:row.payment_review === true,inventoryRestocked:row.inventory_restocked === true,
     approvalUrl:row.status==='paypal_created'?row.approval_url:null,sandbox:true};
 }
-export function createSandboxCheckout({pool,provider,env=process.env}){
+export function createSandboxCheckout({pool,provider,env=process.env,customerReturn=false,maxActiveOrders=null}){
   const scope=[provider.config.clientId,provider.config.partnerId];
   const assertEnabled=()=>assertSandboxCheckout(provider,env);
   async function tx(fn){
@@ -58,6 +58,10 @@ export function createSandboxCheckout({pool,provider,env=process.env}){
         const cat=await catalog(c);
         const old=await c.query('SELECT * FROM beauty_sandbox_orders WHERE buyer_id=$1::uuid AND request_key=$2::uuid',[buyer,key]);
         if(old.rows[0]){const row=old.rows[0];if(row.basket_hash!==hash||row.partner_client_id!==scope[0]||row.partner_id!==scope[1])throw Error('order_key_conflict');return row;}
+        if(maxActiveOrders!==null){
+          const active=await c.query("SELECT count(*)::int AS count FROM beauty_sandbox_orders WHERE buyer_id=$1::uuid AND partner_client_id=$2 AND partner_id=$3 AND status IN ('reserved','paypal_created','capture_pending','review_required')",[buyer,...scope]);
+          if(active.rows[0].count>=maxActiveOrders)throw Error('sandbox_active_order_limit');
+        }
         const quote=quoteBeautyOrder(cat,items);
         if(quote.totalBeforeTaxShippingCents>10000)throw Error('sandbox_limit_100_usd');
         const source=new Map(cat.products.map(p=>[p.id,p]));
@@ -73,6 +77,9 @@ export function createSandboxCheckout({pool,provider,env=process.env}){
       });
     },
     async list(buyer){assertEnabled();const r=await pool.query("SELECT o.*, (SELECT r.result->>'issue' FROM beauty_sandbox_refunds r WHERE r.order_id=o.id AND r.result->>'issue'='PLATFORM_FEE_NOT_ENABLED' LIMIT 1) AS refund_issue FROM beauty_sandbox_orders o WHERE buyer_id=$1::uuid AND partner_client_id=$2 AND partner_id=$3 ORDER BY created_at DESC LIMIT 20",[buyer,...scope]);return r.rows;},
+    async read(buyer,id){assertEnabled();return tx(c=>lock(c,buyer,id));},
+    async listForFounder(){assertEnabled();return (await pool.query("SELECT o.*, (SELECT r.result->>'issue' FROM beauty_sandbox_refunds r WHERE r.order_id=o.id AND r.result->>'issue'='PLATFORM_FEE_NOT_ENABLED' LIMIT 1) AS refund_issue FROM beauty_sandbox_orders o WHERE partner_client_id=$1 AND partner_id=$2 ORDER BY created_at DESC LIMIT 100",scope)).rows;},
+    async ownerForFounder(id){assertEnabled();const r=await pool.query('SELECT buyer_id FROM beauty_sandbox_orders WHERE id=$1::uuid AND partner_client_id=$2 AND partner_id=$3',[id,...scope]);if(!r.rows[0])throw Error('sandbox_order_not_found');return r.rows[0].buyer_id;},
     async prepare(buyer,id){
       assertEnabled();return tx(async c=>{
         const row=await lock(c,buyer,id);
@@ -81,7 +88,7 @@ export function createSandboxCheckout({pool,provider,env=process.env}){
         for(const b of row.bindings)await eligible(c,b.sellerId,b.merchantId);
         const units=sandboxPurchaseUnits(row,provider.config.partnerId);
         const remote=await provider.request('/v2/checkout/orders',{method:'POST',requestId:row.id+'-o',body:{intent:'CAPTURE',purchase_units:units,
-          application_context:{brand_name:'IFCDC Sandbox Test',user_action:'PAY_NOW',shipping_preference:'NO_SHIPPING',return_url:'https://ifcdcbarbersapp.com/admin/beauty-supply?beautySandbox=return',cancel_url:'https://ifcdcbarbersapp.com/admin/beauty-supply?beautySandbox=cancel'}}});
+          application_context:{brand_name:'IFCDC Sandbox Test',user_action:'PAY_NOW',shipping_preference:'NO_SHIPPING',return_url:'https://ifcdcbarbersapp.com'+(customerReturn?'/beauty-supply':'/admin/beauty-supply')+'?beautySandbox=return',cancel_url:'https://ifcdcbarbersapp.com'+(customerReturn?'/beauty-supply':'/admin/beauty-supply')+'?beautySandbox=cancel'}}});
         if(typeof remote?.id!=='string'||!/^[A-Z0-9]{5,40}$/.test(remote.id))throw Error('invalid_paypal_order');
         verifySandboxOrder(remote,{...row,paypal_order_id:remote.id},provider.config.partnerId);
         const url=safeSandboxApprovalLink(remote);

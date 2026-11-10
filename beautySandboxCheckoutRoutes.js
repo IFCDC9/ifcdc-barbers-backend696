@@ -18,7 +18,7 @@ export function createSandboxCheckoutRouter({getPool=getDbPool,provider=createBe
     if(known.includes(e.message))return res.status(409).json({error:e.message});
     return res.status(503).json({error:'sandbox_checkout_unavailable'});
   }
-  router.get('/',async(req,res)=>{try{res.json({orders:(await service().list(req.beautyActorId)).map(publicSandboxOrder)});}catch(e){error(res,e);}});
+  router.get('/',async(req,res)=>{try{res.json({orders:(await service().listForFounder()).map(publicSandboxOrder)});}catch(e){error(res,e);}});
   router.post('/',async(req,res)=>{try{res.json({order:publicSandboxOrder(await service().reserve(req.beautyActorId,req.body?.requestKey,req.body?.items))});}catch(e){error(res,e);}});
   router.get('/webhooks',async(_req,res)=>{try{res.json({webhooks:await webhooks().list()});}catch(e){error(res,e);}});
   router.post('/webhooks/:eventId/retry',async(req,res)=>{
@@ -28,7 +28,7 @@ export function createSandboxCheckoutRouter({getPool=getDbPool,provider=createBe
   router.post('/:id/:action',async(req,res)=>{
     if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(req.params.id)||!['prepare','capture','retryCapture','reconcile','cancel','refund','refundCheck','refundRetry','ready','collected','restock'].includes(req.params.action))return res.status(404).json({error:'sandbox_order_not_found'});
     try{
-      const a=req.params.action,buyer=req.beautyActorId,id=req.params.id;
+      const a=req.params.action,id=req.params.id,buyer=await service().ownerForFounder(id);
       const order=a==='refund'?await operations().requestRefund(buyer,id):a==='refundCheck'?await operations().processRefund(buyer,id,false):a==='refundRetry'?await operations().processRefund(buyer,id,true):['ready','collected'].includes(a)?await operations().fulfillment(buyer,id,a):a==='restock'?await operations().restock(buyer,id):await service()[a](buyer,id);
       res.json({order:publicSandboxOrder(order)});
     }catch(e){error(res,e);}
