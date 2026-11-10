@@ -1,3 +1,4 @@
+import {beautyRefundTerms} from './client/src/lib/beautyOrderPricing.js';
 import { randomUUID } from 'node:crypto';
 import { basketFingerprint } from './beautyOrderDrafts.js';
 import { quoteBeautyOrder } from './beautyOrderService.js';
@@ -6,7 +7,7 @@ export function assertSandboxCheckout(provider,env=process.env){
   if(env.BEAUTY_SANDBOX_CHECKOUT_ENABLED!=='1'||!provider.config.configured||provider.config.environment!=='sandbox')throw Error('sandbox_checkout_disabled');
 }
 export function publicSandboxOrder(row){
-  return {id:row.id,status:row.status,quote:row.quote,expiresAt:row.expires_at,createdAt:row.created_at,refundStatus:row.refund_status || 'none',refundIssue:row.refund_issue==='PLATFORM_FEE_NOT_ENABLED'?'PLATFORM_FEE_NOT_ENABLED':null,fulfillmentStatus:row.fulfillment_status || 'processing',paymentReview:row.payment_review === true,inventoryRestocked:row.inventory_restocked === true,
+  return {...(row.quote?beautyRefundTerms(row.quote):{}),id:row.id,status:row.status,quote:row.quote,expiresAt:row.expires_at,createdAt:row.created_at,refundStatus:row.refund_status || 'none',refundIssue:row.refund_issue==='PLATFORM_FEE_NOT_ENABLED'?'PLATFORM_FEE_NOT_ENABLED':null,fulfillmentStatus:row.fulfillment_status || 'processing',paymentReview:row.payment_review === true,inventoryRestocked:row.inventory_restocked === true,
     approvalUrl:row.status==='paypal_created'?row.approval_url:null,sandbox:true};
 }
 export function createSandboxCheckout({pool,provider,env=process.env,customerReturn=false,maxActiveOrders=null}){

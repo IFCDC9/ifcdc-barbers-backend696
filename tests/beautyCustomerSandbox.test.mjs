@@ -5,7 +5,7 @@ import {createBeautyCustomerSandboxRouter,customerSandboxEligible,customerSandbo
 const buyer='11111111-1111-4111-8111-111111111111',other='22222222-2222-4222-8222-222222222222',id='33333333-3333-4333-8333-333333333333';
 const provider={config:{configured:true,environment:'sandbox'}};
 const env={BEAUTY_SANDBOX_CHECKOUT_ENABLED:'1',BEAUTY_CUSTOMER_SANDBOX_ENABLED:'1',BEAUTY_CUSTOMER_SANDBOX_BUYER_IDS:buyer};
-const order={id,status:'paid',buyer_id:buyer,bindings:[{merchantId:'PRIVATE'}],paypal_order_id:'PRIVATE',quote:{lines:[{productId:'p',name:'Product',quantity:1,unitPriceCents:1000,pickupLocation:'Test location',sellerId:'private'}],subtotalCents:1000,platformFeeCents:150,totalBeforeTaxShippingCents:1150,sellerAllocations:[{merchantId:'PRIVATE'}]}};
+const order={id,status:'paid',buyer_id:buyer,bindings:[{merchantId:'PRIVATE'}],paypal_order_id:'PRIVATE',quote:{pricingPolicy:'seller_commission_v1',lines:[{productId:'p',name:'Product',quantity:1,unitPriceCents:1000,pickupLocation:'Test location',sellerId:'private'}],subtotalCents:1000,platformFeeCents:150,totalBeforeTaxShippingCents:1150,sellerAllocations:[{merchantId:'PRIVATE'}]}};
 test('customer sandbox cannot be enabled by wildcard, client flags, or live credentials',()=>{
  assert.equal(customerSandboxEligible(buyer,provider,env),true);
  assert.equal(customerSandboxEligible(other,provider,env),false);
@@ -31,7 +31,9 @@ test('HTTP trial checks current account, locks identity to token, and limits cus
  assert.equal((await (await request('/config')).json()).eligible,true);assert.equal((await (await request('/config','other')).json()).eligible,false);
  assert.equal((await request('/orders','other',{})).status,403);
  assert.equal((await request('/orders/'+id,'other')).status,404);
- const res=await request('/orders','buyer',{buyerId:other,requestKey:'key',items:[{productId:'p',quantity:1}],priceCents:1});assert.equal(res.status,200);assert.equal(res.headers.get('cache-control'),'no-store');assert.equal(seen.at(-1)[1],buyer);assert.equal(seen.at(-1).length,4);
+ assert.equal((await request('/orders','buyer',{items:[],pricingPolicy:'seller_commission_v1',acceptFeePolicy:true})).status,409);
+ assert.equal((await request('/orders','buyer',{items:[],pricingPolicy:'flat_buyer_fee_v2'})).status,409);
+ const res=await request('/orders','buyer',{buyerId:other,requestKey:'key',items:[{productId:'p',quantity:1}],priceCents:1,pricingPolicy:'flat_buyer_fee_v2',acceptFeePolicy:true});assert.equal(res.status,200);assert.equal(res.headers.get('cache-control'),'no-store');assert.equal(seen.at(-1)[1],buyer);assert.equal(seen.at(-1).length,4);
  const before=seen.length;for(const action of ['refund','ready','collected','restock','constructor'])assert.equal((await request('/orders/'+id+'/'+action,'buyer',{})).status,404);assert.equal(seen.length,before);
  assert.equal((await request('/orders/'+id+'/capture','buyer',{})).status,200);assert.equal(seen.at(-1)[1],buyer);
  env.BEAUTY_CUSTOMER_SANDBOX_ENABLED='0';assert.equal((await request('/orders/'+id+'/capture','buyer',{})).status,403);assert.equal((await request('/orders')).status,200);assert.equal((await request('/orders/'+id+'/reconcile','buyer',{})).status,200);

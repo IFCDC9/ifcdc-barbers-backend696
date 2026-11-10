@@ -51,14 +51,14 @@ export default function BeautyManage() {
         <label>Product photo URL (HTTPS)<input name="imageUrl" type="url" maxLength={2000} placeholder="https://…" value={form.imageUrl} onChange={field}/></label>
         <label>Category<select name="category" value={form.category} onChange={field}>{BEAUTY_CATEGORIES.map(c=><option key={c}>{c}</option>)}</select></label>
         <label>Retail price (USD)<input required name="price" inputMode="decimal" value={form.price} onChange={field}/></label><label>Available stock<input required name="stock" inputMode="numeric" value={form.stock} onChange={field}/></label>
-        <label>Revenue model<select name="revenueModel" value={form.revenueModel} onChange={field}><option value="resale">Wholesale resale</option><option value="commission">Seller commission</option></select></label>
-        <label>Wholesale cost (USD, private)<input name="cost" inputMode="decimal" value={form.cost} onChange={field}/></label><label>Agreed commission (%, private)<input name="commission" inputMode="decimal" placeholder="Not set" value={form.commission} onChange={field}/></label>
+        <label>Wholesale cost (USD, private)<input name="cost" inputMode="decimal" value={form.cost} onChange={field}/></label>
+        <p>New product orders: one $2.50 buyer platform fee and no seller commission. Existing order terms are preserved.</p>
         <label>Publication<select name="status" value={form.status} onChange={field}><option value="draft">Draft</option><option value="published">Published</option><option value="archived">Archived</option></select></label>
         <label className="beauty-manage__check"><input name="shipping" type="checkbox" checked={form.shipping} onChange={field}/>Shipping</label><label className="beauty-manage__check"><input name="pickup" type="checkbox" checked={form.pickup} onChange={field}/>Local pickup</label>
         {form.pickup&&<label>Public pickup address<input required maxLength={500} name="pickupLocation" value={form.pickupLocation} onChange={field}/></label>}
         <label className="beauty-manage__check"><input name="independentBrand" type="checkbox" checked={form.independentBrand} onChange={field}/>Independent product line</label>
         <button>{editing?'Add edits to catalog':'Add product to catalog'}</button>{editing&&<button type="button" onClick={()=>{setEditing(null);setForm(blank());}}>Cancel product edit</button>}
-      </form><p>Adding or editing here prepares your changes. Use Save catalog above to persist them. Commission rates record your agreed terms; payouts are not connected.</p></section>
+      </form><p>Adding or editing here prepares your changes. Use Save catalog above to persist them. Historical commission metadata is retained for reference and does not apply to new checkout pricing.</p></section>
       <section><h2>Products ({catalog.products.length})</h2>{!catalog.products.length&&<p>No products added yet.</p>}<div className="beauty-manage__products">{catalog.products.map(p=><article key={p.id}><small>{p.status}</small><h3>{p.name}</h3><p>{p.brand} • {catalog.sellers.find(s=>s.id===p.sellerId)?.name}</p><p>${money(p.priceCents)} • {p.stock} in stock</p><button type="button" onClick={()=>edit(p)}>Edit {p.name}</button></article>)}</div></section>
       <BeautySandboxCheckout catalog={catalog} disabled={busy||dirty}/>
     </fieldset>}

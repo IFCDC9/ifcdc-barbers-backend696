@@ -32,10 +32,7 @@ export default function BeautyOrderReview({items}) {
     {orders.map(o=><article key={o.id}><h3>Order {o.id.slice(0,8)}</h3><p>{new Date(o.expires_at)<=new Date()?'Expired draft':'Draft · not paid'}</p>
       <ul>{o.quote.lines.map(l=><li key={l.productId}>{l.name} · {l.quantity} × {money(l.unitPriceCents)}</li>)}</ul>
       <p>Product subtotal: {money(o.quote.subtotalCents)}</p><p>Platform fee: {money(o.quote.platformFeeCents)}</p>
-      {o.quote.commissionPayer === 'seller'
-        ? <p>The 2% product commission is deducted from seller proceeds and is not added to your total.</p>
-        : <p>This saved draft uses previous pricing. Save a new draft to use the current seller-paid commission.</p>}
-      {o.quote.commissionPayer !== 'seller' && o.quote.commissionCents != null && <p>Previously quoted buyer commission: {money(o.quote.commissionCents)}</p>}
+      <p>{o.quote.pricingPolicy === 'flat_buyer_fee_v2' ? 'No seller commission. If products are refunded, the $2.50 buyer platform fee is retained.' : 'This saved draft uses previous pricing. It is preserved as originally quoted. Start a new draft for the current $2.50 fee and no seller commission.'}</p>
       <strong>Before tax &amp; shipping: {money(o.quote.totalBeforeTaxShippingCents)}</strong>
       <p>Quote expires {new Date(o.expires_at).toLocaleString()}. Price and availability must be checked again before payment.</p>
     </article>)}

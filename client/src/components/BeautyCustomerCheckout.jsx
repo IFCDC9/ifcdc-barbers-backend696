@@ -1,3 +1,4 @@
+import {BEAUTY_PRICING_POLICY} from '../lib/beautyOrderPricing.js';
 import {useEffect,useRef,useState} from 'react';
 import {Link} from 'react-router-dom';
 import {apiUrl,fetchWithTimeout} from '../lib/api.js';
@@ -5,9 +6,10 @@ import {getStoredToken,getStoredUser,getBearerAuthHeaders} from '../lib/authHead
 import '../styles/beautyCustomerCheckout.css';
 const money=n=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(n/100);
 const labels={reserved:'Reserved · not paid',paypal_created:'Awaiting payment approval',capture_pending:'Verifying payment',review_required:'Payment needs review',paid:'Test payment verified',cancelled:'Cancelled'};
-const errors={authentication_required:'Sign in again to access your orders.',active_account_required:'An active account is required.',customer_trial_not_enabled:'This account is not enabled for the sandbox checkout trial.',sandbox_checkout_disabled:'The sandbox trial is paused. No new payment was submitted.',sandbox_active_order_limit:'You have three unfinished test orders. View your orders and resolve them before reserving more.',sandbox_order_expired:'This reservation expired. Cancel the unpaid order before starting another.',sandbox_pickup_only:'Choose products available for pickup. Shipping is not included in this trial.',sandbox_limit_100_usd:'Keep the test total at or below $100, including the $1.50 fee.',paypal_approval_required:'Open PayPal, approve with a separate sandbox buyer account, then verify payment here.',seller_not_authorized:'The seller is not ready for this payment. Contact the store.',order_not_found:'This order is not available to your account.',capture_must_be_reconciled:'Payment may have started. Check payment status before doing anything else.',order_key_conflict:'This saved request belongs to a different bag. Reload your orders before continuing.','Invalid basket':'Availability changed. Refresh the store and review your bag.'};
+const errors={fee_policy_acceptance_required:'Review and accept the current platform-fee policy before reserving.',authentication_required:'Sign in again to access your orders.',active_account_required:'An active account is required.',customer_trial_not_enabled:'This account is not enabled for the sandbox checkout trial.',sandbox_checkout_disabled:'The sandbox trial is paused. No new payment was submitted.',sandbox_active_order_limit:'You have three unfinished test orders. View your orders and resolve them before reserving more.',sandbox_order_expired:'This reservation expired. Cancel the unpaid order before starting another.',sandbox_pickup_only:'Choose products available for pickup. Shipping is not included in this trial.',sandbox_limit_100_usd:'Keep the test total at or below $100, including the $2.50 fee.',paypal_approval_required:'Open PayPal, approve with a separate sandbox buyer account, then verify payment here.',seller_not_authorized:'The seller is not ready for this payment. Contact the store.',order_not_found:'This order is not available to your account.',capture_must_be_reconciled:'Payment may have started. Check payment status before doing anything else.',order_key_conflict:'This saved request belongs to a different bag. Reload your orders before continuing.','Invalid basket':'Availability changed. Refresh the store and review your bag.'};
 export default function BeautyCustomerCheckout({items}){
  const token=getStoredToken();
+ const [accepted,setAccepted]=useState(false);
  const [eligible,setEligible]=useState(false),[orders,setOrders]=useState([]),[busy,setBusy]=useState(false),[message,setMessage]=useState('');
  const pending=useRef(null),mounted=useRef(true);
  async function request(path,method='GET',body){
@@ -17,7 +19,7 @@ export default function BeautyCustomerCheckout({items}){
   if(!res.ok)throw Error(data.error||'checkout_unavailable');return data;
  }
  useEffect(()=>{
-  mounted.current=true;setOrders([]);setEligible(false);setMessage('');pending.current=null;
+  mounted.current=true;setAccepted(false);setOrders([]);setEligible(false);setMessage('');pending.current=null;
   let active=true;
   if(token)request('/config').then(async config=>{
    if(!active)return;setEligible(config.eligible===true);
@@ -31,15 +33,16 @@ export default function BeautyCustomerCheckout({items}){
   try{
    let data;
    if(action==='reserve'){
+    if(!accepted)throw Error('fee_policy_acceptance_required');
     if(!items.length)throw Error('Choose a pickup product first.');
     const sorted=items.map(x=>({productId:x.productId,quantity:x.quantity})).sort((a,b)=>a.productId.localeCompare(b.productId));
     const user=getStoredUser();if(!user?.id)throw Error('authentication_required');
     const key='ifcdc.beauty.sandbox.request.'+user.id;
-    const fingerprint=JSON.stringify(sorted);
+    const fingerprint=BEAUTY_PRICING_POLICY+JSON.stringify(sorted);
     if(!pending.current){try{pending.current=JSON.parse(sessionStorage.getItem(key)||'null');}catch{}}
     if(pending.current&&pending.current.fingerprint!==fingerprint)throw Error('Finish or cancel your saved test order before changing this checkout request.');
     if(!pending.current){pending.current={fingerprint,requestKey:crypto.randomUUID()};sessionStorage.setItem(key,JSON.stringify(pending.current));}
-    data=await request('/orders','POST',{items:sorted,requestKey:pending.current.requestKey});
+    data=await request('/orders','POST',{items:sorted,requestKey:pending.current.requestKey,pricingPolicy:BEAUTY_PRICING_POLICY,acceptFeePolicy:accepted});
    }else data=await request(action==='list'?'/orders':'/orders/'+id+'/'+action,action==='list'?'GET':'POST');
    if(data.orders)setOrders(data.orders);else if(data.order)setOrders(old=>[data.order,...old.filter(o=>o.id!==data.order.id)]);
    setMessage(data.order?.status==='paid'?'Test payment verified. Check your pickup status below.':data.order?.status==='capture_pending'||data.order?.status==='review_required'?'Payment is being checked. Keep this order and check its status; do not pay again.':action==='list'?'Your test orders are up to date.':'Test order updated.');
@@ -55,15 +58,15 @@ export default function BeautyCustomerCheckout({items}){
   <h3>Checkout &amp; my orders</h3>
   <p>Real customer payments are not open yet.</p>
   {!token?<p><Link to="/login">Sign in</Link> to view your orders.</p>:<>
-   {eligible&&<div className="beauty-customer-checkout__notice"><strong>Sandbox trial · test money only</strong><p>Pickup only. Maximum $100 including one $1.50 buyer fee. Tax and shipping are simulated as zero. Use a separate PayPal sandbox buyer account. Your app sign-in stays the same.</p><p>Reserving holds stock for this order. An expired reservation must be explicitly cancelled before stock is released.</p></div>}
+   {eligible&&<div className="beauty-customer-checkout__notice"><strong>Sandbox trial · test money only</strong><p>Pickup only. Maximum $100 including one $2.50 buyer platform fee. No seller commission. Product refunds exclude the platform fee. Tax and shipping are simulated as zero. Use a separate PayPal sandbox buyer account. Your app sign-in stays the same.</p><p>Reserving holds stock for this order. An expired reservation must be explicitly cancelled before stock is released.</p></div>}
    <fieldset disabled={busy}>
-    {eligible&&<button type="button" disabled={!items.length} onClick={()=>run('reserve')}>Reserve test order from bag</button>}
+    {eligible&&<><label><input type="checkbox" checked={accepted} onChange={e=>setAccepted(e.target.checked)}/> I understand the $2.50 platform fee is retained if products are refunded.</label><button type="button" disabled={!items.length||!accepted} onClick={()=>run('reserve')}>Reserve test order from bag</button></>}
     <button type="button" onClick={()=>run('list')}>Refresh my test orders</button>
     {orders.map(o=><article key={o.id}>
      <h4>Test order {o.id.slice(0,8)}</h4><p>{labels[o.status]||'Status unavailable'} · Pickup: {o.pickupStatus} · Refund: {o.refundStatus}</p>
      {(o.reviewRequired||o.refundStatus!=='none'||o.pickupStatus==='halted')&&<p>Order on hold. Contact the store before pickup.</p>}
      <ul>{o.quote.lines.map(l=><li key={l.productId}>{l.name} × {l.quantity}<br/>Pickup location: {l.pickupLocation||'Confirm with the store'}</li>)}</ul>
-     <p>Products {money(o.quote.subtotalCents)} · buyer fee {money(o.quote.platformFeeCents)}</p><strong>Test total {money(o.quote.totalCents)}</strong>
+     <p>Products {money(o.quote.subtotalCents)} · buyer fee {money(o.quote.platformFeeCents)}</p><strong>Test total {money(o.quote.totalCents)}</strong><p>{o.retainedPlatformFeeCents>0?`Product refund amount: ${money(o.refundAmountCents)}. Platform fee retained: ${money(o.retainedPlatformFeeCents)}.`:"Historical order: original pricing and full-payment refund terms retained."}</p>
      {['reserved','paypal_created'].includes(o.status)&&<p>Reservation expires {new Date(o.expiresAt).toLocaleString()}</p>}
      {eligible&&o.status==='reserved'&&<button type="button" onClick={()=>run('prepare',o.id)}>Continue to test payment</button>}
      {eligible&&o.status==='paypal_created'&&<>{o.approvalUrl&&<p><a href={o.approvalUrl}>Approve test payment on PayPal</a></p>}<button type="button" onClick={()=>run('capture',o.id)}>Verify and complete test payment</button></>}

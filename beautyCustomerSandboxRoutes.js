@@ -1,3 +1,4 @@
+import {BEAUTY_PRICING_POLICY,beautyRefundTerms} from './client/src/lib/beautyOrderPricing.js';
 import express from 'express';
 import {getDbPool} from './db.js';
 import {createBeautyPayPalProvider} from './beautySellerPayments.js';
@@ -9,7 +10,7 @@ export function customerSandboxEligible(buyer,provider,env){
 }
 export function customerSandboxOrder(row){
  const q=row.quote;
- return {id:row.id,status:row.status,sandbox:true,createdAt:row.created_at,expiresAt:row.expires_at,
+ return {...beautyRefundTerms(q),id:row.id,status:row.status,sandbox:true,createdAt:row.created_at,expiresAt:row.expires_at,
   pickupStatus:row.fulfillment_status||'processing',refundStatus:row.refund_status||'none',reviewRequired:row.payment_review===true||row.status==='review_required',
   approvalUrl:row.status==='paypal_created'?row.approval_url:null,
   quote:{lines:q.lines.map(l=>({productId:l.productId,name:l.name,quantity:l.quantity,unitPriceCents:l.unitPriceCents,pickupLocation:l.pickupLocation})),subtotalCents:q.subtotalCents,platformFeeCents:q.platformFeeCents,totalCents:q.totalBeforeTaxShippingCents}};
@@ -44,6 +45,7 @@ export function createBeautyCustomerSandboxRouter({query,resolveToken,getPool=ge
  // Refunds, pickup changes, seller bindings and provider tokens are never customer actions.
  router.post('/orders',async(req,res)=>{
   if(!customerSandboxEligible(req.beautyBuyerId,provider,env))return res.status(403).json({error:'customer_trial_not_enabled'});
+  if(req.body?.pricingPolicy!==BEAUTY_PRICING_POLICY||req.body?.acceptFeePolicy!==true)return res.status(409).json({error:'fee_policy_acceptance_required'});
   try{res.json({order:customerSandboxOrder(await service().reserve(req.beautyBuyerId,req.body?.requestKey,req.body?.items))});}catch(e){error(res,e);}
  });
  router.post('/orders/:id/:action',async(req,res)=>{

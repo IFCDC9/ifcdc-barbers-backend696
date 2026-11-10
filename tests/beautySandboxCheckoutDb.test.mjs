@@ -59,7 +59,7 @@ test('sandbox checkout PostgreSQL transactions and recovery',{skip:!runDb},async
    const before=captureRequests,paid=await service.capture(buyer,r.id);assert.equal(paid.status,'paid');
    assert.equal((await service.capture(buyer,r.id)).status,'paid');assert.equal(captureRequests,before+1);
    const ledger=(await db.query('SELECT details FROM beauty_sandbox_captures WHERE order_id=$1::uuid',[r.id])).rows;
-   assert.equal(ledger.length,1);assert.equal(ledger[0].details.platformFeeCents,170);assert.equal(ledger[0].details.netCents,955);
+   assert.equal(ledger.length,1);assert.equal(ledger[0].details.platformFeeCents,250);assert.equal(ledger[0].details.netCents,975);
    await assert.rejects(service.cancel(buyer,r.id),/capture_must_be_reconciled/);assert.equal(await stock(),9);captureTimeout=false;
   });
   await t.test('unknown captures preserve stock and recheck never submits another capture',async()=>{
