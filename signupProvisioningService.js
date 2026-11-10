@@ -1,3 +1,4 @@
+import { websiteService } from './websiteRuntime.js';
 /**
  * Provisions barber / shop-owner records after lightweight auth registration
  * so mobile signups appear in Super Admin approval queues.
@@ -202,6 +203,7 @@ export async function provisionBarberSignup({
   });
 
   await insertBarberSettingsRow(barberId);
+  await websiteService.provision('barber',barberId,displayName).catch(e=>console.warn('[websites] signup draft deferred:',e.message));
 
   const barberNotify = await notifySuperAdminsNewBarber({
     barberId,
@@ -302,6 +304,7 @@ export async function provisionShopOwnerSignup({
   });
 
   await insertBarberSettingsRow(barberId);
+  await websiteService.provision('shop',businessId,shop).catch(e=>console.warn('[websites] signup draft deferred:',e.message));
 
   await dbQuery(
     `INSERT INTO barber_services (barber_id, business_id, name, price, duration_minutes, is_active)

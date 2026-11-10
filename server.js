@@ -1,3 +1,6 @@
+import { websiteService } from './websiteRuntime.js';
+import { getSupabaseServiceClient } from './src/db/supabaseServiceClient.js';
+import { createWebsiteRouter } from './websiteRoutes.js';
 /**
  * IFCDC Barbers API — ESM entry (`"type": "module"`).
  * `./loadBackendEnv.mjs` MUST stay first — loads `backend/.env` (absolute path) before other imports run.
@@ -822,6 +825,7 @@ app.use(
 console.log("[boot] mounted /api/admin/hubspot (kpis)");
 app.use(createAdminShopsRouter());
 app.use(createBeautyRouter());
+app.use(createWebsiteRouter({service:websiteService,query:dbQuery,auth:requireAuth,storageClient:getSupabaseServiceClient}));
 app.use(createManagementTeamRouter());
 console.log(
   "[admin] routes mounted: invite, audit, password-reset, barbers, shops, management-team, notifications",

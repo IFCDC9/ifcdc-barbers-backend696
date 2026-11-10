@@ -1,3 +1,4 @@
+import { websiteService } from './websiteRuntime.js';
 /**
  * Premium barber onboarding API.
  * - POST /api/barber/onboard — register barber account + barber row + settings (public)
@@ -256,6 +257,7 @@ export function mountBarberOnboardingRoutes(app, { uploadDir } = {}) {
 
       const token = issueAppUserJwt(u);
       const httpStatus = existingAccount ? 200 : 201;
+      await websiteService.provision('barber',barberId,displayName).catch(e=>console.warn('[websites] signup draft deferred:',e.message));
       return res.status(httpStatus).json({
         ok: true,
         existing: existingAccount,

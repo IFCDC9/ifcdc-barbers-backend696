@@ -1,3 +1,4 @@
+import { websiteService } from './websiteRuntime.js';
 import express from "express";
 import { dbQuery } from "./db.js";
 import { comparePassword, hashPassword, validatePasswordStrength } from "./authPasswordPolicy.js";
@@ -187,6 +188,7 @@ export function mountOnboardingBusinessRoutes(app) {
           console.warn("[hubspot] onboarding company enqueue failed:", hubspotErr?.message || hubspotErr),
         );
 
+      await websiteService.provision('shop',businessId,businessName).catch(e=>console.warn('[websites] signup draft deferred:',e.message));
       return res.status(status).json({
         ok: true,
         success: true,

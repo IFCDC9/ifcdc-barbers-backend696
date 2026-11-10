@@ -231,6 +231,10 @@ export default function BookingWizard() {
         }))
         .filter((b) => b.name);
       setBarbers(items);
+      const requestedId=new URLSearchParams(window.location.search).get('barberId');
+      const requested=items.find(b=>String(b.id)===requestedId);
+      if(requested){setBarber(requested);setStep(3);}
+
       if (!items.length) setBarbersError("No providers available right now.");
     } catch (e) {
       setBarbers([]);

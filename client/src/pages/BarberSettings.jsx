@@ -627,6 +627,7 @@ export default function BarberSettings() {
 
   return (
     <Page>
+      <p><Link to="/website-studio" style={{fontWeight:700}}>Open your website studio — customize, upload videos & publish ↗</Link></p>
       <PageHeader
         title="Shop dashboard"
         subtitle="Barber settings — profile, services, weekly hours, PayPal deposits, portfolio images, AURA voice, and client notes."
