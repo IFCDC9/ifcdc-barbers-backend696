@@ -20,7 +20,7 @@ export function createSandboxOperations({pool,provider,env=process.env}){
    const total=rows.reduce((n,r)=>n+Number(r.amount_cents),0);
    const status=rows.length===caps.length&&rows.length>0&&total===order.quote.totalBeforeTaxShippingCents&&rows.every(r=>r.status==='completed')?'completed':rows.some(r=>r.status==='review_required')?'review_required':'pending';
    const r=await c.query("UPDATE beauty_sandbox_orders SET refund_status=$2,fulfillment_status='halted' WHERE id=$1::uuid RETURNING *",[order.id,status]);
-   await event(c,order.id,'refund_'+status);return r.rows[0];
+   await event(c,order.id,'refund_'+status);return {...r.rows[0],refund_issue:rows.some(x=>x.result?.issue==='PLATFORM_FEE_NOT_ENABLED')?'PLATFORM_FEE_NOT_ENABLED':null};
  }
  return {
   async requestRefund(buyer,id){
@@ -65,6 +65,9 @@ export function createSandboxOperations({pool,provider,env=process.env}){
        }
        if(remote)await checkRefund(c,row,remote);
       }catch(e){
+       if(e.providerIssue==='PLATFORM_FEE_NOT_ENABLED'){
+        await c.query("UPDATE beauty_sandbox_refunds SET status='review_required',result=$2::jsonb,checked_at=now() WHERE capture_id=$1",[row.capture_id,JSON.stringify({issue:'PLATFORM_FEE_NOT_ENABLED'})]);
+       }
        // A timeout is an unknown outcome. Retain the same key and reconcile before any retry.
        if(['refund_retry_window_expired','existing_refund_requires_review'].includes(e.message))await c.query("UPDATE beauty_sandbox_refunds SET status='review_required' WHERE capture_id=$1",[row.capture_id]);
        await event(c,id,'refund_attempt_unresolved');

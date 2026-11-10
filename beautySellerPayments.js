@@ -46,7 +46,13 @@ export function createBeautyPayPalProvider({config=beautyPaymentConfig(),fetchIm
       headers:{Authorization:'Bearer '+token.access_token,'Content-Type':'application/json','PayPal-Partner-Attribution-Id':config.bnCode,Prefer:'return=representation',...(requestId?{'PayPal-Request-Id':requestId}:{}),...(merchantId?{'PayPal-Auth-Assertion':Buffer.from(JSON.stringify({alg:'none'})).toString('base64url')+'.'+Buffer.from(JSON.stringify({iss:config.clientId,payer_id:merchantId})).toString('base64url')+'.'}:{})},
       ...(body?{body:JSON.stringify(body)}:{})});
     if(response.status===404) return null;
-    if(!response.ok) fail('seller_provider_request_failed');
+    if(!response.ok){
+      // Preserve only this known capability error; never expose arbitrary provider bodies.
+      let data;try{data=await response.json();}catch{}
+      const e=new Error('seller_provider_request_failed');
+      if(response.status===422&&data?.details?.some(d=>d.issue==='PLATFORM_FEE_NOT_ENABLED'))e.providerIssue='PLATFORM_FEE_NOT_ENABLED';
+      throw e;
+    }
     return response.json();
   }
   return {config,request,
