@@ -198,7 +198,7 @@ export default function BarberOnboarding() {
         } catch {
           /* ignore */
         }
-        navigate("/dashboard", { replace: true });
+        navigate("/website-studio", { replace: true });
         return;
       }
     } catch (e) {

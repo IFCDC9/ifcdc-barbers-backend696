@@ -1,6 +1,9 @@
+import { BusinessWebsite, BusinessDirectory } from './websites/WebsitePages.jsx';
+import WebsiteStudio from './websites/WebsiteStudio.jsx';
+import './websites/websites.css';
 import BeautyManage from "./pages/BeautyManage.jsx";
 import BeautySupply from "./pages/BeautySupply.jsx";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import PayPalReturnBridge from "./components/PayPalReturnBridge.jsx";
 import MainLayout from "./layouts/MainLayout.jsx";
 import { IFCDC_GOLD } from "./lib/ifcdcColors.js";
@@ -81,6 +84,14 @@ function HeaderLanguageSelect() {
 }
 
 function AppShell() {
+  const {pathname}=useLocation();
+  const websiteSurface=pathname==='/'||pathname==='/find-a-barber'||pathname==='/website-studio'||pathname.startsWith('/sites/');
+  if(websiteSurface)return <AuthSessionHydrate><div className="ws-root"><PayPalReturnBridge/><Routes>
+    <Route path="/" element={<Home/>}/>
+    <Route path="/find-a-barber" element={<BusinessDirectory/>}/>
+    <Route path="/sites/:key" element={<BusinessWebsite/>}/>
+    <Route path="/website-studio" element={<WebsiteStudio/>}/>
+  </Routes></div></AuthSessionHydrate>;
   return (
     // DO NOT ADD max-w or mx-auto to root layout
     // This breaks full-screen snap behavior

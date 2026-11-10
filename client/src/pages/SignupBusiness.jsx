@@ -76,7 +76,7 @@ export default function SignupBusiness() {
           if (data.existing === true) {
             console.log("Existing user — continuing onboarding");
           }
-          navigate("/dashboard", { replace: true });
+          navigate("/website-studio", { replace: true });
           return true;
         }
 
