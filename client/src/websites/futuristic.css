@@ -1,0 +1,70 @@
+/* IFCDC public identity; tenant website themes and booking screens remain scoped separately. */
+.ws-root img.ws-brand-logo{width:44px;height:44px;object-fit:contain;flex-shrink:0;border-radius:50%;background:#020303}
+.ws-root .ws-future{--ws-accent:#e5c06b;--ws-muted:#a9b2b5;--ws-line:#ffffff16;background:#070a0c;color:#f1f4f3;min-height:100%;font-family:Arial,Helvetica,sans-serif;position:relative;isolation:isolate}
+.ws-future::before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background:radial-gradient(ellipse 70% 24% at 85% 4%,#bd903417,transparent 75%),linear-gradient(90deg,#ffffff02 1px,transparent 1px),linear-gradient(#ffffff02 1px,transparent 1px);background-size:auto,90px 90px,90px 90px;mask-image:linear-gradient(#000,transparent 72%)}
+.ws-root .ws-future .ws-nav{position:relative;z-index:10;max-width:1640px;margin:auto;padding:24px 5vw;border-bottom:1px solid #ffffff13;background:#070a0cf0;gap:28px}
+.ws-root .ws-future .ws-wordmark{color:#f6f6ef;font-weight:700;letter-spacing:.08em;font-size:1.3rem;gap:12px}
+.ws-root .ws-future .ws-wordmark>span{color:#d9b867;font-size:.58rem;letter-spacing:.2em}
+.ws-root .ws-future .ws-nav nav{font-size:.77rem;gap:25px;color:#b8c0c2}
+.ws-root .ws-future .ws-nav nav>a:hover{color:#f4d996;text-decoration:none}
+.ws-root .ws-future a.ws-button,.ws-root .ws-future a.ws-button:visited,.ws-root .ws-future button.ws-button{color:#111511;background:linear-gradient(115deg,#f5dfa1,#d9ae52);border:1px solid #f3d89a;border-radius:8px;box-shadow:0 4px 20px #dfbd5710;font-weight:700;letter-spacing:.01em;text-shadow:none}
+.ws-root .ws-future a.ws-button:hover,.ws-root .ws-future a.ws-button:focus-visible{color:#0a100b;background:#f8e4ad;border-color:#fae8bd;box-shadow:0 4px 26px #dfbd5720;text-decoration:none}
+.ws-root .ws-future :focus-visible{outline:2px solid #f4d894;outline-offset:5px}
+.ws-root .ws-future .ws-home-hero{max-width:1640px;margin:auto;min-height:740px;grid-template-columns:1.05fr 1fr;gap:35px;padding:30px 5vw 58px;align-items:center}
+.ws-root .ws-future .ws-hero-copy{padding:50px 0 15px;position:relative;z-index:1}
+.ws-root .ws-future .ws-eyebrow{color:#d9bc79;font-size:.64rem;letter-spacing:.2em;line-height:1.7}
+.ws-root .ws-future .ws-hero-copy h1{font-family:Arial,Helvetica,sans-serif;font-size:clamp(3.1rem,5.2vw,6rem);font-weight:500;line-height:1.02;letter-spacing:-.065em;color:#f1f4f3;margin-bottom:30px}
+.ws-root .ws-future em{font-family:inherit;font-style:normal;font-weight:inherit;color:#e9cc86}
+.ws-root .ws-future .ws-hero-copy>p:not(.ws-eyebrow){color:#acb6ba;max-width:430px;font-size:.97rem;line-height:1.85;margin-bottom:27px}
+.ws-root .ws-future .ws-professional-select{color:#c9d0d1;font-size:.7rem;letter-spacing:.02em;width:min(100%,365px);margin-bottom:20px}
+.ws-root .ws-future .ws-professional-select select{color:#edf0eb;background:#111719;border:1px solid #ffffff2b;border-radius:8px;min-height:48px;color-scheme:dark}
+.ws-root .ws-future .ws-actions{gap:20px;align-items:center}
+.ws-root .ws-future .ws-text-link{font-size:.74rem;color:#d9dfdc;border-color:#d8be7859;line-height:1.8}
+.ws-root .ws-future .ws-hero-note{margin-top:0;padding-top:32px;font-size:.65rem;color:#909b9f;letter-spacing:.03em}
+.ws-root .ws-future .ws-line{background:#b1914b;width:28px}
+.ws-root .ws-future .ws-hero-photo{min-height:0;align-self:center;aspect-ratio:1467/1250;width:100%;border-radius:20px;overflow:hidden;background:#070909;border:1px solid #e8ca793b;box-shadow:0 30px 80px #0009,0 0 65px #cfa0460c;isolation:isolate}
+.ws-root .ws-future .ws-hero-photo>img{object-fit:contain;object-position:center;z-index:0}
+.ws-root .ws-future .ws-hero-photo::after{content:"";position:absolute;inset:10px;pointer-events:none;z-index:2;border:1px solid #ffe5a017;border-radius:13px}
+.ws-root .ws-future .ws-photo-caption{z-index:1;padding:55px 28px 22px;background:linear-gradient(transparent,#040707e6);gap:7px}
+.ws-root .ws-future .ws-photo-caption>span{font-family:Arial,Helvetica,sans-serif;font-size:.75rem;font-style:normal;text-transform:uppercase;letter-spacing:.18em;color:#f0d697}
+.ws-root .ws-future .ws-photo-caption small{color:#d4dbd8;font-size:.64rem;letter-spacing:.02em}
+.ws-root .ws-future .ws-values{max-width:1480px;margin:0 auto;border-block:1px solid #ffffff15;color:#aab5b7;padding:24px 5vw;font-size:.64rem;letter-spacing:.12em;background:#10161966}
+.ws-root .ws-future .ws-values i{color:#d9b562}
+.ws-root .ws-future .ws-home-intro{max-width:1500px;margin:auto;padding-top:100px;padding-bottom:80px;gap:80px}
+.ws-root .ws-future .ws-home-intro h2{font-family:Arial,Helvetica,sans-serif;font-size:clamp(2rem,3.4vw,3.7rem);font-weight:400;letter-spacing:-.055em;color:#e9eeec}
+.ws-root .ws-future .ws-home-intro>p{color:#aab4b7;font-size:.9rem;line-height:1.85}
+.ws-root .ws-future .ws-paths{max-width:1500px;margin:auto;gap:20px;padding-bottom:90px}
+.ws-root .ws-future .ws-paths>a,.ws-root .ws-future .ws-paths>a:nth-child(2){background:linear-gradient(135deg,#171e21,#0c1113);color:#eaf0ed;border:1px solid #ffffff17;border-radius:15px;padding:42px;min-height:345px;transition:border-color .2s,transform .2s}
+.ws-root .ws-future .ws-paths>a:nth-child(2){background:linear-gradient(130deg,#24231b,#101512);border-color:#d4b66838}
+.ws-root .ws-future .ws-paths>a:hover{border-color:#e1c07177;transform:translateY(-3px)}
+.ws-root .ws-future .ws-paths h2{font-family:Arial,Helvetica,sans-serif;font-size:clamp(2rem,3vw,3.5rem);font-weight:400;letter-spacing:-.055em}
+.ws-root .ws-future .ws-step{font-size:.6rem;letter-spacing:.17em;color:#d1b777;margin-bottom:30px}
+.ws-root .ws-future .ws-paths p{color:#a9b5b7;opacity:1;font-size:.86rem}
+.ws-root .ws-future .ws-paths a>span:last-child{color:#e8d293;font-size:.74rem;border-color:#d4b76f66}
+.ws-root .ws-future .ws-business-invite{background:radial-gradient(ellipse at 50% 100%,#7863291a,transparent 65%);border-color:#ffffff15;padding-top:85px;padding-bottom:100px}
+.ws-root .ws-future .ws-business-invite h2{font-size:clamp(2.5rem,4.4vw,4.9rem);font-family:Arial,Helvetica,sans-serif;font-weight:400;letter-spacing:-.06em}
+.ws-root .ws-future .ws-business-invite>p:not(.ws-eyebrow){color:#a8b5b9;font-size:.9rem;line-height:1.85}
+.ws-root .ws-future .ws-download{background:linear-gradient(115deg,#171c1c,#0c1113);color:#f1f3ed;border-top:1px solid #ffffff18;gap:60px;padding-top:70px;padding-bottom:70px}
+.ws-root .ws-future .ws-download h2{font-size:clamp(2rem,3.3vw,3.6rem);font-family:Arial,Helvetica,sans-serif;font-weight:400;letter-spacing:-.055em}
+.ws-root .ws-future .ws-download>div>p:not(.ws-eyebrow){color:#a8b4b7;font-size:.88rem}
+.ws-root .ws-future a.ws-store-badge,.ws-root .ws-future a.ws-store-badge:visited{background:#080d0f;color:#f5f5ee;border-color:#d5b5684a;box-shadow:0 4px 25px #0002;border-radius:10px}
+.ws-root .ws-future a.ws-store-badge:hover{background:#1b2425;border-color:#e6c575;color:#fff}
+.ws-root .ws-future .ws-store-badge svg{color:#e8ca82}
+.ws-root .ws-future .ws-store-help{color:#95a5a8}
+.ws-root .ws-future .ws-footer{background:#06090b;color:#a8b2b5;border-top:1px solid #ffffff11;padding:55px 5vw;gap:50px}
+.ws-root .ws-future .ws-footer .ws-wordmark{align-items:center;font-size:1.15rem}
+.ws-root .ws-future .ws-footer .ws-wordmark span{color:#9ca9ab;font-size:.65rem;letter-spacing:0}
+.ws-root .ws-future .ws-footer a:hover{color:#efdaa0}
+.ws-root .ws-future .ws-options-panel{background:#11191c;color:#e9eeeb;border-color:#d0b16650;box-shadow:0 20px 50px #0009;border-radius:10px}
+.ws-root .ws-future .ws-options-panel a{color:#d7dfdc}
+.ws-root .ws-future .ws-options-panel a:hover,.ws-root .ws-future .ws-options-panel a:focus-visible{background:#ffffff0b;color:#f5dc9e}
+.ws-root .ws-directory-surface .ws-directory{max-width:1500px;margin:auto}
+.ws-root .ws-directory-surface .ws-search input{background:#11191c;color:#e9eeeb;border-color:#ffffff25;border-radius:8px}
+.ws-root .ws-directory-surface .ws-directory-photo{background:#182024;border:1px solid #ffffff12;border-radius:12px}
+.ws-root .ws-directory-surface .ws-directory-photo>span{color:#cfb572}
+.ws-root .ws-directory-surface .ws-directory-card small,.ws-root .ws-directory-surface .ws-directory-card p{color:#a9b5b8}
+.ws-root .ws-directory-surface .ws-team-member{border-color:#ffffff20}
+@media(min-width:1600px){.ws-root .ws-future .ws-home-hero,.ws-root .ws-future .ws-nav{padding-left:80px;padding-right:80px}}
+@media(max-width:1000px){.ws-root .ws-future .ws-nav{gap:20px}.ws-root .ws-future .ws-nav nav{gap:18px;font-size:.72rem}.ws-root .ws-future .ws-home-hero{gap:25px;min-height:650px}.ws-root .ws-future .ws-hero-copy h1{font-size:clamp(2.9rem,5.5vw,4.8rem)}.ws-root .ws-future .ws-home-intro{gap:40px}.ws-root .ws-future .ws-paths>a{padding:32px}}
+@media(max-width:620px){.ws-root img.ws-brand-logo{width:35px;height:35px}.ws-root .ws-future .ws-nav{padding:18px 6vw;gap:18px}.ws-root .ws-future .ws-wordmark{font-size:1.05rem;gap:8px}.ws-root .ws-future .ws-wordmark>span{font-size:.48rem;max-width:65px}.ws-root .ws-future .ws-nav>.ws-button{font-size:.61rem;padding:11px 12px;gap:8px;max-width:172px}.ws-root .ws-future .ws-nav nav{justify-content:space-between;width:100%;gap:10px;font-size:.68rem;order:3}.ws-root .ws-future .ws-home-hero{grid-template-columns:1fr;min-height:0;padding:10px 6vw 40px;gap:30px}.ws-root .ws-future .ws-hero-copy{padding:40px 0 0}.ws-root .ws-future .ws-hero-copy h1{font-size:clamp(2.9rem,12vw,4.2rem)}.ws-root .ws-future .ws-eyebrow{font-size:.58rem;letter-spacing:.15em}.ws-root .ws-future .ws-hero-copy>p:not(.ws-eyebrow){font-size:.9rem;line-height:1.8}.ws-root .ws-future .ws-professional-select{width:100%}.ws-root .ws-future .ws-hero-photo{aspect-ratio:1467/1100;border-radius:14px}.ws-root .ws-future .ws-photo-caption{padding:40px 19px 15px}.ws-root .ws-future .ws-values{font-size:.52rem;letter-spacing:.06em;padding:22px 6vw;gap:15px}.ws-root .ws-future .ws-home-intro{padding:55px 6vw 40px;gap:25px}.ws-root .ws-future .ws-paths{padding:0 6vw 55px;gap:17px}.ws-root .ws-future .ws-paths>a{padding:30px;min-height:310px}.ws-root .ws-future .ws-business-invite{padding:55px 6vw 65px}.ws-root .ws-future .ws-download{padding:50px 6vw;gap:30px}.ws-root .ws-future .ws-footer{padding:40px 6vw;gap:30px}.ws-root .ws-future .ws-footer .ws-wordmark span{font-size:.65rem;max-width:130px}.ws-root .ws-future .ws-options-panel{right:0}}
+@media(prefers-reduced-motion:reduce){.ws-root .ws-future .ws-paths>a{transition:none;transform:none}}
