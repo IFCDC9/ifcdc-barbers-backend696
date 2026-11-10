@@ -6,7 +6,7 @@ export function assertSandboxCheckout(provider,env=process.env){
   if(env.BEAUTY_SANDBOX_CHECKOUT_ENABLED!=='1'||!provider.config.configured||provider.config.environment!=='sandbox')throw Error('sandbox_checkout_disabled');
 }
 export function publicSandboxOrder(row){
-  return {id:row.id,status:row.status,quote:row.quote,expiresAt:row.expires_at,createdAt:row.created_at,refundStatus:row.refund_status || 'none',fulfillmentStatus:row.fulfillment_status || 'processing',paymentReview:row.payment_review === true,inventoryRestocked:row.inventory_restocked === true,
+  return {id:row.id,status:row.status,quote:row.quote,expiresAt:row.expires_at,createdAt:row.created_at,refundStatus:row.refund_status || 'none',refundIssue:row.refund_issue==='PLATFORM_FEE_NOT_ENABLED'?'PLATFORM_FEE_NOT_ENABLED':null,fulfillmentStatus:row.fulfillment_status || 'processing',paymentReview:row.payment_review === true,inventoryRestocked:row.inventory_restocked === true,
     approvalUrl:row.status==='paypal_created'?row.approval_url:null,sandbox:true};
 }
 export function createSandboxCheckout({pool,provider,env=process.env}){
@@ -72,7 +72,7 @@ export function createSandboxCheckout({pool,provider,env=process.env}){
         await saveCatalog(c,cat);await event(c,r.rows[0].id,'stock_reserved');return r.rows[0];
       });
     },
-    async list(buyer){assertEnabled();const r=await pool.query('SELECT * FROM beauty_sandbox_orders WHERE buyer_id=$1::uuid AND partner_client_id=$2 AND partner_id=$3 ORDER BY created_at DESC LIMIT 20',[buyer,...scope]);return r.rows;},
+    async list(buyer){assertEnabled();const r=await pool.query("SELECT o.*, (SELECT r.result->>'issue' FROM beauty_sandbox_refunds r WHERE r.order_id=o.id AND r.result->>'issue'='PLATFORM_FEE_NOT_ENABLED' LIMIT 1) AS refund_issue FROM beauty_sandbox_orders o WHERE buyer_id=$1::uuid AND partner_client_id=$2 AND partner_id=$3 ORDER BY created_at DESC LIMIT 20",[buyer,...scope]);return r.rows;},
     async prepare(buyer,id){
       assertEnabled();return tx(async c=>{
         const row=await lock(c,buyer,id);

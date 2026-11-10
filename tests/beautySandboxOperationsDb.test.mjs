@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {randomUUID} from 'node:crypto';
+import {createSandboxCheckout} from '../beautySandboxCheckout.js';
 import {createSandboxOperations} from '../beautySandboxOperations.js';
 import {createSandboxWebhookStore} from '../beautySandboxWebhooks.js';
 import {quoteBeautyOrder} from '../beautyOrderService.js';
@@ -13,11 +14,12 @@ test('sandbox refunds, pickup and webhook PostgreSQL integration',{skip:!runDb},
  const buyer='11111111-1111-4111-8111-111111111111',other='22222222-2222-4222-8222-222222222222';
  const env={BEAUTY_SANDBOX_CHECKOUT_ENABLED:'1',BEAUTY_SANDBOX_REFUNDS_ENABLED:'1'};
  const cat={sellers:[{id:'seller',name:'Seller',status:'approved'}],products:[{id:'product',sellerId:'seller',name:'Test',brand:'IFCDC',category:'Hair care',priceCents:1000,stock:50,status:'published',fulfillment:['pickup'],pickupLocation:'Sandbox test location'}]};
- const remotes=new Map(),refunds=new Map(),keys=new Map();let seq=0,refundSeq=0,postCount=0,loseResponse=false,feeProof=true,providerAllowed=true,readFailures=0,rejectCapture=null;
+ const remotes=new Map(),refunds=new Map(),keys=new Map();let seq=0,refundSeq=0,postCount=0,loseResponse=false,feeProof=true,providerAllowed=true,readFailures=0,rejectCapture=null,capabilityBlocked=false;
  const provider={config:{configured:true,environment:'sandbox',clientId:'partner-app',partnerId:'PARTNER1'},verify:async()=>({status:'account_authorized',merchantId:'SELLER1'}),request:async(path,o={})=>{
    if(path.startsWith('/v2/checkout/orders/')){if(readFailures){readFailures--;throw Error('temporary_network_failure');}return structuredClone(remotes.get(path.split('/').pop()) || null);}
    if(path.startsWith('/v2/payments/refunds/'))return structuredClone(refunds.get(path.split('/').pop()) || null);
    if(path.endsWith('/refund')&&o.method==='POST'){
+    if(capabilityBlocked){const e=Error('seller_provider_request_failed');e.providerIssue='PLATFORM_FEE_NOT_ENABLED';throw e;}
     if(!providerAllowed||path.includes('/'+rejectCapture+'/'))throw Error('seller_provider_request_failed');
     postCount++;let refund=keys.get(o.requestId);
     if(!refund){
@@ -75,6 +77,15 @@ test('sandbox refunds, pickup and webhook PostgreSQL integration',{skip:!runDb},
    const o=await seedPaid();providerAllowed=false;assert.equal((await operations.requestRefund(buyer,o.id)).refund_status,'pending');providerAllowed=true,readFailures=0,rejectCapture=null;
    await db.query("UPDATE beauty_sandbox_refunds SET created_at=now()-interval '31 minutes' WHERE order_id=$1::uuid",[o.id]);
    const before=postCount;assert.equal((await operations.processRefund(buyer,o.id,true)).refund_status,'review_required');assert.equal(postCount,before);
+  });
+  await t.test('platform-fee rejection persists as review with a safe diagnostic across reloads',async()=>{
+   const o=await seedPaid();capabilityBlocked=true;
+   const result=await operations.requestRefund(buyer,o.id);
+   assert.equal(result.refund_status,'review_required');assert.equal(result.refund_issue,'PLATFORM_FEE_NOT_ENABLED');assert.equal(result.fulfillment_status,'halted');
+   const listed=await createSandboxCheckout({pool,provider,env}).list(buyer);
+   assert.equal(listed.find(x=>x.id===o.id).refund_issue,'PLATFORM_FEE_NOT_ENABLED');
+   assert.equal((await operations.processRefund(buyer,o.id,false)).refund_issue,'PLATFORM_FEE_NOT_ENABLED');
+   capabilityBlocked=false;
   });
   await t.test('webhook deduplication and late completion do not reopen refunded orders',async()=>{
    const o=await seedPaid();await operations.requestRefund(buyer,o.id);
