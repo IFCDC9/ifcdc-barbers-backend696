@@ -757,6 +757,7 @@ export async function getBookingCalendarDays(barberId, fromYmd, toYmd, barberNam
   const schedule = await loadBarberSchedule(barberId, barberName);
   const tz = schedule.timezone;
   const today = todayYmdInTimezone(tz);
+  const nowMin = nowMinutesInTimezone(tz);
   const lastBookableDate = addDaysYmd(today, schedule.bookingWindowDays || 90);
   const who = String(barberName || "This provider").trim() || "This provider";
 
@@ -821,9 +822,26 @@ export async function getBookingCalendarDays(barberId, fromYmd, toYmd, barberNam
       continue;
     }
 
-    const existingBookings = await loadBookingsForDate(barberId, dateStr, barberName, {});
+    const eligibleStarts = minuteStarts.filter(
+      (minute) =>
+        (dateStr !== today || minute >= nowMin) &&
+        serviceDurationFitsSchedule(schedule, dateStr, minute, durationMinutes),
+    );
+    if (!eligibleStarts.length) {
+      days.push({
+        date: dateStr,
+        status: "closed",
+        selectable: false,
+        message: `No appointment times remain for this date with ${who}.`,
+        reason: "no_available_times",
+        openSlots: 0,
+      });
+      continue;
+    }
+
+    const existingBookings = await loadBookingsForDate(barberId, dateStr, barberName, { timezone: tz });
     let openCount = 0;
-    for (const m of minuteStarts) {
+    for (const m of eligibleStarts) {
       let free = true;
       for (const booking of existingBookings) {
         if (intervalsOverlap(m, durationMinutes, booking.startMinutes, booking.durationMinutes)) {
