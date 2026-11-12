@@ -71,6 +71,12 @@ export function createSandboxOperations({pool,provider,env=process.env}){
        }
        // A timeout is an unknown outcome. Retain the same key and reconcile before any retry.
        if(['refund_retry_window_expired','existing_refund_requires_review'].includes(e.message))await c.query("UPDATE beauty_sandbox_refunds SET status='review_required' WHERE capture_id=$1",[row.capture_id]);
+       const known = ['refund_retry_window_expired', 'existing_refund_requires_review',
+         'seller_provider_auth_failed', 'seller_provider_request_failed', 'refund_request_invalid'];
+       const reason = known.includes(e?.message) ? e.message : 'refund_outcome_unknown';
+       console.warn('[beauty-sandbox-refund] unresolved', {
+         order: String(id).slice(0, 8), reason,
+       });
        await event(c,id,'refund_attempt_unresolved');
       }
     }
