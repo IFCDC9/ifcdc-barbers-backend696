@@ -231,9 +231,13 @@ export default function BookingWizard() {
         }))
         .filter((b) => b.name);
       setBarbers(items);
-      const requestedId=new URLSearchParams(window.location.search).get('barberId');
-      const requested=items.find(b=>String(b.id)===requestedId);
-      if(requested){setBarber(requested);setStep(3);}
+      const requestedId = new URLSearchParams(window.location.search).get("barberId");
+      const requested = items.find((b) => String(b.id) === requestedId);
+      if (requested) {
+        setBarber(requested);
+        setDate(null);
+        setStep(2);
+      }
 
       if (!items.length) setBarbersError("No providers available right now.");
     } catch (e) {
@@ -610,6 +614,7 @@ export default function BookingWizard() {
                   className={`ifcdc-book-wizard__pick${barber?.id === b.id ? " ifcdc-book-wizard__pick--on" : ""}`}
                   onClick={() => {
                     setBarber(b);
+                    setDate(null);
                     setStep(2);
                     setError(null);
                   }}
@@ -714,7 +719,7 @@ export default function BookingWizard() {
           <button
             type="button"
             className="ifcdc-book-wizard__cta"
-            disabled={!selectedServices.length}
+            disabled={!date || !selectedServices.length}
             onClick={() => {
               setTime(null);
               setStep(4);
