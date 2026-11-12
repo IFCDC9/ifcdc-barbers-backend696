@@ -45,6 +45,25 @@ export function createBeautyPayPalProvider({config=beautyPaymentConfig(),fetchIm
     const response=await fetchImpl(config.apiBase+path,{method,redirect:'error',signal:AbortSignal.timeout(15000),
       headers:{Authorization:'Bearer '+token.access_token,'Content-Type':'application/json','PayPal-Partner-Attribution-Id':config.bnCode,Prefer:'return=representation',...(requestId?{'PayPal-Request-Id':requestId}:{}),...(merchantId?{'PayPal-Auth-Assertion':Buffer.from(JSON.stringify({alg:'none'})).toString('base64url')+'.'+Buffer.from(JSON.stringify({iss:config.clientId,payer_id:merchantId})).toString('base64url')+'.'}:{})},
       ...(body?{body:JSON.stringify(body)}:{})});
+    if (!response.ok && config.environment === 'sandbox') {
+      const operation = method === 'POST' && /^\/v2\/payments\/captures\/[^/]+\/refund$/.test(path)
+        ? 'submit'
+        : method === 'GET' && /^\/v2\/payments\/refunds\/[^/]+$/.test(path)
+          ? 'lookup'
+          : null;
+      if (operation) {
+        const data = await response.clone().json().catch(() => null);
+        const issue = Array.isArray(data?.details)
+          ? data.details.find(detail => /^[A-Z][A-Z0-9_]{1,79}$/.test(detail?.issue || ''))?.issue
+          : undefined;
+        const debugId = typeof data?.debug_id === 'string' && /^[a-f0-9]{8,64}$/i.test(data.debug_id)
+          ? data.debug_id
+          : undefined;
+        console.warn('[beauty-sandbox-refund] PayPal response', {
+          operation, httpStatus: response.status, issue, debugId,
+        });
+      }
+    }
     if(response.status===404) return null;
     if(!response.ok){
       // Preserve only this known capability error; never expose arbitrary provider bodies.
