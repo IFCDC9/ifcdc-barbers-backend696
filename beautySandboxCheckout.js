@@ -116,10 +116,23 @@ export function createSandboxCheckout({pool,provider,env=process.env,customerRet
         if(remote.status!=='APPROVED')throw Error('paypal_approval_required');
         if(remote.purchase_units.some(u=>(u.payments?.captures||[]).length))throw Error('unexpected_capture_requires_review');
         const r=await c.query("UPDATE beauty_sandbox_orders SET status='capture_pending' WHERE id=$1::uuid RETURNING *",[row.id]);
-        await event(c,row.id,retry?'same_capture_retried':'capture_requested');return {...r.rows[0],submitCapture:true};
+        // Preserve the original caller on retries, including attempts made before seller-scoped capture.
+        let captureMerchantId;
+        if (row.bindings.length === 1) {
+          const scoped = !retry || (await c.query(
+            "SELECT 1 FROM beauty_sandbox_order_events WHERE order_id=$1::uuid AND event='seller_scoped_capture' LIMIT 1",
+            [row.id],
+          )).rows.length > 0;
+          if (scoped) {
+            captureMerchantId = row.bindings[0].merchantId;
+            if (!retry) await event(c, row.id, 'seller_scoped_capture');
+          }
+        }
+        await event(c,row.id,retry?'same_capture_retried':'capture_requested');
+        return {...r.rows[0],submitCapture:true,captureMerchantId};
       });
       if(row.submitCapture){
-        try{await provider.request('/v2/checkout/orders/'+encodeURIComponent(row.paypal_order_id)+'/capture',{method:'POST',requestId:row.id+'-c',body:{}});}catch{/* Reconcile after timeouts/errors; never assume money did not move. */}
+        try{await provider.request('/v2/checkout/orders/'+encodeURIComponent(row.paypal_order_id)+'/capture',{method:'POST',requestId:row.id+'-c',merchantId:row.captureMerchantId,body:{}});}catch{/* Reconcile after timeouts/errors; never assume money did not move. */}
       }
       return tx(async c=>{const current=await lock(c,buyer,id);return ['capture_pending','review_required'].includes(current.status)?reconcile(c,current):current;});
     },
