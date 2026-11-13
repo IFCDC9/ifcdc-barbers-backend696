@@ -10,6 +10,12 @@ export function publicSandboxOrder(row){
   return {...(row.quote?beautyRefundTerms(row.quote):{}),id:row.id,status:row.status,quote:row.quote,expiresAt:row.expires_at,createdAt:row.created_at,refundStatus:row.refund_status || 'none',refundIssue:row.refund_issue==='PLATFORM_FEE_NOT_ENABLED'?'PLATFORM_FEE_NOT_ENABLED':null,fulfillmentStatus:row.fulfillment_status || 'processing',paymentReview:row.payment_review === true,inventoryRestocked:row.inventory_restocked === true,
     approvalUrl:row.status==='paypal_created'?row.approval_url:null,sandbox:true};
 }
+function orderMerchantId(row){
+  return row.bindings?.length === 1 && row.bindings[0].sellerScopedOrder === true
+    ? row.bindings[0].merchantId
+    : undefined;
+}
+
 export function createSandboxCheckout({pool,provider,env=process.env,customerReturn=false,maxActiveOrders=null}){
   const scope=[provider.config.clientId,provider.config.partnerId];
   const assertEnabled=()=>assertSandboxCheckout(provider,env);
@@ -36,7 +42,7 @@ export function createSandboxCheckout({pool,provider,env=process.env,customerRet
   }
   async function saveCatalog(c,value){await c.query('UPDATE beauty_catalog_state SET catalog=$1::jsonb,revision=revision+1 WHERE id=1',[JSON.stringify(value)]);}
   async function reconcile(c,row){
-    let remote;try{remote=await provider.request('/v2/checkout/orders/'+encodeURIComponent(row.paypal_order_id));}
+    let remote;try{remote=await provider.request('/v2/checkout/orders/'+encodeURIComponent(row.paypal_order_id),{merchantId:orderMerchantId(row)});}
     catch{return row;}
     if(!remote)return row;
     let captures;
@@ -70,6 +76,7 @@ export function createSandboxCheckout({pool,provider,env=process.env,customerRet
         if(quote.sellerAllocations.length>10)throw Error('too_many_sellers');
         const bindings=[];
         for(const a of quote.sellerAllocations)bindings.push({sellerId:a.sellerId,merchantId:await eligible(c,a.sellerId)});
+        if (bindings.length === 1) bindings[0].sellerScopedOrder = true;
         quote.sandbox=true;quote.fulfillment='pickup';quote.taxCents=0;quote.shippingCents=0;quote.taxTreatment='simulated_zero_tax_sandbox_only';
         for(const line of quote.lines){const p=source.get(line.productId);line.pickupLocation=p.pickupLocation;p.stock-=line.quantity;}
         const r=await c.query(`INSERT INTO beauty_sandbox_orders(id,buyer_id,request_key,basket_hash,partner_client_id,partner_id,quote,bindings)
@@ -88,7 +95,7 @@ export function createSandboxCheckout({pool,provider,env=process.env,customerRet
         if(new Date(row.expires_at)<=new Date())throw Error('sandbox_order_expired');
         for(const b of row.bindings)await eligible(c,b.sellerId,b.merchantId);
         const units=sandboxPurchaseUnits(row,provider.config.partnerId);
-        const remote=await provider.request('/v2/checkout/orders',{method:'POST',requestId:row.id+'-o',body:{intent:'CAPTURE',purchase_units:units,
+        const remote=await provider.request('/v2/checkout/orders',{method:'POST',requestId:row.id+'-o',merchantId:orderMerchantId(row),body:{intent:'CAPTURE',purchase_units:units,
           application_context:{brand_name:'IFCDC Sandbox Test',user_action:'PAY_NOW',shipping_preference:'NO_SHIPPING',return_url:'https://ifcdcbarbersapp.com'+(customerReturn?'/beauty-supply':'/admin/beauty-supply')+'?beautySandbox=return',cancel_url:'https://ifcdcbarbersapp.com'+(customerReturn?'/beauty-supply':'/admin/beauty-supply')+'?beautySandbox=cancel'}}});
         if(typeof remote?.id!=='string'||!/^[A-Z0-9]{5,40}$/.test(remote.id))throw Error('invalid_paypal_order');
         verifySandboxOrder(remote,{...row,paypal_order_id:remote.id},provider.config.partnerId);
@@ -107,7 +114,7 @@ export function createSandboxCheckout({pool,provider,env=process.env,customerRet
         const cat=await catalog(c);
         for(const l of row.quote.lines)if(!cat.products.some(p=>p.id===l.productId&&p.sellerId===l.sellerId&&p.status==='published'))throw Error('seller_not_authorized');
         for(const b of row.bindings){if(!cat.sellers.some(s=>s.id===b.sellerId&&s.status==='approved'))throw Error('seller_not_authorized');await eligible(c,b.sellerId,b.merchantId);}
-        const remote=await provider.request('/v2/checkout/orders/'+encodeURIComponent(row.paypal_order_id));
+        const remote=await provider.request('/v2/checkout/orders/'+encodeURIComponent(row.paypal_order_id),{merchantId:orderMerchantId(row)});
         if(remote?.status==='COMPLETED'||remote?.purchase_units?.some(u=>(u.payments?.captures||[]).length)){
           const r=await c.query("UPDATE beauty_sandbox_orders SET status='capture_pending' WHERE id=$1::uuid RETURNING *",[row.id]);
           await event(c,row.id,'existing_capture_found');return r.rows[0];
@@ -144,7 +151,7 @@ export function createSandboxCheckout({pool,provider,env=process.env,customerRet
         if(row.status==='cancelled')return row;
         if(!['reserved','paypal_created'].includes(row.status))throw Error('capture_must_be_reconciled');
         if(row.paypal_order_id){
-          const remote=await provider.request('/v2/checkout/orders/'+encodeURIComponent(row.paypal_order_id));
+          const remote=await provider.request('/v2/checkout/orders/'+encodeURIComponent(row.paypal_order_id),{merchantId:orderMerchantId(row)});
           if(!remote)throw Error('payment_status_unknown');
           if(remote.status==='COMPLETED'||remote.purchase_units?.some(u=>(u.payments?.captures||[]).length)){
             const r=await c.query("UPDATE beauty_sandbox_orders SET status='capture_pending' WHERE id=$1::uuid RETURNING *",[row.id]);
