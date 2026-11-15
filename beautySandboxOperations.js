@@ -49,7 +49,9 @@ export function createSandboxOperations({pool,provider,env=process.env}){
        if(row.provider_refund_id)remote=await provider.request('/v2/payments/refunds/'+encodeURIComponent(row.provider_refund_id),{merchantId:row.merchant_id});
        else{
         // Recover a response lost after PayPal created the refund using this immutable custom ID.
-        const paypal=await provider.request('/v2/checkout/orders/'+encodeURIComponent(order.paypal_order_id));
+        // Seller-scoped checkout/capture (PR #32/#33) store the order on the seller account;
+        // a partner-only GET omits that capture and leaves the app Pending without posting.
+        const paypal=await provider.request('/v2/checkout/orders/'+encodeURIComponent(order.paypal_order_id),{merchantId:row.merchant_id});
         const unit=paypal?.purchase_units?.find(u=>u.payee?.merchant_id===row.merchant_id&&u.payments?.captures?.some(x=>x.id===row.capture_id));
         for(const ref of unit?.payments?.refunds || []){
          if(typeof ref.id!=='string'||!/^[A-Z0-9]{5,64}$/.test(ref.id))continue;
