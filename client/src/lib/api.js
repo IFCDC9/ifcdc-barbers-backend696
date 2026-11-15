@@ -1,4 +1,5 @@
 import { API_BASE_URL, PRODUCTION_API_ORIGIN } from "../config/api.js"
+import { isD8uiHost, isD8uiOrigin } from "./sessionApiOrigin.js"
 
 export { API_BASE_URL }
 
@@ -22,6 +23,13 @@ function resolveApiOrigin() {
       : env?.VITE_API_URL != null
         ? String(env.VITE_API_URL).trim()
         : ""
+  if (typeof window !== "undefined" && window.location?.hostname) {
+    const host = String(window.location.hostname || "").toLowerCase()
+    if (isD8uiHost(host)) {
+      if (fromEnv && isD8uiOrigin(fromEnv)) return fromEnv.replace(/\/$/, "")
+      return ""
+    }
+  }
   if (fromEnv) return fromEnv.replace(/\/$/, "")
   // Split-host production (ifcdcbarbersapp.com static → backend696 API).
   if (typeof window !== "undefined" && window.location?.origin) {

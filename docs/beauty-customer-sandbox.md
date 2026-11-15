@@ -19,7 +19,7 @@ To enable selected app accounts for sandbox checkout, set these backend variable
 
 The existing BEAUTY_SANDBOX_CHECKOUT_ENABLED=1 and configured sandbox marketplace credentials are also required. Wildcards are not accepted. Start with the Founder's existing app account as the first test account. These are application-user IDs, not PayPal merchant IDs or sandbox email addresses. This does not connect real seller accounts or open real payments.
 
-On d8ui only, set `BEAUTY_SANDBOX_CHECKOUT_ORIGIN=https://ifcdc-barbers-backend696-d8ui.onrender.com` so customer return and cancel URLs stay on the test host (`/beauty-supply?beautySandbox=return|cancel`). Leave it unset on production so those URLs remain `https://ifcdcbarbersapp.com/beauty-supply?...`.
+On d8ui only, set `BEAUTY_SANDBOX_CHECKOUT_ORIGIN=https://ifcdc-barbers-backend696-d8ui.onrender.com` so customer return and cancel URLs stay on the test host (`/beauty-supply?beautySandbox=return|cancel`). Leave it unset on production so those URLs remain `https://ifcdcbarbersapp.com/beauty-supply?...`. On d8ui also set `BEAUTY_SANDBOX_SERVE_CLIENT=1` and build the client with `VITE_API_BASE` pointing at d8ui so `/beauty-supply` and `/login` are served from `client/dist`.
 
 Pausing BEAUTY_CUSTOMER_SANDBOX_ENABLED blocks new reservations and payment submissions but leaves signed-in buyers able to read their existing orders, reconcile payment outcomes and cancel eligible unpaid reservations while the underlying sandbox service remains enabled.
 

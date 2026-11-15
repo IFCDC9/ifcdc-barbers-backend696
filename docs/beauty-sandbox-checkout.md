@@ -12,7 +12,9 @@ This phase adds a Founder-only product payment trial. Public and mobile checkout
 
    `BEAUTY_SANDBOX_CHECKOUT_ORIGIN=https://ifcdc-barbers-backend696-d8ui.onrender.com`
 
-   Paths stay `/admin/beauty-supply?beautySandbox=return|cancel` (Founder) and `/beauty-supply?beautySandbox=return|cancel` (customer). Leave this unset on production backend696. If d8ui is API-only and does not serve the SPA, point the variable at a dedicated test frontend host instead; production buyers must never be sent to d8ui.
+   Paths stay `/admin/beauty-supply?beautySandbox=return|cancel` (Founder) and `/beauty-supply?beautySandbox=return|cancel` (customer). Leave this unset on production backend696.
+
+   On d8ui, also set `BEAUTY_SANDBOX_SERVE_CLIENT=1` (do **not** set `IFCDC_API_ONLY=1`) so `GET /admin/beauty-supply` and `GET /login` serve `client/dist/index.html`. Build the client with `VITE_API_BASE=https://ifcdc-barbers-backend696-d8ui.onrender.com`. Production backend696 must leave `BEAUTY_SANDBOX_SERVE_CLIENT` unset so unknown paths stay JSON `{error:not_found}`.
 
 ## First test
 

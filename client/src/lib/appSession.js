@@ -3,6 +3,19 @@
  */
 import { apiUrl, fetchWithTimeout, getApiBase, wrapNetworkError } from "./api.js";
 import { getStoredToken, persistAuthSession } from "./authHeaders.js";
+import { resolveSessionApiOrigin, sessionApiUrl } from "./sessionApiOrigin.js";
+
+function pageHostname() {
+  try {
+    return typeof window !== "undefined" ? String(window.location?.hostname || "") : "";
+  } catch {
+    return "";
+  }
+}
+
+function sessionOrigin() {
+  return resolveSessionApiOrigin({ configuredBase: getApiBase(), hostname: pageHostname() });
+}
 
 const WAKE_TTL_MS = 60_000;
 let wakePromise = null;
@@ -18,11 +31,11 @@ export async function wakeApiIfNeeded() {
   if (!wakePromise) {
     wakePromise = (async () => {
       try {
-        const origin = getApiBase() || "https://ifcdc-barbers-backend696.onrender.com";
+        const origin = sessionOrigin();
         const paths = ["/health", "/api/health"];
         for (const path of paths) {
           try {
-            await fetchWithTimeout(`${origin.replace(/\/$/, "")}${path}`, {
+            await fetchWithTimeout(sessionApiUrl(path, origin), {
               method: "GET",
               headers: { Accept: "application/json" },
               timeoutMs: 15_000,
@@ -53,8 +66,8 @@ let refreshInFlight = null;
 
 async function refreshSession(token) {
   await wakeApiIfNeeded();
-  const origin = getApiBase() || "https://ifcdc-barbers-backend696.onrender.com";
-  const res = await fetchWithTimeout(`${origin.replace(/\/$/, "")}/api/auth/refresh`, {
+  const origin = sessionOrigin();
+  const res = await fetchWithTimeout(sessionApiUrl("/api/auth/refresh", origin), {
     method: "POST",
     headers: {
       Accept: "application/json",
