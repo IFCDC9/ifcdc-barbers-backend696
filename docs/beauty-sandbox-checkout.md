@@ -8,6 +8,11 @@ This phase adds a Founder-only product payment trial. Public and mobile checkout
 2. Run `scripts/migrations/beauty-sandbox-checkout.sql` in the same Supabase SQL editor/database used for seller payment connections. This creates separate sandbox orders, captures and event tables. It enables RLS and revokes public access.
 3. Commit the listed new and changed files, merge and deploy backend and frontend.
 4. Keep BEAUTY_PAYPAL_ENV=sandbox and the existing dedicated marketplace sandbox credentials. Set BEAUTY_SANDBOX_CHECKOUT_ENABLED=1 in the Barbers backend environment and deploy. The onboarding feature/credentials must already be configured. Do not alter booking PayPal variables.
+5. PayPal return and cancel URLs keep the production storefront (`https://ifcdcbarbersapp.com/...`) unless `BEAUTY_SANDBOX_CHECKOUT_ORIGIN` is set. Do not use `FRONTEND_URL` or `PUBLIC_WEB_URL` for this (d8ui often reports those as production). On **d8ui only**, set:
+
+   `BEAUTY_SANDBOX_CHECKOUT_ORIGIN=https://ifcdc-barbers-backend696-d8ui.onrender.com`
+
+   Paths stay `/admin/beauty-supply?beautySandbox=return|cancel` (Founder) and `/beauty-supply?beautySandbox=return|cancel` (customer). Leave this unset on production backend696. If d8ui is API-only and does not serve the SPA, point the variable at a dedicated test frontend host instead; production buyers must never be sent to d8ui.
 
 ## First test
 

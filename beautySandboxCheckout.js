@@ -3,8 +3,26 @@ import { randomUUID } from 'node:crypto';
 import { basketFingerprint } from './beautyOrderDrafts.js';
 import { quoteBeautyOrder } from './beautyOrderService.js';
 import { sandboxPurchaseUnits,verifySandboxOrder,safeSandboxApprovalLink } from './beautySandboxPaymentContract.js';
+const PRODUCTION_SANDBOX_CHECKOUT_ORIGIN='https://ifcdcbarbersapp.com';
+
 export function assertSandboxCheckout(provider,env=process.env){
   if(env.BEAUTY_SANDBOX_CHECKOUT_ENABLED!=='1'||!provider.config.configured||provider.config.environment!=='sandbox')throw Error('sandbox_checkout_disabled');
+}
+
+/** Explicit test-host override for PayPal return/cancel. Unset keeps production storefront URLs. Never uses FRONTEND_URL / PUBLIC_WEB_URL. */
+export function sandboxCheckoutOrigin(env=process.env){
+  const raw=String(env.BEAUTY_SANDBOX_CHECKOUT_ORIGIN||'').trim();
+  if(!raw)return PRODUCTION_SANDBOX_CHECKOUT_ORIGIN;
+  let parsed;
+  try{parsed=new URL(raw);}catch{throw Error('invalid_sandbox_checkout_origin');}
+  if(parsed.protocol!=='https:'||parsed.username||parsed.password)throw Error('invalid_sandbox_checkout_origin');
+  return parsed.origin;
+}
+
+export function sandboxCheckoutReturnUrls(env=process.env,{customerReturn=false}={}){
+  const origin=sandboxCheckoutOrigin(env);
+  const path=customerReturn?'/beauty-supply':'/admin/beauty-supply';
+  return {return_url:origin+path+'?beautySandbox=return',cancel_url:origin+path+'?beautySandbox=cancel'};
 }
 export function publicSandboxOrder(row){
   return {...(row.quote?beautyRefundTerms(row.quote):{}),id:row.id,status:row.status,quote:row.quote,expiresAt:row.expires_at,createdAt:row.created_at,refundStatus:row.refund_status || 'none',refundIssue:row.refund_issue==='PLATFORM_FEE_NOT_ENABLED'?'PLATFORM_FEE_NOT_ENABLED':null,fulfillmentStatus:row.fulfillment_status || 'processing',paymentReview:row.payment_review === true,inventoryRestocked:row.inventory_restocked === true,
@@ -95,8 +113,9 @@ export function createSandboxCheckout({pool,provider,env=process.env,customerRet
         if(new Date(row.expires_at)<=new Date())throw Error('sandbox_order_expired');
         for(const b of row.bindings)await eligible(c,b.sellerId,b.merchantId);
         const units=sandboxPurchaseUnits(row,provider.config.partnerId);
+        const urls=sandboxCheckoutReturnUrls(env,{customerReturn});
         const remote=await provider.request('/v2/checkout/orders',{method:'POST',requestId:row.id+'-o',merchantId:orderMerchantId(row),body:{intent:'CAPTURE',purchase_units:units,
-          application_context:{brand_name:'IFCDC Sandbox Test',user_action:'PAY_NOW',shipping_preference:'NO_SHIPPING',return_url:'https://ifcdcbarbersapp.com'+(customerReturn?'/beauty-supply':'/admin/beauty-supply')+'?beautySandbox=return',cancel_url:'https://ifcdcbarbersapp.com'+(customerReturn?'/beauty-supply':'/admin/beauty-supply')+'?beautySandbox=cancel'}}});
+          application_context:{brand_name:'IFCDC Sandbox Test',user_action:'PAY_NOW',shipping_preference:'NO_SHIPPING',return_url:urls.return_url,cancel_url:urls.cancel_url}}});
         if(typeof remote?.id!=='string'||!/^[A-Z0-9]{5,40}$/.test(remote.id))throw Error('invalid_paypal_order');
         verifySandboxOrder(remote,{...row,paypal_order_id:remote.id},provider.config.partnerId);
         const url=safeSandboxApprovalLink(remote);
