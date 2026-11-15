@@ -34,6 +34,24 @@ test('sandbox SPA flag is explicit opt-in', () => {
   assert.equal(beautySandboxServeClientEnabled({ BEAUTY_SANDBOX_SERVE_CLIENT: '1' }), true);
 });
 
+test('d8ui Render service id enables SPA; production id and API-only do not', () => {
+  assert.equal(
+    beautySandboxServeClientEnabled({ RENDER_SERVICE_ID: 'srv-d8gn9h77f7vs73evmfgg' }),
+    true,
+  );
+  assert.equal(
+    beautySandboxServeClientEnabled({ RENDER_SERVICE_ID: 'srv-d6tmai24d50c73cdi0mg' }),
+    false,
+  );
+  assert.equal(
+    beautySandboxServeClientEnabled({
+      RENDER_SERVICE_ID: 'srv-d8gn9h77f7vs73evmfgg',
+      IFCDC_API_ONLY: '1',
+    }),
+    false,
+  );
+});
+
 test('without the sandbox flag, unknown pages stay JSON 404 even if dist exists', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'beauty-spa-off-'));
   let server;

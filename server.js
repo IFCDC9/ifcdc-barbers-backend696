@@ -56,6 +56,7 @@ import { createHubSpotRouter } from "./hubspotRoutes.js";
 import { ensureHubSpotSchema } from "./hubspotMigrations.js";
 import { createBeautyRouter } from "./beautyRoutes.js";
 import { mountBeautySandboxClient } from "./beautySandboxClientServe.js";
+import { applyBeautySandboxSchema } from "./applyBeautySandboxSchema.js";
 import { createAdminShopsRouter } from "./adminShopsRoutes.js";
 import { createManagementTeamRouter } from "./managementTeamRoutes.js";
 import { ensureManagementTeamSchema } from "./managementTeamMigrations.js";
@@ -1282,6 +1283,16 @@ async function startServer() {
     console.error("[migrate] app_users/role failed:", e?.message || e);
   }
   try {
+    const beautySchema = await applyBeautySandboxSchema();
+    if (beautySchema.applied) {
+      console.log("[boot] beauty sandbox schema applied on ifcdc_beauty_sandbox_db");
+    } else {
+      console.log("[boot] beauty sandbox schema skipped:", beautySchema.reason || "not_isolated_db");
+    }
+  } catch (e) {
+    console.error("[boot] beauty sandbox schema failed:", e?.message || e);
+  }
+  try {
     await ensureBarberBusinessTables();
     await ensureAdminBarberManagementSchema();
     await ensureProviderTypeSchema();
@@ -1597,7 +1608,9 @@ async function startServer() {
   if (spa.enabled && spa.clientBuildReady) {
     console.log(`[boot] BEAUTY_SANDBOX_SERVE_CLIENT: serving ${spa.distDir} (SPA including /admin/beauty-supply and /login)`);
   } else if (spa.enabled) {
-    console.warn("[boot] BEAUTY_SANDBOX_SERVE_CLIENT=1 but client/dist/index.html missing — keeping JSON 404 catch-all");
+    console.warn("[boot] BEAUTY_SANDBOX_SERVE_CLIENT enabled but client/dist/index.html missing — keeping JSON 404 catch-all");
+  } else {
+    console.log("[boot] beauty sandbox SPA off (JSON 404 catch-all)");
   }
 
   app.use((req, res) => {

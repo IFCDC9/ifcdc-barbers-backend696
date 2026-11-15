@@ -5,9 +5,15 @@ import express from "express";
 
 const repoRoot = path.dirname(fileURLToPath(import.meta.url));
 
+/** Isolated Render preview only — never production backend696. */
+export const D8UI_RENDER_SERVICE_ID = "srv-d8gn9h77f7vs73evmfgg";
+export const D8UI_API_ORIGIN = "https://ifcdc-barbers-backend696-d8ui.onrender.com";
+
 /** Opt-in d8ui/sandbox only. Unset keeps production API JSON 404 catch-all. */
 export function beautySandboxServeClientEnabled(env = process.env) {
-  return String(env.BEAUTY_SANDBOX_SERVE_CLIENT || "").trim() === "1";
+  if (String(env.IFCDC_API_ONLY || "").trim() === "1") return false;
+  if (String(env.BEAUTY_SANDBOX_SERVE_CLIENT || "").trim() === "1") return true;
+  return String(env.RENDER_SERVICE_ID || "").trim() === D8UI_RENDER_SERVICE_ID;
 }
 
 export function resolveClientDistDir({ env = process.env, cwd = process.cwd(), root = repoRoot } = {}) {
