@@ -1,7 +1,7 @@
 import {createBeautyCustomerSandboxRouter} from './beautyCustomerSandboxRoutes.js';
 import { createSandboxWebhookRouter } from './beautySandboxWebhooks.js';
 import { createSandboxCheckoutRouter } from './beautySandboxCheckoutRoutes.js';
-import { createBeautySellerPaymentStore, publicBeautyPaymentConfig } from './beautySellerPayments.js';
+import { createBeautySellerPaymentStore, publicBeautyPaymentConfig, publicSellerConnectionFailure } from './beautySellerPayments.js';
 import { createBeautyOrderDraftStore, publicBeautyDraft } from './beautyOrderDrafts.js';
 import { quoteBeautyOrder } from './beautyOrderService.js';
 import express from 'express';
@@ -117,9 +117,8 @@ export function createBeautyRouter({ query = dbQuery, resolveToken = resolveAuth
       if(action==='start')return res.json(await sellerPayments.start(sellerId,req.beautyActorId));
       return res.json({connection:await sellerPayments.refresh(sellerId,req.beautyActorId)});
     }catch(e){
-      if(e.code==='seller_payments_not_configured')return res.status(503).json({error:e.code});
-      if(e.code==='seller_connection_missing')return res.status(409).json({error:e.code});
-      return res.status(503).json({error:'seller_connection_unavailable'});
+      const body=publicSellerConnectionFailure(e);
+      return res.status(body.error==='seller_connection_missing'?409:503).json(body);
     }
   });
   router.use('/api/beauty/admin/sandbox-checkout',createSandboxCheckoutRouter());

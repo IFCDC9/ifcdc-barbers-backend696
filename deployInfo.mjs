@@ -18,6 +18,7 @@ import {
   productionSupabaseUrl,
   ISOLATED_BEAUTY_SANDBOX_DB,
 } from "./applyBeautySandboxSchema.js";
+import { beautyPaymentConfig, publicBeautyPaymentConfig } from "./beautySellerPayments.js";
 
 const require = createRequire(import.meta.url);
 const { resolvePublicWebOrigin, CANONICAL_PUBLIC_ORIGIN, resolvePayPalCheckoutReturnUrls } = require("./publicSiteConfig.cjs");
@@ -222,12 +223,21 @@ export async function getDeployInfoPayload() {
           checkoutOriginHost = "invalid";
         }
       }
+      const paypal = publicBeautyPaymentConfig(beautyPaymentConfig());
       return {
         serveClientEnabled: beautySandboxServeClientEnabled(),
         apiOnly: String(process.env.IFCDC_API_ONLY || "").trim() === "1",
         clientDistIndexPresent,
         checkoutEnabled: String(process.env.BEAUTY_SANDBOX_CHECKOUT_ENABLED || "").trim() === "1",
         refundsEnabled: String(process.env.BEAUTY_SANDBOX_REFUNDS_ENABLED || "").trim() === "1",
+        paypalEnv: paypal.environment,
+        paypalOnboardingEnabled: paypal.enabled,
+        paypalClientIdSet: paypal.clientIdSet,
+        paypalClientSecretSet: paypal.clientSecretSet,
+        paypalPartnerIdSet: paypal.partnerIdSet,
+        paypalBnCodeSet: paypal.bnCodeSet,
+        paypalConfigured: paypal.configured,
+        paypalMissing: paypal.missing,
         checkoutOriginHost,
         expectedIsolatedDatabase: ISOLATED_BEAUTY_SANDBOX_DB,
         currentDatabase: db.currentDatabase,
