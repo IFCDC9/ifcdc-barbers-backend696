@@ -107,7 +107,10 @@ export function createBeautyPayPalProvider({config=beautyPaymentConfig(),fetchIm
       const e=new Error('seller_provider_request_failed');e.code='seller_provider_request_failed';
       if(operation)e.operation=operation;
       e.httpStatus=diagnostic.httpStatus;e.issue=diagnostic.issue;e.debugId=diagnostic.debugId;
-      if(response.status===422&&data?.details?.some(d=>d.issue==='PLATFORM_FEE_NOT_ENABLED'))e.providerIssue='PLATFORM_FEE_NOT_ENABLED';
+      if(response.status===422){
+        const restricted=data?.details?.find(d=>d.issue==='PLATFORM_FEE_NOT_ENABLED'||d.issue==='REFUND_IS_RESTRICTED')?.issue;
+        if(restricted)e.providerIssue=restricted;
+      }
       throw e;
     }
     return response.json();

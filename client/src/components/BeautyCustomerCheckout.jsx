@@ -63,7 +63,7 @@ export default function BeautyCustomerCheckout({items}){
     {eligible&&<><label><input type="checkbox" checked={accepted} onChange={e=>setAccepted(e.target.checked)}/> I understand the $2.50 platform fee is retained if products are refunded.</label><button type="button" disabled={!items.length||!accepted} onClick={()=>run('reserve')}>Reserve test order from bag</button></>}
     <button type="button" onClick={()=>run('list')}>Refresh my test orders</button>
     {orders.map(o=><article key={o.id}>
-     <h4>Test order {o.id.slice(0,8)}</h4><p>{labels[o.status]||'Status unavailable'} · Pickup: {o.pickupStatus} · Refund: {o.refundStatus}</p>
+     <h4>Test order {o.id.slice(0,8)}</h4><p>{labels[o.status]||'Status unavailable'} · Pickup: {o.pickupStatus} · Refund: {o.refundStatus==='review_required'?'Requires review':o.refundStatus==='pending'?'Pending':o.refundStatus}</p>
      {(o.reviewRequired||o.refundStatus!=='none'||o.pickupStatus==='halted')&&<p>Order on hold. Contact the store before pickup.</p>}
      <ul>{o.quote.lines.map(l=><li key={l.productId}>{l.name} × {l.quantity}<br/>Pickup location: {l.pickupLocation||'Confirm with the store'}</li>)}</ul>
      <p>Products {money(o.quote.subtotalCents)} · buyer fee {money(o.quote.platformFeeCents)}</p><strong>Test total {money(o.quote.totalCents)}</strong><p>{o.retainedPlatformFeeCents>0?`Product refund amount: ${money(o.refundAmountCents)}. Platform fee retained: ${money(o.retainedPlatformFeeCents)}.`:"Historical order: original pricing and full-payment refund terms retained."}</p>

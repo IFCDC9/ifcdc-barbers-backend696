@@ -11,7 +11,7 @@ export function customerSandboxEligible(buyer,provider,env){
 export function customerSandboxOrder(row){
  const q=row.quote;
  return {...beautyRefundTerms(q),id:row.id,status:row.status,sandbox:true,createdAt:row.created_at,expiresAt:row.expires_at,
-  pickupStatus:row.fulfillment_status||'processing',refundStatus:row.refund_status||'none',reviewRequired:row.payment_review===true||row.status==='review_required',
+  pickupStatus:row.fulfillment_status||'processing',refundStatus:row.refund_status||'none',reviewRequired:row.payment_review===true||row.status==='review_required'||row.refund_status==='review_required',
   approvalUrl:row.status==='paypal_created'?row.approval_url:null,
   quote:{lines:q.lines.map(l=>({productId:l.productId,name:l.name,quantity:l.quantity,unitPriceCents:l.unitPriceCents,pickupLocation:l.pickupLocation})),subtotalCents:q.subtotalCents,platformFeeCents:q.platformFeeCents,totalCents:q.totalBeforeTaxShippingCents}};
 }

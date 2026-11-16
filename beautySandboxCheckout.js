@@ -25,7 +25,7 @@ export function sandboxCheckoutReturnUrls(env=process.env,{customerReturn=false}
   return {return_url:origin+path+'?beautySandbox=return',cancel_url:origin+path+'?beautySandbox=cancel'};
 }
 export function publicSandboxOrder(row){
-  return {...(row.quote?beautyRefundTerms(row.quote):{}),id:row.id,status:row.status,quote:row.quote,expiresAt:row.expires_at,createdAt:row.created_at,refundStatus:row.refund_status || 'none',refundIssue:row.refund_issue==='PLATFORM_FEE_NOT_ENABLED'?'PLATFORM_FEE_NOT_ENABLED':null,fulfillmentStatus:row.fulfillment_status || 'processing',paymentReview:row.payment_review === true,inventoryRestocked:row.inventory_restocked === true,
+  return {...(row.quote?beautyRefundTerms(row.quote):{}),id:row.id,status:row.status,quote:row.quote,expiresAt:row.expires_at,createdAt:row.created_at,refundStatus:row.refund_status || 'none',refundIssue:row.refund_issue==='PLATFORM_FEE_NOT_ENABLED'||row.refund_issue==='REFUND_IS_RESTRICTED'?row.refund_issue:null,fulfillmentStatus:row.fulfillment_status || 'processing',paymentReview:row.payment_review === true,inventoryRestocked:row.inventory_restocked === true,
     approvalUrl:row.status==='paypal_created'?row.approval_url:null,sandbox:true};
 }
 function orderMerchantId(row){
@@ -102,9 +102,9 @@ export function createSandboxCheckout({pool,provider,env=process.env,customerRet
         await saveCatalog(c,cat);await event(c,r.rows[0].id,'stock_reserved');return r.rows[0];
       });
     },
-    async list(buyer){assertEnabled();const r=await pool.query("SELECT o.*, (SELECT r.result->>'issue' FROM beauty_sandbox_refunds r WHERE r.order_id=o.id AND r.result->>'issue'='PLATFORM_FEE_NOT_ENABLED' LIMIT 1) AS refund_issue FROM beauty_sandbox_orders o WHERE buyer_id=$1::uuid AND partner_client_id=$2 AND partner_id=$3 ORDER BY created_at DESC LIMIT 20",[buyer,...scope]);return r.rows;},
+    async list(buyer){assertEnabled();const r=await pool.query("SELECT o.*, (SELECT r.result->>'issue' FROM beauty_sandbox_refunds r WHERE r.order_id=o.id AND r.result->>'issue' IN ('PLATFORM_FEE_NOT_ENABLED','REFUND_IS_RESTRICTED') LIMIT 1) AS refund_issue FROM beauty_sandbox_orders o WHERE buyer_id=$1::uuid AND partner_client_id=$2 AND partner_id=$3 ORDER BY created_at DESC LIMIT 20",[buyer,...scope]);return r.rows;},
     async read(buyer,id){assertEnabled();return tx(c=>lock(c,buyer,id));},
-    async listForFounder(){assertEnabled();return (await pool.query("SELECT o.*, (SELECT r.result->>'issue' FROM beauty_sandbox_refunds r WHERE r.order_id=o.id AND r.result->>'issue'='PLATFORM_FEE_NOT_ENABLED' LIMIT 1) AS refund_issue FROM beauty_sandbox_orders o WHERE partner_client_id=$1 AND partner_id=$2 ORDER BY created_at DESC LIMIT 100",scope)).rows;},
+    async listForFounder(){assertEnabled();return (await pool.query("SELECT o.*, (SELECT r.result->>'issue' FROM beauty_sandbox_refunds r WHERE r.order_id=o.id AND r.result->>'issue' IN ('PLATFORM_FEE_NOT_ENABLED','REFUND_IS_RESTRICTED') LIMIT 1) AS refund_issue FROM beauty_sandbox_orders o WHERE partner_client_id=$1 AND partner_id=$2 ORDER BY created_at DESC LIMIT 100",scope)).rows;},
     async ownerForFounder(id){assertEnabled();const r=await pool.query('SELECT buyer_id FROM beauty_sandbox_orders WHERE id=$1::uuid AND partner_client_id=$2 AND partner_id=$3',[id,...scope]);if(!r.rows[0])throw Error('sandbox_order_not_found');return r.rows[0].buyer_id;},
     async prepare(buyer,id){
       assertEnabled();return tx(async c=>{

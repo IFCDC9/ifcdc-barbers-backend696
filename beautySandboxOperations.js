@@ -20,8 +20,9 @@ export function createSandboxOperations({pool,provider,env=process.env}){
    const total=rows.reduce((n,r)=>n+Number(r.amount_cents),0);
    const targets=sandboxRefundTargets(order,caps,provider.config.partnerId);
    const status=rows.length===caps.length&&rows.length>0&&total===targets.reduce((n,t)=>n+t.amountCents,0)&&rows.every(r=>r.status==='completed'&&targets.some(t=>t.captureId===r.capture_id&&t.amountCents===Number(r.amount_cents)&&t.platformFeeCents===Number(r.platform_fee_cents)))?'completed':rows.some(r=>r.status==='review_required')?'review_required':'pending';
+   const issue=rows.map(x=>x.result?.issue).find(i=>i==='PLATFORM_FEE_NOT_ENABLED'||i==='REFUND_IS_RESTRICTED')||null;
    const r=await c.query("UPDATE beauty_sandbox_orders SET refund_status=$2,fulfillment_status='halted' WHERE id=$1::uuid RETURNING *",[order.id,status]);
-   await event(c,order.id,'refund_'+status);return {...r.rows[0],refund_issue:rows.some(x=>x.result?.issue==='PLATFORM_FEE_NOT_ENABLED')?'PLATFORM_FEE_NOT_ENABLED':null};
+   await event(c,order.id,'refund_'+status);return {...r.rows[0],refund_issue:issue};
  }
  return {
   async requestRefund(buyer,id){
@@ -58,7 +59,8 @@ export function createSandboxOperations({pool,provider,env=process.env}){
          const detail=await provider.request('/v2/payments/refunds/'+ref.id,{merchantId:row.merchant_id});
          if(detail?.custom_id===row.request_id){remote=detail;break;}
         }
-        if(!remote&&submit){
+        // A 422 restriction is a completed rejection, not an unknown outcome. Recheck may GET; it must not POST again.
+        if(!remote&&submit&&row.status!=='review_required'){
          if(Date.now()-new Date(row.created_at).getTime()>30*60*1000)throw Error('refund_retry_window_expired');
          // Refuse to refund again if the capture already has another refund or a non-completed state.
          const cap=unit?.payments?.captures?.find(x=>x.id===row.capture_id);
@@ -68,8 +70,8 @@ export function createSandboxOperations({pool,provider,env=process.env}){
        }
        if(remote)await checkRefund(c,row,remote);
       }catch(e){
-       if(e.providerIssue==='PLATFORM_FEE_NOT_ENABLED'){
-        await c.query("UPDATE beauty_sandbox_refunds SET status='review_required',result=$2::jsonb,checked_at=now() WHERE capture_id=$1",[row.capture_id,JSON.stringify({issue:'PLATFORM_FEE_NOT_ENABLED'})]);
+       if(e.providerIssue==='PLATFORM_FEE_NOT_ENABLED'||e.providerIssue==='REFUND_IS_RESTRICTED'){
+        await c.query("UPDATE beauty_sandbox_refunds SET status='review_required',result=$2::jsonb,checked_at=now() WHERE capture_id=$1",[row.capture_id,JSON.stringify({issue:e.providerIssue})]);
        }
        // A timeout is an unknown outcome. Retain the same key and reconcile before any retry.
        if(['refund_retry_window_expired','existing_refund_requires_review'].includes(e.message))await c.query("UPDATE beauty_sandbox_refunds SET status='review_required' WHERE capture_id=$1",[row.capture_id]);

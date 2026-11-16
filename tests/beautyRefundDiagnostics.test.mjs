@@ -4,7 +4,7 @@ import {createBeautyPayPalProvider,beautyPaymentConfig} from '../beautySellerPay
 import {publicSandboxOrder} from '../beautySandboxCheckout.js';
 const config=beautyPaymentConfig({BEAUTY_PAYPAL_ONBOARDING_ENABLED:'1',BEAUTY_PAYPAL_ENV:'sandbox',BEAUTY_PAYPAL_CLIENT_ID:'app',BEAUTY_PAYPAL_CLIENT_SECRET:'secret',BEAUTY_PAYPAL_PARTNER_ID:'partner',BEAUTY_PAYPAL_BN_CODE:'code'});
 test('known platform-fee denial is retained without exposing arbitrary provider data',async()=>{
- for(const [status,issue,expected] of [[422,'PLATFORM_FEE_NOT_ENABLED','PLATFORM_FEE_NOT_ENABLED'],[500,'PLATFORM_FEE_NOT_ENABLED',undefined],[422,'OTHER',undefined]]){
+ for(const [status,issue,expected] of [[422,'PLATFORM_FEE_NOT_ENABLED','PLATFORM_FEE_NOT_ENABLED'],[422,'REFUND_IS_RESTRICTED','REFUND_IS_RESTRICTED'],[500,'PLATFORM_FEE_NOT_ENABLED',undefined],[422,'OTHER',undefined]]){
  const p=createBeautyPayPalProvider({config,fetchImpl:async url=>{
   if(url.endsWith('/token'))return {ok:true,json:async()=>({access_token:'token'})};
   const response={ok:false,status,json:async()=>({details:[{issue}],private:'secret customer data'})};
@@ -15,5 +15,6 @@ test('known platform-fee denial is retained without exposing arbitrary provider 
 });
 test('public order exposes only the allowlisted refund diagnostic',()=>{
  assert.equal(publicSandboxOrder({refund_issue:'PLATFORM_FEE_NOT_ENABLED'}).refundIssue,'PLATFORM_FEE_NOT_ENABLED');
+ assert.equal(publicSandboxOrder({refund_issue:'REFUND_IS_RESTRICTED'}).refundIssue,'REFUND_IS_RESTRICTED');
  assert.equal(publicSandboxOrder({refund_issue:'private provider response'}).refundIssue,null);
 });
