@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {beautyPaymentConfig,publicBeautyPaymentConfig,createBeautyPayPalProvider,verifiedSellerStatus,createBeautySellerPaymentStore} from '../beautySellerPayments.js';
+import {beautyPaymentConfig,publicBeautyPaymentConfig,createBeautyPayPalProvider,verifiedSellerStatus,createBeautySellerPaymentStore,publicSellerConnectionFailure} from '../beautySellerPayments.js';
 const env={BEAUTY_PAYPAL_ONBOARDING_ENABLED:'1',BEAUTY_PAYPAL_ENV:'sandbox',BEAUTY_PAYPAL_CLIENT_ID:'partner-app',BEAUTY_PAYPAL_CLIENT_SECRET:'secret',BEAUTY_PAYPAL_PARTNER_ID:'PARTNER1',BEAUTY_PAYPAL_BN_CODE:'IFCDC_CODE'};
 const config=beautyPaymentConfig(env), tracking='tracking-server-generated';
 const valid=()=>({merchant_id:'MERCHANT1',tracking_id:tracking,payments_receivable:true,primary_email_confirmed:true,
@@ -42,4 +42,43 @@ test('refresh clears stale authorization when seller is no longer found; uses bo
 test('an existing account cannot silently be rebound to a different merchant',async()=>{
  const store=createBeautySellerPaymentStore(async()=>({rows:[{tracking_id:tracking,merchant_id:'ORIGINAL1'}]}),{config,verify:async()=>({merchantId:'OTHER1'})});
  await assert.rejects(store.refresh('seller','founder'),/seller_identity_mismatch/);
+});
+function paypalFetch({oauthStatus=200,token='token',status=200,payload}){
+ return async url=>{
+  if(String(url).endsWith('/token')){
+   return {ok:oauthStatus>=200&&oauthStatus<300,status:oauthStatus,json:async()=>(token?{access_token:token}:{})};
+  }
+  const response={ok:status>=200&&status<300,status,json:async()=>payload};
+  response.clone=()=>response;return response;
+ };
+}
+test('seller connection failures classify oauth, referral, setup URL and database without leaking secrets',async()=>{
+ const missing=createBeautyPayPalProvider({config:beautyPaymentConfig({BEAUTY_PAYPAL_ENV:'sandbox'})});
+ await assert.rejects(missing.start(tracking),e=>{
+  assert.equal(publicSellerConnectionFailure(e).error,'seller_payments_not_configured');
+  assert.equal(publicSellerConnectionFailure(e).stage,'configuration');return true;
+ });
+ const oauth=createBeautyPayPalProvider({config,fetchImpl:paypalFetch({oauthStatus:401,payload:{error:'invalid_client',access_token:'leak'}})});
+ await assert.rejects(oauth.start(tracking),e=>{
+  const body=publicSellerConnectionFailure(e);
+  assert.equal(body.error,'seller_provider_auth_failed');assert.equal(body.stage,'oauth');assert.equal(body.httpStatus,401);
+  assert.equal(JSON.stringify(body).includes('leak'),false);assert.equal(JSON.stringify(e).includes('leak'),false);return true;
+ });
+ const referral=createBeautyPayPalProvider({config,fetchImpl:paypalFetch({status:422,payload:{name:'UNPROCESSABLE_ENTITY',debug_id:'abcdef12',details:[{issue:'PLATFORM_FEE_NOT_ENABLED'}],private:'secret customer data'}})});
+ await assert.rejects(referral.start(tracking),e=>{
+  const body=publicSellerConnectionFailure(e);
+  assert.equal(body.error,'seller_provider_request_failed');assert.equal(body.stage,'partner_referral');
+  assert.equal(body.httpStatus,422);assert.equal(body.issue,'PLATFORM_FEE_NOT_ENABLED');assert.equal(body.debugId,'abcdef12');
+  assert.equal(JSON.stringify(body).includes('secret'),false);return true;
+ });
+ const badUrl=createBeautyPayPalProvider({config,fetchImpl:paypalFetch({payload:{links:[{rel:'action_url',method:'GET',href:'https://evil.example/setup'}]}})});
+ await assert.rejects(badUrl.start(tracking),e=>{
+  const body=publicSellerConnectionFailure(e);
+  assert.equal(body.error,'invalid_seller_setup_link');assert.equal(body.stage,'setup_url');return true;
+ });
+ const store=createBeautySellerPaymentStore(async()=>({rows:[]}),{config,start:async()=>'https://www.sandbox.paypal.com/setup'});
+ await assert.rejects(store.start('seller','11111111-1111-1111-1111-111111111111'),e=>{
+  const body=publicSellerConnectionFailure(e);
+  assert.equal(body.error,'seller_connection_unavailable');assert.equal(body.stage,'database');return true;
+ });
 });

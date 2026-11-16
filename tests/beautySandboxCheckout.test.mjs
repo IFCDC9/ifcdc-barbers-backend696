@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {sandboxPurchaseUnits,verifySandboxOrder,safeSandboxApprovalLink,usd,cents} from '../beautySandboxPaymentContract.js';
-import {assertSandboxCheckout} from '../beautySandboxCheckout.js';
+import {assertSandboxCheckout,sandboxCheckoutReturnUrls} from '../beautySandboxCheckout.js';
 const order=()=>({id:'order-uuid',paypal_order_id:'PAYPAL1',bindings:[{sellerId:'a',merchantId:'SELLER1'},{sellerId:'b',merchantId:'SELLER2'}],quote:{pricingPolicy:'seller_commission_v1',commissionPayer:'seller',platformFeeCents:150,totalBeforeTaxShippingCents:1650,sellerAllocations:[{sellerId:'a',grossCents:1000,commissionCents:20},{sellerId:'b',grossCents:500,commissionCents:10}]}});
 function remote(o,captured=true){
  const units=sandboxPurchaseUnits(o,'PARTNER1');
@@ -45,4 +45,21 @@ test('fees must match before capture and redirects must remain on sandbox PayPal
 });
 test('money parsing does not use floating point rounding',()=>{
  assert.equal(cents(usd(123456)),123456);assert.throws(()=>cents({currency_code:'USD',value:'1.005'}));assert.throws(()=>usd(Number.MAX_SAFE_INTEGER+1));
+});
+test('unset checkout origin keeps production return and cancel hosts for founder and customer',()=>{
+ const founder=sandboxCheckoutReturnUrls({FRONTEND_URL:'https://ifcdc-barbers-backend696-d8ui.onrender.com',PUBLIC_WEB_URL:'https://evil.example'});
+ const customer=sandboxCheckoutReturnUrls({FRONTEND_URL:'https://ifcdc-barbers-backend696-d8ui.onrender.com',PUBLIC_WEB_URL:'https://evil.example'},{customerReturn:true});
+ assert.equal(founder.return_url,'https://ifcdcbarbersapp.com/admin/beauty-supply?beautySandbox=return');
+ assert.equal(founder.cancel_url,'https://ifcdcbarbersapp.com/admin/beauty-supply?beautySandbox=cancel');
+ assert.equal(customer.return_url,'https://ifcdcbarbersapp.com/beauty-supply?beautySandbox=return');
+ assert.equal(customer.cancel_url,'https://ifcdcbarbersapp.com/beauty-supply?beautySandbox=cancel');
+});
+test('configured test origin is used for both return and cancel URLs',()=>{
+ const env={BEAUTY_SANDBOX_CHECKOUT_ORIGIN:'https://ifcdc-barbers-backend696-d8ui.onrender.com/'};
+ const founder=sandboxCheckoutReturnUrls(env);
+ const customer=sandboxCheckoutReturnUrls(env,{customerReturn:true});
+ assert.equal(founder.return_url,'https://ifcdc-barbers-backend696-d8ui.onrender.com/admin/beauty-supply?beautySandbox=return');
+ assert.equal(founder.cancel_url,'https://ifcdc-barbers-backend696-d8ui.onrender.com/admin/beauty-supply?beautySandbox=cancel');
+ assert.equal(customer.return_url,'https://ifcdc-barbers-backend696-d8ui.onrender.com/beauty-supply?beautySandbox=return');
+ assert.equal(customer.cancel_url,'https://ifcdc-barbers-backend696-d8ui.onrender.com/beauty-supply?beautySandbox=cancel');
 });

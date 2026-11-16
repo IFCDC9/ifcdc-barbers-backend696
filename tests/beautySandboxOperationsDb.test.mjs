@@ -14,20 +14,35 @@ test('sandbox refunds, pickup and webhook PostgreSQL integration',{skip:!runDb},
  const buyer='11111111-1111-4111-8111-111111111111',other='22222222-2222-4222-8222-222222222222';
  const env={BEAUTY_SANDBOX_CHECKOUT_ENABLED:'1',BEAUTY_SANDBOX_REFUNDS_ENABLED:'1'};
  const cat={sellers:[{id:'seller',name:'Seller',status:'approved'}],products:[{id:'product',sellerId:'seller',name:'Test',brand:'IFCDC',category:'Hair care',priceCents:1000,stock:50,status:'published',fulfillment:['pickup'],pickupLocation:'Sandbox test location'}]};
- const remotes=new Map(),refunds=new Map(),keys=new Map();let seq=0,refundSeq=0,postCount=0,loseResponse=false,feeProof=true,providerAllowed=true,readFailures=0,rejectCapture=null,capabilityBlocked=false;
+ const remotes=new Map(),refunds=new Map(),keys=new Map();let seq=0,refundSeq=0,postCount=0,loseResponse=false,feeProof=true,providerAllowed=true,readFailures=0,rejectCapture=null,capabilityBlocked=false,refundRestricted=false,sellerScopedOrderReads=false,pendingFirst=false;
  const provider={config:{configured:true,environment:'sandbox',clientId:'partner-app',partnerId:'PARTNER1'},verify:async()=>({status:'account_authorized',merchantId:'SELLER1'}),request:async(path,o={})=>{
-   if(path.startsWith('/v2/checkout/orders/')){if(readFailures){readFailures--;throw Error('temporary_network_failure');}return structuredClone(remotes.get(path.split('/').pop()) || null);}
-   if(path.startsWith('/v2/payments/refunds/'))return structuredClone(refunds.get(path.split('/').pop()) || null);
+   if(path.startsWith('/v2/checkout/orders/')){
+    if(readFailures){readFailures--;throw Error('temporary_network_failure');}
+    const remote=structuredClone(remotes.get(path.split('/').pop()) || null);
+    if(!remote)return null;
+    if(sellerScopedOrderReads){
+     if(!o.merchantId)return {...remote,purchase_units:[]};
+     remote.purchase_units=remote.purchase_units.filter(u=>u.payee?.merchant_id===o.merchantId);
+    }
+    return remote;
+   }
+   if(path.startsWith('/v2/payments/refunds/')){
+    assert.ok(o.merchantId);return structuredClone(refunds.get(path.split('/').pop()) || null);
+   }
    if(path.endsWith('/refund')&&o.method==='POST'){
     if(capabilityBlocked){const e=Error('seller_provider_request_failed');e.providerIssue='PLATFORM_FEE_NOT_ENABLED';throw e;}
+    if(refundRestricted){const e=Error('seller_provider_request_failed');e.providerIssue='REFUND_IS_RESTRICTED';e.httpStatus=422;e.issue='REFUND_IS_RESTRICTED';throw e;}
     if(!providerAllowed||path.includes('/'+rejectCapture+'/'))throw Error('seller_provider_request_failed');
     postCount++;let refund=keys.get(o.requestId);
     if(!refund){
      const capture=path.split('/')[4],order=[...remotes.values()].find(r=>r.purchase_units.some(u=>u.payments.captures.some(c=>c.id===capture)));
-     assert.ok(order);assert.equal(o.merchantId,order.purchase_units.find(u=>u.payments.captures.some(c=>c.id===capture)).payee.merchant_id);refund={id:'REFUND'+(++refundSeq),status:'COMPLETED',custom_id:o.body.custom_id,amount:o.body.amount,
+     assert.ok(order);assert.equal(o.merchantId,order.purchase_units.find(u=>u.payments.captures.some(c=>c.id===capture)).payee.merchant_id);refund={id:'REFUND'+(++refundSeq),status:pendingFirst?'PENDING':'COMPLETED',custom_id:o.body.custom_id,amount:o.body.amount,
        seller_payable_breakdown:feeProof?{platform_fees:o.body.payment_instruction.platform_fees}:{},links:[{rel:'up',method:'GET',href:'https://api-m.sandbox.paypal.com/v2/payments/captures/'+capture}]};
      keys.set(o.requestId,refund);refunds.set(refund.id,refund);
-     const unit=order.purchase_units.find(u=>u.payments.captures.some(c=>c.id===capture));unit.payments.captures[0].status='REFUNDED';unit.payments.refunds=[{id:refund.id}];
+     const unit=order.purchase_units.find(u=>u.payments.captures.some(c=>c.id===capture));
+     unit.payments.refunds=[{id:refund.id}];
+     if(!pendingFirst)unit.payments.captures[0].status='REFUNDED';
+     pendingFirst=false;
     }
     if(loseResponse){loseResponse=false;throw Error('response_lost');}return structuredClone(refund);
    }
@@ -78,6 +93,20 @@ test('sandbox refunds, pickup and webhook PostgreSQL integration',{skip:!runDb},
    await db.query("UPDATE beauty_sandbox_refunds SET created_at=now()-interval '31 minutes' WHERE order_id=$1::uuid",[o.id]);
    const before=postCount;assert.equal((await operations.processRefund(buyer,o.id,true)).refund_status,'review_required');assert.equal(postCount,before);
   });
+  await t.test('422 REFUND_IS_RESTRICTED is review_required and never POSTs again',async()=>{
+   const o=await seedPaid(),before=postCount;refundRestricted=true;
+   const result=await operations.requestRefund(buyer,o.id);
+   assert.equal(result.refund_status,'review_required');assert.equal(result.refund_issue,'REFUND_IS_RESTRICTED');
+   const row=(await db.query('SELECT * FROM beauty_sandbox_refunds WHERE order_id=$1::uuid',[o.id])).rows[0];
+   assert.equal(row.provider_refund_id,null);assert.equal(row.status,'review_required');
+   assert.equal(postCount,before);
+   refundRestricted=false;
+   assert.equal((await operations.processRefund(buyer,o.id,true)).refund_status,'review_required');
+   assert.equal(postCount,before);
+   assert.equal((await operations.processRefund(buyer,o.id,false)).refund_status,'review_required');
+   assert.equal(postCount,before);
+   await assert.rejects(operations.restock(buyer,o.id),/verified_full_refund_required/);
+  });
   await t.test('platform-fee rejection persists as review with a safe diagnostic across reloads',async()=>{
    const o=await seedPaid();capabilityBlocked=true;
    const result=await operations.requestRefund(buyer,o.id);
@@ -109,6 +138,27 @@ test('sandbox refunds, pickup and webhook PostgreSQL integration',{skip:!runDb},
   await t.test('unmatched signed events are retained for Founder review',async()=>{
    assert.equal((await inbox.receive({id:'WH-UNKNOWN',event_type:'PAYMENT.CAPTURE.COMPLETED',resource:{id:'UNKNOWNCAPTURE'}})).status,'unmatched');
    assert.ok((await inbox.list()).some(e=>e.event_id==='WH-UNKNOWN'&&e.status==='unmatched'));
+  });
+  await t.test('seller-scoped orders refund through the seller capture, not a partner-only order GET',async()=>{
+   sellerScopedOrderReads=true;
+   const o=await seedPaid(),before=postCount;
+   assert.equal((await operations.requestRefund(buyer,o.id)).refund_status,'completed');
+   assert.equal(postCount,before+1);
+   assert.equal((await operations.processRefund(buyer,o.id,true)).refund_status,'completed');
+   assert.equal(postCount,before+1);
+   sellerScopedOrderReads=false;
+  });
+  await t.test('a pending PayPal refund updates to completed on status lookup without a second POST',async()=>{
+   sellerScopedOrderReads=true;pendingFirst=true;
+   const o=await seedPaid(),before=postCount;
+   assert.equal((await operations.requestRefund(buyer,o.id)).refund_status,'pending');
+   assert.equal(postCount,before+1);
+   const refundId=(await db.query('SELECT provider_refund_id FROM beauty_sandbox_refunds WHERE order_id=$1::uuid',[o.id])).rows[0].provider_refund_id;
+   const stored=refunds.get(refundId);stored.status='COMPLETED';
+   remotes.get(o.paypal_order_id).purchase_units[0].payments.captures[0].status='REFUNDED';
+   assert.equal((await operations.processRefund(buyer,o.id,false)).refund_status,'completed');
+   assert.equal(postCount,before+1);
+   sellerScopedOrderReads=false;
   });
   await t.test('multi-seller refunds remain pending until all captures are refunded exactly once',async()=>{
    const o=await seedPaid(true),remote=remotes.get(o.paypal_order_id),before=postCount;

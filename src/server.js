@@ -197,8 +197,9 @@ try {
  */
 const explicitApiOnly = String(process.env.IFCDC_API_ONLY || "").trim() === "1"
 const explicitServeSpa = String(process.env.IFCDC_SERVE_SPA || "").trim() === "1"
+const beautySandboxServeClient = String(process.env.BEAUTY_SANDBOX_SERVE_CLIENT || "").trim() === "1"
 const isProd = String(process.env.NODE_ENV || "").toLowerCase() === "production"
-const apiOnly = explicitApiOnly || (!isProd && !explicitServeSpa)
+const apiOnly = explicitApiOnly || (!isProd && !explicitServeSpa && !beautySandboxServeClient)
 
 app.set("trust proxy", true)
 
@@ -952,7 +953,7 @@ function spaIndexFallback(req, res, next) {
     return res.send(VOICE_TWIML_WELCOME.trim())
   }
   if (p.startsWith("/api")) return next()
-  if (p === "/admin" || p.startsWith("/admin/")) return next()
+  if (!beautySandboxServeClient && (p === "/admin" || p.startsWith("/admin/"))) return next()
   if (clientBuildReady) {
     res.sendFile(path.resolve(clientIndexHtml))
     return

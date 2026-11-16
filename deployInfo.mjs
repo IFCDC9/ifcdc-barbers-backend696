@@ -8,6 +8,17 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import { loadAppleIapPrivateKey } from "./appleStoreKitClient.js";
+import {
+  beautySandboxServeClientEnabled,
+  clientDistIndexHtml,
+  resolveClientDistDir,
+} from "./beautySandboxClientServe.js";
+import {
+  inspectBeautySandboxDb,
+  productionSupabaseUrl,
+  ISOLATED_BEAUTY_SANDBOX_DB,
+} from "./applyBeautySandboxSchema.js";
+import { beautyPaymentConfig, publicBeautyPaymentConfig } from "./beautySellerPayments.js";
 
 const require = createRequire(import.meta.url);
 const { resolvePublicWebOrigin, CANONICAL_PUBLIC_ORIGIN, resolvePayPalCheckoutReturnUrls } = require("./publicSiteConfig.cjs");
@@ -189,6 +200,53 @@ export async function getDeployInfoPayload() {
     viteAdminKeyNote:
       "VITE_ADMIN_API_KEY is a frontend build-time var — confirm it matches ADMIN_SECRET on the web host",
     databaseUrlConfigured: Boolean(String(process.env.DATABASE_URL || "").trim()),
+    beautySandbox: await (async () => {
+      const distDir = resolveClientDistDir();
+      const clientDistIndexPresent = existsSync(clientDistIndexHtml(distDir));
+      let db = {
+        currentDatabase: null,
+        isolatedDbMatch: false,
+        tables: null,
+        inspectError: null,
+      };
+      try {
+        db = { ...(await inspectBeautySandboxDb()), inspectError: null };
+      } catch (e) {
+        db.inspectError = e?.message || String(e);
+      }
+      let checkoutOriginHost = null;
+      const rawOrigin = String(process.env.BEAUTY_SANDBOX_CHECKOUT_ORIGIN || "").trim();
+      if (rawOrigin) {
+        try {
+          checkoutOriginHost = new URL(rawOrigin).hostname;
+        } catch {
+          checkoutOriginHost = "invalid";
+        }
+      }
+      const paypal = publicBeautyPaymentConfig(beautyPaymentConfig());
+      return {
+        serveClientEnabled: beautySandboxServeClientEnabled(),
+        apiOnly: String(process.env.IFCDC_API_ONLY || "").trim() === "1",
+        clientDistIndexPresent,
+        checkoutEnabled: String(process.env.BEAUTY_SANDBOX_CHECKOUT_ENABLED || "").trim() === "1",
+        refundsEnabled: String(process.env.BEAUTY_SANDBOX_REFUNDS_ENABLED || "").trim() === "1",
+        paypalEnv: paypal.environment,
+        paypalOnboardingEnabled: paypal.enabled,
+        paypalClientIdSet: paypal.clientIdSet,
+        paypalClientSecretSet: paypal.clientSecretSet,
+        paypalPartnerIdSet: paypal.partnerIdSet,
+        paypalBnCodeSet: paypal.bnCodeSet,
+        paypalConfigured: paypal.configured,
+        paypalMissing: paypal.missing,
+        checkoutOriginHost,
+        expectedIsolatedDatabase: ISOLATED_BEAUTY_SANDBOX_DB,
+        currentDatabase: db.currentDatabase,
+        isolatedDbMatch: Boolean(db.isolatedDbMatch),
+        productionSupabaseHost: productionSupabaseUrl(),
+        tables: db.tables,
+        inspectError: db.inspectError,
+      };
+    })(),
     entitlements: {
       enforceEnabled: (() => {
         const v = String(process.env.ENTITLEMENTS_ENFORCE || "0").trim().toLowerCase();

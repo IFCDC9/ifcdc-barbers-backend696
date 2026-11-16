@@ -1,4 +1,5 @@
 import { API_BASE_URL, PRODUCTION_API_ORIGIN } from "../config/api.js"
+import { isD8uiHost, isD8uiOrigin } from "./sessionApiOrigin.js"
 
 export { API_BASE_URL }
 
@@ -22,6 +23,13 @@ function resolveApiOrigin() {
       : env?.VITE_API_URL != null
         ? String(env.VITE_API_URL).trim()
         : ""
+  if (typeof window !== "undefined" && window.location?.hostname) {
+    const host = String(window.location.hostname || "").toLowerCase()
+    if (isD8uiHost(host)) {
+      if (fromEnv && isD8uiOrigin(fromEnv)) return fromEnv.replace(/\/$/, "")
+      return ""
+    }
+  }
   if (fromEnv) return fromEnv.replace(/\/$/, "")
   // Split-host production (ifcdcbarbersapp.com static → backend696 API).
   if (typeof window !== "undefined" && window.location?.origin) {
@@ -164,6 +172,15 @@ function describeFailedRequest(r) {
   return bits.filter(Boolean).join(" · ")
 }
 
+function attachPublicSellerDiagnostic(err, j) {
+  if (!j || typeof j !== "object") return
+  if (typeof j.error === "string" && /^[a-z][a-z0-9_]{1,80}$/.test(j.error)) err.code = j.error
+  if (typeof j.stage === "string" && /^[a-z][a-z0-9_]{1,40}$/.test(j.stage)) err.stage = j.stage
+  if (typeof j.issue === "string" && /^[A-Z][A-Z0-9_]{1,79}$/.test(j.issue)) err.issue = j.issue
+  if (typeof j.debugId === "string" && /^[a-f0-9]{8,64}$/i.test(j.debugId)) err.debugId = j.debugId
+  if (Number.isInteger(j.httpStatus) && j.httpStatus >= 400 && j.httpStatus < 600) err.httpStatus = j.httpStatus
+}
+
 function throwHttpError(r, j) {
   if (j && j._emptyBody) {
     throw new Error(
@@ -172,7 +189,11 @@ function throwHttpError(r, j) {
   }
 
   const picked = pickHttpErrorMessage(j)
-  if (picked) throw new Error(picked)
+  if (picked) {
+    const err = new Error(picked)
+    attachPublicSellerDiagnostic(err, j)
+    throw err
+  }
 
   if (j && !j._nonJson && typeof j === "object" && Object.keys(j).length > 0) {
     const brief = JSON.stringify(j)

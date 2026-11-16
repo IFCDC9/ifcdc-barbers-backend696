@@ -3,11 +3,29 @@ import { randomUUID } from 'node:crypto';
 import { basketFingerprint } from './beautyOrderDrafts.js';
 import { quoteBeautyOrder } from './beautyOrderService.js';
 import { sandboxPurchaseUnits,verifySandboxOrder,safeSandboxApprovalLink } from './beautySandboxPaymentContract.js';
+const PRODUCTION_SANDBOX_CHECKOUT_ORIGIN='https://ifcdcbarbersapp.com';
+
 export function assertSandboxCheckout(provider,env=process.env){
   if(env.BEAUTY_SANDBOX_CHECKOUT_ENABLED!=='1'||!provider.config.configured||provider.config.environment!=='sandbox')throw Error('sandbox_checkout_disabled');
 }
+
+/** Explicit test-host override for PayPal return/cancel. Unset keeps production storefront URLs. Never uses FRONTEND_URL / PUBLIC_WEB_URL. */
+export function sandboxCheckoutOrigin(env=process.env){
+  const raw=String(env.BEAUTY_SANDBOX_CHECKOUT_ORIGIN||'').trim();
+  if(!raw)return PRODUCTION_SANDBOX_CHECKOUT_ORIGIN;
+  let parsed;
+  try{parsed=new URL(raw);}catch{throw Error('invalid_sandbox_checkout_origin');}
+  if(parsed.protocol!=='https:'||parsed.username||parsed.password)throw Error('invalid_sandbox_checkout_origin');
+  return parsed.origin;
+}
+
+export function sandboxCheckoutReturnUrls(env=process.env,{customerReturn=false}={}){
+  const origin=sandboxCheckoutOrigin(env);
+  const path=customerReturn?'/beauty-supply':'/admin/beauty-supply';
+  return {return_url:origin+path+'?beautySandbox=return',cancel_url:origin+path+'?beautySandbox=cancel'};
+}
 export function publicSandboxOrder(row){
-  return {...(row.quote?beautyRefundTerms(row.quote):{}),id:row.id,status:row.status,quote:row.quote,expiresAt:row.expires_at,createdAt:row.created_at,refundStatus:row.refund_status || 'none',refundIssue:row.refund_issue==='PLATFORM_FEE_NOT_ENABLED'?'PLATFORM_FEE_NOT_ENABLED':null,fulfillmentStatus:row.fulfillment_status || 'processing',paymentReview:row.payment_review === true,inventoryRestocked:row.inventory_restocked === true,
+  return {...(row.quote?beautyRefundTerms(row.quote):{}),id:row.id,status:row.status,quote:row.quote,expiresAt:row.expires_at,createdAt:row.created_at,refundStatus:row.refund_status || 'none',refundIssue:row.refund_issue==='PLATFORM_FEE_NOT_ENABLED'||row.refund_issue==='REFUND_IS_RESTRICTED'?row.refund_issue:null,fulfillmentStatus:row.fulfillment_status || 'processing',paymentReview:row.payment_review === true,inventoryRestocked:row.inventory_restocked === true,
     approvalUrl:row.status==='paypal_created'?row.approval_url:null,sandbox:true};
 }
 function orderMerchantId(row){
@@ -84,9 +102,9 @@ export function createSandboxCheckout({pool,provider,env=process.env,customerRet
         await saveCatalog(c,cat);await event(c,r.rows[0].id,'stock_reserved');return r.rows[0];
       });
     },
-    async list(buyer){assertEnabled();const r=await pool.query("SELECT o.*, (SELECT r.result->>'issue' FROM beauty_sandbox_refunds r WHERE r.order_id=o.id AND r.result->>'issue'='PLATFORM_FEE_NOT_ENABLED' LIMIT 1) AS refund_issue FROM beauty_sandbox_orders o WHERE buyer_id=$1::uuid AND partner_client_id=$2 AND partner_id=$3 ORDER BY created_at DESC LIMIT 20",[buyer,...scope]);return r.rows;},
+    async list(buyer){assertEnabled();const r=await pool.query("SELECT o.*, (SELECT r.result->>'issue' FROM beauty_sandbox_refunds r WHERE r.order_id=o.id AND r.result->>'issue' IN ('PLATFORM_FEE_NOT_ENABLED','REFUND_IS_RESTRICTED') LIMIT 1) AS refund_issue FROM beauty_sandbox_orders o WHERE buyer_id=$1::uuid AND partner_client_id=$2 AND partner_id=$3 ORDER BY created_at DESC LIMIT 20",[buyer,...scope]);return r.rows;},
     async read(buyer,id){assertEnabled();return tx(c=>lock(c,buyer,id));},
-    async listForFounder(){assertEnabled();return (await pool.query("SELECT o.*, (SELECT r.result->>'issue' FROM beauty_sandbox_refunds r WHERE r.order_id=o.id AND r.result->>'issue'='PLATFORM_FEE_NOT_ENABLED' LIMIT 1) AS refund_issue FROM beauty_sandbox_orders o WHERE partner_client_id=$1 AND partner_id=$2 ORDER BY created_at DESC LIMIT 100",scope)).rows;},
+    async listForFounder(){assertEnabled();return (await pool.query("SELECT o.*, (SELECT r.result->>'issue' FROM beauty_sandbox_refunds r WHERE r.order_id=o.id AND r.result->>'issue' IN ('PLATFORM_FEE_NOT_ENABLED','REFUND_IS_RESTRICTED') LIMIT 1) AS refund_issue FROM beauty_sandbox_orders o WHERE partner_client_id=$1 AND partner_id=$2 ORDER BY created_at DESC LIMIT 100",scope)).rows;},
     async ownerForFounder(id){assertEnabled();const r=await pool.query('SELECT buyer_id FROM beauty_sandbox_orders WHERE id=$1::uuid AND partner_client_id=$2 AND partner_id=$3',[id,...scope]);if(!r.rows[0])throw Error('sandbox_order_not_found');return r.rows[0].buyer_id;},
     async prepare(buyer,id){
       assertEnabled();return tx(async c=>{
@@ -95,8 +113,9 @@ export function createSandboxCheckout({pool,provider,env=process.env,customerRet
         if(new Date(row.expires_at)<=new Date())throw Error('sandbox_order_expired');
         for(const b of row.bindings)await eligible(c,b.sellerId,b.merchantId);
         const units=sandboxPurchaseUnits(row,provider.config.partnerId);
+        const urls=sandboxCheckoutReturnUrls(env,{customerReturn});
         const remote=await provider.request('/v2/checkout/orders',{method:'POST',requestId:row.id+'-o',merchantId:orderMerchantId(row),body:{intent:'CAPTURE',purchase_units:units,
-          application_context:{brand_name:'IFCDC Sandbox Test',user_action:'PAY_NOW',shipping_preference:'NO_SHIPPING',return_url:'https://ifcdcbarbersapp.com'+(customerReturn?'/beauty-supply':'/admin/beauty-supply')+'?beautySandbox=return',cancel_url:'https://ifcdcbarbersapp.com'+(customerReturn?'/beauty-supply':'/admin/beauty-supply')+'?beautySandbox=cancel'}}});
+          application_context:{brand_name:'IFCDC Sandbox Test',user_action:'PAY_NOW',shipping_preference:'NO_SHIPPING',return_url:urls.return_url,cancel_url:urls.cancel_url}}});
         if(typeof remote?.id!=='string'||!/^[A-Z0-9]{5,40}$/.test(remote.id))throw Error('invalid_paypal_order');
         verifySandboxOrder(remote,{...row,paypal_order_id:remote.id},provider.config.partnerId);
         const url=safeSandboxApprovalLink(remote);
